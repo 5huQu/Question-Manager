@@ -71,7 +71,7 @@ jobs:
           if (-not (Test-Path "dist\win-unpacked\Question Manager.exe")) {
             throw "Packaged Windows executable was not found."
           }
-          Compress-Archive -Path "dist\win-unpacked" -DestinationPath "dist\${{ matrix.artifact }}.zip" -CompressionLevel Optimal
+          Compress-Archive -Path "dist\win-unpacked" -DestinationPath "dist\${{ matrix.artifact }}-${{ runner.arch }}.zip" -CompressionLevel Optimal
 
       - name: Upload desktop package
         uses: actions/upload-artifact@v7
