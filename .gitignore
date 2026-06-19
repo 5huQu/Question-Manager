@@ -32,6 +32,7 @@ tools/test_brand_layout_optimization.py
 tmp/app-monolith-split/
 PROJECT_MEMORY.md
 .claude/settings.local.json
+pdf_slicer_design.html
 frontend/*_design.html
 
 # Logs and caches
