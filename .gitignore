@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build output
+frontend/dist/
+server/dist/
+dist/
+release/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+server/python/.env
+
+# Runtime data
+runtime/
+data/
+experiments/pdf_slicer/runs/
+server/python/ocr_drafts/
+server/python/ocr_jobs/
+server/python/output/
+server/python/format_cleanup_reports/
+server/python/question_assets
+server/python/native_ocr_trials/
+output/
+tools/export_brand_samples.py
+tools/test_brand_layout_optimization.py
+
+# Temporary planning docs
+tmp/app-monolith-split/
+PROJECT_MEMORY.md
+.claude/settings.local.json
+
+# Logs and caches
+*.log
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor
+.idea/
+.vscode/

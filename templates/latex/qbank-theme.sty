@@ -1,0 +1,257 @@
+%% qbank-theme.sty — 统一教师讲义/试卷/练习单 品牌视觉包
+%% 引擎：XeLaTeX；由 qbank-exam/lecture/worksheet.cls 在 \LoadClass{ctexart} 之后加载。
+%% 视觉身份单一来源：颜色 / 字标 logo / 页眉页脚 / 标题 / 知识点标签 / 答案区 / 解析区。
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{qbank-theme}[2026/06/18 v1.0 Unified teacher document theme]
+
+\RequirePackage{geometry}
+\RequirePackage{fontspec}
+\RequirePackage{amsmath,amssymb,mathtools}
+\RequirePackage{graphicx}
+\RequirePackage{enumitem}
+\RequirePackage{array}
+\RequirePackage{booktabs}
+\RequirePackage{tabularx}
+\RequirePackage{xcolor}
+\RequirePackage{adjustbox}
+\RequirePackage{fancyhdr}
+\RequirePackage{lastpage}
+\RequirePackage{needspace}
+\RequirePackage{multicol}
+\RequirePackage{etoolbox}
+\RequirePackage{ifthen}
+\RequirePackage[most]{tcolorbox}
+\tcbuselibrary{skins,breakable}
+
+%% ---- 字体 -------------------------------------------------------------
+%% 中文：正文宋体，标题/标签/页眉用黑体风格；英文用 TeX Live 自带 Times-like 字体。
+%% 数学字体保持 LaTeX 默认，避免 unicode-math 对既有公式与宏包产生额外兼容成本。
+\setmainfont{texgyretermes-regular.otf}[
+  BoldFont=texgyretermes-bold.otf,
+  ItalicFont=texgyretermes-italic.otf,
+  BoldItalicFont=texgyretermes-bolditalic.otf
+]
+\setsansfont{texgyreheros-regular.otf}[
+  BoldFont=texgyreheros-bold.otf,
+  ItalicFont=texgyreheros-italic.otf,
+  BoldItalicFont=texgyreheros-bolditalic.otf
+]
+\setCJKmainfont{Songti SC}[
+  BoldFont=Songti SC Bold,
+  ItalicFont=Kaiti SC
+]
+\setCJKsansfont{PingFang SC}[
+  BoldFont=Heiti SC
+]
+\setCJKmonofont{Kaiti SC}
+
+\allowdisplaybreaks
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.42em}
+\linespread{1.16}
+\sloppy
+
+%% ---- 配色（改这一段即可换主题）---------------------------------------
+\definecolor{brandink}{HTML}{1B3A5B}   % 主色
+\definecolor{brandtint}{HTML}{EEF3F8}  % 浅底
+\definecolor{brandline}{HTML}{C9D3DC}  % 发丝线
+\definecolor{brandwarm}{HTML}{A8762B}  % 暖点缀
+\definecolor{brandalert}{HTML}{A23B2D} % 克制使用的强调
+
+%% ---- 页面 -------------------------------------------------------------
+\geometry{a4paper,top=20mm,bottom=20mm,left=20mm,right=20mm,headheight=26pt,headsep=10pt,footskip=22pt}
+
+%% ---- 品牌配置宏（在 .tex 顶部改一处即可）-----------------------------
+\newcommand*\qbank@brandname{教师姓名 · 工作室}
+\newcommand*\qbank@brandmark{Q}
+\newcommand*\qbank@tagline{\qbank@brandname}
+\newcommand*\qbank@doctype{讲义}
+\newcommand*\qbank@subject{}
+\newcommand{\setbrandname}[1]{\renewcommand*\qbank@brandname{#1}}
+\newcommand{\setbrandmark}[1]{\renewcommand*\qbank@brandmark{#1}}
+\newcommand{\setbrandtagline}[1]{\renewcommand*\qbank@tagline{#1}}
+\newcommand{\setdoctype}[1]{\renewcommand*\qbank@doctype{#1}}
+\newcommand{\setsubject}[1]{\renewcommand*\qbank@subject{#1}}
+
+%% ---- 文字字标 logo ----------------------------------------------------
+%% 一个 brandink 圆角徽标（品牌首字/字形）+ 品牌名，纯 tcolorbox 实现，无需 tikz。
+\newcommand{\qbankmark}{%
+  \tcbox[on line,boxsep=0pt,left=3.4pt,right=3.4pt,top=1.6pt,bottom=1.6pt,%
+    colback=brandink,coltext=white,colframe=brandink,arc=2.4pt,boxrule=0pt]%
+    {\bfseries\sffamily\qbank@brandmark}%
+  \hspace{0.45em}{\bfseries\sffamily\color{brandink}\qbank@brandname}%
+}
+
+%% ---- 页眉 / 页脚 ------------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\qbankmark}
+\fancyhead[R]{\small\sffamily\color{brandink}\qbank@doctype\ifx\qbank@subject\@empty\else\ \textcolor{brandline}{|}\ \qbank@subject\fi}
+\fancyfoot[L]{\footnotesize\sffamily\color{brandink!75}\qbank@tagline}
+\fancyfoot[R]{\footnotesize\sffamily\color{brandink!75}第 \thepage{} 页 \textcolor{brandline}{/} 共 \pageref{LastPage}{} 页}
+\renewcommand{\headrule}{\vskip-2pt{\color{brandline}\hrule height 0.4pt}}
+\renewcommand{\footrule}{{\color{brandline}\hrule height 0.4pt}\vskip2pt}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyhead[L]{\qbankmark}%
+  \fancyhead[R]{\small\sffamily\color{brandink}\qbank@doctype\ifx\qbank@subject\@empty\else\ \textcolor{brandline}{|}\ \qbank@subject\fi}%
+  \fancyfoot[L]{\footnotesize\sffamily\color{brandink!75}\qbank@tagline}%
+  \fancyfoot[R]{\footnotesize\sffamily\color{brandink!75}第 \thepage{} 页 \textcolor{brandline}{/} 共 \pageref{LastPage}{} 页}%
+}
+
+%% ---- 标题块 -----------------------------------------------------------
+\newcommand*\qbank@title{}
+\newcommand*\qbank@subtitle{}
+\newcommand*\qbank@meta{}
+\newcommand{\doctitle}[1]{\renewcommand*\qbank@title{#1}}
+\newcommand{\docsubtitle}[1]{\renewcommand*\qbank@subtitle{#1}}
+\newcommand{\docmeta}[1]{\renewcommand*\qbank@meta{#1}}
+\newcommand{\qbankmaketitle}{%
+  \begin{center}
+    {\color{brandline}\rule{\linewidth}{0.4pt}}\par\vspace{0.55em}
+    {\sffamily\bfseries\LARGE\color{brandink}\qbank@title}\par
+    \ifx\qbank@subtitle\@empty\else\vspace{0.35em}{\sffamily\large\color{brandink!80}\qbank@subtitle}\par\fi
+    \ifx\qbank@meta\@empty\else\vspace{0.5em}{\small\color{brandink!70}\qbank@meta}\par\fi
+    \vspace{0.55em}{\color{brandline}\rule{\linewidth}{0.4pt}}
+  \end{center}
+  \vspace{0.4em}
+}
+
+%% ---- 标题层级（用 ctex 的 \ctexset，避免与 titlesec 冲突）------------
+\newcommand{\qbanksquare}{{\color{brandink}\rule[-0.08em]{0.5em}{0.92em}}\hspace{0.5em}}
+\ctexset{%
+  section/format = {\qbanksquare\sffamily\large\bfseries\color{brandink}},
+  section/aftername = {\hspace{0.45em}},
+  subsection/format = {\sffamily\normalsize\bfseries\color{brandink!85}},
+  subsection/aftername = {\hspace{0.4em}},
+}
+
+%% ---- 知识点标签 / 难度标 ---------------------------------------------
+\newcommand{\kptag}[1]{%
+  \tcbox[on line,boxsep=0pt,left=4pt,right=4pt,top=1.2pt,bottom=1.2pt,%
+    colback=brandtint,coltext=brandwarm,colframe=brandwarm!55,arc=3pt,boxrule=0.4pt]%
+    {\scriptsize\sffamily #1}%
+}
+\newcommand{\difftag}[1]{%
+  \ifthenelse{\equal{#1}{压轴}\OR\equal{#1}{较难}}%
+    {{\scriptsize\sffamily\color{brandalert}\textbf{难度·#1}}}%
+    {{\scriptsize\sffamily\color{brandink!75}难度·#1}}%
+}
+% \tagrow{难度}{标签1\kptag{...}...}：题目元信息行
+\newcommand{\tagrow}[1]{%
+  {\hspace{0.35em}\raggedright #1\par}%
+  \vspace{0.18em}%
+}
+
+%% ---- 答案区（留白 + 发丝线 + 标签）-----------------------------------
+\newdimen\qbank@answerheight
+\newdimen\qbank@answerremain
+\newdimen\qbank@answeroverhead
+\newenvironment{answerarea}[1]{%
+  \qbank@answerheight=#1\relax
+  \qbank@answeroverhead=1.75\baselineskip
+  \ifdim\pagegoal<10000pt
+    \qbank@answerremain=\pagegoal
+    \advance\qbank@answerremain by -\pagetotal
+    \advance\qbank@answerremain by -\qbank@answeroverhead
+    \ifdim\qbank@answerheight>\qbank@answerremain
+      \qbank@answerheight=\qbank@answerremain
+    \fi
+  \fi
+  \ifdim\qbank@answerheight>0.8cm
+    \par\nobreak\addvspace{0.4em}%
+    \noindent{\scriptsize\sffamily\color{brandink!55}作答区}\par\nobreak\vspace{0.15em}%
+    \noindent{\color{brandline}\rule{\linewidth}{0.3pt}}\par\nobreak
+    \vspace{\qbank@answerheight}%
+  \fi
+}{\par\addvspace{0.3em}}
+
+%% ---- 解析区 -----------------------------------------------------------
+\newtcolorbox{solutionbox}{%
+  enhanced,breakable,colback=brandtint,colframe=brandink,
+  boxrule=0pt,leftrule=2.2pt,arc=0.6mm,
+  left=2.6mm,right=2.2mm,top=1.8mm,bottom=1.8mm,
+  before skip=0.55em,after skip=0.55em,
+  fontupper=\small\linespread{1.24}\selectfont}
+\newcommand{\anslabel}{\textbf{\color{brandink}答案：}}
+\newcommand{\sollabel}{\textbf{\color{brandwarm}解析：}}
+\newcommand{\qbanklongmath}[1]{%
+  \par\noindent
+  \begin{adjustbox}{max width=\linewidth}
+    $\displaystyle #1$
+  \end{adjustbox}%
+  \par
+}
+\newsavebox{\qbank@figbox}
+\newcommand{\qbankfigure}[3]{%
+  \par\addvspace{0.2em}\noindent
+  \sbox{\qbank@figbox}{\includegraphics[width=#2\linewidth,keepaspectratio]{#3}}%
+  \typeout{QBANKFIG id=#1\space page=\thepage\space pagetotal=\the\pagetotal\space pagegoal=\the\pagegoal\space figheight=\the\ht\qbank@figbox\space figdepth=\the\dp\qbank@figbox\space width=#2}%
+  \usebox{\qbank@figbox}%
+  \par\addvspace{0.15em}%
+}
+
+%% ---- 题号 / 题目环境（试卷、练习单共用）-----------------------------
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\qbankchoicecell}[2]{\textbf{#1.}\hspace{0.35em}#2}
+\newcommand{\qbankchoicesfour}[4]{%
+  \par\addvspace{0.25em}\noindent
+  \begin{tabularx}{\linewidth}{@{}YYYY@{}}
+    \qbankchoicecell{A}{#1} & \qbankchoicecell{B}{#2} & \qbankchoicecell{C}{#3} & \qbankchoicecell{D}{#4}
+  \end{tabularx}%
+  \par\addvspace{0.1em}%
+}
+\newcommand{\qbankchoicestwo}[4]{%
+  \par\addvspace{0.25em}\noindent
+  \begin{tabularx}{\linewidth}{@{}YY@{}}
+    \qbankchoicecell{A}{#1} & \qbankchoicecell{B}{#2}\\[0.18em]
+    \qbankchoicecell{C}{#3} & \qbankchoicecell{D}{#4}
+  \end{tabularx}%
+  \par\addvspace{0.1em}%
+}
+\newenvironment{qbankchoicesone}{%
+  \begin{enumerate}[label=\textbf{\Alph*.},leftmargin=2.2em,itemsep=0.15em,topsep=0.25em]
+}{\end{enumerate}}
+
+\newenvironment{examquestion}[1]{%
+  \Needspace{4\baselineskip}%
+  \par\addvspace{0.45em}\noindent
+  \textbf{\normalsize\color{brandink}#1.}\hspace{0.4em}\small\ignorespaces
+}{\par\vspace{0.2em}}
+
+%% \examsection{一、单项选择题}：试卷大题分节标题（不进目录）
+\newcommand{\examsection}[1]{%
+  \par\addvspace{0.9em}\Needspace{3\baselineskip}%
+  \noindent\qbanksquare{\sffamily\large\bfseries\color{brandink}#1}\par
+  \vspace{0.1em}\noindent{\color{brandline}\rule{\linewidth}{0.3pt}}\par\addvspace{0.35em}}
+
+%% ---- 讲义定理类盒子 ---------------------------------------------------
+\newcounter{qbankbox}[section]
+\renewcommand{\theqbankbox}{\thesection.\arabic{qbankbox}}
+\tcbset{qbankthm/.style={%
+  enhanced,breakable,colback=white,colframe=brandink,boxrule=0.5pt,arc=0.7mm,
+  fonttitle=\bfseries\sffamily\color{white},colbacktitle=brandink,
+  coltitle=white,attach boxed title to top left={xshift=2.4mm,yshift=-2.6mm},
+  boxed title style={colback=brandink,colframe=brandink,arc=0.5mm,boxrule=0pt},
+  left=2.8mm,right=2.6mm,top=2.4mm,bottom=2.2mm,
+  before skip=0.75em,after skip=0.6em}}
+
+\newtcolorbox[use counter=qbankbox]{definition}[1][]{qbankthm,title={定义~\theqbankbox\ #1}}
+\newtcolorbox[use counter=qbankbox]{proposition}[1][]{qbankthm,title={性质~\theqbankbox\ #1}}
+\newtcolorbox[use counter=qbankbox]{example}[1][]{qbankthm,title={例~\theqbankbox\ #1}}
+\newtcolorbox[use counter=qbankbox]{exercise}[1][]{qbankthm,title={练习~\theqbankbox\ #1}}
+% 方法/要点盒子（无标题条，浅底）
+\newtcolorbox{keybox}{enhanced,breakable,colback=brandtint,colframe=brandink!55,
+  boxrule=0.4pt,leftrule=2pt,arc=0.7mm,left=2.6mm,right=2.4mm,top=1.6mm,bottom=1.6mm,
+  before skip=0.7em,after skip=0.6em}
+% 小结盒子（暖色细边）
+\newtcolorbox{summary}{enhanced,breakable,colback=white,colframe=brandwarm!70,
+  boxrule=0.5pt,arc=0.7mm,left=2.6mm,right=2.4mm,top=1.8mm,bottom=1.8mm,
+  before skip=0.7em,after skip=0.6em,
+  overlay unbroken and first={\node[anchor=north west,font=\bfseries\sffamily\color{brandwarm},
+    inner sep=0pt] at ([xshift=2.8mm,yshift=-1.6mm]frame.north west){本节小结};},
+  top=5mm}
+
+\endinput

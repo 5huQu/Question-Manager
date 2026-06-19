@@ -1,0 +1,1134 @@
+{
+  "code": "high_school_methods",
+  "name": "高中数学方法题型标签库",
+  "subject": "数学",
+  "stage": "high_school",
+  "locale": "zh-CN",
+  "version": "1.0.0",
+  "source": "system-default",
+  "libraryType": "method_tag",
+  "baseKnowledgeLibraryCode": "high_school_math_cn_default",
+  "groups": [
+    {
+      "code": "MG_FUNC_DERIV",
+      "name": "函数与导数 (基础与压轴)",
+      "sortOrder": 1,
+      "tags": [
+        {
+          "code": "MT_DEF_MONOTONICITY",
+          "name": "定义法证明单调性",
+          "tagType": "method",
+          "appliesTo": [
+            "函数单调性的定义、判定与性质"
+          ],
+          "sortOrder": 1
+        },
+        {
+          "code": "MT_GRAPH_METHOD",
+          "name": "图象法 (数形结合)",
+          "tagType": "method",
+          "appliesTo": [
+            "函数零点 (存在性定理、二分法)",
+            "一元二次不等式解法 (判别式、根)",
+            "函数奇偶性的定义、判定与图象特征",
+            "函数周期性 (对称性与周期的关系)"
+          ],
+          "sortOrder": 2
+        },
+        {
+          "code": "MT_PARAM_SEPARATION",
+          "name": "分离参数法",
+          "tagType": "strategy",
+          "appliesTo": [
+            "函数零点 (存在性定理、二分法)",
+            "利用导数研究函数单调性",
+            "函数的极值、最值及其应用"
+          ],
+          "sortOrder": 4
+        },
+        {
+          "code": "MT_FUNC_CONSTRUCTION",
+          "name": "构造函数法",
+          "tagType": "method",
+          "appliesTo": [
+            "利用导数研究函数单调性",
+            "不等式的性质"
+          ],
+          "sortOrder": 5
+        },
+        {
+          "code": "MT_ISOMORPHISM",
+          "name": "同构法",
+          "tagType": "method",
+          "appliesTo": [
+            "指数幂运算与指数函数",
+            "对数运算与对数函数",
+            "利用导数研究函数单调性"
+          ],
+          "sortOrder": 6
+        },
+        {
+          "code": "MT_HIDDEN_ZERO",
+          "name": "隐零点代换",
+          "tagType": "method",
+          "appliesTo": [
+            "函数的极值、最值及其应用",
+            "函数零点 (存在性定理、二分法)"
+          ],
+          "sortOrder": 7
+        },
+        {
+          "code": "MT_EXTREMUM_SHIFT",
+          "name": "极值点偏移",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "函数的极值、最值及其应用",
+            "函数图象的对称性 (轴对称、中心对称)"
+          ],
+          "sortOrder": 8
+        },
+        {
+          "code": "MT_TANGENT_RELAXATION",
+          "name": "切线放缩法",
+          "tagType": "method",
+          "appliesTo": [
+            "导数概念、几何意义与切线方程",
+            "利用导数研究函数单调性",
+            "不等式的性质"
+          ],
+          "sortOrder": 9
+        },
+        {
+          "code": "MT_ENDPOINT_EFFECT",
+          "name": "端点效应",
+          "tagType": "strategy",
+          "appliesTo": [
+            "利用导数研究函数单调性",
+            "函数的极值、最值及其应用"
+          ],
+          "sortOrder": 10
+        },
+        {
+          "code": "MT_L_HOPITAL",
+          "name": "洛必达法则 (客观题)",
+          "tagType": "strategy",
+          "appliesTo": [
+            "导数公式与运算法则 (和、差、积、商、复合)",
+            "函数的极值、最值及其应用"
+          ],
+          "sortOrder": 11
+        },
+        {
+          "code": "MT_ABSTRACT_FUNCTION",
+          "name": "抽象函数题型",
+          "description": "对应函数重难点培优中的抽象函数。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "抽象函数与新定义函数",
+            "函数单调性的定义、判定与性质",
+            "函数奇偶性的定义、判定与图象特征",
+            "函数周期性 (对称性与周期的关系)"
+          ],
+          "sortOrder": 12
+        },
+        {
+          "code": "MT_NESTED_FUNCTION",
+          "name": "复合函数与嵌套函数应用",
+          "description": "对应复合函数及嵌套函数的应用。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "复合函数与嵌套函数综合",
+            "复合函数 (定义域、单调性“同增异减”)",
+            "函数零点 (存在性定理、二分法)"
+          ],
+          "sortOrder": 13
+        },
+        {
+          "code": "MT_FUNCTION_NEW_DEFINITION",
+          "name": "函数新定义问题",
+          "description": "对应常见函数与函数中的新定义问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "抽象函数与新定义函数",
+            "新定义问题"
+          ],
+          "sortOrder": 14
+        },
+        {
+          "code": "MT_COMPARE_SIZE",
+          "name": "比较大小方法题型",
+          "description": "对应导数重难点培优“比较大小方法题型全归纳”。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "指数幂运算与指数函数",
+            "对数运算与对数函数",
+            "利用导数研究函数单调性"
+          ],
+          "sortOrder": 15
+        },
+        {
+          "code": "MT_CUBIC_FUNCTION",
+          "name": "三次函数图像与性质",
+          "description": "对应三次函数的图像与性质。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "利用导数研究函数单调性",
+            "函数的极值、最值及其应用",
+            "二阶导数、凹凸性与拐点"
+          ],
+          "sortOrder": 16
+        },
+        {
+          "code": "MT_MIXED_ORIGINAL_DERIVATIVE",
+          "name": "原函数与导函数混合构造",
+          "description": "对应导数中原函数与导函数的混合构造。",
+          "tagType": "method",
+          "appliesTo": [
+            "导数公式与运算法则 (和、差、积、商、复合)",
+            "利用导数研究函数单调性",
+            "利用导数证明不等式"
+          ],
+          "sortOrder": 17
+        },
+        {
+          "code": "MT_SECOND_DERIVATIVE_CONCAVITY",
+          "name": "二阶导与凹凸反转",
+          "description": "对应二阶导、凹凸反转与端点效应。",
+          "tagType": "method",
+          "appliesTo": [
+            "二阶导数、凹凸性与拐点",
+            "函数的极值、最值及其应用"
+          ],
+          "sortOrder": 18
+        },
+        {
+          "code": "MT_TWO_VARIABLE_DERIVATIVE",
+          "name": "导数双变量问题",
+          "description": "对应导数中的双变量问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "导数中的恒成立、有解与参数范围",
+            "利用导数证明不等式"
+          ],
+          "sortOrder": 19
+        },
+        {
+          "code": "MT_INTEGER_SOLUTION_DISTANCE",
+          "name": "导数中的整数解与距离问题",
+          "description": "对应导数中的整数解和几类距离问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "导数中的零点与隐零点问题",
+            "导数中的恒成立、有解与参数范围"
+          ],
+          "sortOrder": 20
+        }
+      ]
+    },
+    {
+      "code": "MG_PROB_STAT_COUNT",
+      "name": "概率统计与计数原理",
+      "sortOrder": 2,
+      "tags": [
+        {
+          "code": "MT_LEAST_SQUARES",
+          "name": "最小二乘法",
+          "tagType": "method",
+          "appliesTo": [
+            "线性相关、相关系数、回归直线、R^2"
+          ],
+          "sortOrder": 1
+        },
+        {
+          "code": "MT_CHI_SQUARE",
+          "name": "卡方检验 (独立性检验)",
+          "tagType": "method",
+          "appliesTo": [
+            "独立性检验 (列联表、卡方)"
+          ],
+          "sortOrder": 2
+        },
+        {
+          "code": "MT_HISTOGRAM_ESTIMATION",
+          "name": "频率直方图数字特征估计",
+          "tagType": "method",
+          "appliesTo": [
+            "频率分布直方图、折线图、茎叶图",
+            "数字特征 (均值、中位数、众数、方差、百分位数)"
+          ],
+          "sortOrder": 3
+        },
+        {
+          "code": "MT_TOTAL_PROBABILITY",
+          "name": "全概率公式应用",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "条件概率与全概率公式 (新教材重点)"
+          ],
+          "sortOrder": 4
+        },
+        {
+          "code": "MT_BAYES_THEOREM",
+          "name": "贝叶斯公式推断",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "条件概率与全概率公式 (新教材重点)"
+          ],
+          "sortOrder": 5
+        },
+        {
+          "code": "MT_MARKOV_CHAIN",
+          "name": "状态转移 (马尔可夫链)",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "条件概率与全概率公式 (新教材重点)",
+            "递推数列 (累加、累乘、构造)"
+          ],
+          "sortOrder": 6
+        },
+        {
+          "code": "MT_BUNDLING",
+          "name": "捆绑法",
+          "tagType": "method",
+          "appliesTo": [
+            "排列、组合定义及计算公式"
+          ],
+          "sortOrder": 7
+        },
+        {
+          "code": "MT_SLOTTING",
+          "name": "插空法",
+          "tagType": "method",
+          "appliesTo": [
+            "排列、组合定义及计算公式"
+          ],
+          "sortOrder": 8
+        },
+        {
+          "code": "MT_STARS_AND_BARS",
+          "name": "隔板法",
+          "tagType": "method",
+          "appliesTo": [
+            "排列、组合定义及计算公式"
+          ],
+          "sortOrder": 9
+        },
+        {
+          "code": "MT_COMPLEMENTARY",
+          "name": "正难则反 (补集法)",
+          "tagType": "strategy",
+          "appliesTo": [
+            "样本空间、事件关系 (并、交、互斥、独立)",
+            "离散型随机变量分布列、期望、方差",
+            "排列、组合定义及计算公式"
+          ],
+          "sortOrder": 10
+        },
+        {
+          "code": "MT_COUNT_DISTRIBUTION",
+          "name": "分组分配与排列组合综合",
+          "description": "对应排列组合题型技巧全归纳。",
+          "tagType": "method",
+          "appliesTo": [
+            "排列组合综合技巧",
+            "排列、组合定义及计算公式"
+          ],
+          "sortOrder": 11
+        },
+        {
+          "code": "MT_INCLUSION_EXCLUSION",
+          "name": "容斥原理",
+          "description": "补充计数原理常见题型。",
+          "tagType": "method",
+          "appliesTo": [
+            "排列组合综合技巧",
+            "分步与分类计数原理"
+          ],
+          "sortOrder": 12
+        },
+        {
+          "code": "MT_BINOMIAL_COEFFICIENT_SUM",
+          "name": "二项式系数和与赋值法",
+          "description": "对应二项式定理题型技巧。",
+          "tagType": "method",
+          "appliesTo": [
+            "二项式定理综合应用",
+            "二项式定理 (通项、系数性质、赋值法)"
+          ],
+          "sortOrder": 13
+        },
+        {
+          "code": "MT_FOUR_DISTRIBUTIONS",
+          "name": "四大分布及其应用",
+          "description": "对应两点分布、二项分布、超几何分布与正态分布。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "二项分布、超几何分布、正态分布",
+            "离散型随机变量分布列、期望、方差"
+          ],
+          "sortOrder": 14
+        },
+        {
+          "code": "MT_PROB_DECISION_MATCH",
+          "name": "概率决策与比赛概率",
+          "description": "对应概率中的决策问题及比赛中的概率。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "概率决策与比赛概率问题",
+            "离散型随机变量分布列、期望、方差"
+          ],
+          "sortOrder": 15
+        },
+        {
+          "code": "MT_STAT_OPEN_QUESTION",
+          "name": "统计解答题全题型",
+          "description": "对应统计解答题全题型归纳。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "用样本估计总体与统计图表综合",
+            "线性相关、相关系数、回归直线、R^2",
+            "独立性检验 (列联表、卡方)"
+          ],
+          "sortOrder": 16
+        }
+      ]
+    },
+    {
+      "code": "MG_TRIG_VECTOR",
+      "name": "三角函数与平面向量",
+      "sortOrder": 3,
+      "tags": [
+        {
+          "code": "MT_COMPOSITE_TRIG_SUBSTITUTION",
+          "name": "复合型三角函数整体代换法",
+          "tagType": "method",
+          "appliesTo": [
+            "y=Asin(wx+phi) 的图象、性质与变换",
+            "函数单调性的定义、判定与性质",
+            "函数图象的对称性 (轴对称、中心对称)",
+            "函数的极值、最值及其应用"
+          ],
+          "sortOrder": 1
+        },
+        {
+          "code": "MT_AUXILIARY_ANGLE",
+          "name": "辅助角公式法",
+          "tagType": "method",
+          "appliesTo": [
+            "y=Asin(wx+phi) 的图象、性质与变换",
+            "和差公式、倍角公式、半角公式"
+          ],
+          "sortOrder": 2
+        },
+        {
+          "code": "MT_SIDE_ANGLE_CONVERSION",
+          "name": "边角互化",
+          "tagType": "strategy",
+          "appliesTo": [
+            "正弦定理及其变形 (大角对大边、外接圆直径)",
+            "余弦定理及其应用"
+          ],
+          "sortOrder": 3
+        },
+        {
+          "code": "MT_BASIS_VECTOR",
+          "name": "基底法",
+          "tagType": "method",
+          "appliesTo": [
+            "平面向量基本定理 (基底)",
+            "向量线性运算 (三角形、平行四边形法则)"
+          ],
+          "sortOrder": 4
+        },
+        {
+          "code": "MT_COORDINATE_SYSTEM_2D",
+          "name": "坐标建系法 (平面)",
+          "tagType": "method",
+          "appliesTo": [
+            "向量坐标表示与运算",
+            "数量积 (定义、投影、坐标表示)",
+            "向量夹角与垂直条件"
+          ],
+          "sortOrder": 5
+        },
+        {
+          "code": "MT_POLARIZATION_IDENTITY",
+          "name": "极化恒等式",
+          "tagType": "method",
+          "appliesTo": [
+            "数量积 (定义、投影、坐标表示)",
+            "向量夹角与垂直条件"
+          ],
+          "sortOrder": 6
+        },
+        {
+          "code": "MT_EQUAL_SUM_LINE",
+          "name": "等和线定理",
+          "tagType": "method",
+          "appliesTo": [
+            "平面向量基本定理 (基底)",
+            "向量线性运算 (三角形、平行四边形法则)"
+          ],
+          "sortOrder": 7
+        },
+        {
+          "code": "MT_PROJECTION",
+          "name": "投影法",
+          "tagType": "method",
+          "appliesTo": [
+            "数量积 (定义、投影、坐标表示)"
+          ],
+          "sortOrder": 8
+        },
+        {
+          "code": "MT_ANGLE_MATCHING",
+          "name": "配凑角法",
+          "description": "对应三角恒等变换中的配凑角。",
+          "tagType": "method",
+          "appliesTo": [
+            "三角恒等变换综合",
+            "和差公式、倍角公式、半角公式"
+          ],
+          "sortOrder": 9
+        },
+        {
+          "code": "MT_UNIVERSAL_TRIG_FORMULA",
+          "name": "半角、万能公式与三倍角应用",
+          "description": "对应半角、万能公式、三倍角。",
+          "tagType": "method",
+          "appliesTo": [
+            "三角恒等变换综合",
+            "和差公式、倍角公式、半角公式"
+          ],
+          "sortOrder": 10
+        },
+        {
+          "code": "MT_PRODUCT_SUM_TRANSFORM",
+          "name": "和差化积与积化和差",
+          "description": "对应和差化积、积化和差公式应用。",
+          "tagType": "method",
+          "appliesTo": [
+            "三角恒等变换综合"
+          ],
+          "sortOrder": 11
+        },
+        {
+          "code": "MT_TRIG_PARAMETER_OMEGA_PHI",
+          "name": "三角函数中 w、phi 参数取值",
+          "description": "对应 y=Asin(wx+phi) 中 w、phi 的取值问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "y=Asin(wx+phi) 中参数 w、phi 问题",
+            "y=Asin(wx+phi) 的图象、性质与变换"
+          ],
+          "sortOrder": 12
+        },
+        {
+          "code": "MT_TRI_AREA_PERIMETER_EXTREMUM",
+          "name": "解三角形面积周长最值范围",
+          "description": "对应解三角形中面积、周长、边的最值与范围。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "解三角形中的面积、周长、最值与范围",
+            "三角形面积公式 (海伦、坐标、内切圆)"
+          ],
+          "sortOrder": 13
+        },
+        {
+          "code": "MT_TRI_SPECIAL_LINE_CONDITION",
+          "name": "中线角平分线垂线条件破解",
+          "description": "对应解三角形含中线、角平分线、垂线的条件破解。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "解三角形中的中线、角平分线与垂线条件",
+            "正弦定理及其变形 (大角对大边、外接圆直径)",
+            "余弦定理及其应用"
+          ],
+          "sortOrder": 14
+        },
+        {
+          "code": "MT_RECTANGLE_IDENTITY",
+          "name": "矩形恒等式",
+          "description": "对应坐标法与极化恒等式、矩形恒等式。",
+          "tagType": "method",
+          "appliesTo": [
+            "数量积 (定义、投影、坐标表示)",
+            "平面向量中的最值、范围与不等式"
+          ],
+          "sortOrder": 15
+        },
+        {
+          "code": "MT_CLAW_DIAGRAM",
+          "name": "爪型图与共线推论",
+          "description": "对应平面向量共线定理及其推论、爪型图。",
+          "tagType": "method",
+          "appliesTo": [
+            "平面向量几何应用 (共线、四心、面积)",
+            "平面向量基本定理 (基底)"
+          ],
+          "sortOrder": 16
+        },
+        {
+          "code": "MT_TRIANGLE_CENTERS_BENZ",
+          "name": "四心问题与奔驰定理",
+          "description": "对应三角形四心问题及奔驰定理。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "平面向量几何应用 (共线、四心、面积)",
+            "数量积 (定义、投影、坐标表示)"
+          ],
+          "sortOrder": 17
+        }
+      ]
+    },
+    {
+      "code": "MG_SEQ_ALGEBRA",
+      "name": "数列与代数变形",
+      "sortOrder": 4,
+      "tags": [
+        {
+          "code": "MT_STAGGERED_SUBTRACTION",
+          "name": "错位相减法",
+          "tagType": "method",
+          "appliesTo": [
+            "Sn 与 an 的关系应用",
+            "等差数列 (通项、前n项和、性质)",
+            "等比数列 (通项、前n项和、性质)"
+          ],
+          "sortOrder": 1
+        },
+        {
+          "code": "MT_TELESCOPING_SUM",
+          "name": "裂项相消法",
+          "tagType": "method",
+          "appliesTo": [
+            "Sn 与 an 的关系应用"
+          ],
+          "sortOrder": 2
+        },
+        {
+          "code": "MT_REVERSE_ADDITION",
+          "name": "倒序相加法",
+          "tagType": "method",
+          "appliesTo": [
+            "Sn 与 an 的关系应用"
+          ],
+          "sortOrder": 3
+        },
+        {
+          "code": "MT_GROUPED_SUM",
+          "name": "分组求和法",
+          "tagType": "method",
+          "appliesTo": [
+            "Sn 与 an 的关系应用"
+          ],
+          "sortOrder": 4
+        },
+        {
+          "code": "MT_ODD_EVEN_TERMS",
+          "name": "奇偶项数列求和",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "Sn 与 an 的关系应用",
+            "递推数列 (累加、累乘、构造)"
+          ],
+          "sortOrder": 5
+        },
+        {
+          "code": "MT_PERIODIC_SEQ",
+          "name": "周期数列求和",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "Sn 与 an 的关系应用",
+            "递推数列 (累加、累乘、构造)"
+          ],
+          "sortOrder": 6
+        },
+        {
+          "code": "MT_SEQ_CONSTRUCTION",
+          "name": "构造法 (求通项)",
+          "tagType": "method",
+          "appliesTo": [
+            "递推数列 (累加、累乘、构造)"
+          ],
+          "sortOrder": 7
+        },
+        {
+          "code": "MT_MULTIPLY_BY_ONE",
+          "name": "乘“1”法 (常数代换法)",
+          "tagType": "strategy",
+          "appliesTo": [
+            "基本不等式 (算术-几何平均)"
+          ],
+          "sortOrder": 8
+        },
+        {
+          "code": "MT_ZERO_POINT_SEGMENT",
+          "name": "零点分段法",
+          "tagType": "method",
+          "appliesTo": [
+            "绝对值不等式 (几何意义、分段讨论)"
+          ],
+          "sortOrder": 9
+        },
+        {
+          "code": "MT_ABSOLUTE_SEQ",
+          "name": "含绝对值数列问题",
+          "description": "对应数列中的绝对值问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "数列中的绝对值、奇偶项、插项与公共项",
+            "绝对值不等式 (几何意义、分段讨论)"
+          ],
+          "sortOrder": 10
+        },
+        {
+          "code": "MT_INSERT_COMMON_TERM_SEQ",
+          "name": "插项、公共项与存在项问题",
+          "description": "对应插项类、公共项、存在项问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "数列中的绝对值、奇偶项、插项与公共项",
+            "等差数列 (通项、前n项和、性质)",
+            "等比数列 (通项、前n项和、性质)"
+          ],
+          "sortOrder": 11
+        },
+        {
+          "code": "MT_INTEGER_SEQ",
+          "name": "数列取整数问题",
+          "description": "对应数列中的取整数问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "数列中的绝对值、奇偶项、插项与公共项",
+            "数列通项公式求法"
+          ],
+          "sortOrder": 12
+        },
+        {
+          "code": "MT_SEQ_INDUCTION_INEQUALITY",
+          "name": "数列不等式与数学归纳法",
+          "description": "对应数列与不等式及数学归纳法。",
+          "tagType": "method",
+          "appliesTo": [
+            "数学归纳法与数列不等式",
+            "不等式的性质"
+          ],
+          "sortOrder": 13
+        },
+        {
+          "code": "MT_SEQ_NEW_CULTURE_DEFINITION",
+          "name": "数列新文化新定义问题",
+          "description": "对应数列中的新文化、新定义问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "新定义问题",
+            "数学文化与情境化问题",
+            "数列通项公式求法"
+          ],
+          "sortOrder": 14
+        }
+      ]
+    },
+    {
+      "code": "MG_ANALYTIC_GEOM",
+      "name": "解析几何",
+      "sortOrder": 5,
+      "tags": [
+        {
+          "code": "MT_VIETA_THEOREM",
+          "name": "设而不求 (韦达定理)",
+          "tagType": "strategy",
+          "appliesTo": [
+            "直线与圆锥曲线的位置关系 (联立、判别式)",
+            "圆锥曲线弦长问题 (弦长公式、韦达定理)"
+          ],
+          "sortOrder": 1
+        },
+        {
+          "code": "MT_POINT_DIFFERENCE",
+          "name": "点差法 (第三定义)",
+          "tagType": "method",
+          "appliesTo": [
+            "直线与圆锥曲线的位置关系 (联立、判别式)",
+            "圆锥曲线弦长问题 (弦长公式、韦达定理)"
+          ],
+          "sortOrder": 2
+        },
+        {
+          "code": "MT_BASE_HEIGHT_CONVERSION",
+          "name": "底高转化法",
+          "tagType": "strategy",
+          "appliesTo": [
+            "解析几何面积问题 (坐标法、底高转化)"
+          ],
+          "sortOrder": 3
+        },
+        {
+          "code": "MT_PARAM_ELIMINATION",
+          "name": "参数消元 (硬解定理)",
+          "tagType": "method",
+          "appliesTo": [
+            "解析几何比值问题 (参数设点、线段比例)",
+            "圆锥曲线定点问题 (参数消元、恒等关系)"
+          ],
+          "sortOrder": 4
+        },
+        {
+          "code": "MT_INTERSECTION_LOCUS",
+          "name": "交轨法 / 相关点法",
+          "tagType": "method",
+          "appliesTo": [
+            "圆的方程 (标准、一般)、点线圆位置关系",
+            "椭圆 (定义、标准方程、几何性质)",
+            "双曲线 (定义、标准方程、几何性质、渐近线)",
+            "抛物线 (定义、标准方程、几何性质、焦准焦半径)"
+          ],
+          "sortOrder": 5
+        },
+        {
+          "code": "MT_FOCAL_RADIUS",
+          "name": "焦半径公式应用",
+          "tagType": "method",
+          "appliesTo": [
+            "椭圆 (定义、标准方程、几何性质)",
+            "双曲线 (定义、标准方程、几何性质、渐近线)",
+            "抛物线 (定义、标准方程、几何性质、焦准焦半径)"
+          ],
+          "sortOrder": 6
+        },
+        {
+          "code": "MT_CONIC_ECCENTRICITY_ALL",
+          "name": "离心率全题型",
+          "description": "对应椭圆、双曲线离心率求法全归纳。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "圆锥曲线离心率计算与范围",
+            "椭圆 (定义、标准方程、几何性质)",
+            "双曲线 (定义、标准方程、几何性质、渐近线)"
+          ],
+          "sortOrder": 7
+        },
+        {
+          "code": "MT_MIDPOINT_CHORD",
+          "name": "中点弦问题",
+          "description": "对应圆锥曲线中的中点弦问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "圆锥曲线中点弦与点差法",
+            "直线与圆锥曲线的位置关系 (联立、判别式)"
+          ],
+          "sortOrder": 8
+        },
+        {
+          "code": "MT_FIXED_VALUE_POINT_LINE",
+          "name": "定值、定点、定直线问题",
+          "description": "对应圆锥曲线中的定值、定点、定直线。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "圆锥曲线定值、定点与定直线问题",
+            "圆锥曲线定点问题 (参数消元、恒等关系)"
+          ],
+          "sortOrder": 9
+        },
+        {
+          "code": "MT_ASYMMETRIC_VIETA",
+          "name": "非对称韦达应用",
+          "description": "对应韦达定理和非对称韦达。",
+          "tagType": "method",
+          "appliesTo": [
+            "直线与圆锥曲线的位置关系 (联立、判别式)",
+            "圆锥曲线弦长问题 (弦长公式、韦达定理)"
+          ],
+          "sortOrder": 10
+        },
+        {
+          "code": "MT_FOCAL_CHORD_SECOND_CONCLUSION",
+          "name": "焦半径、焦点弦二级结论",
+          "description": "对应焦半径、焦点弦秒杀公式。",
+          "tagType": "method",
+          "appliesTo": [
+            "圆锥曲线焦半径与焦点弦",
+            "抛物线 (定义、标准方程、几何性质、焦准焦半径)"
+          ],
+          "sortOrder": 11
+        },
+        {
+          "code": "MT_APOLLONIUS_MONGE_CIRCLE",
+          "name": "阿波罗尼斯圆与蒙日圆",
+          "description": "对应向量隐圆、阿波罗尼斯圆、蒙日圆。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "圆的方程 (标准、一般)、点线圆位置关系",
+            "直线与圆、圆与圆的位置关系"
+          ],
+          "sortOrder": 12
+        },
+        {
+          "code": "MT_POLAR_AFFINE",
+          "name": "极点极线与仿射变换",
+          "description": "对应极点极线、光学性质与仿射变换。",
+          "tagType": "method",
+          "appliesTo": [
+            "圆锥曲线高级性质 (极点极线、仿射变换)"
+          ],
+          "sortOrder": 13
+        }
+      ]
+    },
+    {
+      "code": "MG_SOLID_GEOM",
+      "name": "立体几何",
+      "sortOrder": 6,
+      "tags": [
+        {
+          "code": "MT_SPATIAL_VECTOR_COORD",
+          "name": "空间向量坐标法",
+          "tagType": "method",
+          "appliesTo": [
+            "空间向量在立几中的应用 (坐标法)",
+            "空间角 (异面直线角、线面角、二面角)"
+          ],
+          "sortOrder": 1
+        },
+        {
+          "code": "MT_EQUAL_VOLUME",
+          "name": "等体积法",
+          "tagType": "method",
+          "appliesTo": [
+            "柱、锥、台、球的结构特征、表面积与体积"
+          ],
+          "sortOrder": 2
+        },
+        {
+          "code": "MT_CUT_AND_FILL",
+          "name": "割补法 (补形法)",
+          "tagType": "method",
+          "appliesTo": [
+            "柱、锥、台、球的结构特征、表面积与体积"
+          ],
+          "sortOrder": 3
+        },
+        {
+          "code": "MT_FINDING_CENTER",
+          "name": "找心法 (外心/重心)",
+          "tagType": "strategy",
+          "appliesTo": [
+            "柱、锥、台、球的结构特征、表面积与体积"
+          ],
+          "sortOrder": 4
+        },
+        {
+          "code": "MT_TRANSLATION_CONVERSION",
+          "name": "平移转化法",
+          "tagType": "strategy",
+          "appliesTo": [
+            "空间角 (异面直线角、线面角、二面角)",
+            "空间平行判定与性质 (线线、线面、面面)"
+          ],
+          "sortOrder": 5
+        },
+        {
+          "code": "MT_CIRCUM_INSCRIBED_SPHERE",
+          "name": "外接球、内切球与棱切球",
+          "description": "对应立体几何中的外接球、内切球、棱切球。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "外接球、内切球与棱切球问题",
+            "柱、锥、台、球的结构特征、表面积与体积"
+          ],
+          "sortOrder": 6
+        },
+        {
+          "code": "MT_SHORTEST_PATH",
+          "name": "立体几何路径最短",
+          "description": "对应立体几何中的路径最短问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "立体几何中的截面、轨迹与路径最短"
+          ],
+          "sortOrder": 7
+        },
+        {
+          "code": "MT_SECTION_LOCUS",
+          "name": "截面、轨迹与动点问题",
+          "description": "对应截面、轨迹、动点培优归类。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "立体几何中的截面、轨迹与路径最短",
+            "空间点、直线、平面的位置关系"
+          ],
+          "sortOrder": 8
+        },
+        {
+          "code": "MT_NON_COORDINATE_SOLID",
+          "name": "非建系立体几何综合",
+          "description": "对应立体几何非建系综合大题。",
+          "tagType": "strategy",
+          "appliesTo": [
+            "空间平行判定与性质 (线线、线面、面面)",
+            "空间垂直判定与性质 (线线、线面、面面)",
+            "空间角 (异面直线角、线面角、二面角)"
+          ],
+          "sortOrder": 9
+        },
+        {
+          "code": "MT_SOLID_EXPLORATORY",
+          "name": "立体几何探索性与新定义问题",
+          "description": "对应立体几何中的最值范围、探索性及新定义问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "新定义问题",
+            "立体几何中的截面、轨迹与路径最短",
+            "空间向量在立几中的应用 (坐标法)"
+          ],
+          "sortOrder": 10
+        }
+      ]
+    },
+    {
+      "code": "MG_COMPOSITE_GENERAL",
+      "name": "复合方法与通用思想 (跨模块)",
+      "sortOrder": 7,
+      "tags": [
+        {
+          "code": "MT_ROOT_THREADING",
+          "name": "穿针引线法 (标根法)",
+          "tagType": "method",
+          "appliesTo": [
+            "一元二次不等式解法 (判别式、根)",
+            "利用导数研究函数单调性",
+            "函数的极值、最值及其应用"
+          ],
+          "sortOrder": 1
+        },
+        {
+          "code": "MT_SHAPE_NUMBER_COMBINED",
+          "name": "数形结合",
+          "tagType": "strategy",
+          "appliesTo": [
+            "集合的基本运算 (并、交、补、韦恩图)",
+            "函数零点 (存在性定理、二分法)",
+            "复数的几何意义 (复平面、向量)",
+            "线性规划 (目标函数、可行域) [Note: Extension]"
+          ],
+          "sortOrder": 2
+        },
+        {
+          "code": "MT_CLASSIFICATION_DISCUSSION",
+          "name": "分类讨论",
+          "tagType": "strategy",
+          "appliesTo": [
+            "绝对值不等式 (几何意义、分段讨论)",
+            "利用导数研究函数单调性",
+            "直线与圆锥曲线的位置关系 (联立、判别式)"
+          ],
+          "sortOrder": 3
+        },
+        {
+          "code": "MT_SPECIAL_CASE",
+          "name": "特例法 (排除法)",
+          "tagType": "strategy",
+          "appliesTo": [
+            "充分条件、必要条件与充要条件判定",
+            "复数的四则运算、共轭复数、模"
+          ],
+          "sortOrder": 4
+        },
+        {
+          "code": "MT_CAUCHY_WEIGHTED_SUM",
+          "name": "柯西不等式与权方和",
+          "description": "对应柯西不等式与权方和不等式。",
+          "tagType": "method",
+          "appliesTo": [
+            "柯西不等式与权方和不等式",
+            "基本不等式 (算术-几何平均)"
+          ],
+          "sortOrder": 5
+        },
+        {
+          "code": "MT_PARAM_EXISTENCE_ALWAYS",
+          "name": "恒成立与有解问题",
+          "description": "跨函数、导数、不等式的参数题型。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "导数中的恒成立、有解与参数范围",
+            "不等式中的参数、恒成立与有解问题",
+            "函数零点 (存在性定理、二分法)"
+          ],
+          "sortOrder": 6
+        },
+        {
+          "code": "MT_MULTI_MODULE_OPEN_PROBLEM",
+          "name": "多模块综合解答题",
+          "description": "对应三角、立几、圆锥曲线、数列、导数、概率统计多模块综合。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "多模块综合考查"
+          ],
+          "sortOrder": 7
+        }
+      ]
+    },
+    {
+      "code": "MG_INNOVATION",
+      "name": "新高考创新与跨模块综合",
+      "sortOrder": 8,
+      "tags": [
+        {
+          "code": "MT_MATH_CULTURE_CONTEXT",
+          "name": "数学文化情境题",
+          "description": "对应高中热门数学文化问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "数学文化与情境化问题"
+          ],
+          "sortOrder": 1
+        },
+        {
+          "code": "MT_STRUCTURED_POORLY",
+          "name": "结构不良问题",
+          "description": "对应高中数学结构不良问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "结构不良问题"
+          ],
+          "sortOrder": 2
+        },
+        {
+          "code": "MT_NEW_DEFINITION_GENERAL",
+          "name": "新定义问题通法",
+          "description": "对应高中数学新定义问题全归纳。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "新定义问题",
+            "抽象函数与新定义函数",
+            "数学文化与情境化问题"
+          ],
+          "sortOrder": 3
+        },
+        {
+          "code": "MT_UNIVERSITY_BACKGROUND",
+          "name": "大学数学背景题",
+          "description": "对应大学数学背景下的数学问题。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "大学数学背景问题"
+          ],
+          "sortOrder": 4
+        },
+        {
+          "code": "MT_NEW_GAOKAO_19",
+          "name": "高考第19题新定义专项",
+          "description": "对应高考数学第19题新定义专项。",
+          "tagType": "problem_type",
+          "appliesTo": [
+            "新定义问题",
+            "多模块综合考查"
+          ],
+          "sortOrder": 5
+        }
+      ]
+    }
+  ]
+}

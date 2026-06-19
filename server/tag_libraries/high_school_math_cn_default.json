@@ -1,0 +1,583 @@
+{
+  "code": "high_school_math_cn_default",
+  "name": "高中数学默认知识点标签",
+  "subject": "数学",
+  "stage": "high_school",
+  "locale": "zh-CN",
+  "version": "1.0.0",
+  "source": "system-default",
+  "libraryType": "knowledge_point",
+  "isDefault": true,
+  "chapters": [
+    {
+      "code": "CH_SET_LOGIC",
+      "name": "集合与常用逻辑用语",
+      "sortOrder": 1,
+      "knowledgePoints": [
+        {
+          "code": "KP_SET_DEF",
+          "name": "集合的含义与表示 (列举法、描述法)",
+          "tagType": "knowledge",
+          "sortOrder": 1
+        },
+        {
+          "code": "KP_SET_REL",
+          "name": "集合间的基本关系 (包含、相等、子集、真子集)",
+          "tagType": "knowledge",
+          "sortOrder": 2
+        },
+        {
+          "code": "KP_SET_OPER",
+          "name": "集合的基本运算 (并、交、补、韦恩图)",
+          "tagType": "knowledge",
+          "sortOrder": 3
+        },
+        {
+          "code": "KP_LOGIC_QUANT",
+          "name": "全称量词与存在量词 (命题及其否定)",
+          "tagType": "knowledge",
+          "sortOrder": 4
+        },
+        {
+          "code": "KP_LOGIC_COND",
+          "name": "充分条件、必要条件与充要条件判定",
+          "tagType": "knowledge",
+          "sortOrder": 5
+        }
+      ]
+    },
+    {
+      "code": "CH_FUNC",
+      "name": "函数概念与性质",
+      "sortOrder": 2,
+      "knowledgePoints": [
+        {
+          "code": "KP_FUNC_DEF",
+          "name": "函数的概念、映射与三要素 (定义域、值域、对应关系)",
+          "tagType": "knowledge",
+          "sortOrder": 1
+        },
+        {
+          "code": "KP_FUNC_DOMAIN",
+          "name": "函数定义域的求法 (分式、根式、对数、实际意义)",
+          "tagType": "knowledge",
+          "sortOrder": 2
+        },
+        {
+          "code": "KP_FUNC_RANGE",
+          "name": "函数值域与最值 (配方、判别式、单调性、换元)",
+          "tagType": "knowledge",
+          "sortOrder": 3
+        },
+        {
+          "code": "KP_FUNC_MONO",
+          "name": "函数单调性的定义、判定与性质",
+          "tagType": "knowledge",
+          "sortOrder": 4
+        },
+        {
+          "code": "KP_FUNC_PARITY",
+          "name": "函数奇偶性的定义、判定与图象特征",
+          "tagType": "knowledge",
+          "sortOrder": 5
+        },
+        {
+          "code": "KP_FUNC_PERIOD",
+          "name": "函数周期性 (对称性与周期的关系)",
+          "tagType": "knowledge",
+          "sortOrder": 6
+        },
+        {
+          "code": "KP_FUNC_SYM",
+          "name": "函数图象的对称性 (轴对称、中心对称)",
+          "tagType": "knowledge",
+          "sortOrder": 7
+        },
+        {
+          "code": "KP_FUNC_TRANS",
+          "name": "函数图象的变换 (平移、翻折、伸缩)",
+          "tagType": "knowledge",
+          "sortOrder": 8
+        },
+        {
+          "code": "KP_FUNC_EXP",
+          "name": "指数幂运算与指数函数",
+          "tagType": "knowledge",
+          "sortOrder": 9
+        },
+        {
+          "code": "KP_FUNC_LOG",
+          "name": "对数运算与对数函数",
+          "tagType": "knowledge",
+          "sortOrder": 10
+        },
+        {
+          "code": "KP_FUNC_POWER",
+          "name": "幂函数的图象与性质",
+          "tagType": "knowledge",
+          "sortOrder": 11
+        },
+        {
+          "code": "KP_FUNC_ZERO",
+          "name": "函数零点 (存在性定理、二分法)",
+          "tagType": "knowledge",
+          "sortOrder": 12
+        },
+        {
+          "code": "KP_FUNC_COMP",
+          "name": "复合函数 (定义域、单调性“同增异减”)",
+          "tagType": "knowledge",
+          "sortOrder": 13
+        }
+      ]
+    },
+    {
+      "code": "CH_DERIV",
+      "name": "导数及其应用",
+      "sortOrder": 3,
+      "knowledgePoints": [
+        {
+          "code": "KP_DERIV_DEF",
+          "name": "导数概念、几何意义与切线方程",
+          "tagType": "knowledge",
+          "sortOrder": 1
+        },
+        {
+          "code": "KP_DERIV_CALC",
+          "name": "导数公式与运算法则 (和、差、积、商、复合)",
+          "tagType": "knowledge",
+          "sortOrder": 2
+        },
+        {
+          "code": "KP_DERIV_MONO",
+          "name": "利用导数研究函数单调性",
+          "tagType": "knowledge",
+          "sortOrder": 3
+        },
+        {
+          "code": "KP_DERIV_EXTREMA",
+          "name": "函数的极值、最值及其应用",
+          "tagType": "knowledge",
+          "sortOrder": 4
+        },
+        {
+          "code": "KP_DERIV_APP",
+          "name": "导数在实际问题中的应用 (优化问题)",
+          "tagType": "knowledge",
+          "sortOrder": 5
+        }
+      ]
+    },
+    {
+      "code": "CH_TRIG",
+      "name": "三角函数",
+      "sortOrder": 4,
+      "knowledgePoints": [
+        {
+          "code": "KP_TRIG_ANGLE",
+          "name": "弧度制、象限角、终边相同角",
+          "tagType": "knowledge",
+          "sortOrder": 1
+        },
+        {
+          "code": "KP_TRIG_DEF",
+          "name": "三角函数定义 (单位圆定义)",
+          "tagType": "knowledge",
+          "sortOrder": 2
+        },
+        {
+          "code": "KP_TRIG_IDENT",
+          "name": "同角三角函数基本关系 (平方关系、商关系)",
+          "tagType": "knowledge",
+          "sortOrder": 3
+        },
+        {
+          "code": "KP_TRIG_REDUCE",
+          "name": "诱导公式 (奇变偶不变，符号看象限)",
+          "tagType": "knowledge",
+          "sortOrder": 4
+        },
+        {
+          "code": "KP_TRIG_GRAPH",
+          "name": "y=Asin(wx+phi) 的图象、性质与变换",
+          "tagType": "knowledge",
+          "sortOrder": 5
+        },
+        {
+          "code": "KP_TRIG_ADD",
+          "name": "和差公式、倍角公式、半角公式",
+          "tagType": "knowledge",
+          "sortOrder": 6
+        },
+        {
+          "code": "KP_SINE_LAW",
+          "name": "正弦定理及其变形 (大角对大边、外接圆直径)",
+          "tagType": "knowledge",
+          "sortOrder": 7
+        },
+        {
+          "code": "KP_COSINE_LAW",
+          "name": "余弦定理及其应用",
+          "tagType": "knowledge",
+          "sortOrder": 8
+        },
+        {
+          "code": "KP_TRI_AREA",
+          "name": "三角形面积公式 (海伦、坐标、内切圆)",
+          "tagType": "knowledge",
+          "sortOrder": 9
+        }
+      ]
+    },
+    {
+      "code": "CH_VEC",
+      "name": "平面向量",
+      "sortOrder": 5,
+      "knowledgePoints": [
+        {
+          "code": "KP_VEC_DEF",
+          "name": "向量概念、模、零向量、单位向量",
+          "tagType": "knowledge",
+          "sortOrder": 1
+        },
+        {
+          "code": "KP_VEC_OPER",
+          "name": "向量线性运算 (三角形、平行四边形法则)",
+          "tagType": "knowledge",
+          "sortOrder": 2
+        },
+        {
+          "code": "KP_VEC_BASE",
+          "name": "平面向量基本定理 (基底)",
+          "tagType": "knowledge",
+          "sortOrder": 3
+        },
+        {
+          "code": "KP_VEC_COORD",
+          "name": "向量坐标表示与运算",
+          "tagType": "knowledge",
+          "sortOrder": 4
+        },
+        {
+          "code": "KP_VEC_DOT",
+          "name": "数量积 (定义、投影、坐标表示)",
+          "tagType": "knowledge",
+          "sortOrder": 5
+        },
+        {
+          "code": "KP_VEC_ANGLE",
+          "name": "向量夹角与垂直条件",
+          "tagType": "knowledge",
+          "sortOrder": 6
+        }
+      ]
+    },
+    {
+      "code": "CH_SEQ",
+      "name": "数列",
+      "sortOrder": 6,
+      "knowledgePoints": [
+        {
+          "code": "KP_SEQ_DEF",
+          "name": "数列概念、分类与表示方法",
+          "tagType": "knowledge",
+          "sortOrder": 1
+        },
+        {
+          "code": "KP_SEQ_ARITH",
+          "name": "等差数列 (通项、前n项和、性质)",
+          "tagType": "knowledge",
+          "sortOrder": 2
+        },
+        {
+          "code": "KP_SEQ_GEOM",
+          "name": "等比数列 (通项、前n项和、性质)",
+          "tagType": "knowledge",
+          "sortOrder": 3
+        },
+        {
+          "code": "KP_SEQ_SN_AN",
+          "name": "Sn 与 an 的关系应用",
+          "tagType": "knowledge",
+          "sortOrder": 4
+        },
+        {
+          "code": "KP_SEQ_RECUR",
+          "name": "递推数列 (累加、累乘、构造)",
+          "tagType": "knowledge",
+          "sortOrder": 5
+        }
+      ]
+    },
+    {
+      "code": "CH_INEQ",
+      "name": "不等式",
+      "sortOrder": 7,
+      "knowledgePoints": [
+        {
+          "code": "KP_INEQ_PROP",
+          "name": "不等式的性质",
+          "tagType": "knowledge",
+          "sortOrder": 1
+        },
+        {
+          "code": "KP_INEQ_QUAD",
+          "name": "一元二次不等式解法 (判别式、根)",
+          "tagType": "knowledge",
+          "sortOrder": 2
+        },
+        {
+          "code": "KP_INEQ_MEAN",
+          "name": "基本不等式 (算术-几何平均)",
+          "tagType": "knowledge",
+          "sortOrder": 3
+        },
+        {
+          "code": "KP_INEQ_ABS",
+          "name": "绝对值不等式 (几何意义、分段讨论)",
+          "tagType": "knowledge",
+          "sortOrder": 4
+        },
+        {
+          "code": "KP_LINEAR_PROG",
+          "name": "线性规划 (目标函数、可行域) [Note: Extension]",
+          "tagType": "knowledge",
+          "sortOrder": 5
+        }
+      ]
+    },
+    {
+      "code": "CH_SOLID",
+      "name": "立体几何",
+      "sortOrder": 8,
+      "knowledgePoints": [
+        {
+          "code": "KP_SOLID_FIG",
+          "name": "柱、锥、台、球的结构特征、表面积与体积",
+          "tagType": "knowledge",
+          "sortOrder": 1
+        },
+        {
+          "code": "KP_SOLID_VIEW",
+          "name": "三视图与直观图 [Note: Historical]",
+          "tagType": "knowledge",
+          "sortOrder": 2
+        },
+        {
+          "code": "KP_SOLID_PARA",
+          "name": "空间平行判定与性质 (线线、线面、面面)",
+          "tagType": "knowledge",
+          "sortOrder": 3
+        },
+        {
+          "code": "KP_SOLID_PERP",
+          "name": "空间垂直判定与性质 (线线、线面、面面)",
+          "tagType": "knowledge",
+          "sortOrder": 4
+        },
+        {
+          "code": "KP_SOLID_ANGLE",
+          "name": "空间角 (异面直线角、线面角、二面角)",
+          "tagType": "knowledge",
+          "sortOrder": 5
+        },
+        {
+          "code": "KP_SPACE_VEC",
+          "name": "空间向量在立几中的应用 (坐标法)",
+          "tagType": "knowledge",
+          "sortOrder": 6
+        }
+      ]
+    },
+    {
+      "code": "CH_ANALYTIC",
+      "name": "解析几何",
+      "sortOrder": 9,
+      "knowledgePoints": [
+        {
+          "code": "KP_LINE_EQ",
+          "name": "直线方程、斜率、位置关系、距离公式",
+          "tagType": "knowledge",
+          "sortOrder": 1
+        },
+        {
+          "code": "KP_CIRCLE_EQ",
+          "name": "圆的方程 (标准、一般)、点线圆位置关系",
+          "tagType": "knowledge",
+          "sortOrder": 2
+        },
+        {
+          "code": "KP_ELLIPSE",
+          "name": "椭圆 (定义、标准方程、几何性质)",
+          "tagType": "knowledge",
+          "sortOrder": 3
+        },
+        {
+          "code": "KP_HYPERBOLA",
+          "name": "双曲线 (定义、标准方程、几何性质、渐近线)",
+          "tagType": "knowledge",
+          "sortOrder": 4
+        },
+        {
+          "code": "KP_PARABOLA",
+          "name": "抛物线 (定义、标准方程、几何性质、焦准焦半径)",
+          "tagType": "knowledge",
+          "sortOrder": 5
+        },
+        {
+          "code": "KP_CONIC_ECC",
+          "name": "圆锥曲线离心率计算与范围",
+          "tagType": "knowledge",
+          "sortOrder": 6
+        },
+        {
+          "code": "KP_LINE_CONIC",
+          "name": "直线与圆锥曲线的位置关系 (联立、判别式)",
+          "tagType": "knowledge",
+          "sortOrder": 7
+        },
+        {
+          "code": "KP_CONIC_CHORD_LENGTH",
+          "name": "圆锥曲线弦长问题 (弦长公式、韦达定理)",
+          "tagType": "knowledge",
+          "sortOrder": 8
+        },
+        {
+          "code": "KP_CONIC_AREA",
+          "name": "解析几何面积问题 (坐标法、底高转化)",
+          "tagType": "knowledge",
+          "sortOrder": 9
+        },
+        {
+          "code": "KP_CONIC_RATIO",
+          "name": "解析几何比值问题 (参数设点、线段比例)",
+          "tagType": "knowledge",
+          "sortOrder": 10
+        },
+        {
+          "code": "KP_CONIC_FIXED_POINT",
+          "name": "圆锥曲线定点问题 (参数消元、恒等关系)",
+          "tagType": "knowledge",
+          "sortOrder": 11
+        }
+      ]
+    },
+    {
+      "code": "CH_PROB_STAT",
+      "name": "概率统计",
+      "sortOrder": 10,
+      "knowledgePoints": [
+        {
+          "code": "KP_STAT_SAMPLE",
+          "name": "抽样方法 (随机、分层)",
+          "tagType": "knowledge",
+          "sortOrder": 1
+        },
+        {
+          "code": "KP_STAT_GRAPH",
+          "name": "频率分布直方图、折线图、茎叶图",
+          "tagType": "knowledge",
+          "sortOrder": 2
+        },
+        {
+          "code": "KP_STAT_CHAR",
+          "name": "数字特征 (均值、中位数、众数、方差、百分位数)",
+          "tagType": "knowledge",
+          "sortOrder": 3
+        },
+        {
+          "code": "KP_STAT_CORR",
+          "name": "线性相关、相关系数、回归直线、R^2",
+          "tagType": "knowledge",
+          "sortOrder": 4
+        },
+        {
+          "code": "KP_STAT_CHI",
+          "name": "独立性检验 (列联表、卡方)",
+          "tagType": "knowledge",
+          "sortOrder": 5
+        },
+        {
+          "code": "KP_PROB_EVENT",
+          "name": "样本空间、事件关系 (并、交、互斥、独立)",
+          "tagType": "knowledge",
+          "sortOrder": 6
+        },
+        {
+          "code": "KP_PROB_CLASS",
+          "name": "古典概型与几何概型",
+          "tagType": "knowledge",
+          "sortOrder": 7
+        },
+        {
+          "code": "KP_PROB_COND",
+          "name": "条件概率与全概率公式 (新教材重点)",
+          "tagType": "knowledge",
+          "sortOrder": 8
+        },
+        {
+          "code": "KP_RAND_VAR",
+          "name": "离散型随机变量分布列、期望、方差",
+          "tagType": "knowledge",
+          "sortOrder": 9
+        },
+        {
+          "code": "KP_DIST_MODEL",
+          "name": "二项分布、超几何分布、正态分布",
+          "tagType": "knowledge",
+          "sortOrder": 10
+        }
+      ]
+    },
+    {
+      "code": "CH_COUNTING",
+      "name": "计数原理",
+      "sortOrder": 11,
+      "knowledgePoints": [
+        {
+          "code": "KP_COUNT_BASIC",
+          "name": "分步与分类计数原理",
+          "tagType": "knowledge",
+          "sortOrder": 1
+        },
+        {
+          "code": "KP_PERM_COMB",
+          "name": "排列、组合定义及计算公式",
+          "tagType": "knowledge",
+          "sortOrder": 2
+        },
+        {
+          "code": "KP_BINOMIAL",
+          "name": "二项式定理 (通项、系数性质、赋值法)",
+          "tagType": "knowledge",
+          "sortOrder": 3
+        }
+      ]
+    },
+    {
+      "code": "CH_COMPLEX",
+      "name": "复数",
+      "sortOrder": 12,
+      "knowledgePoints": [
+        {
+          "code": "KP_COMPLEX_BASE",
+          "name": "虚数单位 i、代数形式、实部虚部",
+          "tagType": "knowledge",
+          "sortOrder": 1
+        },
+        {
+          "code": "KP_COMPLEX_OPER",
+          "name": "复数的四则运算、共轭复数、模",
+          "tagType": "knowledge",
+          "sortOrder": 2
+        },
+        {
+          "code": "KP_COMPLEX_GEOM",
+          "name": "复数的几何意义 (复平面、向量)",
+          "tagType": "knowledge",
+          "sortOrder": 3
+        }
+      ]
+    }
+  ]
+}
