@@ -145,7 +145,7 @@ export function OverviewTab({
                       key={run.runId}
                       className="hover:bg-zinc-50/60 dark:hover:bg-zinc-850/20 transition-colors group"
                     >
-                      <td className="p-3 max-w-[280px]">
+                      <td className="min-w-0 p-3">
                         <button
                           className="block max-w-full truncate text-left font-semibold text-zinc-900 transition-colors hover:text-blue-600 focus:outline-none dark:text-zinc-100 dark:hover:text-blue-400"
                           title={run.paperTitle || run.pdfName}
@@ -153,7 +153,7 @@ export function OverviewTab({
                         >
                           {run.paperTitle || run.pdfName}
                         </button>
-                        <div className="text-[10px] text-zinc-450 dark:text-zinc-500 mt-0.5 truncate">{run.pdfName}</div>
+                        <div className="mt-1 truncate text-[0.78rem] font-medium leading-5 text-zinc-450 dark:text-zinc-500">{run.pdfName}</div>
                       </td>
                       <td className="p-3">
                         <Badge variant={statusVariant(run.sliceStatus)}>{label(run.sliceStatus)}</Badge>
