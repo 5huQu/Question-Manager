@@ -422,17 +422,17 @@ export function SettingsPage() {
                   </label>
                   <div className="grid gap-4">
                     <label className="space-y-1.5 block">
-                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">分类/清洗 API 地址</span>
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">分类 API 地址</span>
                       <input
                         className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
                         value={draft.cleanupApiBaseUrl ?? ''}
                         onChange={(e) => setDraft({ ...draft, cleanupApiBaseUrl: e.target.value })}
                         placeholder={draft.apiBaseUrl || '留空时沿用 OCR API 地址'}
                       />
-                      <p className="text-[11px] leading-5 text-zinc-400">分类、格式清洗和难度评估共用这组模型配置；留空时沿用 OCR API 地址。</p>
+                      <p className="text-[11px] leading-5 text-zinc-400">用于知识点、解题方法和难度评估；留空时沿用 OCR API 地址。</p>
                     </label>
                     <label className="space-y-1.5 block">
-                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">分类/清洗 API Key</span>
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">分类 API Key</span>
                       <input
                         className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
                         placeholder={data?.cleanupApiKeyConfigured ? '已配置密钥，留空表示不修改' : '留空时沿用 OCR API Key'}
@@ -442,7 +442,7 @@ export function SettingsPage() {
                       />
                     </label>
                     <label className="space-y-1.5 block">
-                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">分类/清洗模型</span>
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">分类模型</span>
                       <input
                         className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
                         value={draft.cleanupModel ?? ''}
@@ -451,7 +451,7 @@ export function SettingsPage() {
                       />
                     </label>
                     <label className="space-y-1.5 block">
-                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">分类/清洗并发（1-20）</span>
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">分类并发（1-20）</span>
                       <input
                         type="number"
                         className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"

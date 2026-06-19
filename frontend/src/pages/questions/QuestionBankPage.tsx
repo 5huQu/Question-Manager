@@ -1,25 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useMemo, useState } from 'react'
 import { api } from '@/api/client'
 import { BankTab } from '@/components/questions/WorkbenchQuestionCard'
 import { useAsync } from '@/hooks/useAsync'
 import type { QuestionBankResponse, QuestionItem } from '@/types'
 
 export function QuestionBankPage() {
-  const location = useLocation()
-  const initialFormatIssueOnly = () => new URLSearchParams(location.search).get('formatIssue') === '1'
   const [query, setQuery] = useState('')
   const [stage, setStage] = useState('')
   const [questionType, setQuestionType] = useState('')
   const [difficulty, setDifficulty] = useState('')
   const [knowledgePoint, setKnowledgePoint] = useState('')
   const [solutionMethod, setSolutionMethod] = useState('')
-  const [formatIssueOnly, setFormatIssueOnly] = useState(initialFormatIssueOnly)
   const [page, setPage] = useState(1)
   const pageSize = 20
-  useEffect(() => {
-    setFormatIssueOnly(initialFormatIssueOnly())
-  }, [location.search])
   const questionBankUrl = useMemo(() => {
     const params = new URLSearchParams()
     params.set('page', String(page))
@@ -30,9 +23,8 @@ export function QuestionBankPage() {
     if (difficulty) params.set('difficulty', difficulty)
     if (knowledgePoint) params.set('knowledgePoint', knowledgePoint)
     if (solutionMethod) params.set('solutionMethod', solutionMethod)
-    if (formatIssueOnly) params.set('formatIssue', '1')
     return `/api/question-bank/items?${params.toString()}`
-  }, [difficulty, knowledgePoint, page, query, questionType, solutionMethod, stage, formatIssueOnly])
+  }, [difficulty, knowledgePoint, page, query, questionType, solutionMethod, stage])
   const questionBank = useAsync<QuestionBankResponse>(() => api(questionBankUrl), [questionBankUrl])
   function replaceQuestionInBank(item: QuestionItem) {
     questionBank.setData((current) => current ? {
@@ -65,8 +57,6 @@ export function QuestionBankPage() {
         setKnowledgePoint={setKnowledgePoint}
         solutionMethod={solutionMethod}
         setSolutionMethod={setSolutionMethod}
-        formatIssueOnly={formatIssueOnly}
-        setFormatIssueOnly={setFormatIssueOnly}
         page={page}
         setPage={setPage}
         onQuestionSaved={replaceQuestionInBank}

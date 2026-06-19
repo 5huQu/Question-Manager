@@ -215,39 +215,6 @@ export type OcrProgress = {
   failedDraftCount: number
   totalQuestions: number
   progressPercent: number
-  formatCleanup: null | {
-    examinedCount?: number
-    scriptChangedCount?: number
-    modelNeededCount?: number
-    modelCleanedCount?: number
-    modelAttemptedCount?: number
-    modelResolvedCount?: number
-    failedCount?: number
-    classificationAttemptedCount?: number
-    classificationResolvedCount?: number
-    records?: {
-      id?: string
-      draft?: string
-      needsModelCleanup?: boolean
-      reasons?: string[]
-      modelError?: string
-      classificationError?: string
-      renderErrors?: {
-        field?: string
-        code?: string
-        message?: string
-        snippet?: string
-        context?: string
-        mode?: string
-        start?: number
-        end?: number
-      }[]
-    }[]
-  }
-  formatCleanupActive: boolean
-  formatCleanupReportPath: string
-  formatCleanupLogPath: string
-  formatCleanupLogTail: string
   logTail: string
 }
 
@@ -378,7 +345,7 @@ export type ParsedChoiceQuestion = {
 export type AppReactNode = ReactNode
 
 // Pending Bank Confirmation Page types
-export type PendingBankFilter = 'all' | 'ready' | 'blocked' | 'banked' | 'skipped' | 'ocr_failed' | 'format_issue' | 'has_figures'
+export type PendingBankFilter = 'all' | 'ready' | 'blocked' | 'banked' | 'skipped' | 'ocr_failed' | 'has_figures'
 
 export type PendingBankSummary = {
   total: number
@@ -387,7 +354,6 @@ export type PendingBankSummary = {
   banked: number
   skipped: number
   ocrFailed: number
-  formatIssue: number
   hasFigures: number
 }
 

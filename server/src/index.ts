@@ -310,7 +310,6 @@ type ExportRecordItemSnapshot = {
 
 type PublicQuestion = ReturnType<typeof mapQuestion>
 const activeOcrProcesses = new Map<string, ChildProcessWithoutNullStreams>()
-const activeFormatCleanupProcesses = new Map<string, ChildProcessWithoutNullStreams>()
 const duplicateSimilarityThreshold = 0.62
 
 function nowIso() {
@@ -646,7 +645,7 @@ function renderOcrDraftMarkdown(result: Record<string, any>) {
   return lines.join('\n')
 }
 
-function syncQuestionBankItemToOcrDraft(item: QuestionView | null) {
+function syncQuestionBankItemToOcrDraft(item: ReturnType<typeof getQuestion> | null) {
   if (!item?.id) return false
   const draftDir = path.join(pythonDataRoot, 'ocr_drafts', item.id)
   const resultPath = path.join(draftDir, 'ocr_result.json')
@@ -1310,7 +1309,6 @@ function ensureSchema() {
     )
     WHERE source_run_id != ''
   `).run()
-  backfillFormatReviewFlagsFromReports()
   backfillExportRecordFileSizes()
   clearMismatchedExportRecordItems()
   backfillExportRecordItems()
@@ -2089,49 +2087,6 @@ function exportRunForMigratedOcr(runId: string) {
   return records.length
 }
 
-function rerunBatchSize() {
-  const parsed = Number.parseInt(String(readOcrSettings().maxItems || '10'), 10)
-  if (!Number.isFinite(parsed)) return 10
-  return Math.max(1, Math.min(parsed, 500))
-}
-
-function buildQuestionBankWhereClause(filters: Record<string, unknown> = {}, formatIssueOnly = false) {
-  const q = String(filters.q || '').trim()
-  const stage = String(filters.stage || '').trim()
-  const questionType = String(filters.questionType || '').trim()
-  const knowledgePoint = String(filters.knowledgePoint || '').trim()
-  const solutionMethod = String(filters.solutionMethod || '').trim()
-  const difficulty = String(filters.difficulty || '').trim()
-  const whereSql = `
-    WHERE (? = '' OR search_text LIKE ? OR source_title LIKE ? OR chapter LIKE ? OR knowledge_points_json LIKE ? OR solution_methods_json LIKE ?)
-      AND (? = '' OR stage = ?)
-      AND (? = '' OR question_type = ?)
-      AND (? = '' OR knowledge_points_json LIKE ?)
-      AND (? = '' OR solution_methods_json LIKE ?)
-      AND (? = '' OR difficulty_label = ?)
-      ${formatIssueOnly ? 'AND format_review_required = 1' : ''}
-  `
-  const filterParams = [
-    q,
-    `%${q}%`,
-    `%${q}%`,
-    `%${q}%`,
-    `%${q}%`,
-    `%${q}%`,
-    stage,
-    stage,
-    questionType,
-    questionType,
-    knowledgePoint,
-    `%${knowledgePoint}%`,
-    solutionMethod,
-    `%${solutionMethod}%`,
-    difficulty,
-    difficulty,
-  ]
-  return { whereSql, filterParams }
-}
-
 function chunkArray<T>(items: T[], size: number) {
   const chunks: T[][] = []
   for (let index = 0; index < items.length; index += size) {
@@ -2183,7 +2138,7 @@ function createQuestionBankRerunTask(questionIds: string[], options: { forceRegi
   }>
 
   if (!questions.length) {
-    throw new Error('当前格式问题题目缺少原始 OCR 分块信息，无法批量重新 OCR。')
+    throw new Error('当前题目缺少原始 OCR 分块信息，无法重新 OCR。')
   }
 
   const batchId = createId('batch', 'question_bank_rerun')
@@ -2210,8 +2165,8 @@ function createQuestionBankRerunTask(questionIds: string[], options: { forceRegi
     runId,
     batchId,
     'question_bank_rerun',
-    '格式问题批量重新 OCR',
-    '格式问题批量重新 OCR',
+    '题库批量重新 OCR',
+    '题库批量重新 OCR',
     '',
     'question_bank',
     'question_bank',
@@ -2221,7 +2176,7 @@ function createQuestionBankRerunTask(questionIds: string[], options: { forceRegi
     'full',
     questions[0]?.question.stage || configuredGradeStages()[0] || '高三',
     1,
-    JSON.stringify(['题库格式问题批量重新 OCR']),
+    JSON.stringify(['题库批量重新 OCR']),
     now,
     now,
     questions.length,
@@ -2354,7 +2309,6 @@ function importMigratedOcrResults(runId: string) {
   const runStage = String(runRow?.stage || configuredGradeStages()[0] || '高三')
   const isQuestionBankRerun = runRow?.upload_mode === 'question_bank_rerun'
   if (!fs.existsSync(draftsDir)) return 0
-  const formatReviewById = formatReviewRecordsById(runId)
   let imported = 0
   for (const entry of fs.readdirSync(draftsDir)) {
     if (!entry.startsWith(runId)) continue
@@ -2375,9 +2329,8 @@ function importMigratedOcrResults(runId: string) {
     if (!stem && !answer && !analysis) continue
     const questionType = inferQuestionType(stem, answer)
     const figures = figuresForImportedOcrResult(result, runId)
-    const formatReviewRecord = formatReviewById.get(String(result.id)) || formatReviewById.get(entry)
-    const needsFormatReview = formatReviewRecord ? cleanupRecordNeedsFormatReview(formatReviewRecord) : false
-    const formatReviewJson = needsFormatReview ? JSON.stringify(formatReviewPayload(formatReviewRecord)) : '{}'
+    const needsFormatReview = false
+    const formatReviewJson = '{}'
     const isQuestionOnlyRun = normalizeFileRole(runRow?.file_role) === 'questions'
     const existing = db.prepare('SELECT id, chapter, source_title, source_run_id, source_solution_run_id, merge_status, merge_note, bank_status, updated_at FROM question_bank_items WHERE id = ?').get(targetQuestionId) as {
       id: string
@@ -2674,18 +2627,6 @@ function tryAutoMergeSeparatedExam(batchId: string) {
   return { merged, unresolved, skipped: false }
 }
 
-function formatCleanupReportPath(runId: string) {
-  return path.join(pythonDataRoot, 'format_cleanup_reports', `${runId}.json`)
-}
-
-function formatCleanupLogPath(runId: string) {
-  return path.join(pythonDataRoot, 'format_cleanup_reports', `${runId}.log`)
-}
-
-function workspaceRelativePath(filePath: string) {
-  return assetPathFor(filePath)
-}
-
 type FormatIssue = {
   field: string
   code: string
@@ -2695,58 +2636,6 @@ type FormatIssue = {
   mode?: string
   start?: number
   end?: number
-}
-
-function cleanupRecordNeedsFormatReview(record: Record<string, any> = {}) {
-  return Boolean(record.needsModelCleanup || record.modelError || record.classificationError || (Array.isArray(record.renderErrors) && record.renderErrors.length))
-}
-
-function formatIssueFromCleanupRecord(record: Record<string, any> = {}): FormatIssue | null {
-  const renderErrors = Array.isArray(record.renderErrors) ? record.renderErrors : []
-  const firstError = renderErrors[0]
-  if (firstError) {
-    return {
-      field: String(firstError.field || 'system'),
-      code: String(firstError.code || 'format_error'),
-      message: String(firstError.message || record.modelError || record.classificationError || ''),
-      snippet: String(firstError.snippet || ''),
-      context: String(firstError.context || firstError.snippet || ''),
-      mode: firstError.mode ? String(firstError.mode) : undefined,
-      start: Number.isFinite(Number(firstError.start)) ? Number(firstError.start) : undefined,
-      end: Number.isFinite(Number(firstError.end)) ? Number(firstError.end) : undefined,
-    }
-  }
-  const firstReason = Array.isArray(record.reasons) ? String(record.reasons[0] || '') : ''
-  if (firstReason) {
-    const [field, code] = firstReason.split(':')
-    return {
-      field: field || 'system',
-      code: code || 'format_error',
-      message: String(record.modelError || record.classificationError || ''),
-      snippet: '',
-    }
-  }
-  if (record.modelError || record.classificationError) {
-    return {
-      field: 'system',
-      code: record.modelError ? 'format_cleanup_worker_failed' : 'classification_failed',
-      message: String(record.modelError || record.classificationError || ''),
-      snippet: '',
-    }
-  }
-  return null
-}
-
-function formatReviewPayload(record: Record<string, any> = {}) {
-  const issue = formatIssueFromCleanupRecord(record)
-  return {
-    issue,
-    reasons: Array.isArray(record.reasons) ? record.reasons : [],
-    renderErrors: Array.isArray(record.renderErrors) ? record.renderErrors : [],
-    modelError: String(record.modelError || ''),
-    classificationError: String(record.classificationError || ''),
-    updatedAt: nowIso(),
-  }
 }
 
 function formatIssueFromReviewJson(value = ''): FormatIssue | undefined {
@@ -2764,344 +2653,7 @@ function formatIssueFromReviewJson(value = ''): FormatIssue | undefined {
       end: Number.isFinite(Number(issue.end)) ? Number(issue.end) : undefined,
     }
   }
-  const recordIssue = formatIssueFromCleanupRecord(payload)
-  return recordIssue || undefined
-}
-
-function formatReviewRecordsById(runId: string) {
-  const report = readFormatCleanupReport(runId)
-  const records = Array.isArray(report?.records) ? report.records : []
-  const byId = new Map<string, Record<string, any>>()
-  records.forEach((record) => {
-    if (!cleanupRecordNeedsFormatReview(record)) return
-    const keys = [record.id, record.draft].map((value) => String(value || '')).filter(Boolean)
-    keys.forEach((key) => byId.set(key, record))
-  })
-  return byId
-}
-
-function backfillFormatReviewFlagsFromReports() {
-  const reportsDir = path.join(pythonDataRoot, 'format_cleanup_reports')
-  if (!fs.existsSync(reportsDir)) return
-  const update = db.prepare(`
-    UPDATE question_bank_items
-    SET format_review_required = ?,
-        format_review_reasons_json = ?,
-        updated_at = updated_at
-    WHERE id = ?
-  `)
-  for (const fileName of fs.readdirSync(reportsDir)) {
-    if (!fileName.endsWith('.json')) continue
-    const reportPath = path.join(reportsDir, fileName)
-    const reportUpdatedAtMs = fs.statSync(reportPath).mtime.getTime()
-    const runId = fileName.replace(/\.json$/, '')
-    const rows = db.prepare('SELECT id, updated_at FROM question_bank_items WHERE source_run_id = ?').all(runId) as Array<{ id: string; updated_at: string }>
-    if (!rows.length) continue
-    const recordsById = formatReviewRecordsById(runId)
-    rows.forEach((row) => {
-      const questionUpdatedAtMs = parseTimestampMs(row.updated_at)
-      if (questionUpdatedAtMs > reportUpdatedAtMs) return
-      const record = recordsById.get(row.id)
-      const needsReview = record ? cleanupRecordNeedsFormatReview(record) : false
-      update.run(
-        needsReview ? 1 : 0,
-        needsReview ? JSON.stringify(formatReviewPayload(record)) : '{}',
-        row.id
-      )
-    })
-  }
-}
-
-function validateQuestionFormat(_input: { stemMarkdown?: string; answerText?: string; analysisMarkdown?: string }): FormatIssue[] {
-  return []
-}
-
-function validateQuestionFormatBatch(rows: QuestionRow[]): Map<string, FormatIssue[]> {
-  if (!rows.length) return new Map<string, FormatIssue[]>()
-  return new Map(rows.map((row) => [row.id, validateQuestionFormat({
-    stemMarkdown: row.stem_markdown,
-    answerText: row.answer_text,
-    analysisMarkdown: row.analysis_markdown,
-  })]))
-}
-
-function firstFormatIssue(input: { stemMarkdown?: string; answerText?: string; analysisMarkdown?: string }) {
-  return validateQuestionFormat(input)[0] || null
-}
-
-function refreshRunFormatReview(runId: string) {
-  if (!runId) return
-  const rows = db.prepare('SELECT * FROM question_bank_items WHERE source_run_id = ? ORDER BY serial_no ASC').all(runId) as QuestionRow[]
-  if (!rows.length) return
-  const formatErrorsById = validateQuestionFormatBatch(rows)
-  const records = rows.map((row) => {
-    const errors = formatErrorsById.get(row.id) || []
-    return {
-      id: row.id,
-      draft: row.id,
-      needsModelCleanup: errors.length > 0,
-      reasons: errors.map((error: FormatIssue) => `${error.field}:${error.code}`),
-      renderErrors: errors,
-      modelError: '',
-      classificationError: '',
-    }
-  })
-  const updateFormatReview = db.prepare(`
-    UPDATE question_bank_items
-    SET format_review_required = ?,
-        format_review_reasons_json = ?,
-        updated_at = ?
-    WHERE id = ?
-  `)
-  records.forEach((record) => {
-    const needsReview = cleanupRecordNeedsFormatReview(record)
-    updateFormatReview.run(
-      needsReview ? 1 : 0,
-      needsReview ? JSON.stringify(formatReviewPayload(record)) : '{}',
-      nowIso(),
-      record.id
-    )
-  })
-  const issueRecords = records.filter((record) => record.needsModelCleanup)
-  fs.mkdirSync(path.dirname(formatCleanupReportPath(runId)), { recursive: true })
-  fs.writeFileSync(formatCleanupReportPath(runId), JSON.stringify({
-    runId,
-    examinedCount: rows.length,
-    scriptChangedCount: 0,
-    modelNeededCount: issueRecords.length,
-    modelCleanedCount: 0,
-    modelAttemptedCount: 0,
-    modelResolvedCount: 0,
-    failedCount: 0,
-    classificationAttemptedCount: 0,
-    classificationResolvedCount: 0,
-    records,
-    refreshedFromQuestionBank: true,
-    updatedAt: nowIso(),
-  }, null, 2))
-  const run = getRun(runId)
-  if (run && String(run.ocrError || '').includes('格式清洗') && issueRecords.length <= 0) {
-    db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'succeeded', ocr_error = '', updated_at = ? WHERE run_id = ?")
-      .run(nowIso(), runId)
-  } else if (run && String(run.ocrError || '').includes('格式清洗')) {
-    db.prepare("UPDATE pdf_slicer_runs SET ocr_error = ?, updated_at = ? WHERE run_id = ?")
-      .run(`人工修正后仍有 ${issueRecords.length} 题存在格式问题。`, nowIso(), runId)
-  }
-}
-
-function refreshQuestionFormatReview(questionId: string) {
-  const row = db.prepare('SELECT * FROM question_bank_items WHERE id = ?').get(questionId) as QuestionRow | undefined
-  if (!row) return []
-  const errors = validateQuestionFormat({
-    stemMarkdown: row.stem_markdown,
-    answerText: row.answer_text,
-    analysisMarkdown: row.analysis_markdown,
-  })
-  const record = {
-    id: row.id,
-    draft: row.id,
-    needsModelCleanup: errors.length > 0,
-    reasons: errors.map((error) => `${error.field}:${error.code}`),
-    renderErrors: errors,
-    modelError: '',
-    classificationError: '',
-  }
-  db.prepare(`
-    UPDATE question_bank_items
-    SET format_review_required = ?,
-        format_review_reasons_json = ?,
-        updated_at = ?
-    WHERE id = ?
-  `).run(
-    record.needsModelCleanup ? 1 : 0,
-    record.needsModelCleanup ? JSON.stringify(formatReviewPayload(record)) : '{}',
-    nowIso(),
-    row.id
-  )
-  return errors
-}
-
-type QuestionView = NonNullable<ReturnType<typeof getQuestion>>
-type SingleQuestionCleanupResult = {
-  item?: Record<string, any>
-  record?: Record<string, any>
-}
-
-function buildSingleQuestionCleanupPayload(item: QuestionView) {
-  return {
-    id: item.id,
-    problem_text: item.stemMarkdown,
-    answer: item.answerText,
-    analysis: item.analysisMarkdown,
-    knowledge_points: item.knowledgePoints,
-    solution_methods: item.solutionMethods,
-    difficulty_score_10: item.difficultyScore10,
-    difficulty_label: item.difficultyLabel,
-  }
-}
-
-function runSingleQuestionCleanupScript(item: QuestionView, options: { model?: boolean; classify?: boolean } = {}) {
-  const scriptPath = path.join(sourceRoot, 'server', 'python', 'scripts', 'cleanup_question_bank_item.py')
-  const args = [scriptPath, '--concurrency', '1']
-  if (options.model) args.push('--model')
-  if (options.classify) args.push('--classify')
-  const stdout = execFileSync(pythonCommand(), args, {
-    cwd: pythonRoot,
-    encoding: 'utf8',
-    input: JSON.stringify(buildSingleQuestionCleanupPayload(item)),
-    maxBuffer: 1024 * 1024 * 20,
-    timeout: 180000,
-  })
-  return JSON.parse(stdout) as SingleQuestionCleanupResult
-}
-
-function applySingleQuestionCleanupResult(
-  id: string,
-  item: QuestionView,
-  result: SingleQuestionCleanupResult,
-  options: { applyWhenNeedsReview?: boolean } = {},
-) {
-  const cleanup = result.record || {}
-  const needsReview = Boolean(cleanup.needsModelCleanup)
-  if (needsReview && !options.applyWhenNeedsReview) {
-    db.prepare(`
-      UPDATE question_bank_items
-      SET format_review_required = 1,
-          format_review_reasons_json = ?,
-          updated_at = ?
-      WHERE id = ?
-    `).run(JSON.stringify(formatReviewPayload(cleanup)), nowIso(), id)
-    refreshQuestionFormatReview(id)
-    return { cleanup, applied: false, item: getQuestion(id) }
-  }
-
-  const cleaned = result.item || {}
-  const stemMarkdown = String(cleaned.stemMarkdown ?? cleaned.problem_text ?? item.stemMarkdown ?? '')
-  const answerText = String(cleaned.answerText ?? cleaned.answer ?? item.answerText ?? '')
-  const analysisMarkdown = String(cleaned.analysisMarkdown ?? cleaned.analysis ?? item.analysisMarkdown ?? '')
-  const score10 = normalizeDifficultyScore10(cleaned.difficultyScore10 ?? item.difficultyScore10)
-  db.prepare(`
-    UPDATE question_bank_items SET
-      stem_markdown = ?,
-      answer_text = ?,
-      analysis_markdown = ?,
-      search_text = ?,
-      knowledge_points_json = ?,
-      solution_methods_json = ?,
-      difficulty_score_10 = ?,
-      difficulty_label = ?,
-      format_review_required = ?,
-      format_review_reasons_json = ?,
-      updated_at = ?
-    WHERE id = ?
-  `).run(
-    stemMarkdown,
-    answerText,
-    analysisMarkdown,
-    buildSearchText(stemMarkdown, answerText, analysisMarkdown, [item.sourceTitle, item.chapter, ...(item.knowledgePoints || []), ...(item.solutionMethods || [])]),
-    JSON.stringify(normalizeTags(cleaned.knowledgePoints ?? item.knowledgePoints)),
-    JSON.stringify(normalizeTags(cleaned.solutionMethods ?? item.solutionMethods)),
-    score10,
-    String(cleaned.difficultyLabel || difficultyLabel10(score10)),
-    needsReview ? 1 : 0,
-    needsReview ? JSON.stringify(formatReviewPayload(cleanup)) : '{}',
-    nowIso(),
-    id
-  )
-  refreshQuestionFormatReview(id)
-  syncQuestionBankItemToOcrDraft(getQuestion(id))
-  return { cleanup, applied: true, item: getQuestion(id) }
-}
-
-function cleanupQuestionAfterSave(id: string) {
-  const item = getQuestion(id)
-  if (!item) return null
-  const result = runSingleQuestionCleanupScript(item)
-  return applySingleQuestionCleanupResult(id, item, result, { applyWhenNeedsReview: true })
-}
-
-function readFormatCleanupReport(runId: string) {
-  const reportPath = formatCleanupReportPath(runId)
-  if (!fs.existsSync(reportPath)) return null
-  return parseJson<Record<string, any>>(fs.readFileSync(reportPath, 'utf8'), {})
-}
-
-function isFormatReviewStatusMessage(value = '') {
-  const message = String(value || '')
-  if (!message) return false
-  const isFormatReview = message.includes('格式清洗') || message.includes('模型清洗') || message.includes('格式问题')
-  const isStatusSummary = message.includes('仍有') || message.includes('需要检查') || message.includes('人工修正')
-  return isFormatReview && isStatusSummary
-}
-
-function cleanupReportSyncedWithQuestionBank(runId: string) {
-  const report = readFormatCleanupReport(runId)
-  if (!report) return null
-  const rows = db.prepare(`
-    SELECT id, format_review_required, format_review_reasons_json
-    FROM question_bank_items
-    WHERE source_run_id = ?
-  `).all(runId) as Array<{ id: string; format_review_required: number; format_review_reasons_json: string }>
-  if (!rows.length) return report
-
-  const rowsById = new Map(rows.map((row) => [row.id, row]))
-  const records = Array.isArray(report.records) ? report.records : []
-  const syncedRecords = records.map((record: Record<string, any>) => {
-    const row = [record.id, record.draft]
-      .map((value) => rowsById.get(String(value || '')))
-      .find(Boolean)
-    if (!row) return record
-    if (!row.format_review_required) {
-      return {
-        ...record,
-        needsModelCleanup: false,
-        reasons: [],
-        renderErrors: [],
-        modelError: '',
-        classificationError: '',
-      }
-    }
-    const payload = parseJson<Record<string, any>>(row.format_review_reasons_json || '{}', {})
-    return {
-      ...record,
-      needsModelCleanup: true,
-      reasons: Array.isArray(payload.reasons) ? payload.reasons : (Array.isArray(record.reasons) ? record.reasons : []),
-      renderErrors: Array.isArray(payload.renderErrors) ? payload.renderErrors : (Array.isArray(record.renderErrors) ? record.renderErrors : []),
-      modelError: String(payload.modelError || record.modelError || ''),
-      classificationError: String(payload.classificationError || record.classificationError || ''),
-    }
-  })
-  const modelNeededCount = rows.filter((row) => row.format_review_required).length
-  return {
-    ...report,
-    records: syncedRecords,
-    modelNeededCount,
-    syncedFromQuestionBank: true,
-  }
-}
-
-function clearStaleFormatCleanupError(runId: string, run: ReturnType<typeof getRun>, report: Record<string, any> | null) {
-  if (!run || Number(report?.modelNeededCount || 0) > 0) return run
-  if (!isFormatReviewStatusMessage(run.ocrError)) return run
-  db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'succeeded', ocr_error = '', updated_at = ? WHERE run_id = ?")
-    .run(nowIso(), runId)
-  return getRun(runId) || { ...run, ocrStatus: 'succeeded' as const, ocrError: '' }
-}
-
-function runFormatCleanup(runId: string, useModel = false) {
-  syncRunQuestionBankItemsToOcrDrafts(runId)
-  const scriptPath = path.join(sourceRoot, 'server', 'python', 'scripts', 'format_cleanup_for_question.py')
-  const settings = readOcrSettings()
-  const args = [scriptPath, '--run-id', runId, '--apply', '--concurrency', settings.cleanupConcurrency || '20']
-  if (useModel) args.push('--model')
-  if (readOcrSettings().classificationEnabled !== 'false') args.push('--classify')
-  const stdout = execFileSync(pythonCommand(), args, {
-    cwd: pythonRoot,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim()
-  const lastLine = stdout.split(/\r?\n/).filter(Boolean).pop() || '{}'
-  return parseJson<Record<string, any>>(lastLine, readFormatCleanupReport(runId) || {})
+  return undefined
 }
 
 function runQuestionClassification(runId: string) {
@@ -3115,53 +2667,20 @@ function runQuestionClassification(runId: string) {
   return parseJson<Record<string, any>>(stdout, { runId, total: 0, updated: 0, failed: 0, failures: [] })
 }
 
-function startFormatCleanupBackground(runId: string) {
-  if (activeFormatCleanupProcesses.has(runId)) {
-    throw new Error('该批次的模型格式清洗已经在运行。')
-  }
-  const syncedDrafts = syncRunQuestionBankItemsToOcrDrafts(runId)
-  const scriptPath = path.join(sourceRoot, 'server', 'python', 'scripts', 'format_cleanup_for_question.py')
-  const logPath = formatCleanupLogPath(runId)
-  fs.mkdirSync(path.dirname(logPath), { recursive: true })
+function classifyRunAfterImport(runId: string, logPath?: string) {
   const settings = readOcrSettings()
-  fs.writeFileSync(logPath, `[${nowIso()}] model format cleanup started. concurrency=${settings.cleanupConcurrency || '20'} synced_drafts=${syncedDrafts}\n`)
-  const args = [scriptPath, '--run-id', runId, '--apply', '--model', '--concurrency', settings.cleanupConcurrency || '20']
-  if (settings.classificationEnabled !== 'false') args.push('--classify')
-  const child = spawn(pythonCommand(), args, {
-    cwd: pythonRoot,
-    env: process.env,
-  })
-  activeFormatCleanupProcesses.set(runId, child)
-  const append = (chunk: Buffer) => fs.appendFileSync(logPath, chunk)
-  child.stdout.on('data', append)
-  child.stderr.on('data', append)
-  child.on('close', (code, signal) => {
-    activeFormatCleanupProcesses.delete(runId)
-    fs.appendFileSync(logPath, `\n[${nowIso()}] model format cleanup exited. code=${code ?? 'null'} signal=${signal ?? 'null'}\n`)
-    const report = readFormatCleanupReport(runId)
-    const remaining = Number(report?.modelNeededCount || 0)
-    try {
-	      if (code === 0 && remaining <= 0) {
-	        const imported = importMigratedOcrResults(runId)
-	        db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'succeeded', ocr_error = '', updated_at = ? WHERE run_id = ?")
-	          .run(nowIso(), runId)
-	        fs.appendFileSync(logPath, `[${nowIso()}] imported=${imported}\n`)
-	      } else if (code === 0) {
-	        db.prepare("UPDATE pdf_slicer_runs SET ocr_status = ?, ocr_error = ?, updated_at = ? WHERE run_id = ?")
-	          .run('succeeded', `模型格式清洗后仍有 ${remaining} 题需要检查，已保留题库现有文本。`, nowIso(), runId)
-	        backfillFormatReviewFlagsFromReports()
-	        fs.appendFileSync(logPath, `[${nowIso()}] imported=0; remaining_format_review=${remaining}; preserved_question_bank_text=true\n`)
-	      } else {
-        db.prepare("UPDATE pdf_slicer_runs SET ocr_error = ?, updated_at = ? WHERE run_id = ?")
-          .run(`模型格式清洗异常退出：code=${code ?? 'null'} signal=${signal ?? 'null'}。`, nowIso(), runId)
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      db.prepare("UPDATE pdf_slicer_runs SET ocr_error = ?, updated_at = ? WHERE run_id = ?")
-        .run(message, nowIso(), runId)
+  if (settings.classificationEnabled === 'false') return null
+  try {
+    const report = runQuestionClassification(runId)
+    if (logPath) {
+      fs.appendFileSync(logPath, `[${nowIso()}] classification updated=${report.updated ?? 0} failed=${report.failed ?? 0}\n`)
     }
-  })
-  return child.pid
+    return report
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (logPath) fs.appendFileSync(logPath, `[${nowIso()}] classification skipped/failed: ${message}\n`)
+    return { failed: true, error: message }
+  }
 }
 
 function getOcrDraftStats(runId: string) {
@@ -3305,8 +2824,7 @@ function tailText(filePath: string, limit = 6000) {
 }
 
 function getOcrProgress(runId: string) {
-  const report = cleanupReportSyncedWithQuestionBank(runId)
-  const run = clearStaleFormatCleanupError(runId, getRun(runId), report)
+  const run = getRun(runId)
   if (!run) return null
   const importedQuestions = (db.prepare('SELECT COUNT(*) AS count FROM question_bank_items WHERE source_run_id = ?').get(runId) as { count: number }).count
   const draftStats = getOcrDraftStats(runId)
@@ -3322,11 +2840,6 @@ function getOcrProgress(runId: string) {
     failedDraftCount: draftStats.failed,
     totalQuestions: total,
     progressPercent,
-    formatCleanup: report,
-    formatCleanupActive: activeFormatCleanupProcesses.has(runId),
-    formatCleanupReportPath: workspaceRelativePath(formatCleanupReportPath(runId)),
-    formatCleanupLogPath: workspaceRelativePath(formatCleanupLogPath(runId)),
-    formatCleanupLogTail: tailText(formatCleanupLogPath(runId)),
     logTail: tailText(ocrJobLogPath(runId)),
   }
 }
@@ -3347,6 +2860,42 @@ function runMigratedOcr(runId: string) {
     throw new Error('OCR runner 已结束，但没有产生待入库的题目内容；请检查 server/python/ocr_drafts/ocr_trial_report.md。')
   }
   return imported
+}
+
+async function finishMigratedOcrBackground(runId: string, count: number, code: number | null, signal: NodeJS.Signals | null, logPath: string) {
+  try {
+    if (code === 0) {
+      const imported = importMigratedOcrResults(runId)
+      classifyRunAfterImport(runId, logPath)
+      const finishedAt = nowIso()
+      if (imported >= count) {
+        db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'succeeded', ocr_error = '', ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
+          .run(finishedAt, finishedAt, runId)
+      } else if (imported > 0) {
+        const message = `OCR 部分完成：已生成 ${imported}/${count} 道待入库题目；请查看 server/python/ocr_jobs/${runId}.log。`
+        db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'failed', ocr_error = ?, ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
+          .run(message, finishedAt, finishedAt, runId)
+      } else {
+        const message = 'OCR runner 已结束，但没有产生待入库的题目内容；请检查 OCR 进度日志。'
+        db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'failed', ocr_error = ?, ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
+          .run(message, finishedAt, finishedAt, runId)
+      }
+    } else {
+      const imported = importMigratedOcrResults(runId)
+      const finishedAt = nowIso()
+      const message = imported > 0
+        ? `OCR 部分完成：已生成 ${imported}/${count} 道待入库题目；请查看 server/python/ocr_jobs/${runId}.log。`
+        : `OCR runner 异常退出：code=${code ?? 'null'} signal=${signal ?? 'null'}；请检查 OCR 进度日志。`
+      db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'failed', ocr_error = ?, ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
+        .run(message, finishedAt, finishedAt, runId)
+    }
+  } catch (error) {
+    const finishedAt = nowIso()
+    const message = error instanceof Error ? error.message : String(error)
+    db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'failed', ocr_error = ?, ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
+      .run(message, finishedAt, finishedAt, runId)
+  }
+  tryAutoMergeSeparatedExamForRun(runId)
 }
 
 function startMigratedOcrBackground(runId: string, options: { force?: boolean } = {}) {
@@ -3375,46 +2924,7 @@ function startMigratedOcrBackground(runId: string, options: { force?: boolean } 
   child.on('close', (code, signal) => {
     activeOcrProcesses.delete(runId)
     fs.appendFileSync(logPath, `\n[${nowIso()}] OCR runner exited. code=${code ?? 'null'} signal=${signal ?? 'null'}\n`)
-    const finishedAt = nowIso()
-    try {
-      const cleanupReport = code === 0 ? runFormatCleanup(runId, false) : null
-      const modelNeeded = Number(cleanupReport?.modelNeededCount || 0)
-      if (code === 0 && modelNeeded > 0) {
-        const modelReport = runFormatCleanup(runId, true)
-        const remaining = Number(modelReport?.modelNeededCount || 0)
-        if (remaining > 0) {
-          const imported = importMigratedOcrResults(runId)
-          db.prepare("UPDATE pdf_slicer_runs SET ocr_status = ?, ocr_error = ?, ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
-            .run(imported >= count ? 'succeeded' : 'failed', `OCR 完成，但自动模型清洗/分类后仍有 ${remaining} 题需要检查。`, finishedAt, finishedAt, runId)
-          tryAutoMergeSeparatedExamForRun(runId)
-          return
-        }
-        const imported = importMigratedOcrResults(runId)
-        db.prepare("UPDATE pdf_slicer_runs SET ocr_status = ?, ocr_error = ?, ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
-          .run(imported >= count ? 'succeeded' : 'failed', imported >= count ? '' : `OCR 后处理完成，但仅生成 ${imported}/${count} 道待入库题目。`, finishedAt, finishedAt, runId)
-      } else {
-        const imported = importMigratedOcrResults(runId)
-        if (code === 0 && imported >= count) {
-          db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'succeeded', ocr_error = '', ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
-            .run(finishedAt, finishedAt, runId)
-        } else if (imported > 0) {
-          const message = `OCR 部分完成：已生成 ${imported}/${count} 道待入库题目；请查看 server/python/ocr_jobs/${runId}.log。`
-          db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'failed', ocr_error = ?, ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
-            .run(message, finishedAt, finishedAt, runId)
-        } else {
-          const message = code === 0
-            ? 'OCR runner 已结束，但没有产生待入库的题目内容；请检查 OCR 进度日志。'
-            : `OCR runner 异常退出：code=${code ?? 'null'} signal=${signal ?? 'null'}；请检查 OCR 进度日志。`
-          db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'failed', ocr_error = ?, ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
-            .run(message, finishedAt, finishedAt, runId)
-        }
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'failed', ocr_error = ?, ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
-        .run(message, finishedAt, finishedAt, runId)
-    }
-    tryAutoMergeSeparatedExamForRun(runId)
+    void finishMigratedOcrBackground(runId, count, code, signal, logPath)
   })
   return count
 }
@@ -3427,11 +2937,6 @@ function removeRunArtifacts(runId: string) {
     child.kill('SIGTERM')
     activeOcrProcesses.delete(runId)
   }
-  const cleanupChild = activeFormatCleanupProcesses.get(runId)
-  if (cleanupChild) {
-    cleanupChild.kill('SIGTERM')
-    activeFormatCleanupProcesses.delete(runId)
-  }
   if (row?.run_dir) fs.rmSync(resolveStoragePath(row.run_dir), { recursive: true, force: true })
   for (const id of questionIds) {
     fs.rmSync(path.join(dataDir, 'question_figures', id), { recursive: true, force: true })
@@ -3443,8 +2948,6 @@ function removeRunArtifacts(runId: string) {
     }
   }
   fs.rmSync(ocrJobLogPath(runId), { force: true })
-  fs.rmSync(formatCleanupReportPath(runId), { force: true })
-  fs.rmSync(formatCleanupLogPath(runId), { force: true })
   db.prepare('DELETE FROM pdf_slicer_solution_items WHERE source_run_id = ?').run(runId)
 }
 
@@ -3461,8 +2964,6 @@ function removeRunOcrOutputs(runId: string) {
     }
   }
   fs.rmSync(ocrJobLogPath(runId), { force: true })
-  fs.rmSync(formatCleanupReportPath(runId), { force: true })
-  fs.rmSync(formatCleanupLogPath(runId), { force: true })
   db.prepare('DELETE FROM pdf_slicer_solution_items WHERE source_run_id = ?').run(runId)
 }
 
@@ -6022,7 +5523,6 @@ app.post('/api/tools/pdf-slicer/runs/bulk-ocr', (req, res) => {
 app.get('/api/tools/pdf-slicer/ocr-jobs', (_, res) => {
   const jobs = (db.prepare("SELECT * FROM pdf_slicer_runs WHERE ocr_status != 'idle' ORDER BY updated_at DESC").all() as RunRow[])
     .map(mapRun)
-    .map((run) => isFormatReviewStatusMessage(run.ocrError) ? { ...run, ocrError: '' } : run)
   res.json({
     summary: {
       totalJobs: jobs.length,
@@ -6088,19 +5588,18 @@ app.get('/api/tools/pdf-slicer/runs/:runId/pending-bank', (req, res) => {
     ...pendingBankOcrFailureItems(runId, importedIds, sourceTitle),
   ]
 
-  const summary = { total: allItems.length, ready: 0, blocked: 0, banked: 0, skipped: 0, ocrFailed: 0, formatIssue: 0, hasFigures: 0 }
+  const summary = { total: allItems.length, ready: 0, blocked: 0, banked: 0, skipped: 0, ocrFailed: 0, hasFigures: 0 }
   const isOcrFailed = (item: ReturnType<typeof mapQuestion>) => !item.stemMarkdown || item.stemMarkdown.trim() === ''
   const needsReview = (item: ReturnType<typeof mapQuestion>) => {
     if (item.bankStatus === 'banked' || item.bankStatus === 'skipped') return false
-    return isOcrFailed(item) || item.bankStatus === 'blocked' || Boolean(item.needsFormatReview)
+    return isOcrFailed(item) || item.bankStatus === 'blocked'
   }
-  const isReady = (item: ReturnType<typeof mapQuestion>) => item.bankStatus === 'ready' && !isOcrFailed(item) && !item.needsFormatReview
+  const isReady = (item: ReturnType<typeof mapQuestion>) => item.bankStatus === 'ready' && !isOcrFailed(item)
 
   for (const item of allItems) {
     if (isOcrFailed(item)) {
       summary.ocrFailed += 1
     }
-    if (item.needsFormatReview) summary.formatIssue += 1
     if (item.hasFigures) summary.hasFigures += 1
     if (isReady(item)) summary.ready += 1
     else if (needsReview(item)) summary.blocked += 1
@@ -6114,7 +5613,6 @@ app.get('/api/tools/pdf-slicer/runs/:runId/pending-bank', (req, res) => {
   else if (filter === 'banked') filtered = allItems.filter((item) => item.bankStatus === 'banked')
   else if (filter === 'skipped') filtered = allItems.filter((item) => item.bankStatus === 'skipped')
   else if (filter === 'ocr_failed') filtered = allItems.filter(isOcrFailed)
-  else if (filter === 'format_issue') filtered = allItems.filter((item) => Boolean(item.needsFormatReview))
   else if (filter === 'has_figures') filtered = allItems.filter((item) => item.hasFigures)
 
   const statusOrder: Record<string, number> = { blocked: 0, ready: 1, banked: 2, skipped: 3 }
@@ -6181,7 +5679,6 @@ app.post('/api/tools/pdf-slicer/runs/:runId/pending-bank/manual-candidate', (req
       needsFormatReview: false,
     })
     if (!item) throw new Error('题目创建失败。')
-    refreshQuestionFormatReview(id)
     syncQuestionBankItemToOcrDraft(getQuestion(id))
     res.status(201).json(getQuestion(id))
   } catch (error) {
@@ -6233,8 +5730,8 @@ app.post('/api/tools/pdf-slicer/runs/:runId/pending-bank/bulk-confirm', (req, re
   for (const id of questionIds) {
     const row = db.prepare('SELECT * FROM question_bank_items WHERE id = ? AND source_run_id = ?').get(id, runId) as QuestionRow | undefined
     if (!row) { failed += 1; continue }
-    if (row.bank_status === 'blocked' || row.format_review_required) {
-      warnings.push(`题目 ${id} 仍存在格式或识别风险。`)
+    if (row.bank_status === 'blocked') {
+      warnings.push(`题目 ${id} 仍存在识别风险。`)
     }
     const similar = similarQuestionCandidates(row, { limit: 2 })
     if (similar.length) {
@@ -6315,35 +5812,6 @@ app.post('/api/tools/pdf-slicer/runs/:runId/pending-bank/bulk-delete', (req, res
   }
   if (success > 0) syncReviewRunCounts(runId)
   res.json({ success, failed })
-})
-
-app.post('/api/tools/pdf-slicer/runs/:runId/pending-bank/bulk-format-cleanup', (req, res) => {
-  const runId = req.params.runId
-  if (!getRun(runId)) {
-    res.status(404).json({ error: '批次不存在。' })
-    return
-  }
-  const questionIds: string[] = req.body?.questionIds || []
-  if (!questionIds.length) {
-    res.status(400).json({ error: '请指定要清洗的题目。' })
-    return
-  }
-  let success = 0
-  let failed = 0
-  const errors: string[] = []
-  for (const id of questionIds) {
-    const item = getQuestion(id)
-    if (!item || item.sourceRunId !== runId) { failed += 1; continue }
-    try {
-      const result = runSingleQuestionCleanupScript(item, { model: false, classify: false })
-      applySingleQuestionCleanupResult(id, item, result)
-      success += 1
-    } catch (error) {
-      failed += 1
-      errors.push(`题目 ${id}：${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  res.json({ success, failed, warnings: errors.length ? errors : undefined })
 })
 
 app.post('/api/tools/pdf-slicer/runs/:runId/force-rerun-ocr', (req, res) => {
@@ -6432,50 +5900,11 @@ app.post('/api/tools/pdf-slicer/runs/:runId/complete-ocr', (req, res) => {
   res.json(getRun(req.params.runId))
 })
 
-app.post('/api/tools/pdf-slicer/runs/:runId/format-cleanup', (req, res) => {
-  if (!getRun(req.params.runId)) {
-    res.status(404).json({ error: '批次不存在。' })
-    return
-  }
-  try {
-    const useModel = Boolean(req.body?.model)
-    if (useModel) {
-      const pid = startFormatCleanupBackground(req.params.runId)
-      res.status(202).json({ runId: req.params.runId, started: true, pid, progress: getOcrProgress(req.params.runId) })
-      return
-    }
-    const report = runFormatCleanup(req.params.runId, useModel)
-    const remaining = Number(report.modelNeededCount || 0)
-    let imported = 0
-	    if (remaining <= 0) {
-	      imported = importMigratedOcrResults(req.params.runId)
-	      db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'succeeded', ocr_error = '', updated_at = ? WHERE run_id = ?")
-	        .run(nowIso(), req.params.runId)
-	    } else {
-	      const message = `脚本清洗后仍有 ${remaining} 题需要模型格式清洗。`
-	      db.prepare("UPDATE pdf_slicer_runs SET ocr_status = ?, ocr_error = ?, updated_at = ? WHERE run_id = ?")
-	        .run('succeeded', `${message} 已保留题库现有文本。`, nowIso(), req.params.runId)
-	      backfillFormatReviewFlagsFromReports()
-	    }
-    res.json({ runId: req.params.runId, report, importedQuestions: imported, run: getRun(req.params.runId) })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    db.prepare("UPDATE pdf_slicer_runs SET ocr_error = ?, updated_at = ? WHERE run_id = ?")
-      .run(message, nowIso(), req.params.runId)
-    res.status(500).json({ error: message, run: getRun(req.params.runId), report: readFormatCleanupReport(req.params.runId) })
-  }
-})
-
 app.post('/api/tools/pdf-slicer/runs/:runId/force-interrupt-ocr', (req, res) => {
   const child = activeOcrProcesses.get(req.params.runId)
   if (child) {
     child.kill('SIGTERM')
     activeOcrProcesses.delete(req.params.runId)
-  }
-  const cleanupChild = activeFormatCleanupProcesses.get(req.params.runId)
-  if (cleanupChild) {
-    cleanupChild.kill('SIGTERM')
-    activeFormatCleanupProcesses.delete(req.params.runId)
   }
   db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'failed', ocr_error = '用户强制中断', ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
     .run(nowIso(), nowIso(), req.params.runId)
@@ -6499,7 +5928,6 @@ app.get('/api/question-bank/items', (req, res) => {
   const knowledgePoint = String(req.query.knowledgePoint || '').trim()
   const solutionMethod = String(req.query.solutionMethod || '').trim()
   const difficulty = String(req.query.difficulty || '').trim()
-  const formatIssueOnly = String(req.query.formatIssue || '') === '1'
   const requestedPage = Number.parseInt(String(req.query.page || '1'), 10)
   const requestedPageSize = Number.parseInt(String(req.query.pageSize || '20'), 10)
   const pageSize = Math.min(100, Math.max(1, Number.isFinite(requestedPageSize) ? requestedPageSize : 20))
@@ -6529,22 +5957,6 @@ app.get('/api/question-bank/items', (req, res) => {
     difficulty,
     difficulty,
   ]
-  if (formatIssueOnly) {
-    const issueWhereSql = `${whereSql} AND format_review_required = 1`
-    const totalRow = db.prepare(`SELECT COUNT(*) AS count FROM question_bank_items ${issueWhereSql}`).get(...filterParams) as { count: number }
-    const totalItems = totalRow.count ?? 0
-    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
-    const page = Math.min(totalPages, Math.max(1, Number.isFinite(requestedPage) ? requestedPage : 1))
-    const offset = (page - 1) * pageSize
-    const rows = db.prepare(`
-      SELECT * FROM question_bank_items
-      ${issueWhereSql}
-      ORDER BY updated_at DESC
-      LIMIT ? OFFSET ?
-    `).all(...filterParams, pageSize, offset) as QuestionRow[]
-    res.json({ items: rows.map(mapQuestion), totalItems, page, pageSize, totalPages, basket: getBasket(), formatIssueOnly: true })
-    return
-  }
   const totalRow = db.prepare(`SELECT COUNT(*) AS count FROM question_bank_items ${whereSql}`).get(...filterParams) as { count: number }
   const totalItems = totalRow.count ?? 0
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
@@ -6557,73 +5969,6 @@ app.get('/api/question-bank/items', (req, res) => {
     LIMIT ? OFFSET ?
   `).all(...filterParams, pageSize, offset) as QuestionRow[]
   res.json({ items: rows.map(mapQuestion), totalItems, page, pageSize, totalPages, basket: getBasket() })
-})
-
-app.post('/api/question-bank/bulk-rerun-ocr', (req, res) => {
-  const filters = req.body?.filters || {}
-  const { whereSql, filterParams } = buildQuestionBankWhereClause(filters, true)
-  const rows = db.prepare(`
-    SELECT id, source_run_id
-    FROM question_bank_items
-    ${whereSql}
-    ORDER BY updated_at DESC
-  `).all(...filterParams) as Array<{ id: string; source_run_id: string }>
-  if (!rows.length) {
-    res.status(400).json({ error: '当前筛选条件下没有可重新 OCR 的格式问题题目。' })
-    return
-  }
-
-  const eligibleIds: string[] = []
-  const skippedIds: string[] = []
-  for (const row of rows) {
-    if (!row.source_run_id) {
-      skippedIds.push(row.id)
-      continue
-    }
-    const reviewItem = getReviewItems(row.source_run_id).find((entry) => entry.resultId === row.id)
-    if (!reviewItem) {
-      skippedIds.push(row.id)
-      continue
-    }
-    eligibleIds.push(row.id)
-  }
-
-  if (!eligibleIds.length) {
-    res.status(400).json({ error: '这些格式问题题目缺少原始 OCR 分块信息，暂时无法批量重新 OCR。' })
-    return
-  }
-
-  const batchSize = rerunBatchSize()
-  const chunks = chunkArray(eligibleIds, batchSize)
-  const tasks: Array<{ batchId: string; runId: string; createdCount: number }> = []
-  const failed: Array<{ index: number; error: string }> = []
-  for (const [index, chunk] of chunks.entries()) {
-    try {
-      const task = createQuestionBankRerunTask(chunk)
-      tasks.push(task)
-      const now = nowIso()
-      db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'running', ocr_error = '', ocr_started_at = COALESCE(NULLIF(ocr_started_at, ''), ?), updated_at = ? WHERE run_id = ?")
-        .run(now, now, task.runId)
-      startMigratedOcrBackground(task.runId)
-    } catch (error) {
-      failed.push({ index: index + 1, error: error instanceof Error ? error.message : String(error) })
-    }
-  }
-
-  if (!tasks.length) {
-    res.status(500).json({ error: failed[0]?.error || '批量重新 OCR 启动失败。' })
-    return
-  }
-
-  res.json({
-    totalMatched: rows.length,
-    eligibleCount: eligibleIds.length,
-    skippedCount: skippedIds.length,
-    batchSize,
-    runCount: tasks.length,
-    tasks,
-    failed,
-  })
 })
 
 app.post('/api/question-bank/items/:id/rerun-ocr', (req, res) => {
@@ -6786,40 +6131,8 @@ app.patch('/api/question-bank/items/:id', (req, res) => {
     nowIso(),
     id
   )
-  try {
-    refreshQuestionFormatReview(id)
-    syncQuestionBankItemToOcrDraft(getQuestion(id))
-    res.json(getQuestion(id))
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    res.status(500).json({ error: `题目已保存，但格式校验失败：${message}` })
-  }
-})
-
-app.post('/api/question-bank/items/:id/format-cleanup', (req, res) => {
-  const id = decodeURIComponent(String(req.params.id || ''))
-  const item = getQuestion(id)
-  if (!item) {
-    res.status(404).json({ error: '题目不存在。' })
-    return
-  }
-  try {
-    const result = runSingleQuestionCleanupScript(item, { model: Boolean(req.body?.model), classify: Boolean(req.body?.classify) })
-    const { cleanup, applied } = applySingleQuestionCleanupResult(id, item, result)
-    if (cleanup.needsModelCleanup) {
-      res.json({
-        item: getQuestion(id),
-        cleanup,
-        applied,
-        message: '清洗后仍未通过前端渲染校验，已保留原题目内容。',
-      })
-      return
-    }
-    res.json({ item: getQuestion(id), cleanup, applied })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    res.status(500).json({ error: `单题格式清洗失败：${message}` })
-  }
+  syncQuestionBankItemToOcrDraft(getQuestion(id))
+  res.json(getQuestion(id))
 })
 
 app.delete('/api/question-bank/items/:id', (req, res) => {

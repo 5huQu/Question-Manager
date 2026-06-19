@@ -1,22 +1,20 @@
 import { useEffect, useState } from 'react'
-import { Crop, LoaderCircle, PencilLine, Plus, RefreshCcw, ScanSearch, Trash2 } from 'lucide-react'
+import { Crop, PencilLine, Plus, RefreshCcw, Trash2 } from 'lucide-react'
 import { api, jsonHeaders } from '@/api/client'
 import { FigureCropDialog } from '@/components/questions/FigureDialogs'
 import { EditDialog } from '@/components/questions/EditDialog'
 import { QuestionMarkdownContent, SolutionDisclosure } from '@/components/questions/QuestionContent'
 import { Badge, Button, Empty, SelectFilter, TagRow } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
-import type { OcrSettings, QuestionBankResponse, QuestionFigure, QuestionItem, TagLibraries } from '@/types'
-import { cleanupCodeLabel, cleanupFieldLabel, cleanupSnippet } from '@/utils/ocrCleanup'
+import type { QuestionBankResponse, QuestionFigure, QuestionItem, TagLibraries } from '@/types'
 import { addQuestionToActiveBasket } from '@/utils/questionBasket'
 import { difficultyLabel10, displaySource } from '@/utils/questionDisplay'
 import { richBlocksPlainText } from '@/components/RichContent'
 
-export function WorkbenchQuestionCard({ item, onAddToBasket, onDelete, onReload, onQuestionSaved, formatIssueOnly = false }: { item: QuestionItem; onAddToBasket: (id: string) => void; onDelete: (id: string) => void; onReload: () => void; onQuestionSaved?: (item: QuestionItem) => void; formatIssueOnly?: boolean }) {
+export function WorkbenchQuestionCard({ item, onAddToBasket, onDelete, onReload, onQuestionSaved }: { item: QuestionItem; onAddToBasket: (id: string) => void; onDelete: (id: string) => void; onReload: () => void; onQuestionSaved?: (item: QuestionItem) => void }) {
   const [cropOpen, setCropOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<Partial<QuestionItem>>(item)
-  const formatIssue = item.formatIssue
   useEffect(() => {
     setDraft(item)
   }, [item])
@@ -67,21 +65,11 @@ export function WorkbenchQuestionCard({ item, onAddToBasket, onDelete, onReload,
         <div className="flex gap-2">
           <Button size="sm" variant="outline" icon={PencilLine} onClick={() => setEditing(true)}>编辑题目</Button>
           <Button size="sm" variant="outline" icon={Crop} onClick={() => setCropOpen(true)}>框选题图</Button>
-          {!formatIssueOnly ? (
-            <Button size="sm" variant="outline" onClick={() => onAddToBasket(item.id)}>加入试题篮</Button>
-          ) : null}
+          <Button size="sm" variant="outline" onClick={() => onAddToBasket(item.id)}>加入试题篮</Button>
           <Button size="sm" asLink variant="default" to={`/questions/${encodeURIComponent(item.id)}`}>进入详情</Button>
           <Button size="sm" variant="danger" icon={Trash2} onClick={() => onDelete(item.id)}>删除题目</Button>
         </div>
       </div>
-
-      {formatIssue ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
-          <p className="font-semibold">格式问题：{cleanupFieldLabel(formatIssue.field)}：{cleanupCodeLabel(formatIssue.code)}</p>
-          {formatIssue.context || formatIssue.snippet ? <p className="mt-1">片段：{cleanupSnippet(formatIssue.context || formatIssue.snippet)}</p> : null}
-          {formatIssue.message ? <p className="mt-1">原因：{formatIssue.message}</p> : null}
-        </div>
-      ) : null}
 
       <div className="text-sm text-zinc-800 leading-relaxed">
         <QuestionMarkdownContent content={item.stemMarkdown || richBlocksPlainText(item.problemBlocks)} figures={item.figures} />
@@ -116,8 +104,6 @@ export function BankTab({
   setKnowledgePoint,
   solutionMethod,
   setSolutionMethod,
-  formatIssueOnly,
-  setFormatIssueOnly,
   page,
   setPage,
   onQuestionSaved,
@@ -141,16 +127,11 @@ export function BankTab({
   setKnowledgePoint: (value: string) => void
   solutionMethod: string
   setSolutionMethod: (value: string) => void
-  formatIssueOnly: boolean
-  setFormatIssueOnly: (value: boolean) => void
   page: number
   setPage: (value: number | ((value: number) => number)) => void
   onQuestionSaved?: (item: QuestionItem) => void
 }) {
   const tagLibraries = useAsync<TagLibraries>(() => api('/api/question-bank/tag-libraries'), [])
-  const ocrSettings = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
-  const [bulkRerunBusy, setBulkRerunBusy] = useState(false)
-  const [bulkRerunNotice, setBulkRerunNotice] = useState('')
 
   const rawItems = questionBank?.items ?? []
   const items = rawItems
@@ -162,44 +143,6 @@ export function BankTab({
   function updateFilter(setter: (value: string) => void, value: string) {
     setter(value)
     setPage(1)
-  }
-
-  async function bulkRerunOcr() {
-    if (!formatIssueOnly || totalItems <= 0 || bulkRerunBusy) return
-    const batchSize = Math.max(1, Number.parseInt(String(ocrSettings.data?.maxItems || '10'), 10) || 10)
-    const confirmed = window.confirm(`将按当前筛选结果批量重新 OCR ${totalItems} 道格式问题题目。\n系统会沿用 OCR 设置中的每批题数，当前为每批 ${batchSize} 题。是否继续？`)
-    if (!confirmed) return
-    setBulkRerunBusy(true)
-    setBulkRerunNotice('')
-    try {
-      const result = await api<{
-        totalMatched: number
-        eligibleCount: number
-        skippedCount: number
-        batchSize: number
-        runCount: number
-        failed?: Array<{ index: number; error: string }>
-      }>('/api/question-bank/bulk-rerun-ocr', {
-        method: 'POST',
-        headers: jsonHeaders,
-        body: JSON.stringify({
-          filters: {
-            q: query.trim(),
-            stage,
-            questionType,
-            difficulty,
-            knowledgePoint,
-            solutionMethod,
-          },
-        }),
-      })
-      const failedCount = result.failed?.length || 0
-      setBulkRerunNotice(`已创建 ${result.runCount} 个 OCR 任务，共 ${result.eligibleCount} 题，按每批 ${result.batchSize} 题拆分。${result.skippedCount > 0 ? `另有 ${result.skippedCount} 题缺少原始分块，已跳过。` : ''}${failedCount > 0 ? `其中 ${failedCount} 批启动失败。` : ''}`)
-    } catch (error) {
-      setBulkRerunNotice(error instanceof Error ? error.message : String(error))
-    } finally {
-      setBulkRerunBusy(false)
-    }
   }
 
   async function addToBasket(id: string) {
@@ -227,17 +170,10 @@ export function BankTab({
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-sm text-zinc-800">题目列表</h3>
           <div className="flex gap-2">
-            {formatIssueOnly ? (
-              <Button size="sm" variant="outline" icon={bulkRerunBusy ? LoaderCircle : ScanSearch} disabled={bulkRerunBusy || totalItems <= 0} onClick={bulkRerunOcr}>
-                {bulkRerunBusy ? '批量启动中...' : '批量重新 OCR'}
-              </Button>
-            ) : null}
-            <Button size="sm" variant={formatIssueOnly ? 'default' : 'outline'} icon={RefreshCcw} onClick={() => { setFormatIssueOnly(!formatIssueOnly); setPage(1); }}>只看格式问题</Button>
-            <Button size="sm" variant="outline" onClick={() => { setQuery(''); setStage(''); setQuestionType(''); setDifficulty(''); setKnowledgePoint(''); setSolutionMethod(''); setFormatIssueOnly(false); setPage(1); }}>重置筛选</Button>
+            <Button size="sm" variant="outline" icon={RefreshCcw} onClick={() => { setQuery(''); setStage(''); setQuestionType(''); setDifficulty(''); setKnowledgePoint(''); setSolutionMethod(''); setPage(1); }}>重置筛选</Button>
             <Button size="sm" asLink icon={Plus} to="/questions/new">新增题目</Button>
           </div>
         </div>
-        {bulkRerunNotice ? <p className="text-xs text-zinc-500">{bulkRerunNotice}</p> : null}
         <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-6">
           <input className="h-9 rounded-md border px-3 text-xs bg-zinc-50 focus:bg-white" placeholder="搜索题干/来源/标签..." value={query} onChange={(e) => updateFilter(setQuery, e.target.value)} />
           <SelectFilter label="全部学段" value={stage} options={tagLibraries.data?.stages ?? ['高一', '高二', '高三', '高中']} onChange={(value) => updateFilter(setStage, value)} />
@@ -251,12 +187,12 @@ export function BankTab({
       {/* Questions List */}
       <div className="flex-1 overflow-auto space-y-4 pr-1 pb-4">
         {items.map((item) => (
-          <WorkbenchQuestionCard key={item.id} item={item} onAddToBasket={addToBasket} onDelete={deleteQuestion} onReload={reload} onQuestionSaved={onQuestionSaved} formatIssueOnly={formatIssueOnly} />
+          <WorkbenchQuestionCard key={item.id} item={item} onAddToBasket={addToBasket} onDelete={deleteQuestion} onReload={reload} onQuestionSaved={onQuestionSaved} />
         ))}
         {loading ? <Empty text={items.length ? '正在刷新题目...' : '正在读取题目...'} /> : null}
         {error ? <Empty text={`题目读取失败：${error}`} /> : null}
         {!items.length && !loading && !error ? (
-          <Empty text={formatIssueOnly ? '当前没有需要处理的格式问题题目' : hasActiveFilters ? '未找到匹配筛选条件的题目' : '题库中暂无题目'} />
+          <Empty text={hasActiveFilters ? '未找到匹配筛选条件的题目' : '题库中暂无题目'} />
         ) : null}
         {totalItems > 0 ? (
           <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white/95 px-3 py-2 text-xs text-zinc-500 shadow-sm backdrop-blur">

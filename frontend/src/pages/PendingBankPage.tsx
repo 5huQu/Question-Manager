@@ -36,7 +36,7 @@ import type {
 // ── Main Page ────────────────────────────────────────────────────────
 
 function canConfirmDirectly(item: QuestionItem) {
-  return !item.pendingBankReadOnly && item.bankStatus === 'ready' && !item.needsFormatReview && Boolean(item.stemMarkdown?.trim())
+  return !item.pendingBankReadOnly && item.bankStatus === 'ready' && Boolean(item.stemMarkdown?.trim())
 }
 
 function canSelectForBulk(item: QuestionItem) {
@@ -121,8 +121,6 @@ export default function PendingBankPage() {
           problemBlocks: [],
           answerBlocks: [],
           analysisBlocks: [],
-          needsFormatReview: false,
-          formatIssue: undefined,
         }
       : item)
   }
@@ -264,11 +262,11 @@ export default function PendingBankPage() {
       })
       return
     }
-    const blockedCount = data?.items.filter((item) => ids.includes(item.id) && (item.bankStatus === 'blocked' || item.needsFormatReview)).length ?? 0
+    const blockedCount = data?.items.filter((item) => ids.includes(item.id) && item.bankStatus === 'blocked').length ?? 0
     if (blockedCount > 0) {
       setConfirmDialog({
         title: '存在风险题目',
-        message: `你选择的题目中有 ${blockedCount} 题仍存在格式或识别风险。建议先处理后再入库。`,
+        message: `你选择的题目中有 ${blockedCount} 题仍存在识别风险。建议先处理后再入库。`,
         danger: false,
         confirmText: '仍然入库',
         cancelText: '返回处理',
@@ -521,7 +519,6 @@ function FilterBar({ filter, summary, onFilterChange }: { filter: PendingBankFil
     { key: 'ready', label: '可入库', count: summary.ready },
     { key: 'blocked', label: '需处理', count: summary.blocked },
     { key: 'ocr_failed', label: '识别失败', count: summary.ocrFailed },
-    { key: 'format_issue', label: '格式问题', count: summary.formatIssue },
     { key: 'has_figures', label: '有题图', count: summary.hasFigures },
     { key: 'banked', label: '已入库', count: summary.banked },
     { key: 'skipped', label: '已跳过', count: summary.skipped },
@@ -591,7 +588,7 @@ function QuestionCard({ item, active, selected, selectable, onSelect, onClick }:
   onSelect: () => void
   onClick: () => void
 }) {
-  const preview = (item.stemMarkdown || item.formatIssue?.message || '').replace(/\$\$?[^$]+\$\$?/g, '[公式]').replace(/[#*_~`>|\\]/g, '').trim().slice(0, 80)
+  const preview = (item.stemMarkdown || '').replace(/\$\$?[^$]+\$\$?/g, '[公式]').replace(/[#*_~`>|\\]/g, '').trim().slice(0, 80)
 
   return (
     <div
@@ -628,7 +625,6 @@ function QuestionCard({ item, active, selected, selectable, onSelect, onClick }:
         </div>
         <div className="flex items-center gap-2 mt-1">
           {item.hasFigures ? <ImageIcon className="size-3 text-zinc-400" /> : null}
-          {item.needsFormatReview ? <AlertTriangle className="size-3 text-amber-500" /> : null}
           {item.similarQuestions?.length ? <AlertTriangle className="size-3 text-amber-500" /> : null}
         </div>
         {preview ? (
@@ -780,7 +776,7 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, onSkip, onDelete
             {isOcrFailed ? (
               <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
                 <p className="font-semibold">识别失败</p>
-                <p className="mt-1 text-xs">{item.formatIssue?.message || 'OCR 未能提取到可用内容。建议重新 OCR。'}</p>
+                <p className="mt-1 text-xs">OCR 未能提取到可用内容。建议重新 OCR。</p>
                 {readOnlyFailure ? <p className="mt-1 text-xs">这道题尚未生成待入库候选，可打开编辑题目手动补录，或只重跑当前题 OCR。</p> : null}
               </div>
             ) : null}
@@ -845,14 +841,6 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, onSkip, onDelete
               </div>
             ) : null}
 
-            {/* Format issue */}
-            {item.formatIssue ? (
-              <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                <p className="font-semibold">格式问题</p>
-                <p className="mt-1">{item.formatIssue.message || '存在格式异常'}</p>
-                {item.formatIssue.snippet ? <p className="mt-1 font-mono text-[10px] opacity-80 break-all">{item.formatIssue.snippet}</p> : null}
-              </div>
-            ) : null}
           </>
         )}
       </div>

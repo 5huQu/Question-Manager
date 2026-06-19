@@ -3,7 +3,7 @@ import { RefreshCcw } from 'lucide-react'
 import { api } from '@/api/client'
 import { Button, Empty, PageTitle, Panel, SummaryGrid } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
-import type { OcrJobs, OcrProgress } from '@/types'
+import type { OcrJobs } from '@/types'
 import { OcrJobCard } from './OcrJobCard'
 
 export function OcrQueuePage() {
@@ -32,8 +32,5 @@ export function OcrQueuePage() {
     </section>
   )
 }
-
-type CleanupRecord = NonNullable<NonNullable<OcrProgress['formatCleanup']>['records']>[number]
-
 
 export default OcrQueuePage

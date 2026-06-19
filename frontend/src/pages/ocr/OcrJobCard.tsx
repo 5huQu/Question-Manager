@@ -4,7 +4,6 @@ import { api } from '@/api/client'
 import { Badge, Button, MiniMetric } from '@/components/ui'
 import type { ApiRun, OcrProgress } from '@/types'
 import { fileRoleLabel, label, materialTypeLabel, statusVariant } from '@/utils/questionDisplay'
-import { cleanupCodeLabel, cleanupFieldLabel, cleanupIssueRecords, cleanupQuestionLabel, cleanupReasonLabel, cleanupSnippet, isFormatReviewStatusMessage } from '@/utils/ocrCleanup'
 
 export function OcrJobCard({ run, onReload }: { run: ApiRun; onReload: () => void }) {
   const [progress, setProgress] = useState<OcrProgress | null>(null)
@@ -16,10 +15,6 @@ export function OcrJobCard({ run, onReload }: { run: ApiRun; onReload: () => voi
   const fileRole = visibleRun.fileRole || 'full'
   const generatedLabel = fileRole === 'solutions' ? '已生成解析' : fileRole === 'questions' ? '已生成题干' : '已生成题目'
   const busy = Boolean(action)
-  const cleanupReport = progress?.formatCleanup
-  const modelNeededCount = Number(cleanupReport?.modelNeededCount || 0)
-  const cleanupIssues = cleanupIssueRecords(cleanupReport)
-  const cleanupErrorDuplicatedBySummary = modelNeededCount > 0 && isFormatReviewStatusMessage(visibleRun.ocrError)
   const generatedCount = Math.max(progress?.importedQuestions ?? 0, progress?.successfulDraftCount ?? 0, visibleRun.solutionItems || 0)
   const failedCount = Math.max(progress?.failedDraftCount ?? 0, progress ? progress.totalQuestions - generatedCount : 0, 0)
   const pendingBankCount = progress?.importedQuestions ?? visibleRun.importedQuestions ?? 0
@@ -112,29 +107,7 @@ export function OcrJobCard({ run, onReload }: { run: ApiRun; onReload: () => voi
         </div>
       ) : null}
       {actionError ? <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</div> : null}
-      {modelNeededCount > 0 ? (
-        <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          <p className="font-semibold">题库当前仍有 {modelNeededCount} 题存在格式问题。</p>
-          {cleanupIssues.length ? (
-            <div className="mt-2 space-y-2">
-              {cleanupIssues.slice(0, 5).map((record) => {
-                const errors = record.renderErrors ?? []
-                const labels = errors.length ? errors.slice(0, 3).map((error) => `${cleanupFieldLabel(error.field)}：${cleanupCodeLabel(error.code)}`) : (record.reasons ?? []).slice(0, 3).map(cleanupReasonLabel)
-                const firstError = errors.find((error) => error.context || error.snippet)
-                const firstSnippet = cleanupSnippet(firstError?.context || firstError?.snippet || '')
-                return (
-                  <div key={record.id || record.draft} className="rounded-lg border border-red-200 bg-white/70 px-2 py-1.5">
-                    <p className="font-semibold">{cleanupQuestionLabel(record)}：{labels.join('；') || '格式异常'}</p>
-                    {firstSnippet ? <p className="mt-1 text-xs leading-5 text-red-600">片段：{firstSnippet}</p> : null}
-                    {record.modelError ? <p className="mt-1 text-xs leading-5 text-red-600">模型错误：{record.modelError}</p> : null}
-                  </div>
-                )
-              })}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      {visibleRun.ocrError && !cleanupErrorDuplicatedBySummary ? <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{visibleRun.ocrError}</div> : null}
+      {visibleRun.ocrError ? <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{visibleRun.ocrError}</div> : null}
       <div className="mt-3 flex flex-wrap gap-2">
         {canStartOcr ? <Button size="sm" variant="outline" icon={action === '启动 OCR' ? LoaderCircle : ScanSearch} disabled={busy || progress?.active} onClick={start}>{action === '启动 OCR' ? '启动中...' : '开始 OCR'}</Button> : null}
         <Button size="sm" variant="outline" icon={action === '完全重跑' ? LoaderCircle : RefreshCcw} disabled={busy} onClick={rerun}>{action === '完全重跑' ? '重跑中...' : '完全重跑'}</Button>
