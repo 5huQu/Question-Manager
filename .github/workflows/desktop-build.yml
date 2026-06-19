@@ -21,9 +21,13 @@ jobs:
           - name: macOS
             os: macos-latest
             artifact: Question-Manager-macOS
+            package_command: npm run pack:desktop
+            package_path: dist/Question-Manager-macOS-*.zip
           - name: Windows
             os: windows-latest
-            artifact: Question-Manager-Windows
+            artifact: Question-Manager-Windows-Installer
+            package_command: npm run pack:windows-installer
+            package_path: dist/Question-Manager-Setup-*.exe
 
     steps:
       - name: Check out repository
@@ -54,7 +58,7 @@ jobs:
         run: npm run test:smoke
 
       - name: Package and verify desktop application
-        run: npm run pack:desktop
+        run: ${{ matrix.package_command }}
 
       - name: Create macOS archive
         if: runner.os == 'macOS'
@@ -64,19 +68,10 @@ jobs:
           test -n "$app_path"
           ditto -c -k --sequesterRsrc --keepParent "$app_path" "dist/${{ matrix.artifact }}-${{ runner.arch }}.zip"
 
-      - name: Create Windows archive
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "dist\win-unpacked\Question Manager.exe")) {
-            throw "Packaged Windows executable was not found."
-          }
-          Compress-Archive -Path "dist\win-unpacked" -DestinationPath "dist\${{ matrix.artifact }}-${{ runner.arch }}.zip" -CompressionLevel Optimal
-
       - name: Upload desktop package
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}-${{ runner.arch }}
-          path: dist/${{ matrix.artifact }}-*.zip
+          path: ${{ matrix.package_path }}
           if-no-files-found: error
           retention-days: 14

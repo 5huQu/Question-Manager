@@ -97,7 +97,7 @@ npm run pack:desktop
 build-and-install-windows.cmd
 ```
 
-脚本会检查 Node.js、安装 npm 依赖、准备 Python 运行时、构建应用并启动生成的桌面程序。更详细的排错说明见 [`WINDOWS_BUILD.md`](WINDOWS_BUILD.md)。
+脚本会检查 Node.js、安装 npm 依赖、准备 Python 运行时、验证包内切题流程，并生成和启动 NSIS 安装向导。安装完成后，Question Manager 会出现在 Windows“设置 → 应用”中，并提供标准卸载入口。更详细的排错说明见 [`WINDOWS_BUILD.md`](WINDOWS_BUILD.md)。
 
 ### GitHub Actions 跨平台打包
 
@@ -107,7 +107,7 @@ build-and-install-windows.cmd
 2. 运行数学渲染测试和 API smoke test。
 3. 下载并校验对应平台的内置 Python。
 4. 生成桌面应用并执行包内 Python 切题验证。
-5. 上传可直接解压运行的 macOS 和 Windows ZIP artifact。
+5. 上传 macOS ZIP 和 Windows NSIS 安装器 artifact。
 
 推送形如 `v0.1.0` 的版本标签也会自动触发同一套构建。当前产物未进行 Apple 或 Windows 代码签名，系统首次打开时可能显示安全提醒。
 

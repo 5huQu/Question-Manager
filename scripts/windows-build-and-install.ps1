@@ -31,23 +31,6 @@ function Require-Node24 {
   return $versionText
 }
 
-function Copy-CleanDirectory($Source, $Destination) {
-  if (Test-Path $Destination) {
-    Remove-Item $Destination -Recurse -Force
-  }
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination) | Out-Null
-  Copy-Item $Source $Destination -Recurse -Force
-}
-
-function New-Shortcut($ShortcutPath, $TargetPath, $WorkingDirectory) {
-  $shell = New-Object -ComObject WScript.Shell
-  $shortcut = $shell.CreateShortcut($ShortcutPath)
-  $shortcut.TargetPath = $TargetPath
-  $shortcut.WorkingDirectory = $WorkingDirectory
-  $shortcut.IconLocation = $TargetPath
-  $shortcut.Save()
-}
-
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $Root
 
@@ -63,38 +46,34 @@ if ($LASTEXITCODE -ne 0) {
   throw "npm ci failed."
 }
 
-Step "Building and verifying the Windows desktop package"
-npm run pack:desktop
+Step "Building and verifying the Windows NSIS installer"
+npm run pack:windows-installer
 if ($LASTEXITCODE -ne 0) {
-  throw "npm run pack:desktop failed."
+  throw "npm run pack:windows-installer failed."
 }
 
-$BuiltApp = Join-Path $Root "dist\win-unpacked"
-$ExePath = Join-Path $BuiltApp "Question Manager.exe"
-if (-not (Test-Path $ExePath)) {
-  throw "Built app was not found: $ExePath"
+$Installer = Get-ChildItem (Join-Path $Root "dist") -Filter "Question-Manager-Setup-*-x64.exe" |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1
+if (-not $Installer) {
+  throw "The NSIS installer was not found in the dist directory."
 }
 
-$InstallRoot = Join-Path $env:LOCALAPPDATA "QuestionManager"
-$InstallApp = Join-Path $InstallRoot "app"
-$InstalledExe = Join-Path $InstallApp "Question Manager.exe"
-
-Step "Installing to $InstallApp"
-Copy-CleanDirectory $BuiltApp $InstallApp
-
-if (-not $NoShortcut) {
-  Step "Creating shortcuts"
-  $Programs = [Environment]::GetFolderPath("Programs")
-  $StartMenuDir = Join-Path $Programs "Question Manager"
-  New-Item -ItemType Directory -Force -Path $StartMenuDir | Out-Null
-  New-Shortcut (Join-Path $StartMenuDir "Question Manager.lnk") $InstalledExe $InstallApp
-  New-Shortcut (Join-Path ([Environment]::GetFolderPath("Desktop")) "Question Manager.lnk") $InstalledExe $InstallApp
-}
-
-Step "Installed"
-Write-Host "App: $InstalledExe"
+Step "Installer ready"
+Write-Host "Installer: $($Installer.FullName)"
 
 if (-not $NoLaunch) {
-  Step "Launching Question Manager"
-  Start-Process $InstalledExe
+  Step "Launching the Question Manager installer"
+  $InstallerArgs = @()
+  if ($NoShortcut) {
+    $InstallerArgs += "--no-desktop-shortcut"
+  }
+  $Process = if ($InstallerArgs.Count -gt 0) {
+    Start-Process -FilePath $Installer.FullName -ArgumentList $InstallerArgs -Wait -PassThru
+  } else {
+    Start-Process -FilePath $Installer.FullName -Wait -PassThru
+  }
+  if ($Process.ExitCode -ne 0) {
+    throw "The installer exited with code $($Process.ExitCode)."
+  }
 }

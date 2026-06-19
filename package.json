@@ -22,6 +22,7 @@
     "verify:packaged-python": "node scripts/verify-packaged-python.mjs",
     "desktop": "npm run build && npm run prepare:python-runtime && electron .",
     "pack:desktop": "npm run build && npm run prepare:python-runtime && electron-builder --dir && npm run verify:packaged-python",
+    "pack:windows-installer": "npm run pack:desktop && electron-builder --win nsis --x64",
     "test:math-render": "node server/scripts/validate_math_render.test.mjs",
     "test:smoke": "node server/scripts/smoke.test.mjs",
     "start": "PORT=8797 node server/dist/index.js"
@@ -63,8 +64,19 @@
     },
     "win": {
       "target": [
-        "dir"
+        "nsis"
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Question Manager",
+      "uninstallDisplayName": "Question Manager",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Question-Manager-Setup-${version}-${arch}.${ext}"
     }
   },
   "dependencies": {

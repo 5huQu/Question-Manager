@@ -27,11 +27,10 @@ The script will:
 1. Install npm dependencies with `npm ci`.
 2. Download and verify the bundled Windows Python runtime.
 3. Build the frontend and backend.
-4. Package `dist\win-unpacked`.
-5. Verify the packaged Python runtime.
-6. Copy the app to `%LOCALAPPDATA%\QuestionManager\app`.
-7. Create Start Menu and Desktop shortcuts.
-8. Launch Question Manager.
+4. Package and verify `dist\win-unpacked`.
+5. Verify the packaged Python runtime with a real PDF cutting smoke test.
+6. Build a standard NSIS installer.
+7. Launch the installer, which creates Start Menu/Desktop shortcuts and a standard uninstall entry.
 
 ## Options
 
@@ -40,7 +39,11 @@ The script will:
 .\scripts\windows-build-and-install.ps1 -NoShortcut
 ```
 
+`-NoLaunch` only builds the installer. `-NoShortcut` launches the installer without creating a Desktop shortcut.
+
 ## Output
 
-- Built package: `dist\win-unpacked`
-- Installed app: `%LOCALAPPDATA%\QuestionManager\app\Question Manager.exe`
+- Verified unpacked app: `dist\win-unpacked`
+- Installer: `dist\Question-Manager-Setup-<version>-x64.exe`
+
+After installation, Question Manager appears in Windows Settings under Apps and can be removed through the standard uninstall entry.
