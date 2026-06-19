@@ -2,23 +2,31 @@ import { useState, type FormEvent } from 'react'
 import { FileUp, LoaderCircle } from 'lucide-react'
 import { api } from '@/api/client'
 import { Button, Panel } from '@/components/ui'
+import { Modal } from '@/components/dialogs/Modal'
 import { RunCard } from '@/pages/pdf-slicer/RunCard'
 import type { Dashboard, OcrSettings } from '@/types'
 import { useAsync } from '@/hooks/useAsync'
 import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
+import { fileListHasWord, libreOfficeDownloadUrl } from '@/utils/wordFiles'
 import { mockRuns } from './OverviewTab'
 
 export function SlicerTab({ dashboard, reload }: { dashboard: Dashboard | null; reload: () => void }) {
   const [uploading, setUploading] = useState(false)
   const [stage, setStage] = useState('高三')
+  const [showWordUploadWarning, setShowWordUploadWarning] = useState(false)
   const ocrSettings = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
   const stageOptions = gradeOptionsForTeachingStages(ocrSettings.data?.teachingStages)
   const selectedStage = ensureStageValue(stage, stageOptions)
+  const missingLibreOffice = ocrSettings.data?.sofficeAvailable === false
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const input = event.currentTarget.elements.namedItem('files') as HTMLInputElement
     if (!input.files?.length) return
+    if (missingLibreOffice && fileListHasWord(input.files)) {
+      setShowWordUploadWarning(true)
+      return
+    }
     const form = new FormData()
     Array.from(input.files).forEach((file) => form.append('files', file))
     const paperTitleInput = event.currentTarget.elements.namedItem('paperTitle') as HTMLInputElement
@@ -42,7 +50,7 @@ export function SlicerTab({ dashboard, reload }: { dashboard: Dashboard | null; 
     <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] h-[calc(100vh-9rem)] min-h-[580px] overflow-hidden">
       {/* Upload Panel */}
       <div className="h-full overflow-auto">
-        <Panel title="批量上传 PDF / DOCX">
+        <Panel title="批量上传 PDF / DOC / DOCX">
           <form className="space-y-3" onSubmit={handleUpload}>
             <p className="text-xs leading-5 text-zinc-500">上传后会写入新数据库，并自动进入切题队列。</p>
             <label className="space-y-1 block">
@@ -57,7 +65,7 @@ export function SlicerTab({ dashboard, reload }: { dashboard: Dashboard | null; 
             </label>
             <label className="space-y-1 block">
               <span className="text-xs text-zinc-500 font-medium font-semibold">选择物理文件</span>
-              <input className="w-full text-xs mt-1" accept=".pdf,.docx" name="files" required type="file" />
+              <input className="w-full text-xs mt-1" accept=".pdf,.doc,.docx" name="files" required type="file" />
             </label>
             <Button className="w-full mt-2" disabled={uploading} icon={uploading ? LoaderCircle : FileUp}>
               {uploading ? '上传中...' : '提交文件并创建批次'}
@@ -80,6 +88,26 @@ export function SlicerTab({ dashboard, reload }: { dashboard: Dashboard | null; 
           </div>
         </div>
       </div>
+      {showWordUploadWarning ? (
+        <Modal
+          title="需要先安装 LibreOffice"
+          desc="DOC/DOCX 文件必须先转换为 PDF 才能进入切题。"
+          onClose={() => setShowWordUploadWarning(false)}
+        >
+          <div className="space-y-4 text-sm leading-6 text-zinc-600">
+            <p>当前没有检测到 LibreOffice，因此已拦截 DOC/DOCX 上传。PDF 文件可以继续上传。</p>
+            <p>安装 LibreOffice 后重启应用，或到“系统设置 → 外部工具”填写 soffice.exe 的完整路径。</p>
+            <a
+              href={libreOfficeDownloadUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-9 items-center justify-center rounded-lg bg-zinc-950 px-3 text-xs font-semibold text-white hover:bg-zinc-800"
+            >
+              下载 LibreOffice
+            </a>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   )
 }

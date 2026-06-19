@@ -325,6 +325,10 @@ function safeName(value: string) {
     .slice(0, 80) || 'file'
 }
 
+function isWordUploadKind(kind: string) {
+  return kind === 'doc' || kind === 'docx'
+}
+
 function createId(prefix: string, name = '') {
   const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14)
   const suffix = Math.random().toString(16).slice(2, 8)
@@ -5516,7 +5520,14 @@ app.get('/api/tools/pdf-slicer/dashboard', (_, res) => {
 app.post('/api/tools/pdf-slicer/uploads', upload.array('files'), (req, res) => {
   const files = req.files as Express.Multer.File[]
   if (!files?.length) {
-    res.status(400).json({ error: '请至少上传一个 PDF 或 DOCX 文件。' })
+    res.status(400).json({ error: '请至少上传一个 PDF、DOC 或 DOCX 文件。' })
+    return
+  }
+  const containsWordFile = files.some((file) => isWordUploadKind(path.extname(normalizeUploadName(file.originalname)).slice(1).toLowerCase()))
+  if (containsWordFile && !sofficePath()) {
+    res.status(400).json({
+      error: '未检测到 LibreOffice，无法上传 DOC/DOCX 文件。请先安装 LibreOffice，或在系统设置的外部工具中填写 soffice.exe 路径。',
+    })
     return
   }
   const now = nowIso()
@@ -5557,8 +5568,8 @@ app.post('/api/tools/pdf-slicer/uploads', upload.array('files'), (req, res) => {
     let pdfName = originalName
     let uploadMode = 'single_pdf'
     let diagnostics: Record<string, unknown> = {}
-    if (sourceKind === 'docx') {
-      diagnostics = { docxFormulaAnalysis: analyzeDocxFormulaTypes(target) }
+    if (isWordUploadKind(sourceKind)) {
+      diagnostics = sourceKind === 'docx' ? { docxFormulaAnalysis: analyzeDocxFormulaTypes(target) } : {}
       pdfPath = convertDocxToPdf(target, runDir)
       pdfName = path.basename(pdfPath)
       uploadMode = 'docx_to_pdf'

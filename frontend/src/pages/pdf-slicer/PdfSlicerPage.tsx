@@ -4,22 +4,27 @@ import { api } from '@/api/client'
 import { SeparatedFileInput } from '@/components/pdf-slicer/SeparatedFileInput'
 import { UploadModeButton } from '@/components/pdf-slicer/UploadModeButton'
 import { Empty } from '@/components/ui'
+import { Modal } from '@/components/dialogs/Modal'
 import { useAsync } from '@/hooks/useAsync'
-import type { Dashboard } from '@/types'
+import type { Dashboard, OcrSettings } from '@/types'
 import { materialTypeLabel, workflowModeLabel, workflowStatusLabel } from '@/utils/questionDisplay'
+import { fileListHasWord, libreOfficeDownloadUrl } from '@/utils/wordFiles'
 import { RunCard } from './RunCard'
 
 export function PdfSlicerPage() {
   const { data, error, loading, reload } = useAsync<Dashboard>(() => api('/api/tools/pdf-slicer/dashboard'), [])
+  const ocrSettings = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null)
+  const [showWordUploadWarning, setShowWordUploadWarning] = useState(false)
   const [uploadMode, setUploadMode] = useState<'auto' | 'lecture' | 'exam'>('auto')
   const [examUploadMode, setExamUploadMode] = useState<'full' | 'separated'>('full')
   const [questionFiles, setQuestionFiles] = useState<FileList | null>(null)
   const [solutionFiles, setSolutionFiles] = useState<FileList | null>(null)
   const separatedExamUpload = uploadMode === 'exam' && examUploadMode === 'separated'
   const uploadFileCount = separatedExamUpload ? (questionFiles?.length ?? 0) + (solutionFiles?.length ?? 0) : (selectedFiles?.length ?? 0)
+  const missingLibreOffice = ocrSettings.data?.sofficeAvailable === false
   const visibleBatches = (data?.batches ?? []).filter((batch) => {
     const runCount = Number(batch.runCount ?? 0)
     const title = batch.title || batch.id
@@ -42,20 +47,46 @@ export function PdfSlicerPage() {
     e.stopPropagation()
     setDragActive(false)
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      if (missingLibreOffice && fileListHasWord(e.dataTransfer.files)) {
+        setShowWordUploadWarning(true)
+        return
+      }
       setSelectedFiles(e.dataTransfer.files)
     }
   }
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
+      if (missingLibreOffice && fileListHasWord(e.target.files)) {
+        e.target.value = ''
+        setShowWordUploadWarning(true)
+        return
+      }
       setSelectedFiles(e.target.files)
     }
+  }
+
+  function handleSeparatedFiles(files: FileList | null, setter: (files: FileList | null) => void) {
+    if (missingLibreOffice && fileListHasWord(files)) {
+      setShowWordUploadWarning(true)
+      setter(null)
+      return
+    }
+    setter(files)
   }
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (separatedExamUpload && (!questionFiles?.length || !solutionFiles?.length)) return
     if (!separatedExamUpload && (!selectedFiles || !selectedFiles.length)) return
+    if (missingLibreOffice && (
+      fileListHasWord(selectedFiles) ||
+      fileListHasWord(questionFiles) ||
+      fileListHasWord(solutionFiles)
+    )) {
+      setShowWordUploadWarning(true)
+      return
+    }
     const form = new FormData()
     const paperTitleInput = event.currentTarget.elements.namedItem('paperTitle') as HTMLInputElement
     const materialType = uploadMode === 'auto' ? 'unknown' : uploadMode === 'lecture' ? 'lecture' : 'exam'
@@ -97,7 +128,7 @@ export function PdfSlicerPage() {
     <div className="max-w-7xl mx-auto p-6 space-y-6">
       <header className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight">PDF 切分中心</h1>
-        <p className="text-sm text-zinc-500 mt-1">上传 PDF 或 DOCX 文件，系统将自动识别并切分为独立的题目，完成后可进行人工复核。</p>
+        <p className="text-sm text-zinc-500 mt-1">上传 PDF、DOC 或 DOCX 文件，系统将自动识别并切分为独立的题目，完成后可进行人工复核。</p>
       </header>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -159,8 +190,8 @@ export function PdfSlicerPage() {
 
               {separatedExamUpload ? (
                 <div className="grid gap-2">
-                  <SeparatedFileInput title="原卷文件" desc="试题页、学生版" files={questionFiles} inputId="question-upload-input" onChange={setQuestionFiles} />
-                  <SeparatedFileInput title="解析文件" desc="答案、详解版本" files={solutionFiles} inputId="solution-upload-input" onChange={setSolutionFiles} />
+                  <SeparatedFileInput title="原卷文件" desc="试题页、学生版" files={questionFiles} inputId="question-upload-input" onChange={(files) => handleSeparatedFiles(files, setQuestionFiles)} />
+                  <SeparatedFileInput title="解析文件" desc="答案、详解版本" files={solutionFiles} inputId="solution-upload-input" onChange={(files) => handleSeparatedFiles(files, setSolutionFiles)} />
                 </div>
               ) : (
                 <div className="space-y-1.5">
@@ -180,7 +211,7 @@ export function PdfSlicerPage() {
                       type="file"
                       name="files"
                       multiple
-                      accept=".pdf,.docx,application/pdf"
+                      accept=".pdf,.doc,.docx,application/pdf"
                       className="hidden"
                       onChange={handleFileChange}
                     />
@@ -198,7 +229,7 @@ export function PdfSlicerPage() {
                       </div>
                     ) : (
                       <>
-                        <p className="text-sm font-medium text-zinc-700">拖拽 PDF 或 DOCX 到此处</p>
+                        <p className="text-sm font-medium text-zinc-700">拖拽 PDF、DOC 或 DOCX 到此处</p>
                         <p className="text-xs text-zinc-400 mt-1">或点击浏览本地文件</p>
                       </>
                     )}
@@ -248,10 +279,30 @@ export function PdfSlicerPage() {
                 ) : null}
                 {data.runs.map((run) => <RunCard key={run.runId} run={run} onReload={reload} />)}
               </div>
-            ) : <Empty text="暂无批次，先上传一份 PDF 或 DOCX。" />}
+            ) : <Empty text="暂无批次，先上传一份 PDF、DOC 或 DOCX。" />}
+          </div>
           </div>
         </div>
-      </div>
+      {showWordUploadWarning ? (
+        <Modal
+          title="需要先安装 LibreOffice"
+          desc="DOC/DOCX 文件必须先转换为 PDF 才能进入切题。"
+          onClose={() => setShowWordUploadWarning(false)}
+        >
+          <div className="space-y-4 text-sm leading-6 text-zinc-600">
+            <p>当前没有检测到 LibreOffice，因此已拦截 DOC/DOCX 上传。PDF 文件可以继续上传。</p>
+            <p>安装 LibreOffice 后重启应用，或到“系统设置 → 外部工具”填写 soffice.exe 的完整路径。</p>
+            <a
+              href={libreOfficeDownloadUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-9 items-center justify-center rounded-lg bg-zinc-950 px-3 text-xs font-semibold text-white hover:bg-zinc-800"
+            >
+              下载 LibreOffice
+            </a>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   )
 }

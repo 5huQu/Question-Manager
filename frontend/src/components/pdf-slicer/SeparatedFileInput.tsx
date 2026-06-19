@@ -11,7 +11,7 @@ export function SeparatedFileInput({ title, desc, files, inputId, onChange }: { 
         id={inputId}
         type="file"
         multiple
-        accept=".pdf,.docx,application/pdf"
+        accept=".pdf,.doc,.docx,application/pdf"
         className="hidden"
         onChange={(event) => onChange(event.target.files?.length ? event.target.files : null)}
       />

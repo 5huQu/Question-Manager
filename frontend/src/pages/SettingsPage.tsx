@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import { BookOpen, Check, Settings2, Tags, AlertCircle, LoaderCircle, SlidersHorizontal, Wrench, ExternalLink } from 'lucide-react'
 import { api, jsonHeaders } from '@/api/client'
 import { Button, Empty, PageTitle } from '@/components/ui'
+import { Modal } from '@/components/dialogs/Modal'
 import { useAsync } from '@/hooks/useAsync'
 import type { OcrSettings } from '@/types'
 import { teachingStageOptions } from '@/utils/stages'
+import { libreOfficeDownloadUrl } from '@/utils/wordFiles'
 
 export function SettingsPage() {
   const { data, error, loading, reload } = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
@@ -12,10 +14,12 @@ export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'basic' | 'tools' | 'ocr' | 'classification' | 'prompts'>('basic')
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [showLibreOfficeAlert, setShowLibreOfficeAlert] = useState(false)
 
   useEffect(() => {
     if (data) {
       setDraft(data)
+      if (!data.sofficeAvailable) setShowLibreOfficeAlert(true)
     }
   }, [data])
 
@@ -130,6 +134,12 @@ export function SettingsPage() {
 
               {activeTab === 'basic' && (
                 <div className="space-y-6">
+                  {!data?.sofficeAvailable ? (
+                    <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
+                      <span>未检测到 LibreOffice。DOC/DOCX 上传前需要先安装它，或在“外部工具”里填写 soffice.exe 路径。</span>
+                      <Button size="sm" variant="outline" icon={AlertCircle} onClick={() => setShowLibreOfficeAlert(true)}>查看提醒</Button>
+                    </div>
+                  ) : null}
                   <div className="bg-zinc-50 dark:bg-zinc-800/20 rounded-xl p-4 border border-zinc-200 dark:border-zinc-800">
                     <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">基础设置</p>
                     <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed font-normal">
@@ -346,7 +356,7 @@ export function SettingsPage() {
                       <div>
                         <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">LibreOffice</p>
                         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed font-normal">
-                          用于 DOCX 上传后的 Word 转 PDF。应用会自动查找默认安装目录，也可以手动指定 soffice.exe。
+                          用于 DOC/DOCX 上传后的 Word 转 PDF。应用会自动查找默认安装目录，也可以手动指定 soffice.exe。
                         </p>
                       </div>
                       {data?.sofficeAvailable ? (
@@ -364,9 +374,9 @@ export function SettingsPage() {
                   </div>
                   {!data?.sofficeAvailable ? (
                     <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
-                      <span>未安装 LibreOffice 时，DOCX 文件无法自动转换为 PDF。建议从官方页面下载安装。</span>
+                      <span>未安装 LibreOffice 时，DOC/DOCX 文件无法自动转换为 PDF。建议从官方页面下载安装。</span>
                       <a
-                        href="https://www.libreoffice.org/download/"
+                        href={libreOfficeDownloadUrl}
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-amber-900 px-2.5 text-xs font-semibold text-white hover:bg-amber-950 dark:bg-amber-200 dark:text-amber-950 dark:hover:bg-amber-100"
@@ -508,6 +518,34 @@ export function SettingsPage() {
           </div>
         </div>
       )}
+      {showLibreOfficeAlert && !data?.sofficeAvailable ? (
+        <Modal
+          title="未检测到 LibreOffice"
+          desc="DOC/DOCX 转 PDF 需要本机安装 LibreOffice。"
+          onClose={() => setShowLibreOfficeAlert(false)}
+        >
+          <div className="space-y-4 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+            <p>
+              当前没有找到 LibreOffice 的 soffice.exe。PDF 文件仍可上传；DOC/DOCX 文件会被拦截，避免进入无法处理的切题队列。
+            </p>
+            <p>
+              安装 LibreOffice 后重启应用即可自动检测。若安装在非默认目录，请在“系统设置 → 外部工具”中填写 soffice.exe 的完整路径。
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <a
+                href={libreOfficeDownloadUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-3 text-xs font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white"
+              >
+                下载 LibreOffice
+                <ExternalLink className="size-3.5" />
+              </a>
+              <Button size="sm" variant="outline" onClick={() => { setActiveTab('tools'); setShowLibreOfficeAlert(false) }}>打开外部工具设置</Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
     </section>
   )
 }

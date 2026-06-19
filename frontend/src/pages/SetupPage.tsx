@@ -5,6 +5,7 @@ import { api, jsonHeaders } from '@/api/client'
 import { Button, Badge } from '@/components/ui'
 import type { OcrSettings } from '@/types'
 import { teachingStageOptions } from '@/utils/stages'
+import { libreOfficeDownloadUrl } from '@/utils/wordFiles'
 
 type SetupDraft = Pick<
   OcrSettings,
@@ -35,8 +36,6 @@ type HealthResponse = {
     sofficePath?: string
   }
 }
-
-const libreOfficeDownloadUrl = 'https://www.libreoffice.org/download/'
 
 export function SetupPage({
   initialSettings,
@@ -146,7 +145,7 @@ export function SetupPage({
                   <div>
                     <p className="font-semibold">未检测到 LibreOffice</p>
                     <p className="mt-1 text-xs leading-5 text-amber-800/80 dark:text-amber-200/80">
-                      DOCX 上传需要 LibreOffice 将 Word 转为 PDF。安装后重启应用，或在系统设置里填写 soffice.exe 路径。
+                      DOC/DOCX 上传需要 LibreOffice 将 Word 转为 PDF。安装后重启应用，或在系统设置里填写 soffice.exe 路径。
                     </p>
                   </div>
                 </div>
@@ -163,7 +162,7 @@ export function SetupPage({
             ) : health?.tools?.soffice ? (
               <div className="flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-xs text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-200">
                 <Check className="mt-0.5 size-4 shrink-0" />
-                <span>已检测到 LibreOffice，DOCX 上传可自动转 PDF。</span>
+                <span>已检测到 LibreOffice，DOC/DOCX 上传可自动转 PDF。</span>
               </div>
             ) : null}
 
