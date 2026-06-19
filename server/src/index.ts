@@ -1856,15 +1856,19 @@ function readOcrPromptSettings() {
   const defaults = readEffectivePromptDefaults()
   if (!fs.existsSync(promptPath)) return defaults
   const payload = parseJson<Record<string, string>>(fs.readFileSync(promptPath, 'utf8'), {})
+  const promptValue = (key: string, fallback: string) => {
+    const value = String(payload[key] || '')
+    return value && !value.includes('\uFFFD') ? value : fallback
+  }
   return {
-    wholeSystemPrompt: payload.whole_system_prompt || defaults.wholeSystemPrompt,
-    wholeUserPrompt: payload.whole_user_prompt || defaults.wholeUserPrompt,
-    chunkSystemPrompt: payload.chunk_system_prompt || defaults.chunkSystemPrompt,
-    chunkUserPrompt: payload.chunk_user_prompt || defaults.chunkUserPrompt,
-    cleanupSystemPrompt: payload.cleanup_system_prompt || defaults.cleanupSystemPrompt,
-    cleanupUserPrompt: payload.cleanup_user_prompt || defaults.cleanupUserPrompt,
-    classificationSystemPrompt: payload.classification_system_prompt || defaults.classificationSystemPrompt,
-    classificationUserPrompt: payload.classification_user_prompt || defaults.classificationUserPrompt,
+    wholeSystemPrompt: promptValue('whole_system_prompt', defaults.wholeSystemPrompt),
+    wholeUserPrompt: promptValue('whole_user_prompt', defaults.wholeUserPrompt),
+    chunkSystemPrompt: promptValue('chunk_system_prompt', defaults.chunkSystemPrompt),
+    chunkUserPrompt: promptValue('chunk_user_prompt', defaults.chunkUserPrompt),
+    cleanupSystemPrompt: promptValue('cleanup_system_prompt', defaults.cleanupSystemPrompt),
+    cleanupUserPrompt: promptValue('cleanup_user_prompt', defaults.cleanupUserPrompt),
+    classificationSystemPrompt: promptValue('classification_system_prompt', defaults.classificationSystemPrompt),
+    classificationUserPrompt: promptValue('classification_user_prompt', defaults.classificationUserPrompt),
   }
 }
 
@@ -1893,11 +1897,12 @@ function readEffectivePromptDefaults() {
       '  "cleanupUserPrompt": DEFAULT_CLEANUP_USER_PROMPT,',
       '  "classificationSystemPrompt": DEFAULT_CLASSIFICATION_SYSTEM_PROMPT,',
       '  "classificationUserPrompt": DEFAULT_CLASSIFICATION_USER_PROMPT,',
-      '}, ensure_ascii=False))',
+      '}))',
     ].join('\n')
     return parseJson<typeof fallback>(
       execFileSync(pythonCommand(), ['-c', code], {
         cwd: pythonRoot,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
       }),
