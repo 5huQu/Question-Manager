@@ -13,10 +13,11 @@ Compatibility note:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 
-PROMPT_SETTINGS_PATH = Path(__file__).resolve().parents[2] / "ocr_prompt_settings.json"
+PROMPT_SETTINGS_PATH = Path(os.getenv("QUESTION_PROMPT_SETTINGS_PATH", Path(__file__).resolve().parents[2] / "ocr_prompt_settings.json"))
 
 
 def _prompt_settings() -> dict[str, str]:

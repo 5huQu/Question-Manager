@@ -41,6 +41,16 @@ SUPPLEMENTAL_REGION_MAX_SEGMENTS_PER_REQUEST = 5
 ANALYSIS_MAX_SEGMENTS_PER_REQUEST = 2
 
 
+def display_path(path: Path) -> str:
+    resolved = path.resolve()
+    for root in (DATA_ROOT, PROJECT_ROOT):
+        try:
+            return str(resolved.relative_to(root.resolve()))
+        except ValueError:
+            continue
+    return str(resolved)
+
+
 def resolve_runtime_path(path_value: str | Path) -> Path:
     path = Path(path_value)
     if path.is_absolute():
@@ -827,7 +837,7 @@ def _run_whole_question_json_ocr(
     channel_name: str,
 ) -> dict[str, Any]:
     input_images, strategy = prepare_input_images(manifest_record, draft_dir, settings)
-    input_image_rel_paths = [str(path.relative_to(PROJECT_ROOT)) for path in input_images]
+    input_image_rel_paths = [display_path(path) for path in input_images]
 
     if dry_run:
         return {
@@ -1719,7 +1729,7 @@ def build_trial_report(
     lines = [
         "# OCR 试跑报告",
         "",
-        f"- 本次读取的 manifest 路径: {manifest_path.relative_to(PROJECT_ROOT)}",
+        f"- 本次读取的 manifest 路径: {display_path(manifest_path)}",
         f"- manifest 中 ready_for_ocr 总数: {manifest_total}",
         f"- 通过图片可用性检查的数量: {eligible_total}",
         f"- 本次计划处理数量: {selected_total}",

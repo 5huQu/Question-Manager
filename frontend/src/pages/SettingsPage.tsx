@@ -420,6 +420,46 @@ export function SettingsPage() {
                       <option value="false">关闭</option>
                     </select>
                   </label>
+                  <div className="grid gap-4">
+                    <label className="space-y-1.5 block">
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">分类/清洗 API 地址</span>
+                      <input
+                        className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
+                        value={draft.cleanupApiBaseUrl ?? ''}
+                        onChange={(e) => setDraft({ ...draft, cleanupApiBaseUrl: e.target.value })}
+                        placeholder={draft.apiBaseUrl || '留空时沿用 OCR API 地址'}
+                      />
+                      <p className="text-[11px] leading-5 text-zinc-400">分类、格式清洗和难度评估共用这组模型配置；留空时沿用 OCR API 地址。</p>
+                    </label>
+                    <label className="space-y-1.5 block">
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">分类/清洗 API Key</span>
+                      <input
+                        className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
+                        placeholder={data?.cleanupApiKeyConfigured ? '已配置密钥，留空表示不修改' : '留空时沿用 OCR API Key'}
+                        value={draft.cleanupApiKey ?? ''}
+                        onChange={(e) => setDraft({ ...draft, cleanupApiKey: e.target.value })}
+                        type="password"
+                      />
+                    </label>
+                    <label className="space-y-1.5 block">
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">分类/清洗模型</span>
+                      <input
+                        className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
+                        value={draft.cleanupModel ?? ''}
+                        onChange={(e) => setDraft({ ...draft, cleanupModel: e.target.value })}
+                        placeholder={draft.model || '留空时沿用 OCR 模型'}
+                      />
+                    </label>
+                    <label className="space-y-1.5 block">
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">分类/清洗并发（1-20）</span>
+                      <input
+                        type="number"
+                        className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
+                        value={draft.cleanupConcurrency ?? ''}
+                        onChange={(e) => setDraft({ ...draft, cleanupConcurrency: e.target.value })}
+                      />
+                    </label>
+                  </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <label className="space-y-1.5 block">
                       <span className="text-xs text-zinc-500 dark:text-zinc-400 font-semibold">分类 System Prompt</span>

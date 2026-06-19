@@ -2041,8 +2041,7 @@ function exportRunForMigratedOcr(runId: string) {
   if (!run) throw new Error('批次不存在。')
   const items = getReviewItems(runId).filter((item) => item.reviewStatus === 'ready_for_ocr')
   if (!items.length) throw new Error('没有已通过复核的切片，请先提交切题复核。')
-  const pythonRoot = path.join(sourceRoot, 'server', 'python')
-  const outputDir = path.join(pythonRoot, 'output')
+  const outputDir = path.join(pythonDataRoot, 'output')
   fs.mkdirSync(outputDir, { recursive: true })
 
   const records = items.map((item) => {

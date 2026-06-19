@@ -27,7 +27,7 @@ FALLBACK_METHOD_LIBRARY_PATH = PROJECT_ROOT / "server" / "tag_libraries" / "high
 DB_PATH = DATA_ROOT / "data" / "question.sqlite"
 KNOWLEDGE_LIBRARY_PATH = Path(os.environ["KNOWLEDGE_LIBRARY_PATH"]) if os.getenv("KNOWLEDGE_LIBRARY_PATH") else FALLBACK_KNOWLEDGE_LIBRARY_PATH
 METHOD_LIBRARY_PATH = Path(os.environ["METHOD_LIBRARY_PATH"]) if os.getenv("METHOD_LIBRARY_PATH") else FALLBACK_METHOD_LIBRARY_PATH
-PROMPT_SETTINGS_PATH = PYTHON_ROOT / "ocr_prompt_settings.json"
+PROMPT_SETTINGS_PATH = Path(os.getenv("QUESTION_PROMPT_SETTINGS_PATH", PYTHON_ROOT / "ocr_prompt_settings.json"))
 
 SYSTEM_PROMPT = """你是高中数学题目分类工具。
 
