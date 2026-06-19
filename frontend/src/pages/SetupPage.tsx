@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check, FileStack, LoaderCircle, Sparkles, AlertCircle } from 'lucide-react'
+import { Check, FileStack, LoaderCircle, Sparkles, AlertCircle, ExternalLink } from 'lucide-react'
 import { api, jsonHeaders } from '@/api/client'
 import { Button, Badge } from '@/components/ui'
 import type { OcrSettings } from '@/types'
@@ -29,6 +29,15 @@ const fallbackDraft: SetupDraft = {
   teachingStages: ['高中'],
 }
 
+type HealthResponse = {
+  tools?: {
+    soffice?: boolean
+    sofficePath?: string
+  }
+}
+
+const libreOfficeDownloadUrl = 'https://www.libreoffice.org/download/'
+
 export function SetupPage({
   initialSettings,
   onComplete,
@@ -40,6 +49,13 @@ export function SetupPage({
   const [draft, setDraft] = useState<SetupDraft>({ ...fallbackDraft, ...initialSettings })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [health, setHealth] = useState<HealthResponse | null>(null)
+
+  useEffect(() => {
+    api<HealthResponse>('/api/health')
+      .then(setHealth)
+      .catch(() => setHealth(null))
+  }, [])
 
   function toggleTeachingStage(stage: string) {
     const current = draft.teachingStages?.length ? draft.teachingStages : ['高中']
@@ -120,6 +136,34 @@ export function SetupPage({
               <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50/60 p-4 text-xs text-red-700 dark:border-red-905/30 dark:bg-red-950/20 dark:text-red-300 animate-shake">
                 <AlertCircle className="size-4 shrink-0 mt-0.5" />
                 <span>{error}</span>
+              </div>
+            ) : null}
+
+            {health && !health.tools?.soffice ? (
+              <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                  <div>
+                    <p className="font-semibold">未检测到 LibreOffice</p>
+                    <p className="mt-1 text-xs leading-5 text-amber-800/80 dark:text-amber-200/80">
+                      DOCX 上传需要 LibreOffice 将 Word 转为 PDF。安装后重启应用，或在系统设置里填写 soffice.exe 路径。
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href={libreOfficeDownloadUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-amber-950 dark:bg-amber-200 dark:text-amber-950 dark:hover:bg-amber-100"
+                >
+                  安装 LibreOffice
+                  <ExternalLink className="size-3.5" />
+                </a>
+              </div>
+            ) : health?.tools?.soffice ? (
+              <div className="flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-xs text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-200">
+                <Check className="mt-0.5 size-4 shrink-0" />
+                <span>已检测到 LibreOffice，DOCX 上传可自动转 PDF。</span>
               </div>
             ) : null}
 
