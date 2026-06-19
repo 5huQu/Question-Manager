@@ -85,7 +85,7 @@ export default function App() {
   }
 
   return (
-    <div className={`flex min-h-screen text-[13px] transition-colors duration-150 ${
+    <div className={`flex min-h-screen text-[var(--app-body-text)] transition-colors duration-150 ${
       darkMode ? 'dark bg-zinc-950 text-zinc-100' : 'bg-zinc-50 text-zinc-900'
     }`}>
       <AppSidebar

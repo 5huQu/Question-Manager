@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron')
+const { app, BrowserWindow, dialog, screen } = require('electron')
 const { spawn } = require('node:child_process')
 const fs = require('node:fs')
 const http = require('node:http')
@@ -97,6 +97,33 @@ function waitForServer(port, timeoutMs = 15000) {
   })
 }
 
+function setupDisplayAwareZoom(win) {
+  if (process.platform !== 'win32') return
+
+  let lastZoomFactor = 1
+  const updateZoomForDisplay = () => {
+    if (win.isDestroyed()) return
+
+    const display = screen.getDisplayMatching(win.getBounds())
+    const scaleFactor = display.scaleFactor || 1
+    const zoomFactor = Math.max(1, Math.min(1.18, scaleFactor >= 1.5 ? 1.08 : 1))
+
+    if (Math.abs(zoomFactor - lastZoomFactor) > 0.001) {
+      lastZoomFactor = zoomFactor
+      win.webContents.setZoomFactor(zoomFactor)
+    }
+  }
+
+  win.on('resize', updateZoomForDisplay)
+  win.on('move', updateZoomForDisplay)
+  screen.on('display-metrics-changed', updateZoomForDisplay)
+  win.webContents.once('did-finish-load', updateZoomForDisplay)
+
+  win.on('closed', () => {
+    screen.removeListener('display-metrics-changed', updateZoomForDisplay)
+  })
+}
+
 async function createWindow() {
   const port = await getFreePort()
   await startServer(port)
@@ -114,6 +141,8 @@ async function createWindow() {
       additionalArguments: [`--api-base-url=http://127.0.0.1:${port}`],
     },
   })
+
+  setupDisplayAwareZoom(win)
 
   const appUrl = `http://127.0.0.1:${port}`
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
