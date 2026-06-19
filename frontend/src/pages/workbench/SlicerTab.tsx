@@ -3,11 +3,17 @@ import { FileUp, LoaderCircle } from 'lucide-react'
 import { api } from '@/api/client'
 import { Button, Panel } from '@/components/ui'
 import { RunCard } from '@/pages/pdf-slicer/RunCard'
-import type { Dashboard } from '@/types'
+import type { Dashboard, OcrSettings } from '@/types'
+import { useAsync } from '@/hooks/useAsync'
+import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
 import { mockRuns } from './OverviewTab'
 
 export function SlicerTab({ dashboard, reload }: { dashboard: Dashboard | null; reload: () => void }) {
   const [uploading, setUploading] = useState(false)
+  const [stage, setStage] = useState('高三')
+  const ocrSettings = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
+  const stageOptions = gradeOptionsForTeachingStages(ocrSettings.data?.teachingStages)
+  const selectedStage = ensureStageValue(stage, stageOptions)
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -17,6 +23,7 @@ export function SlicerTab({ dashboard, reload }: { dashboard: Dashboard | null; 
     Array.from(input.files).forEach((file) => form.append('files', file))
     const paperTitleInput = event.currentTarget.elements.namedItem('paperTitle') as HTMLInputElement
     form.append('paperTitle', paperTitleInput.value)
+    form.append('stage', selectedStage)
     setUploading(true)
     try {
       await api('/api/tools/pdf-slicer/uploads', { method: 'POST', body: form })
@@ -41,6 +48,12 @@ export function SlicerTab({ dashboard, reload }: { dashboard: Dashboard | null; 
             <label className="space-y-1 block">
               <span className="text-xs text-zinc-500 font-medium">试卷名称</span>
               <input className="w-full rounded-lg border px-3 py-1.5 text-xs bg-zinc-50 focus:bg-white" name="paperTitle" placeholder="选填，若为空则自动提取" />
+            </label>
+            <label className="space-y-1 block">
+              <span className="text-xs text-zinc-500 font-medium">学段</span>
+              <select className="w-full rounded-lg border px-3 py-1.5 text-xs bg-zinc-50 focus:bg-white" value={selectedStage} onChange={(event) => setStage(event.target.value)}>
+                {stageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
             </label>
             <label className="space-y-1 block">
               <span className="text-xs text-zinc-500 font-medium font-semibold">选择物理文件</span>

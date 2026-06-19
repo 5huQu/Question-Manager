@@ -8,10 +8,19 @@ export function parseChoiceQuestion(value: string): ParsedChoiceQuestion | null 
   if (matches.length < 4) return null
   const firstFour = matches.slice(0, 4)
   if (firstFour.map((match) => match[1]).join('') !== 'ABCD') return null
+  let remainder = ''
   const options = firstFour.map((match, index) => {
     const next = firstFour[index + 1]
     const start = Number(match.index) + match[0].length
-    const end = next?.index ?? normalized.length
+    let end = next?.index ?? normalized.length
+    if (!next) {
+      const tail = normalized.slice(start)
+      const boundary = tail.search(/\n{2,}(?=(?:参考答案|解析)[:：]|!\[[^\]]*\]\(|##\s|\*\*\d+\.\*\*)/)
+      if (boundary >= 0) {
+        end = start + boundary
+        remainder = normalized.slice(end).trim()
+      }
+    }
     return {
       label: match[1],
       content: normalized.slice(start, end).trim(),
@@ -21,6 +30,7 @@ export function parseChoiceQuestion(value: string): ParsedChoiceQuestion | null 
   return {
     stem: normalized.slice(0, Number(firstFour[0].index)).trimEnd(),
     options,
+    remainder,
   }
 }
 

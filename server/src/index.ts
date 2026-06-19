@@ -15,8 +15,7 @@ const storageRoot = path.resolve(process.env.QUESTION_DATA_DIR || sourceRoot)
 const dataDir = path.join(storageRoot, 'data')
 const runsRoot = path.join(storageRoot, 'experiments', 'pdf_slicer', 'runs')
 const sqlitePath = path.join(dataDir, 'question.sqlite')
-const knowledgeLibraryPath = path.join(sourceRoot, 'server', 'tag_libraries', 'high_school_math_cn_default.json')
-const methodLibraryPath = path.join(sourceRoot, 'server', 'tag_libraries', 'high_school_methods.json')
+const tagLibrariesDir = path.join(sourceRoot, 'server', 'tag_libraries')
 const pythonRoot = path.join(sourceRoot, 'server', 'python')
 const pythonDataRoot = path.join(storageRoot, 'python')
 const frontendDist = path.join(sourceRoot, 'frontend', 'dist')
@@ -27,6 +26,7 @@ const katex = require('katex') as { renderToString: (tex: string, options?: Reco
 fs.mkdirSync(dataDir, { recursive: true })
 fs.mkdirSync(runsRoot, { recursive: true })
 fs.mkdirSync(pythonDataRoot, { recursive: true })
+fs.mkdirSync(tagLibrariesDir, { recursive: true })
 
 const db = new DatabaseSync(sqlitePath)
 db.exec('PRAGMA foreign_keys = ON')
@@ -157,6 +157,7 @@ type RunRow = {
   source_file_kind: string
   material_type: MaterialType
   file_role: FileRole
+  stage: string
   classification_confidence: number
   classification_reasons_json: string
   run_dir: string
@@ -258,6 +259,31 @@ type CollectionItemRow = QuestionRow & {
   sort_order: number
   score: number
   section_name: string
+}
+
+type ExportRecordSourceType = 'collection' | 'run'
+type ExportRecordRow = {
+  id: string
+  source_type: ExportRecordSourceType
+  collection_id: string
+  run_id: string
+  title: string
+  format: string
+  variant: string
+  filename: string
+  path: string
+  url: string
+  items_json: string
+  content_length: number
+  question_count: number
+  status: 'succeeded' | 'failed'
+  error: string
+  created_at: string
+}
+
+type ExportRecordItemSnapshot = {
+  questionId: string
+  exportOrder: number
 }
 
 type PublicQuestion = ReturnType<typeof mapQuestion>
@@ -685,28 +711,183 @@ function uniqueTags(values: unknown[]) {
   return tags
 }
 
+function tagLibraryType(value: unknown) {
+  return String(value) === 'method_tag' ? 'method_tag' : 'knowledge_point'
+}
+
+function safeTagLibraryCode(value: unknown, fallback = 'custom_library') {
+  const raw = String(value || '').trim().toLowerCase()
+  return (raw.replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || fallback).slice(0, 96)
+}
+
+function tagLibraryFilePath(code: string) {
+  return path.join(tagLibrariesDir, `${safeTagLibraryCode(code)}.json`)
+}
+
+function normalizeLearningTagLibrary(rawValue: unknown, fallbackCode = 'learning_tag_library') {
+  const raw = rawValue as Record<string, any>
+  const libraryType = tagLibraryType(raw?.libraryType)
+  const code = safeTagLibraryCode(raw?.code, fallbackCode)
+  const sections = libraryType === 'method_tag'
+    ? (Array.isArray(raw?.groups) ? raw.groups : Array.isArray(raw?.chapters) ? raw.chapters : [])
+    : (Array.isArray(raw?.chapters) ? raw.chapters : Array.isArray(raw?.groups) ? raw.groups : [])
+  return {
+    id: code,
+    code,
+    name: String(raw?.name || code),
+    subject: String(raw?.subject || '数学'),
+    stage: String(raw?.stage || 'high_school'),
+    locale: String(raw?.locale || 'zh-CN'),
+    version: String(raw?.version || '1.0.0'),
+    source: String(raw?.source || 'local-edit'),
+    libraryType,
+    baseKnowledgeLibraryId: raw?.baseKnowledgeLibraryId ? String(raw.baseKnowledgeLibraryId) : undefined,
+    baseKnowledgeLibraryCode: raw?.baseKnowledgeLibraryCode ? String(raw.baseKnowledgeLibraryCode) : undefined,
+    baseKnowledgeLibraryName: raw?.baseKnowledgeLibraryName ? String(raw.baseKnowledgeLibraryName) : undefined,
+    isDefault: libraryType === 'knowledge_point' && Boolean(raw?.isDefault),
+    chapters: sections.map((section: any, sectionIndex: number) => {
+      const points = libraryType === 'method_tag'
+        ? (Array.isArray(section?.tags) ? section.tags : Array.isArray(section?.knowledgePoints) ? section.knowledgePoints : [])
+        : (Array.isArray(section?.knowledgePoints) ? section.knowledgePoints : Array.isArray(section?.tags) ? section.tags : [])
+      const sectionCode = String(section?.code || `${libraryType === 'method_tag' ? 'MG' : 'CH'}_${sectionIndex + 1}`)
+      return {
+        id: sectionCode,
+        code: sectionCode,
+        name: String(section?.name || `分组 ${sectionIndex + 1}`),
+        sortOrder: Number(section?.sortOrder || sectionIndex + 1),
+        knowledgePoints: points.map((point: any, pointIndex: number) => {
+          const pointCode = String(point?.code || `${libraryType === 'method_tag' ? 'MT' : 'KP'}_${sectionIndex + 1}_${pointIndex + 1}`)
+          return {
+            id: pointCode,
+            code: pointCode,
+            name: String(point?.name || `标签 ${pointIndex + 1}`),
+            description: point?.description ? String(point.description) : undefined,
+            tagType: point?.tagType ? String(point.tagType) : libraryType === 'method_tag' ? 'method' : 'knowledge',
+            appliesTo: Array.isArray(point?.appliesTo) ? point.appliesTo.map((item: unknown) => String(item)).filter(Boolean) : undefined,
+            sortOrder: Number(point?.sortOrder || pointIndex + 1),
+          }
+        }),
+      }
+    }),
+  }
+}
+
+function serializeLearningTagLibrary(library: ReturnType<typeof normalizeLearningTagLibrary>) {
+  const base = {
+    code: library.code,
+    name: library.name,
+    subject: library.subject,
+    stage: library.stage,
+    locale: library.locale,
+    version: library.version,
+    source: library.source,
+    libraryType: library.libraryType,
+  }
+  if (library.libraryType === 'method_tag') {
+    return {
+      ...base,
+      baseKnowledgeLibraryCode: library.baseKnowledgeLibraryCode,
+      groups: library.chapters.map((chapter) => ({
+        code: chapter.code,
+        name: chapter.name,
+        sortOrder: chapter.sortOrder,
+        tags: chapter.knowledgePoints.map((point: any) => ({
+          code: point.code,
+          name: point.name,
+          description: point.description,
+          tagType: point.tagType || 'method',
+          appliesTo: point.appliesTo,
+          sortOrder: point.sortOrder,
+        })),
+      })),
+    }
+  }
+  return {
+    ...base,
+    isDefault: Boolean(library.isDefault),
+    chapters: library.chapters.map((chapter) => ({
+      code: chapter.code,
+      name: chapter.name,
+      sortOrder: chapter.sortOrder,
+      knowledgePoints: chapter.knowledgePoints.map((point: any) => ({
+        code: point.code,
+        name: point.name,
+        description: point.description,
+        tagType: point.tagType || 'knowledge',
+        sortOrder: point.sortOrder,
+      })),
+    })),
+  }
+}
+
+function validateLearningTagLibrary(library: ReturnType<typeof normalizeLearningTagLibrary>) {
+  if (!library.code || !library.name || !library.subject || !library.stage) return '标签库 code、名称、科目、阶段不能为空。'
+  if (!library.chapters.length) return library.libraryType === 'method_tag' ? '至少需要一个分组。' : '至少需要一个章节。'
+  for (const [chapterIndex, chapter] of library.chapters.entries()) {
+    if (!chapter.code || !chapter.name) return `第 ${chapterIndex + 1} 个${library.libraryType === 'method_tag' ? '分组' : '章节'}缺少 code 或名称。`
+    if (!chapter.knowledgePoints.length) return `「${chapter.name}」至少需要一个标签。`
+    for (const [pointIndex, point] of chapter.knowledgePoints.entries()) {
+      if (!point.code || !point.name) return `「${chapter.name}」的第 ${pointIndex + 1} 个标签缺少 code 或名称。`
+    }
+  }
+  return ''
+}
+
+function readLearningTagLibraries() {
+  const files = fs.readdirSync(tagLibrariesDir)
+    .filter((fileName) => fileName.toLowerCase().endsWith('.json'))
+    .sort()
+  const libraries = files.flatMap((fileName) => {
+    const filePath = path.join(tagLibrariesDir, fileName)
+    const payload = parseJson<unknown>(fs.readFileSync(filePath, 'utf8'), null)
+    if (!payload) return []
+    const values = Array.isArray(payload) ? payload : [payload]
+    return values.map((value, index) => normalizeLearningTagLibrary(value, path.basename(fileName, '.json') || `library_${index + 1}`))
+  })
+  return libraries.sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.name.localeCompare(right.name, 'zh-CN'))
+}
+
+function writeLearningTagLibrary(rawPayload: unknown) {
+  const library = normalizeLearningTagLibrary(rawPayload)
+  const error = validateLearningTagLibrary(library)
+  if (error) throw new Error(error)
+  if (library.isDefault && library.libraryType === 'knowledge_point') {
+    for (const existing of readLearningTagLibraries()) {
+      if (existing.code === library.code || existing.libraryType !== 'knowledge_point' || !existing.isDefault) continue
+      const existingPath = tagLibraryFilePath(existing.code)
+      if (fs.existsSync(existingPath)) {
+        fs.writeFileSync(existingPath, `${JSON.stringify(serializeLearningTagLibrary({ ...existing, isDefault: false }), null, 2)}\n`)
+      }
+    }
+  }
+  fs.writeFileSync(tagLibraryFilePath(library.code), `${JSON.stringify(serializeLearningTagLibrary(library), null, 2)}\n`)
+  return normalizeLearningTagLibrary(serializeLearningTagLibrary(library))
+}
+
 function readTagLibraries() {
-  const knowledgePayload = fs.existsSync(knowledgeLibraryPath) ? parseJson<Record<string, any>>(fs.readFileSync(knowledgeLibraryPath, 'utf8'), {}) : {}
-  const methodPayload = fs.existsSync(methodLibraryPath) ? parseJson<Record<string, any>>(fs.readFileSync(methodLibraryPath, 'utf8'), {}) : {}
-  const libraryKnowledgePoints = (Array.isArray(knowledgePayload.chapters) ? knowledgePayload.chapters : []).flatMap((chapter: any) =>
-    (Array.isArray(chapter.knowledgePoints) ? chapter.knowledgePoints : []).map((item: any) => String(item.name || '')).filter(Boolean)
+  const libraries = readLearningTagLibraries()
+  const libraryKnowledgePoints = libraries.filter((library) => library.libraryType === 'knowledge_point').flatMap((library) =>
+    library.chapters.flatMap((chapter) => chapter.knowledgePoints.map((item: any) => item.name).filter(Boolean))
   )
-  const librarySolutionMethods = (Array.isArray(methodPayload.groups) ? methodPayload.groups : []).flatMap((group: any) =>
-    (Array.isArray(group.tags) ? group.tags : []).map((item: any) => String(item.name || '')).filter(Boolean)
+  const librarySolutionMethods = libraries.filter((library) => library.libraryType === 'method_tag').flatMap((library) =>
+    library.chapters.flatMap((chapter) => chapter.knowledgePoints.map((item: any) => item.name).filter(Boolean))
   )
   const existingRows = db.prepare(`
-    SELECT knowledge_points_json, solution_methods_json
+    SELECT stage, question_type, knowledge_points_json, solution_methods_json
     FROM question_bank_items
-    WHERE knowledge_points_json != '[]' OR solution_methods_json != '[]'
-  `).all() as Array<Pick<QuestionRow, 'knowledge_points_json' | 'solution_methods_json'>>
+    WHERE stage != '' OR question_type != '' OR knowledge_points_json != '[]' OR solution_methods_json != '[]'
+  `).all() as Array<Pick<QuestionRow, 'stage' | 'question_type' | 'knowledge_points_json' | 'solution_methods_json'>>
   const existingKnowledgePoints = existingRows.flatMap((row) => parseJson<string[]>(row.knowledge_points_json || '[]', []))
   const existingSolutionMethods = existingRows.flatMap((row) => parseJson<string[]>(row.solution_methods_json || '[]', []))
+  const existingStages = existingRows.map((row) => row.stage).filter(Boolean)
+  const existingQuestionTypes = existingRows.map((row) => normalizeQuestionType(row.question_type)).filter(Boolean)
   const knowledgePoints = uniqueTags([...libraryKnowledgePoints, ...existingKnowledgePoints])
   const solutionMethods = uniqueTags([...librarySolutionMethods, ...existingSolutionMethods])
   return {
     knowledgePoints,
     solutionMethods,
-    stages: ['高一', '高二', '高三', '高中'],
+    stages: uniqueTags([...configuredGradeStages(), ...existingStages]),
+    questionTypes: uniqueTags(['单选题', '多选题', '填空题', '解答题', ...existingQuestionTypes]),
     difficultyLabels: ['基础', '中等', '较难', '压轴'],
   }
 }
@@ -918,6 +1099,7 @@ function ensureSchema() {
       source_file_kind TEXT NOT NULL DEFAULT 'pdf',
       material_type TEXT NOT NULL DEFAULT 'unknown',
       file_role TEXT NOT NULL DEFAULT 'full',
+      stage TEXT NOT NULL DEFAULT '高三',
       classification_confidence REAL NOT NULL DEFAULT 0,
       classification_reasons_json TEXT NOT NULL DEFAULT '[]',
       run_dir TEXT NOT NULL,
@@ -1023,10 +1205,32 @@ function ensureSchema() {
       FOREIGN KEY (question_id) REFERENCES question_bank_items(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS question_bank_export_records (
+      id TEXT PRIMARY KEY,
+      source_type TEXT NOT NULL,
+      collection_id TEXT NOT NULL DEFAULT '',
+      run_id TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL DEFAULT '',
+      format TEXT NOT NULL DEFAULT '',
+      variant TEXT NOT NULL DEFAULT '',
+      filename TEXT NOT NULL DEFAULT '',
+      path TEXT NOT NULL DEFAULT '',
+      url TEXT NOT NULL DEFAULT '',
+      items_json TEXT NOT NULL DEFAULT '[]',
+      content_length INTEGER NOT NULL DEFAULT 0,
+      question_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'succeeded',
+      error TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_runs_created_at ON pdf_slicer_runs(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_runs_ocr_status ON pdf_slicer_runs(ocr_status);
     CREATE INDEX IF NOT EXISTS idx_qb_updated_at ON question_bank_items(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_review_run ON pdf_slicer_review_items(run_id, result_id);
+    CREATE INDEX IF NOT EXISTS idx_qb_export_records_created_at ON question_bank_export_records(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_qb_export_records_collection ON question_bank_export_records(collection_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_qb_export_records_run ON question_bank_export_records(run_id, created_at DESC);
   `)
 
   ensureColumn('pdf_slicer_runs', 'paper_title', "TEXT NOT NULL DEFAULT ''")
@@ -1036,6 +1240,7 @@ function ensureSchema() {
   ensureColumn('pdf_slicer_batches', 'workflow_status', "TEXT NOT NULL DEFAULT 'ready'")
   ensureColumn('pdf_slicer_runs', 'material_type', "TEXT NOT NULL DEFAULT 'unknown'")
   ensureColumn('pdf_slicer_runs', 'file_role', "TEXT NOT NULL DEFAULT 'full'")
+  ensureColumn('pdf_slicer_runs', 'stage', "TEXT NOT NULL DEFAULT '高三'")
   ensureColumn('pdf_slicer_runs', 'classification_confidence', "REAL NOT NULL DEFAULT 0")
   ensureColumn('pdf_slicer_runs', 'classification_reasons_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('pdf_slicer_runs', 'document_diagnostics_json', "TEXT NOT NULL DEFAULT '{}'")
@@ -1063,6 +1268,7 @@ function ensureSchema() {
   ensureColumn('question_bank_collections', 'total_score', "REAL NOT NULL DEFAULT 0")
   ensureColumn('question_bank_collections', 'time_limit', "INTEGER NOT NULL DEFAULT 0")
   ensureColumn('question_bank_collections', 'export_format', "TEXT NOT NULL DEFAULT 'markdown'")
+  ensureColumn('question_bank_export_records', 'items_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('question_bank_collection_items', 'score', "REAL NOT NULL DEFAULT 0")
   ensureColumn('question_bank_collection_items', 'section_name', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('pdf_slicer_review_items', 'segments_json', "TEXT NOT NULL DEFAULT '[]'")
@@ -1079,6 +1285,9 @@ function ensureSchema() {
     WHERE source_run_id != ''
   `).run()
   backfillFormatReviewFlagsFromReports()
+  backfillExportRecordFileSizes()
+  clearMismatchedExportRecordItems()
+  backfillExportRecordItems()
 
   if (!db.prepare('SELECT id FROM question_bank_collections WHERE id = ?').get('basket')) {
     const now = nowIso()
@@ -1115,7 +1324,10 @@ function mapRun(row: RunRow) {
   const importedQuestions = (db.prepare('SELECT COUNT(*) AS count FROM question_bank_items WHERE source_run_id = ?').get(row.run_id) as { count: number }).count
   const bankedQuestions = (db.prepare("SELECT COUNT(*) AS count FROM question_bank_items WHERE source_run_id = ? AND bank_status = 'banked'").get(row.run_id) as { count: number }).count
   const solutionItems = (db.prepare('SELECT COUNT(*) AS count FROM pdf_slicer_solution_items WHERE source_run_id = ?').get(row.run_id) as { count: number }).count
-  const progressPercent = row.ocr_status === 'succeeded' ? 1 : row.ocr_status === 'running' ? 0.5 : row.ocr_status === 'failed' ? 0.2 : 0
+  const expectedQuestions = row.approved_questions || row.total_questions || 0
+  const completedByImport = expectedQuestions > 0 && Math.max(importedQuestions, solutionItems) >= expectedQuestions
+  const ocrStatus = row.ocr_status === 'succeeded' || completedByImport ? 'succeeded' : row.ocr_status
+  const progressPercent = ocrStatus === 'succeeded' ? 1 : ocrStatus === 'running' ? 0.5 : ocrStatus === 'failed' ? 0.2 : 0
   const documentDiagnostics = parseJson<Record<string, any>>(row.document_diagnostics_json || '{}', {})
   return {
     runId: row.run_id,
@@ -1128,6 +1340,7 @@ function mapRun(row: RunRow) {
     sourceFileKind: row.source_file_kind,
     materialType: normalizeMaterialType(row.material_type),
     fileRole: normalizeFileRole(row.file_role),
+    stage: row.stage || '高三',
     classificationConfidence: Number(row.classification_confidence || 0),
     classificationReasons: parseJson<string[]>(row.classification_reasons_json || '[]', []),
     runDir: row.run_dir,
@@ -1141,13 +1354,13 @@ function mapRun(row: RunRow) {
     totalQuestions: row.total_questions,
     approvedQuestions: row.approved_questions,
     unreviewedQuestions: row.unreviewed_questions,
-    ocrStatus: row.ocr_status,
+    ocrStatus,
     ocrError: row.ocr_error,
     ocrStartedAt: row.ocr_started_at,
     ocrFinishedAt: row.ocr_finished_at,
-    progressPercent: row.ocr_status === 'failed' && importedQuestions > 0 && row.approved_questions > 0 ? importedQuestions / row.approved_questions : progressPercent,
+    progressPercent: ocrStatus === 'failed' && importedQuestions > 0 && row.approved_questions > 0 ? importedQuestions / row.approved_questions : progressPercent,
     totalOcrQuestions: row.approved_questions,
-    processedQuestions: Math.max(importedQuestions, solutionItems) || (row.ocr_status === 'succeeded' ? row.approved_questions : row.ocr_status === 'running' ? Math.floor(row.approved_questions / 2) : 0),
+    processedQuestions: Math.max(importedQuestions, solutionItems) || (ocrStatus === 'succeeded' ? row.approved_questions : ocrStatus === 'running' ? Math.floor(row.approved_questions / 2) : 0),
     importedQuestions,
     bankedQuestions,
     solutionItems,
@@ -1537,10 +1750,81 @@ function ocrPromptSettingsPath() {
   return path.join(configDir, 'ocr_prompt_settings.json')
 }
 
+function appSettingsPath() {
+  const configDir = path.join(storageRoot, 'config')
+  fs.mkdirSync(configDir, { recursive: true })
+  return path.join(configDir, 'app_settings.json')
+}
+
 process.env.QUESTION_PYTHON_DATA_DIR ||= pythonDataRoot
 process.env.QUESTION_OCR_ENV_PATH ||= ocrEnvPath()
 process.env.QUESTION_PROMPT_SETTINGS_PATH ||= ocrPromptSettingsPath()
 process.env.QUESTION_ASSET_ROOT ||= storageRoot
+
+const defaultAppSettings = {
+  setupCompleted: false,
+  systemName: 'Question Manager',
+  siteTitle: 'Question Manager',
+  siteDescription: '本地优先的 PDF 切分、OCR 识别与数学题库管理工具。',
+  examExportTemplate: 'builtin' as 'builtin' | 'examch',
+  worksheetWatermark: '教师姓名 · 工作室',
+  examWatermark: 'Qrane',
+  lectureWatermark: '教师姓名 · 工作室',
+  teachingStages: ['高中'],
+}
+
+const teachingStageValues = ['小学', '初中', '高中', '其他']
+const teachingStageGradeMap: Record<string, string[]> = {
+  小学: ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级'],
+  初中: ['初一', '初二', '初三'],
+  高中: ['高一', '高二', '高三'],
+  其他: ['其他'],
+}
+
+function normalizeTeachingStages(value: unknown) {
+  const source = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[,，、\s]+/) : []
+  const selected = source.map((item) => String(item).trim()).filter((item) => teachingStageValues.includes(item))
+  return selected.length ? Array.from(new Set(selected)) : [...defaultAppSettings.teachingStages]
+}
+
+function configuredGradeStages() {
+  return Array.from(new Set(readAppSettings().teachingStages.flatMap((stage) => teachingStageGradeMap[stage] || [])))
+}
+
+function readAppSettings() {
+  const settingsPath = appSettingsPath()
+  const hasSettingsFile = fs.existsSync(settingsPath)
+  if (!hasSettingsFile) return { ...defaultAppSettings }
+  const payload = parseJson<Record<string, unknown>>(fs.readFileSync(settingsPath, 'utf8'), {})
+  return {
+    setupCompleted: payload.setupCompleted === true || payload.setupCompleted === 'true',
+    systemName: String(payload.systemName ?? defaultAppSettings.systemName),
+    siteTitle: String(payload.siteTitle ?? defaultAppSettings.siteTitle),
+    siteDescription: String(payload.siteDescription ?? defaultAppSettings.siteDescription),
+    examExportTemplate: payload.examExportTemplate === 'examch' ? 'examch' as const : 'builtin' as const,
+    worksheetWatermark: String(payload.worksheetWatermark ?? defaultAppSettings.worksheetWatermark),
+    examWatermark: String(payload.examWatermark ?? defaultAppSettings.examWatermark),
+    lectureWatermark: String(payload.lectureWatermark ?? defaultAppSettings.lectureWatermark),
+    teachingStages: normalizeTeachingStages(payload.teachingStages),
+  }
+}
+
+function writeAppSettings(input: Record<string, unknown>) {
+  const existing = readAppSettings()
+  const payload = {
+    setupCompleted: input.setupCompleted === true || input.setupCompleted === 'true' || existing.setupCompleted,
+    systemName: String(input.systemName ?? existing.systemName).trim() || defaultAppSettings.systemName,
+    siteTitle: String(input.siteTitle ?? existing.siteTitle).trim() || defaultAppSettings.siteTitle,
+    siteDescription: String(input.siteDescription ?? existing.siteDescription).trim(),
+    examExportTemplate: input.examExportTemplate === 'examch' ? 'examch' as const : input.examExportTemplate === 'builtin' ? 'builtin' as const : existing.examExportTemplate,
+    worksheetWatermark: String(input.worksheetWatermark ?? existing.worksheetWatermark).trim() || defaultAppSettings.worksheetWatermark,
+    examWatermark: String(input.examWatermark ?? existing.examWatermark).trim() || defaultAppSettings.examWatermark,
+    lectureWatermark: String(input.lectureWatermark ?? existing.lectureWatermark).trim() || defaultAppSettings.lectureWatermark,
+    teachingStages: normalizeTeachingStages(input.teachingStages ?? existing.teachingStages),
+  }
+  fs.writeFileSync(appSettingsPath(), `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
+  return readAppSettings()
+}
 
 function readOcrPromptSettings() {
   const promptPath = ocrPromptSettingsPath()
@@ -1631,6 +1915,7 @@ function readOcrSettings() {
     values[key.trim()] = rest.join('=').trim()
   }
   return {
+    ...readAppSettings(),
     apiBaseUrl: values.OCR_API_BASE_URL || '',
     apiKeyConfigured: Boolean(values.OCR_API_KEY || process.env.OCR_API_KEY),
     model: values.OCR_MODEL || '',
@@ -1680,6 +1965,7 @@ function writeOcrSettings(input: Record<string, unknown>) {
   const lines = [...Object.entries(map), ...passthroughKeys.map((key) => [key, values[key]] as [string, string])]
     .map(([key, value]) => `${key}=${value}`)
   fs.writeFileSync(envPath, `${lines.join('\n')}\n`, { mode: 0o600 })
+  writeAppSettings(input)
   writeOcrPromptSettings(input)
   return readOcrSettings()
 }
@@ -1777,12 +2063,14 @@ function rerunBatchSize() {
 function buildQuestionBankWhereClause(filters: Record<string, unknown> = {}, formatIssueOnly = false) {
   const q = String(filters.q || '').trim()
   const stage = String(filters.stage || '').trim()
+  const questionType = String(filters.questionType || '').trim()
   const knowledgePoint = String(filters.knowledgePoint || '').trim()
   const solutionMethod = String(filters.solutionMethod || '').trim()
   const difficulty = String(filters.difficulty || '').trim()
   const whereSql = `
     WHERE (? = '' OR search_text LIKE ? OR source_title LIKE ? OR chapter LIKE ? OR knowledge_points_json LIKE ? OR solution_methods_json LIKE ?)
       AND (? = '' OR stage = ?)
+      AND (? = '' OR question_type = ?)
       AND (? = '' OR knowledge_points_json LIKE ?)
       AND (? = '' OR solution_methods_json LIKE ?)
       AND (? = '' OR difficulty_label = ?)
@@ -1797,6 +2085,8 @@ function buildQuestionBankWhereClause(filters: Record<string, unknown> = {}, for
     `%${q}%`,
     stage,
     stage,
+    questionType,
+    questionType,
     knowledgePoint,
     `%${knowledgePoint}%`,
     solutionMethod,
@@ -1868,9 +2158,9 @@ function createQuestionBankRerunTask(questionIds: string[], options: { forceRegi
   const insertRun = db.prepare(`
     INSERT INTO pdf_slicer_runs (
       run_id, batch_id, upload_mode, paper_title, pdf_name, pdf_path, source_file_name, source_file_kind, run_dir, document_diagnostics_json,
-      material_type, file_role, classification_confidence, classification_reasons_json,
+      material_type, file_role, stage, classification_confidence, classification_reasons_json,
       created_at, updated_at, slice_status, quick_review_status, total_questions, approved_questions, unreviewed_questions, ocr_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'succeeded', 'submitted', ?, ?, 0, 'idle')
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'succeeded', 'submitted', ?, ?, 0, 'idle')
   `)
   const insertReview = db.prepare(`
     INSERT INTO pdf_slicer_review_items (
@@ -1894,6 +2184,7 @@ function createQuestionBankRerunTask(questionIds: string[], options: { forceRegi
     JSON.stringify({ bulkRerun: true, questionCount: questions.length }),
     'unknown',
     'full',
+    questions[0]?.question.stage || configuredGradeStages()[0] || '高三',
     1,
     JSON.stringify(['题库格式问题批量重新 OCR']),
     now,
@@ -1962,9 +2253,9 @@ function createPendingBankRerunTask(sourceRunId: string, resultId: string, optio
   db.prepare(`
     INSERT INTO pdf_slicer_runs (
       run_id, batch_id, upload_mode, paper_title, pdf_name, pdf_path, source_file_name, source_file_kind, run_dir, document_diagnostics_json,
-      material_type, file_role, classification_confidence, classification_reasons_json,
+      material_type, file_role, stage, classification_confidence, classification_reasons_json,
       created_at, updated_at, slice_status, quick_review_status, total_questions, approved_questions, unreviewed_questions, ocr_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'succeeded', 'submitted', 1, 1, 0, 'idle')
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'succeeded', 'submitted', 1, 1, 0, 'idle')
   `).run(
     runId,
     batchId,
@@ -1978,6 +2269,7 @@ function createPendingBankRerunTask(sourceRunId: string, resultId: string, optio
     JSON.stringify({ pendingBankRerun: true, sourceRunId, resultId }),
     'unknown',
     'full',
+    sourceRun.stage || configuredGradeStages()[0] || '高三',
     1,
     JSON.stringify(['待入库单题重新 OCR']),
     now,
@@ -2024,6 +2316,7 @@ function importMigratedOcrResults(runId: string) {
   }
   const draftsDir = path.join(pythonDataRoot, 'ocr_drafts')
   const sourceTitle = cleanSourceTitle(runRow?.paper_title || runRow?.pdf_name || '', runRow?.pdf_name || 'OCR 导入')
+  const runStage = String(runRow?.stage || configuredGradeStages()[0] || '高三')
   const isQuestionBankRerun = runRow?.upload_mode === 'question_bank_rerun'
   if (!fs.existsSync(draftsDir)) return 0
   const formatReviewById = formatReviewRecordsById(runId)
@@ -2072,6 +2365,7 @@ function importMigratedOcrResults(runId: string) {
         db.prepare(`
           UPDATE question_bank_items SET
             question_no = ?,
+            stage = ?,
             question_type = ?,
             difficulty_score = ?,
             difficulty_score_10 = ?,
@@ -2090,6 +2384,7 @@ function importMigratedOcrResults(runId: string) {
           WHERE id = ?
         `).run(
           questionNo,
+          runStage,
           questionType,
           result.needs_human_review ? 4 : 3,
           difficultyScore10,
@@ -2111,6 +2406,7 @@ function importMigratedOcrResults(runId: string) {
         db.prepare(`
           UPDATE question_bank_items SET
             question_no = ?,
+            stage = ?,
             question_type = ?,
             difficulty_score = ?,
             difficulty_score_10 = ?,
@@ -2136,6 +2432,7 @@ function importMigratedOcrResults(runId: string) {
           WHERE id = ?
         `).run(
           questionNo,
+          runStage,
           questionType,
           result.needs_human_review ? 4 : 3,
           difficultyScore10,
@@ -2171,6 +2468,7 @@ function importMigratedOcrResults(runId: string) {
     createQuestion({
       id: targetQuestionId,
       questionNo,
+      stage: runStage,
       questionType,
       difficultyScore: result.needs_human_review ? 4 : 3,
       difficultyScore10,
@@ -2889,6 +3187,7 @@ function ocrFailureReasonFromResult(result: Record<string, any>, fallback = '') 
 function pendingBankOcrFailureItems(runId: string, importedIds: Set<string>, sourceTitle: string) {
   const draftsDir = path.join(pythonDataRoot, 'ocr_drafts')
   const reportReasons = ocrFailureReasonsFromJobLog(runId)
+  const runStage = getRun(runId)?.stage || configuredGradeStages()[0] || '高三'
   const failures: Array<PublicQuestion & { pendingBankReadOnly: true }> = []
   const reviewItems = getReviewItems(runId).filter((item) => item.reviewStatus === 'ready_for_ocr' && !importedIds.has(item.resultId))
   reviewItems.forEach((item, index) => {
@@ -2912,7 +3211,7 @@ function pendingBankOcrFailureItems(runId: string, importedIds: Set<string>, sou
       id: item.resultId,
       serialNo: Number.parseInt(questionNo, 10) || index + 1,
       questionNo,
-      stage: '高中',
+      stage: runStage,
       questionType: 'OCR题',
       difficultyScore: 3,
       difficultyScore10: 5,
@@ -3220,6 +3519,12 @@ function refreshCollectionScore(id: string) {
   db.prepare('UPDATE question_bank_collections SET total_score = ?, updated_at = ? WHERE id = ?').run(Number(row.total || 0), nowIso(), id)
 }
 
+function defaultCollectionItemScore(questionType: string) {
+  if (questionType === '多选题') return 6
+  if (questionType === '解答题') return 15
+  return 5
+}
+
 function normalizeCollectionKind(value: unknown) {
   return value === 'basket' ? 'basket' : 'paper'
 }
@@ -3230,6 +3535,273 @@ function normalizeCollectionStatus(value: unknown) {
 
 function normalizeExportFormat(value: unknown) {
   return value === 'latex' ? 'latex' : 'markdown'
+}
+
+function normalizeExportRecordSourceType(value: unknown): ExportRecordSourceType | '' {
+  if (value === 'collection' || value === 'run') return value
+  return ''
+}
+
+function mapExportRecord(row: ExportRecordRow) {
+  return {
+    id: row.id,
+    sourceType: row.source_type,
+    collectionId: row.collection_id,
+    runId: row.run_id,
+    title: row.title,
+    format: row.format,
+    variant: row.variant,
+    filename: row.filename,
+    path: row.path,
+    url: row.url,
+    items: parseJson<ExportRecordItemSnapshot[]>(row.items_json || '[]', []),
+    contentLength: Number(row.content_length || 0),
+    questionCount: Number(row.question_count || 0),
+    status: row.status,
+    error: row.error,
+    createdAt: row.created_at,
+  }
+}
+
+function collectionExportItems(collection: NonNullable<ReturnType<typeof getCollection>>): ExportRecordItemSnapshot[] {
+  return collection.questions.map((entry, index) => ({
+    questionId: String(entry.item.id || ''),
+    exportOrder: index + 1,
+  })).filter((item) => item.questionId)
+}
+
+function runExportItems(runId: string): ExportRecordItemSnapshot[] {
+  return (db.prepare(`
+    SELECT id
+    FROM question_bank_items
+    WHERE source_run_id = ?
+    ORDER BY serial_no ASC, created_at ASC
+  `).all(runId) as Array<{ id: string }>).map((row, index) => ({
+    questionId: row.id,
+    exportOrder: index + 1,
+  }))
+}
+
+function exportRecordFileSize(recordPath = '', recordUrl = '') {
+  const urlPath = String(recordUrl || '').replace(/^\/assets\//, '')
+  const rawPath = String(recordPath || urlPath || '').trim()
+  if (!rawPath) return 0
+  try {
+    const stat = fs.statSync(resolveStoragePath(rawPath))
+    return stat.isFile() ? stat.size : 0
+  } catch {
+    return 0
+  }
+}
+
+function backfillExportRecordFileSizes() {
+  const rows = db.prepare(`
+    SELECT id, path, url
+    FROM question_bank_export_records
+    WHERE status = 'succeeded'
+      AND LOWER(format) = 'pdf'
+      AND content_length = 0
+      AND (path != '' OR url != '')
+  `).all() as Array<Pick<ExportRecordRow, 'id' | 'path' | 'url'>>
+  if (!rows.length) return 0
+  const update = db.prepare('UPDATE question_bank_export_records SET content_length = ? WHERE id = ?')
+  let updated = 0
+  for (const row of rows) {
+    const size = exportRecordFileSize(row.path, row.url)
+    if (size <= 0) continue
+    update.run(size, row.id)
+    updated += 1
+  }
+  return updated
+}
+
+function backfillExportRecordItems() {
+  const rows = db.prepare(`
+    SELECT id, source_type, collection_id, run_id, items_json, question_count
+    FROM question_bank_export_records
+    WHERE items_json = ''
+       OR items_json = '[]'
+       OR items_json IS NULL
+  `).all() as Array<Pick<ExportRecordRow, 'id' | 'source_type' | 'collection_id' | 'run_id' | 'items_json' | 'question_count'>>
+  if (!rows.length) return 0
+  const update = db.prepare('UPDATE question_bank_export_records SET items_json = ? WHERE id = ?')
+  let updated = 0
+  for (const row of rows) {
+    const items = row.source_type === 'collection' && row.collection_id
+      ? collectionExportItems(getCollection(row.collection_id) ?? getBasket())
+      : row.source_type === 'run' && row.run_id
+        ? runExportItems(row.run_id)
+        : []
+    const expectedCount = Number(row.question_count || 0)
+    if (!items.length || (expectedCount > 0 && items.length !== expectedCount)) continue
+    update.run(JSON.stringify(items), row.id)
+    updated += 1
+  }
+  return updated
+}
+
+function restoreExportRecordToCollection(recordId: string, targetCollectionId: string) {
+  const record = db.prepare('SELECT * FROM question_bank_export_records WHERE id = ?').get(recordId) as ExportRecordRow | undefined
+  if (!record) throw new Error('导出记录不存在。')
+  if (!collectionExists(targetCollectionId)) throw new Error('目标试题篮不存在。')
+  const items = parseJson<ExportRecordItemSnapshot[]>(record.items_json || '[]', [])
+    .map((item) => ({
+      questionId: String(item.questionId || '').trim(),
+      exportOrder: Math.max(1, Math.floor(Number(item.exportOrder || 0))),
+    }))
+    .filter((item) => item.questionId)
+    .sort((left, right) => left.exportOrder - right.exportOrder)
+  if (!items.length) throw new Error('该导出记录没有可回填的题目快照。')
+
+  const seen = new Set<string>()
+  const uniqueItems = items.filter((item) => {
+    if (seen.has(item.questionId)) return false
+    seen.add(item.questionId)
+    return true
+  })
+  const questions = uniqueItems.map((item) => ({
+    snapshot: item,
+    row: db.prepare('SELECT * FROM question_bank_items WHERE id = ?').get(item.questionId) as QuestionRow | undefined,
+  }))
+  const missing = questions.filter((item) => !item.row).map((item) => item.snapshot.questionId)
+  if (missing.length) {
+    throw new Error(`有 ${missing.length} 道题已不存在，无法回填。`)
+  }
+
+  const now = nowIso()
+  db.exec('BEGIN')
+  try {
+    db.prepare('DELETE FROM question_bank_collection_items WHERE collection_id = ?').run(targetCollectionId)
+    const insert = db.prepare(`
+      INSERT INTO question_bank_collection_items
+        (id, collection_id, question_id, sort_order, score, section_name, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+    questions.forEach((entry, index) => {
+      const row = entry.row as QuestionRow
+      insert.run(
+        createId('rel'),
+        targetCollectionId,
+        row.id,
+        entry.snapshot.exportOrder || index + 1,
+        defaultCollectionItemScore(normalizeQuestionType(row.question_type, row.stem_markdown, row.answer_text)),
+        '',
+        now
+      )
+    })
+    db.prepare('UPDATE question_bank_collections SET updated_at = ? WHERE id = ?').run(now, targetCollectionId)
+    refreshCollectionScore(targetCollectionId)
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+  return {
+    restoredCount: questions.length,
+    collection: getCollection(targetCollectionId),
+    exportRecord: mapExportRecord(record),
+  }
+}
+
+function clearMismatchedExportRecordItems() {
+  const rows = db.prepare(`
+    SELECT id, question_count, items_json
+    FROM question_bank_export_records
+    WHERE question_count > 0
+      AND items_json != ''
+      AND items_json != '[]'
+  `).all() as Array<Pick<ExportRecordRow, 'id' | 'question_count' | 'items_json'>>
+  if (!rows.length) return 0
+  const update = db.prepare("UPDATE question_bank_export_records SET items_json = '[]' WHERE id = ?")
+  let cleared = 0
+  for (const row of rows) {
+    const items = parseJson<ExportRecordItemSnapshot[]>(row.items_json || '[]', [])
+    if (items.length === Number(row.question_count || 0)) continue
+    update.run(row.id)
+    cleared += 1
+  }
+  return cleared
+}
+
+function createExportRecord(input: {
+  sourceType: ExportRecordSourceType
+  collectionId?: string
+  runId?: string
+  title?: string
+  format: string
+  variant?: string
+  filename?: string
+  path?: string
+  url?: string
+  items?: ExportRecordItemSnapshot[]
+  contentLength?: number
+  questionCount?: number
+  status?: 'succeeded' | 'failed'
+  error?: string
+}) {
+  const id = createId('export')
+  const now = nowIso()
+  db.prepare(`
+    INSERT INTO question_bank_export_records
+      (id, source_type, collection_id, run_id, title, format, variant, filename, path, url, items_json, content_length, question_count, status, error, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    input.sourceType,
+    input.collectionId || '',
+    input.runId || '',
+    input.title || '',
+    input.format,
+    input.variant || '',
+    input.filename || '',
+    input.path || '',
+    input.url || '',
+    JSON.stringify(input.items || []),
+    Math.max(0, Math.floor(Number(input.contentLength || 0))),
+    Math.max(0, Math.floor(Number(input.questionCount || 0))),
+    input.status || 'succeeded',
+    input.error || '',
+    now
+  )
+  return db.prepare('SELECT * FROM question_bank_export_records WHERE id = ?').get(id) as ExportRecordRow
+}
+
+function listExportRecords(options: {
+  sourceType?: ExportRecordSourceType | ''
+  collectionId?: string
+  runId?: string
+  query?: string
+  limit?: number
+} = {}) {
+  const where: string[] = []
+  const values: Array<string | number> = []
+  if (options.sourceType) {
+    where.push('source_type = ?')
+    values.push(options.sourceType)
+  }
+  if (options.collectionId) {
+    where.push('collection_id = ?')
+    values.push(options.collectionId)
+  }
+  if (options.runId) {
+    where.push('run_id = ?')
+    values.push(options.runId)
+  }
+  const query = String(options.query || '').trim()
+  if (query) {
+    where.push('(title LIKE ? OR filename LIKE ? OR format LIKE ?)')
+    const pattern = `%${query}%`
+    values.push(pattern, pattern, pattern)
+  }
+  const limit = Math.max(1, Math.min(Math.floor(Number(options.limit || 100)), 500))
+  const sql = `
+    SELECT *
+    FROM question_bank_export_records
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    ORDER BY created_at DESC
+    LIMIT ?
+  `
+  return (db.prepare(sql).all(...values, limit) as ExportRecordRow[]).map(mapExportRecord)
 }
 
 function normalizeNumber(value: unknown, fallback = 0) {
@@ -3243,8 +3815,9 @@ function questionPlainText(value: string) {
 
 function markdownQuestionLine(index: number, item: any) {
   const score = Number(item.score || 0)
-  const stem = stripLeadingQuestionNo(item.item.stemMarkdown, item.item.questionNo)
-  return `### ${index}. ${score ? `（${score} 分）` : ''}\n\n${stem || '（题干待补充）'}`
+  const stem = stripLeadingQuestionNo(item.item.stemMarkdown, item.item.questionNo).trim()
+  const scoreText = score ? `（${score} 分）` : ''
+  return `**${index}.** ${scoreText}${stem || '（题干待补充）'}`
 }
 
 function figureUsageText(usage: string) {
@@ -3589,6 +4162,20 @@ function importJsonQuestionsFromSliceRun(runId: string, questions: Array<Record<
     throw error
   }
 
+  const targetCount = run.approvedQuestions || run.totalQuestions || reviewItems.length
+  if (created.length >= targetCount) {
+    db.prepare(`
+      UPDATE pdf_slicer_runs
+      SET ocr_status = 'succeeded',
+          ocr_error = '',
+          ocr_started_at = COALESCE(NULLIF(ocr_started_at, ''), ?),
+          ocr_finished_at = ?,
+          updated_at = ?
+      WHERE run_id = ?
+    `).run(now, now, now, runId)
+    updateBatchWorkflow(run.batchId)
+  }
+
   return {
     items: created,
     count: created.length,
@@ -3846,12 +4433,13 @@ function worksheetSectionTitle(name: string, score: WorksheetSectionScore | unde
 }
 
 function qbankChoiceLayout(choices: string[]) {
+  if (choices.length !== 4) return 'one'
+  if (choices.some((choice) => /\n|\$\$|\|[^\n]*\||!\[[^\]]*\]\(/.test(String(choice || '')))) return 'one'
   const plainChoices = choices.map((choice) => questionPlainText(choice).replace(/\$+/g, '').replace(/\s+/g, ''))
-  if (plainChoices.some((choice) => choice.includes('\n'))) return 'one'
   const maxLength = Math.max(...plainChoices.map((choice) => choice.length), 0)
   const totalLength = plainChoices.reduce((sum, choice) => sum + choice.length, 0)
   if (maxLength <= 18 && totalLength <= 72) return 'four'
-  if (maxLength <= 38) return 'two'
+  if (maxLength <= 38 && totalLength <= 152) return 'two'
   return 'one'
 }
 
@@ -3880,7 +4468,7 @@ function worksheetQuestionLatex(
 ) {
   const lines = [`\\begin{examquestion}{${index + 1}}`]
   const { prompt, choices } = splitChoiceStemForExport(entry.item.stemMarkdown)
-  lines.push(renderExamZhPrompt(prompt || entry.item.stemMarkdown, entry.item.questionType) || '（题干待补充）')
+  lines.push(keepSubquestionsTogether(renderExamZhPrompt(prompt || entry.item.stemMarkdown, entry.item.questionType) || '（题干待补充）'))
   if (choices.length) {
     lines.push(worksheetChoicesLatex(choices))
   }
@@ -3909,7 +4497,7 @@ function worksheetQuestionLatex(
     appendFigures(analysisFigures(entry), 'analysis')
     lines.push('\\end{solutionbox}')
   } else if (normalizeQuestionType(entry.item.questionType, entry.item.stemMarkdown, entry.item.answerText) === '解答题') {
-    lines.push('\\begin{answerarea}{4.2cm}\\end{answerarea}')
+    lines.push('\\nobreak\\begin{answerarea}{4.2cm}\\end{answerarea}')
   }
   lines.push('\\end{examquestion}')
   return lines.join('\n')
@@ -3924,11 +4512,18 @@ function buildCollectionWorksheetLatex(
 ) {
   const specs = new Map<string, WorksheetFigureSpec>()
   const scorePlan = buildWorksheetScorePlan(collection)
+  const appSettings = readAppSettings()
+  const brandName = documentClass === 'qbank-lecture'
+    ? appSettings.lectureWatermark
+    : documentClass === 'qbank-exam'
+      ? appSettings.examWatermark
+      : appSettings.worksheetWatermark
+  const brandTagline = `${brandName} ｜ 高中数学`
   const lines = [
     `\\documentclass{${documentClass}}`,
-    '\\setbrandname{教师姓名 · 工作室}',
+    `\\setbrandname{${markdownToExamLatex(brandName, false)}}`,
     '\\setbrandmark{Q}',
-    '\\setbrandtagline{教师姓名 · 工作室 ｜ 高中数学}',
+    `\\setbrandtagline{${markdownToExamLatex(brandTagline, false)}}`,
     '\\setsubject{高中数学}',
     `\\doctitle{${markdownToExamLatex(collection.title || '综合练习', false)}}`,
   ]
@@ -4056,7 +4651,7 @@ function buildRunWorksheetCollection(run: NonNullable<ReturnType<typeof getRun>>
   }
 }
 
-function exportRunWorksheetPdf(runId: string, options: { title?: string }) {
+function exportRunWorksheetPdf(runId: string, options: { title?: string; variant?: ExportVariant }) {
   const run = getRun(runId)
   if (!run) throw new Error('批次不存在。')
   const rows = db.prepare(`
@@ -4066,11 +4661,16 @@ function exportRunWorksheetPdf(runId: string, options: { title?: string }) {
   `).all(runId) as QuestionRow[]
   if (!rows.length) throw new Error('当前批次暂无已入库题目，无法导出。')
   const collection = buildRunWorksheetCollection({ ...run, paperTitle: options.title || run.paperTitle }, rows)
-  const pdfPath = exportCollectionWorksheetPdf(collection, 'student')
+  const variant = options.variant || 'student'
+  const pdfPath = exportCollectionWorksheetPdf(collection, variant)
   return { path: pdfPath, format: 'pdf' as const }
 }
 
-function exportRunExamPdf(runId: string, options: { title?: string }) {
+function exportRunExamPdf(runId: string, options: { title?: string; variant?: ExportVariant }) {
+  const variant = options.variant || 'student'
+  if (readAppSettings().examExportTemplate === 'examch') {
+    return exportRunExamZh(runId, { ...options, format: 'pdf', variant })
+  }
   const run = getRun(runId)
   if (!run) throw new Error('批次不存在。')
   const rows = db.prepare(`
@@ -4080,7 +4680,7 @@ function exportRunExamPdf(runId: string, options: { title?: string }) {
   `).all(runId) as QuestionRow[]
   if (!rows.length) throw new Error('当前批次暂无已入库题目，无法导出。')
   const collection = buildRunWorksheetCollection({ ...run, paperTitle: options.title || run.paperTitle }, rows)
-  const pdfPath = exportCollectionWorksheetPdf(collection, 'student', 'qbank-exam')
+  const pdfPath = exportCollectionWorksheetPdf(collection, variant, 'qbank-exam')
   return { path: pdfPath, format: 'pdf' as const }
 }
 
@@ -4102,11 +4702,37 @@ function splitChoiceStemForExport(stem: string) {
 }
 
 function escapeLatexTextSegment(value: string) {
-  return String(value || '')
+  return normalizeUnicodeRomanNumerals(String(value || ''))
     .replace(/\\/g, '\\textbackslash{}')
     .replace(/([#%&_{}])/g, '\\$1')
     .replace(/~/g, '\\textasciitilde{}')
     .replace(/\^/g, '\\textasciicircum{}')
+}
+
+function normalizeUnicodeRomanNumerals(value: string) {
+  const romanMap: Record<string, string> = {
+    'Ⅰ': 'I',
+    'Ⅱ': 'II',
+    'Ⅲ': 'III',
+    'Ⅳ': 'IV',
+    'Ⅴ': 'V',
+    'Ⅵ': 'VI',
+    'Ⅶ': 'VII',
+    'Ⅷ': 'VIII',
+    'Ⅸ': 'IX',
+    'Ⅹ': 'X',
+    'ⅰ': 'i',
+    'ⅱ': 'ii',
+    'ⅲ': 'iii',
+    'ⅳ': 'iv',
+    'ⅴ': 'v',
+    'ⅵ': 'vi',
+    'ⅶ': 'vii',
+    'ⅷ': 'viii',
+    'ⅸ': 'ix',
+    'ⅹ': 'x',
+  }
+  return value.replace(/[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅰⅱⅲⅳⅴⅵⅶⅷⅸⅹ]/g, (match) => romanMap[match] || match)
 }
 
 function normalizeLatexMathSegment(value: string) {
@@ -4139,6 +4765,13 @@ function markdownTextToExamLatex(value: string, preserveBreaks = true) {
     .map((paragraph) => paragraph.split(/\n/).map((line) => line.trim()).filter(Boolean).join('\n\\par\n'))
     .filter(Boolean)
     .join('\n\\par\n')
+}
+
+function keepSubquestionsTogether(latex: string) {
+  return String(latex || '').replace(
+    /\\par\s*\n(?=（(?:\d+|[ivxIVX]+|[一二三四五六七八九十]+)）)/g,
+    '\\par\\nobreak\n',
+  )
 }
 
 function isMarkdownTableRow(line: string) {
@@ -4249,8 +4882,39 @@ function keepChoiceParenTogether(latex: string) {
     .replace(/\(\s*(?:\\par\s*)?\)/g, '\\mbox{(\\hspace{1.25em})}')
 }
 
-function renderExamZhPrompt(prompt: string, questionType: string) {
-  if (questionType !== '填空题') return keepChoiceParenTogether(markdownToExamLatex(prompt, true))
+function keepChoiceParenTogetherWithAnswer(latex: string, answer: string) {
+  const ansStr = answer.trim()
+  if (!ansStr) return keepChoiceParenTogether(latex)
+  const cnParen = /（\s*(?:\\par\s*)?）/g
+  const enParen = /\(\s*(?:\\par\s*)?\)/g
+
+  const cnMatches = Array.from(latex.matchAll(cnParen))
+  const enMatches = Array.from(latex.matchAll(enParen))
+
+  if (cnMatches.length > 0) {
+    const lastMatch = cnMatches[cnMatches.length - 1]
+    const idx = lastMatch.index!
+    return keepChoiceParenTogether(latex.slice(0, idx)) + `\\mbox{（\\textbf{${ansStr}}）}` + keepChoiceParenTogether(latex.slice(idx + lastMatch[0].length))
+  } else if (enMatches.length > 0) {
+    const lastMatch = enMatches[enMatches.length - 1]
+    const idx = lastMatch.index!
+    return keepChoiceParenTogether(latex.slice(0, idx)) + `\\mbox{(\\textbf{${ansStr}})}` + keepChoiceParenTogether(latex.slice(idx + lastMatch[0].length))
+  }
+
+  return keepChoiceParenTogether(latex)
+}
+
+function renderExamZhPrompt(prompt: string, questionType: string, variant: ExportVariant = 'student', answer = '') {
+  if (questionType !== '填空题') {
+    const latex = markdownToExamLatex(prompt, true)
+    if (variant === 'teacher' && (questionType === '单选题' || questionType === '多选题')) {
+      const letters = Array.from(selectedChoiceLetters(answer)).sort().join('')
+      if (letters) {
+        return keepChoiceParenTogetherWithAnswer(latex, letters)
+      }
+    }
+    return keepChoiceParenTogether(latex)
+  }
   const source = String(prompt || '')
   const hadBlank = hasVisibleFillinBlank(source)
   const normalized = source.replace(/_{2,}|＿{2,}/g, examZhFillinToken)
@@ -4375,9 +5039,16 @@ function examZhSectionForQuestionType(questionType: string, scorePlan: ReturnTyp
   return ''
 }
 
-function buildRunExamZhStudentLatex(run: NonNullable<ReturnType<typeof getRun>>, rows: QuestionRow[], title: string, scoreConfig = defaultExamZhScoreConfig, watermarkText = 'Qrane') {
+function buildRunExamZhLatex(
+  run: NonNullable<ReturnType<typeof getRun>>,
+  rows: QuestionRow[],
+  title: string,
+  variant: ExportVariant = 'student',
+  scoreConfig = defaultExamZhScoreConfig,
+  watermarkText = readAppSettings().examWatermark
+) {
   const scorePlan = buildExamZhScorePlan(rows, scoreConfig)
-  const watermark = markdownToExamLatex(String(watermarkText || 'Qrane').replace(/\s+/g, ' ').trim(), false)
+  const watermark = markdownToExamLatex(String(watermarkText || readAppSettings().examWatermark).replace(/\s+/g, ' ').trim(), false)
   const lines: string[] = [
     '\\documentclass{exam-zh}',
     '\\usepackage{amsmath,mathtools}',
@@ -4388,9 +5059,9 @@ function buildRunExamZhStudentLatex(run: NonNullable<ReturnType<typeof getRun>>,
     '',
     '\\examsetup{',
     '  page/size = a4paper,',
-    '  paren/show-answer = false,',
-    '  fillin/show-answer = false,',
-    '  solution/show-solution = hide,',
+    `  paren/show-answer = ${variant === 'teacher' ? 'true' : 'false'},`,
+    `  fillin/show-answer = ${variant === 'teacher' ? 'true' : 'false'},`,
+    `  solution/show-solution = ${variant === 'teacher' ? 'show' : 'hide'},`,
     '  choices/max-columns = 4,',
     '  choices/label-pos = auto,',
     '  choices/label-sep = 0.45em,',
@@ -4424,15 +5095,26 @@ function buildRunExamZhStudentLatex(run: NonNullable<ReturnType<typeof getRun>>,
     const { prompt, choices } = splitChoiceStemForExport(item.stemMarkdown)
     const questionScore = scorePlan.questionScores.get(item.id)
     lines.push('', '\\begin{question}')
-    lines.push(`${questionScore ? `\\textbf{（${scoreText(questionScore)}分）}\\quad ` : ''}${renderExamZhPrompt(prompt, questionType) || '（题干待补充）'}`)
+    lines.push(`${questionScore ? `\\textbf{（${scoreText(questionScore)}分）}\\quad ` : ''}${renderExamZhPrompt(prompt, questionType, variant, item.answerText) || '（题干待补充）'}`)
     if (choices.length) {
       lines.push('\\begin{choices}')
       for (const choice of choices) lines.push(`  \\item ${markdownToExamLatex(choice, true)}`)
       lines.push('\\end{choices}')
     }
     lines.push(...examZhFigureLines(questionFigures({ item })))
-    if (questionType === '解答题' && paperNo >= 15) {
+    if (questionType === '解答题' && paperNo >= 15 && variant !== 'teacher') {
       lines.push(examZhAnswerBlank(paperNo))
+    }
+    if (variant === 'teacher') {
+      lines.push('\\begin{solution}')
+      lines.push(`\\textbf{【答案】} ${markdownToExamLatex(item.answerText, true) || '暂无'}`)
+      lines.push('')
+      lines.push(`\\textbf{【解析】} ${markdownToExamLatex(item.analysisMarkdown, true) || '暂无'}`)
+      const anaFigs = analysisFigures({ item })
+      if (anaFigs.length) {
+        lines.push(...examZhFigureLines(anaFigs))
+      }
+      lines.push('\\end{solution}')
     }
     lines.push('\\end{question}')
   }
@@ -4447,7 +5129,17 @@ function xelatexPath() {
   ])
 }
 
-function exportRunExamZhStudent(runId: string, options: { title?: string; format?: 'latex' | 'pdf'; scoreConfig?: ExamZhScoreConfig; watermarkText?: string }) {
+function exportRunExamZh(
+  runId: string,
+  options: {
+    title?: string
+    format?: 'latex' | 'pdf'
+    scoreConfig?: ExamZhScoreConfig
+    watermarkText?: string
+    variant?: ExportVariant
+  }
+) {
+  const variant = options.variant || 'student'
   const run = getRun(runId)
   if (!run) throw new Error('批次不存在。')
   const rows = (db.prepare(`
@@ -4462,9 +5154,20 @@ function exportRunExamZhStudent(runId: string, options: { title?: string; format
   if (!rows.length) throw new Error('当前批次暂无已入库题目，无法导出。')
   const outDir = path.join(storageRoot, 'output', 'pdf', 'batch-exports', safeName(runId))
   fs.mkdirSync(outDir, { recursive: true })
-  const baseName = `${safeName(options.title || run.paperTitle || run.pdfName || runId)}-examzh-student`
+  const baseName = `${safeName(options.title || run.paperTitle || run.pdfName || runId)}-examzh-${variant}`
   const texPath = path.join(outDir, `${baseName}.tex`)
-  fs.writeFileSync(texPath, buildRunExamZhStudentLatex(run, rows, options.title || run.paperTitle || run.pdfName, options.scoreConfig, options.watermarkText), 'utf8')
+  fs.writeFileSync(
+    texPath,
+    buildRunExamZhLatex(
+      run,
+      rows,
+      options.title || run.paperTitle || run.pdfName,
+      variant,
+      options.scoreConfig,
+      options.watermarkText || readAppSettings().examWatermark
+    ),
+    'utf8'
+  )
   if (options.format === 'pdf') {
     for (let i = 0; i < 2; i += 1) {
       execFileSync(xelatexPath(), ['-interaction=nonstopmode', '-halt-on-error', path.basename(texPath)], {
@@ -4644,7 +5347,7 @@ function createQuestion(input: Partial<PublicQuestion> = {}) {
     id,
     serial.next,
     input.questionNo || String(serial.next),
-    input.stage || '高三',
+    input.stage || configuredGradeStages()[0] || '高三',
     input.questionType || '未设题型',
     input.difficultyScore ?? 0,
     chapter,
@@ -4701,11 +5404,53 @@ app.get('/api/tools/pdf-slicer/ocr-settings', (_, res) => {
   res.json(readOcrSettings())
 })
 
+app.get('/api/settings', (_, res) => {
+  res.json(readOcrSettings())
+})
+
 app.get('/api/question-bank/tag-libraries', (_, res) => {
   res.json(readTagLibraries())
 })
 
+app.get('/api/learning-tags/libraries', (_, res) => {
+  res.json({ libraries: readLearningTagLibraries() })
+})
+
+app.post('/api/learning-tags/libraries', (req, res) => {
+  try {
+    const library = writeLearningTagLibrary(req.body)
+    res.json({ library })
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
+app.delete('/api/learning-tags/libraries/:id', (req, res) => {
+  const id = safeTagLibraryCode(decodeURIComponent(req.params.id))
+  const libraries = readLearningTagLibraries()
+  const library = libraries.find((item) => item.id === id || item.code === id)
+  if (!library) {
+    res.status(404).json({ error: '标签库不存在。' })
+    return
+  }
+  if (library.isDefault) {
+    res.status(400).json({ error: '默认标签库不可删除，请先将其他知识点标签库设为默认。' })
+    return
+  }
+  if (libraries.length <= 1) {
+    res.status(400).json({ error: '至少需要保留一个标签库。' })
+    return
+  }
+  const filePath = tagLibraryFilePath(library.code)
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+  res.json({ ok: true })
+})
+
 app.patch('/api/tools/pdf-slicer/ocr-settings', (req, res) => {
+  res.json(writeOcrSettings(req.body || {}))
+})
+
+app.patch('/api/settings', (req, res) => {
   res.json(writeOcrSettings(req.body || {}))
 })
 
@@ -4745,6 +5490,7 @@ app.post('/api/tools/pdf-slicer/uploads', upload.array('files'), (req, res) => {
   const now = nowIso()
   const requestedMaterialType = normalizeMaterialType(req.body?.materialType ?? req.body?.material_type ?? 'unknown')
   const requestedFileRole = normalizeFileRole(req.body?.fileRole ?? req.body?.file_role ?? 'unknown')
+  const requestedStage = String(req.body?.stage || configuredGradeStages()[0] || '高三').trim() || '高三'
   const requestedFileRoles = parseJson<FileRole[]>(String(req.body?.fileRolesJson || req.body?.file_roles_json || '[]'), [])
     .map((role) => normalizeFileRole(role))
   const runIds: string[] = []
@@ -4763,9 +5509,9 @@ app.post('/api/tools/pdf-slicer/uploads', upload.array('files'), (req, res) => {
   const insertRun = db.prepare(`
     INSERT INTO pdf_slicer_runs (
       run_id, batch_id, upload_mode, paper_title, pdf_name, pdf_path, source_file_name, source_file_kind, run_dir, document_diagnostics_json,
-      material_type, file_role, classification_confidence, classification_reasons_json,
+      material_type, file_role, stage, classification_confidence, classification_reasons_json,
       created_at, updated_at, slice_status, quick_review_status, total_questions, approved_questions, unreviewed_questions, ocr_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'pending', 0, 0, 0, 'idle')
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'pending', 0, 0, 0, 'idle')
   `)
   for (const [fileIndex, file] of files.entries()) {
     const originalName = normalizeUploadName(file.originalname)
@@ -4810,6 +5556,7 @@ app.post('/api/tools/pdf-slicer/uploads', upload.array('files'), (req, res) => {
       JSON.stringify(diagnostics),
       classification.materialType,
       classification.fileRole,
+      requestedStage,
       classification.confidence,
       JSON.stringify(classification.reasons),
       now,
@@ -5629,6 +6376,7 @@ app.post('/api/tools/pdf-slicer/runs/:runId/complete-ocr', (req, res) => {
   for (let index = existing; index < run.approvedQuestions; index += 1) {
     createQuestion({
       questionNo: String(index + 1),
+      stage: run.stage || configuredGradeStages()[0] || '高三',
       questionType: 'OCR题',
       difficultyScore: 3,
       chapter: '待整理',
@@ -5705,6 +6453,7 @@ app.delete('/api/tools/pdf-slicer/runs/:runId', (req, res) => {
 app.get('/api/question-bank/items', (req, res) => {
   const q = String(req.query.q || '').trim()
   const stage = String(req.query.stage || '').trim()
+  const questionType = String(req.query.questionType || '').trim()
   const knowledgePoint = String(req.query.knowledgePoint || '').trim()
   const solutionMethod = String(req.query.solutionMethod || '').trim()
   const difficulty = String(req.query.difficulty || '').trim()
@@ -5715,6 +6464,7 @@ app.get('/api/question-bank/items', (req, res) => {
   const whereSql = `
     WHERE (? = '' OR search_text LIKE ? OR source_title LIKE ? OR chapter LIKE ? OR knowledge_points_json LIKE ? OR solution_methods_json LIKE ?)
       AND (? = '' OR stage = ?)
+      AND (? = '' OR question_type = ?)
       AND (? = '' OR knowledge_points_json LIKE ?)
       AND (? = '' OR solution_methods_json LIKE ?)
       AND (? = '' OR difficulty_label = ?)
@@ -5728,6 +6478,8 @@ app.get('/api/question-bank/items', (req, res) => {
     `%${q}%`,
     stage,
     stage,
+    questionType,
+    questionType,
     knowledgePoint,
     `%${knowledgePoint}%`,
     solutionMethod,
@@ -6086,6 +6838,60 @@ app.post('/api/question-bank/items/:id/figures', (req, res) => {
   res.status(201).json(figure)
 })
 
+app.patch('/api/question-bank/items/:id/figures/:figureId', (req, res) => {
+  const id = decodeURIComponent(req.params.id)
+  const figureId = decodeURIComponent(req.params.figureId)
+  const item = getQuestion(id)
+  if (!item) {
+    res.status(404).json({ error: '题目不存在。' })
+    return
+  }
+  const figures = item.figures as Array<Record<string, any>>
+  const index = figures.findIndex((figure) => String(figure.id || '') === figureId)
+  if (index < 0) {
+    res.status(404).json({ error: '题图不存在。' })
+    return
+  }
+  const current = figures[index]
+  const bbox = req.body?.bbox || current.bbox || {}
+  const sourcePath = stripAssetPrefix(String(current.sourcePath || item.sliceImagePath || ''))
+  let outputRel = stripAssetPrefix(String(current.path || ''))
+  if (!outputRel) outputRel = path.join('data', 'question_figures', id, `${figureId}.png`)
+  if (sourcePath && Object.keys(bbox).length) {
+    const inputPath = resolveStoragePath(sourcePath)
+    const outputPath = resolveStoragePath(outputRel)
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+    const cropScript = [
+      'from PIL import Image',
+      'import json, sys',
+      'src, dst, raw = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])',
+      'x = int(round(float(raw.get("x", raw.get("x0", 0)))))',
+      'y = int(round(float(raw.get("y", raw.get("y0", 0)))))',
+      'w = int(round(float(raw.get("width", raw.get("w", raw.get("x1", 0) - raw.get("x0", 0))))))',
+      'h = int(round(float(raw.get("height", raw.get("h", raw.get("y1", 0) - raw.get("y0", 0))))))',
+      'im = Image.open(src)',
+      'x = max(0, min(x, im.width - 1)); y = max(0, min(y, im.height - 1))',
+      'w = max(1, min(w, im.width - x)); h = max(1, min(h, im.height - y))',
+      'im.crop((x, y, x + w, y + h)).save(dst)',
+    ].join('; ')
+    execFileSync(pythonCommand(), ['-c', cropScript, inputPath, outputPath, JSON.stringify(bbox)], { encoding: 'utf8' })
+  }
+  const usage = req.body?.usage ? String(req.body.usage) : String(current.usage || 'stem')
+  const nextFigure = {
+    ...current,
+    usage,
+    category: req.body?.category || current.category || 'question_figure',
+    optionLabel: usage === 'options' && req.body?.optionLabel ? String(req.body.optionLabel).toUpperCase() : '',
+    pageNumber: Number(req.body?.pageNumber || current.pageNumber || 1),
+    bbox,
+    sourcePath,
+    path: outputRel,
+  }
+  const nextFigures = figures.map((figure, figureIndex) => figureIndex === index ? nextFigure : figure)
+  db.prepare('UPDATE question_bank_items SET figures_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(nextFigures), nowIso(), id)
+  res.json(nextFigure)
+})
+
 app.post('/api/question-bank/items/:id/figures/upload', upload.single('file'), (req, res) => {
   const id = decodeURIComponent(String(req.params.id || ''))
   const item = getQuestion(id)
@@ -6164,6 +6970,44 @@ app.get('/api/question-bank/collections', (_, res) => {
   res.json({ items: rows.map((row) => mapCollectionSummary(row, Number(row.question_count || 0))) })
 })
 
+app.get('/api/question-bank/export-records', (req, res) => {
+  const sourceType = normalizeExportRecordSourceType(req.query.sourceType)
+  const collectionId = String(req.query.collectionId || '').trim()
+  const runId = String(req.query.runId || '').trim()
+  const query = String(req.query.q || req.query.query || '').trim()
+  const limit = Math.floor(normalizeNumber(req.query.limit, 100))
+  res.json({
+    items: listExportRecords({
+      sourceType,
+      collectionId,
+      runId,
+      query,
+      limit,
+    }),
+  })
+})
+
+app.delete('/api/question-bank/export-records/:id', (req, res) => {
+  const id = decodeURIComponent(req.params.id)
+  const existing = db.prepare('SELECT id FROM question_bank_export_records WHERE id = ?').get(id)
+  if (!existing) {
+    res.status(404).json({ error: '导出记录不存在。' })
+    return
+  }
+  db.prepare('DELETE FROM question_bank_export_records WHERE id = ?').run(id)
+  res.json({ deleted: true })
+})
+
+app.post('/api/question-bank/export-records/:id/restore-to-basket', (req, res) => {
+  const id = decodeURIComponent(req.params.id)
+  const targetCollectionId = String(req.body?.collectionId || 'basket').trim() || 'basket'
+  try {
+    res.json(restoreExportRecordToCollection(id, targetCollectionId))
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
 app.post('/api/question-bank/collections', (req, res) => {
   const now = nowIso()
   const title = String(req.body?.title || '未命名试卷').trim() || '未命名试卷'
@@ -6190,6 +7034,16 @@ app.post('/api/question-bank/collections', (req, res) => {
     now
   )
   res.status(201).json(getCollection(id))
+})
+
+app.get('/api/question-bank/collections/:id/export-records', (req, res) => {
+  const id = decodeURIComponent(req.params.id)
+  if (!collectionExists(id)) {
+    res.status(404).json({ error: '试题篮不存在。' })
+    return
+  }
+  const limit = Math.floor(normalizeNumber(req.query.limit, 100))
+  res.json({ items: listExportRecords({ sourceType: 'collection', collectionId: id, limit }) })
 })
 
 app.get('/api/question-bank/collections/:id', (req, res) => {
@@ -6234,8 +7088,17 @@ app.patch('/api/question-bank/collections/:id', (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `)
     for (const questionId of body.addQuestionIds.map(String)) {
-      if (!getQuestion(questionId)) continue
-      insert.run(createId('rel'), id, questionId, Date.now(), normalizeNumber(body.score), String(body.sectionName || ''), nowIso())
+      const q = getQuestion(questionId)
+      if (!q) continue
+      let finalScore = normalizeNumber(body.score)
+      if (!finalScore) {
+        if (q.questionType === '单选题') finalScore = 5
+        else if (q.questionType === '填空题') finalScore = 5
+        else if (q.questionType === '多选题') finalScore = 6
+        else if (q.questionType === '解答题') finalScore = 15
+        else finalScore = 5
+      }
+      insert.run(createId('rel'), id, questionId, Date.now(), finalScore, String(body.sectionName || ''), nowIso())
     }
     refreshCollectionScore(id)
   }
@@ -6267,9 +7130,18 @@ app.post('/api/question-bank/collections/:id/items', (req, res) => {
     res.status(404).json({ error: '试题篮不存在。' })
     return
   }
-  if (!getQuestion(questionId)) {
+  const q = getQuestion(questionId)
+  if (!q) {
     res.status(404).json({ error: '题目不存在。' })
     return
+  }
+  let finalScore = normalizeNumber(req.body?.score)
+  if (!finalScore) {
+    if (q.questionType === '单选题') finalScore = 5
+    else if (q.questionType === '填空题') finalScore = 5
+    else if (q.questionType === '多选题') finalScore = 6
+    else if (q.questionType === '解答题') finalScore = 15
+    else finalScore = 5
   }
   const now = nowIso()
   const relationId = createId('rel')
@@ -6282,7 +7154,7 @@ app.post('/api/question-bank/collections/:id/items', (req, res) => {
     id,
     questionId,
     Math.floor(normalizeNumber(req.body?.sortOrder, Date.now())),
-    normalizeNumber(req.body?.score),
+    finalScore,
     String(req.body?.sectionName || ''),
     now
   )
@@ -6327,6 +7199,17 @@ app.delete('/api/question-bank/collections/:id/items/:relationId', (req, res) =>
   res.json(getCollection(id))
 })
 
+app.delete('/api/question-bank/collections/:id/items', (req, res) => {
+  const id = decodeURIComponent(req.params.id)
+  if (!collectionExists(id)) {
+    res.status(404).json({ error: '试题篮不存在。' })
+    return
+  }
+  db.prepare('DELETE FROM question_bank_collection_items WHERE collection_id = ?').run(id)
+  refreshCollectionScore(id)
+  res.json(getCollection(id))
+})
+
 app.patch('/api/question-bank/collections/:id/reorder', (req, res) => {
   const id = decodeURIComponent(req.params.id)
   if (!collectionExists(id)) {
@@ -6356,11 +7239,25 @@ app.post('/api/question-bank/collections/:id/export', (req, res) => {
     try {
       const pdfPath = exportCollectionWorksheetPdf(collection, variant)
       const relativePath = assetPathFor(pdfPath)
+      const record = createExportRecord({
+        sourceType: 'collection',
+        collectionId: collection.id,
+        title: collection.title,
+        format: 'pdf',
+        variant,
+        filename: path.basename(pdfPath),
+        path: relativePath,
+        url: `/assets/${relativePath}`,
+        items: collectionExportItems(collection),
+        contentLength: exportRecordFileSize(relativePath),
+        questionCount: collection.questionCount,
+      })
       res.json({
         filename: path.basename(pdfPath),
         format: 'pdf',
         url: `/assets/${relativePath}`,
         path: relativePath,
+        exportRecord: mapExportRecord(record),
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -6371,31 +7268,70 @@ app.post('/api/question-bank/collections/:id/export', (req, res) => {
   const format = normalizeExportFormat(req.body?.format || collection.exportFormat)
   const content = format === 'latex' ? buildCollectionLatex(collection, variant) : buildCollectionMarkdown(collection, variant)
   const extension = format === 'latex' ? 'tex' : 'md'
+  const filename = `${safeName(collection.title || '试题篮')}-${variant}.${extension}`
+  const record = createExportRecord({
+    sourceType: 'collection',
+    collectionId: collection.id,
+    title: collection.title,
+    format,
+    variant,
+    filename,
+    items: collectionExportItems(collection),
+    contentLength: Buffer.byteLength(content, 'utf8'),
+    questionCount: collection.questionCount,
+  })
   res.json({
-    filename: `${safeName(collection.title || '试题篮')}-${variant}.${extension}`,
+    filename,
     format,
     content,
+    exportRecord: mapExportRecord(record),
   })
+})
+
+app.get('/api/tools/pdf-slicer/runs/:runId/export-records', (req, res) => {
+  const runId = req.params.runId
+  if (!getRun(runId)) {
+    res.status(404).json({ error: '批次不存在。' })
+    return
+  }
+  const limit = Math.floor(normalizeNumber(req.query.limit, 100))
+  res.json({ items: listExportRecords({ sourceType: 'run', runId, limit }) })
 })
 
 app.post('/api/tools/pdf-slicer/runs/:runId/export-batch', (req, res) => {
   const runId = req.params.runId
   const format = req.body?.format === 'pdf' ? 'pdf' : 'latex'
   const title = String(req.body?.title || '').trim()
+  const template = req.body?.template === 'worksheet' ? 'worksheet' : 'exam'
+  const variant = normalizeExportVariant(req.body?.variant)
   const watermarkText = String(req.body?.watermarkText || '').trim()
   const scoreConfig = normalizeExamZhScoreConfig(req.body?.scoreConfig)
   try {
     const run = getRun(runId)
     if (!run) throw new Error('批次不存在。')
-    const result = run.materialType === 'lecture'
-      ? exportRunWorksheetPdf(runId, { title })
-      : exportRunExamPdf(runId, { title })
+    const result = run.materialType === 'lecture' || template === 'worksheet'
+      ? exportRunWorksheetPdf(runId, { title, variant })
+      : exportRunExamPdf(runId, { title, variant })
     const rel = assetPathFor(result.path)
+    const record = createExportRecord({
+      sourceType: 'run',
+      runId,
+      title: title || run.paperTitle || run.pdfName,
+      format: result.format,
+      variant: `${template}-${variant}`,
+      filename: path.basename(result.path),
+      path: rel,
+      url: `/assets/${rel}`,
+      items: runExportItems(runId),
+      contentLength: exportRecordFileSize(rel),
+      questionCount: Number(run.approvedQuestions || run.totalQuestions || 0),
+    })
     res.json({
       filename: path.basename(result.path),
       format: result.format,
       url: `/assets/${rel}`,
       path: rel,
+      exportRecord: mapExportRecord(record),
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

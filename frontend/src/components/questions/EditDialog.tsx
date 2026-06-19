@@ -6,10 +6,11 @@ import { normalizeRichBlocks, richBlocksPlainText } from '@/components/RichConte
 import { Modal } from '@/components/dialogs/Modal'
 import { Badge, Button } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
-import type { QuestionItem, TagLibraries } from '@/types'
+import type { OcrSettings, QuestionItem, TagLibraries } from '@/types'
 import { FigureGallery, QuestionContent, QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import { assetUrl, difficultyLabel10, difficultyLabelFromScore10, figuresByUsage, splitTags } from '@/utils/questionDisplay'
 import { draftAnalysisText, draftAnswerText, draftProblemText, paragraphBlocksFromText } from '@/utils/jsonCleanup'
+import { gradeOptionsForTeachingStages } from '@/utils/stages'
 
 export function analysisCopyGroupCount(count: number) {
   if (count <= 0) return 0
@@ -36,6 +37,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
 	      problem_text: draftProblemText(draft),
 	      answer: draftAnswerText(draft),
 	      analysis: draftAnalysisText(draft),
+	      stage: draft.stage || '',
 	      question_type: draft.questionType || '',
 	      knowledge_points: draft.knowledgePoints || [],
 	      solution_methods: draft.solutionMethods || [],
@@ -56,6 +58,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
 	        problem_text: draftProblemText(draft),
 	        answer: draftAnswerText(draft),
 	        analysis: draftAnalysisText(draft),
+	        stage: draft.stage || '',
 	        question_type: draft.questionType || '',
 	        knowledge_points: draft.knowledgePoints || [],
 	        solution_methods: draft.solutionMethods || [],
@@ -66,6 +69,11 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
   }, [draft, mode])
 
   const tagLibraries = useAsync<TagLibraries>(() => api('/api/question-bank/tag-libraries'), [])
+  const ocrSettings = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
+  const configuredStageOptions = gradeOptionsForTeachingStages(ocrSettings.data?.teachingStages)
+  const metadataStageOptions = draft.stage && !configuredStageOptions.includes(draft.stage)
+    ? [...configuredStageOptions, draft.stage]
+    : configuredStageOptions
   const imageUrl = draft.sliceImagePath ? assetUrl(String(draft.sliceImagePath)) : ''
   const segmentImages = draft.ocrSegmentImages ?? []
   const groupedSegmentImages = useMemo(() => {
@@ -99,6 +107,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
 	      problem_text: draftProblemText(source),
 	      answer: draftAnswerText(source),
 	      analysis: draftAnalysisText(source),
+	      stage: source.stage || '',
 	      question_type: source.questionType || '',
 	      knowledge_points: source.knowledgePoints || [],
 	      solution_methods: source.solutionMethods || [],
@@ -348,6 +357,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
     const analysis = source.analysis_blocks ?? source.analysisBlocks ?? source.analysis
     const knowledgePoints = textArray(source.knowledge_points ?? source.knowledgePoints)
     const solutionMethods = textArray(source.solution_methods ?? source.solutionMethods)
+    const stage = source.stage
     const questionType = source.question_type ?? source.questionType
     const score = source.difficulty_score_10 ?? source.difficultyScore10
     if (Array.isArray(stem)) {
@@ -373,6 +383,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
     }
     if (knowledgePoints) next.knowledgePoints = knowledgePoints
     if (solutionMethods) next.solutionMethods = solutionMethods
+    if (typeof stage === 'string') next.stage = stage
     if (typeof questionType === 'string') next.questionType = questionType
     if (score !== undefined && score !== null && String(score).trim()) {
       next.difficultyScore10 = Number(score)
@@ -561,6 +572,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
 	    problem_text: draftProblemText(draft),
 	    answer: draftAnswerText(draft),
 	    analysis: draftAnalysisText(draft),
+	    stage: draft.stage || '',
 	    knowledge_points: draft.knowledgePoints || [],
 	    solution_methods: draft.solutionMethods || [],
 	    difficulty_score_10: draft.difficultyScore10 || '',
@@ -678,6 +690,14 @@ Markdown/LaTeX 要求：
                       <LabeledInput label="章节/知识点概览" help="旧字段；可作为主知识点简写。" value={draft.chapter ?? ''} onChange={(value) => updateDraft({ chapter: value })} />
                     </div>
                     <LabeledSelect
+                      label="学段"
+                      help="用于题目展示、筛选和后续导入记录。"
+                      value={draft.stage ?? ''}
+                      options={metadataStageOptions}
+                      placeholder="未设学段"
+                      onChange={(value) => updateDraft({ stage: value })}
+                    />
+                    <LabeledSelect
                       label="题型"
                       help="影响题目展示、筛选和试卷导出时的版式判断。"
                       value={draft.questionType ?? ''}
@@ -729,7 +749,8 @@ Markdown/LaTeX 要求：
                     <p className="font-semibold text-zinc-900 dark:text-zinc-100">可识别字段</p>
 	                    <p>problem_text / stemMarkdown</p>
 	                    <p>answer / answerText</p>
-	                    <p>analysis / analysisMarkdown</p>
+                    <p>analysis / analysisMarkdown</p>
+                    <p>stage</p>
                     <p>knowledge_points / knowledgePoints</p>
                     <p>solution_methods / solutionMethods</p>
                     <p>difficulty_score_10 / difficultyScore10</p>

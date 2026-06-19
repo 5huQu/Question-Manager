@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Crop, LoaderCircle, PencilLine, Plus, RefreshCcw, ScanSearch, Trash2 } from 'lucide-react'
 import { api, jsonHeaders } from '@/api/client'
 import { FigureCropDialog } from '@/components/questions/FigureDialogs'
@@ -11,7 +10,6 @@ import type { OcrSettings, QuestionBankResponse, QuestionFigure, QuestionItem, T
 import { cleanupCodeLabel, cleanupFieldLabel, cleanupSnippet } from '@/utils/ocrCleanup'
 import { addQuestionToActiveBasket } from '@/utils/questionBasket'
 import { difficultyLabel10, displaySource } from '@/utils/questionDisplay'
-import { paragraphBlocksFromText } from '@/utils/jsonCleanup'
 import { richBlocksPlainText } from '@/components/RichContent'
 
 export function WorkbenchQuestionCard({ item, onAddToBasket, onDelete, onReload, onQuestionSaved, formatIssueOnly = false }: { item: QuestionItem; onAddToBasket: (id: string) => void; onDelete: (id: string) => void; onReload: () => void; onQuestionSaved?: (item: QuestionItem) => void; formatIssueOnly?: boolean }) {
@@ -31,6 +29,13 @@ export function WorkbenchQuestionCard({ item, onAddToBasket, onDelete, onReload,
   }
   async function deleteFigure(figureId: string) {
     await api(`/api/question-bank/items/${encodeURIComponent(item.id)}/figures/${encodeURIComponent(figureId)}`, { method: 'DELETE' })
+  }
+  async function updateFigure(figureId: string, payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
+    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(item.id)}/figures/${encodeURIComponent(figureId)}`, {
+      method: 'PATCH',
+      headers: jsonHeaders,
+      body: JSON.stringify({ usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox }),
+    })
   }
   function closeCropDialog(changed?: boolean) {
     setCropOpen(false)
@@ -89,7 +94,7 @@ export function WorkbenchQuestionCard({ item, onAddToBasket, onDelete, onReload,
         className="border-t pt-4 mt-2"
       />
       {editing ? <EditDialog draft={draft} setDraft={setDraft} onClose={() => setEditing(false)} onSave={saveEditedQuestion} /> : null}
-      {cropOpen ? <FigureCropDialog question={item} onClose={closeCropDialog} onDelete={deleteFigure} onSave={addFigure} /> : null}
+      {cropOpen ? <FigureCropDialog question={item} onClose={closeCropDialog} onDelete={deleteFigure} onSave={addFigure} onUpdate={updateFigure} /> : null}
     </article>
   )
 }
@@ -103,6 +108,8 @@ export function BankTab({
   setQuery,
   stage,
   setStage,
+  questionType,
+  setQuestionType,
   difficulty,
   setDifficulty,
   knowledgePoint,
@@ -126,6 +133,8 @@ export function BankTab({
   setQuery: (value: string) => void
   stage: string
   setStage: (value: string) => void
+  questionType: string
+  setQuestionType: (value: string) => void
   difficulty: string
   setDifficulty: (value: string) => void
   knowledgePoint: string
@@ -140,7 +149,6 @@ export function BankTab({
 }) {
   const tagLibraries = useAsync<TagLibraries>(() => api('/api/question-bank/tag-libraries'), [])
   const ocrSettings = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
-  const navigate = useNavigate()
   const [bulkRerunBusy, setBulkRerunBusy] = useState(false)
   const [bulkRerunNotice, setBulkRerunNotice] = useState('')
 
@@ -149,7 +157,7 @@ export function BankTab({
   const totalItems = questionBank?.totalItems ?? 0
   const totalPages = questionBank?.totalPages ?? 1
   const currentPage = questionBank?.page ?? page
-  const hasActiveFilters = Boolean(query.trim() || stage || difficulty || knowledgePoint || solutionMethod)
+  const hasActiveFilters = Boolean(query.trim() || stage || questionType || difficulty || knowledgePoint || solutionMethod)
 
   function updateFilter(setter: (value: string) => void, value: string) {
     setter(value)
@@ -178,6 +186,7 @@ export function BankTab({
           filters: {
             q: query.trim(),
             stage,
+            questionType,
             difficulty,
             knowledgePoint,
             solutionMethod,
@@ -211,20 +220,6 @@ export function BankTab({
     reload()
   }
 
-  async function createSample() {
-    const item = await api<QuestionItem>('/api/question-bank/items', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({
-      questionNo: '1',
-      questionType: '解答题',
-      difficultyScore: 3,
-      chapter: '导数与函数性质',
-      sourceTitle: '手动创建样例',
-      problemBlocks: paragraphBlocksFromText('已知函数 f(x)=ln x-ax，讨论函数零点与参数 a 的取值关系。'),
-      answerBlocks: paragraphBlocksFromText('分情况讨论 a 与 1/e 的大小关系。'),
-      analysisBlocks: paragraphBlocksFromText('通过导数判断单调性，再结合极值判断零点个数。'),
-    }) })
-    navigate(`/questions/${encodeURIComponent(item.id)}`)
-  }
-
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-9rem)] min-h-[580px] overflow-hidden">
       {/* Header & Filter Row */}
@@ -237,15 +232,16 @@ export function BankTab({
                 {bulkRerunBusy ? '批量启动中...' : '批量重新 OCR'}
               </Button>
             ) : null}
-            <Button size="sm" variant={formatIssueOnly ? 'default' : 'outline'} icon={RefreshCcw} onClick={() => { setFormatIssueOnly(!formatIssueOnly); setPage(1); }}>格式问题处理</Button>
-            <Button size="sm" variant="outline" onClick={() => { setQuery(''); setStage(''); setDifficulty(''); setKnowledgePoint(''); setSolutionMethod(''); setFormatIssueOnly(false); setPage(1); }}>重置筛选</Button>
-            <Button size="sm" icon={Plus} onClick={createSample}>新建样例题</Button>
+            <Button size="sm" variant={formatIssueOnly ? 'default' : 'outline'} icon={RefreshCcw} onClick={() => { setFormatIssueOnly(!formatIssueOnly); setPage(1); }}>只看格式问题</Button>
+            <Button size="sm" variant="outline" onClick={() => { setQuery(''); setStage(''); setQuestionType(''); setDifficulty(''); setKnowledgePoint(''); setSolutionMethod(''); setFormatIssueOnly(false); setPage(1); }}>重置筛选</Button>
+            <Button size="sm" asLink icon={Plus} to="/questions/new">新增题目</Button>
           </div>
         </div>
         {bulkRerunNotice ? <p className="text-xs text-zinc-500">{bulkRerunNotice}</p> : null}
-        <div className="grid gap-2 grid-cols-1 sm:grid-cols-5">
+        <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-6">
           <input className="h-9 rounded-md border px-3 text-xs bg-zinc-50 focus:bg-white" placeholder="搜索题干/来源/标签..." value={query} onChange={(e) => updateFilter(setQuery, e.target.value)} />
           <SelectFilter label="全部学段" value={stage} options={tagLibraries.data?.stages ?? ['高一', '高二', '高三', '高中']} onChange={(value) => updateFilter(setStage, value)} />
+          <SelectFilter label="全部题型" value={questionType} options={tagLibraries.data?.questionTypes ?? ['单选题', '多选题', '填空题', '解答题']} onChange={(value) => updateFilter(setQuestionType, value)} />
           <SelectFilter label="全部难度" value={difficulty} options={tagLibraries.data?.difficultyLabels ?? ['基础', '中等', '较难', '压轴']} onChange={(value) => updateFilter(setDifficulty, value)} />
           <SelectFilter label="全部知识点" value={knowledgePoint} options={tagLibraries.data?.knowledgePoints ?? []} onChange={(value) => updateFilter(setKnowledgePoint, value)} />
           <SelectFilter label="全部解题方法" value={solutionMethod} options={tagLibraries.data?.solutionMethods ?? []} onChange={(value) => updateFilter(setSolutionMethod, value)} />

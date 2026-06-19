@@ -10,6 +10,7 @@ export function QuestionBankPage() {
   const initialFormatIssueOnly = () => new URLSearchParams(location.search).get('formatIssue') === '1'
   const [query, setQuery] = useState('')
   const [stage, setStage] = useState('')
+  const [questionType, setQuestionType] = useState('')
   const [difficulty, setDifficulty] = useState('')
   const [knowledgePoint, setKnowledgePoint] = useState('')
   const [solutionMethod, setSolutionMethod] = useState('')
@@ -25,12 +26,13 @@ export function QuestionBankPage() {
     params.set('pageSize', String(pageSize))
     if (query.trim()) params.set('q', query.trim())
     if (stage) params.set('stage', stage)
+    if (questionType) params.set('questionType', questionType)
     if (difficulty) params.set('difficulty', difficulty)
     if (knowledgePoint) params.set('knowledgePoint', knowledgePoint)
     if (solutionMethod) params.set('solutionMethod', solutionMethod)
     if (formatIssueOnly) params.set('formatIssue', '1')
     return `/api/question-bank/items?${params.toString()}`
-  }, [difficulty, knowledgePoint, page, query, solutionMethod, stage, formatIssueOnly])
+  }, [difficulty, knowledgePoint, page, query, questionType, solutionMethod, stage, formatIssueOnly])
   const questionBank = useAsync<QuestionBankResponse>(() => api(questionBankUrl), [questionBankUrl])
   function replaceQuestionInBank(item: QuestionItem) {
     questionBank.setData((current) => current ? {
@@ -55,6 +57,8 @@ export function QuestionBankPage() {
         setQuery={setQuery}
         stage={stage}
         setStage={setStage}
+        questionType={questionType}
+        setQuestionType={setQuestionType}
         difficulty={difficulty}
         setDifficulty={setDifficulty}
         knowledgePoint={knowledgePoint}

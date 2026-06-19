@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { BadgeCheck, Check, Combine, FileJson, Pencil, RefreshCcw, Scissors, Trash2, X } from 'lucide-react'
 import { api, jsonHeaders } from '@/api/client'
 import { ImagePreviewDialog, Modal } from '@/components/dialogs/Modal'
-import { Badge, Button, Empty, Info, Panel } from '@/components/ui'
+import { Badge, Button, Empty, Panel } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { ApiRun, SliceReviewItem } from '@/types'
 import { isFormulaSuspectFigure, label } from '@/utils/questionDisplay'
@@ -55,6 +55,16 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
     if (readonly) return
     setReviewNotice('已提交复核，正在启动 OCR...')
     await api('/api/tools/pdf-slicer/runs/quick-review', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ runId: run.runId, approvedResultIds: Array.from(selected) }) })
+    onSubmitted()
+  }
+  async function submitReviewOnly() {
+    if (readonly) return
+    setReviewNotice('已提交复核。')
+    await api('/api/tools/pdf-slicer/runs/quick-review', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ runId: run.runId, approvedResultIds: Array.from(selected), autoStartOcr: false }),
+    })
     onSubmitted()
   }
   async function submitForJsonImport() {
@@ -237,11 +247,22 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
   return (
     <Modal
       title={readonly ? '题块查看' : '切题复核'}
-      desc={readonly ? `来源：${run.paperTitle || run.pdfName}。` : `来源：${run.paperTitle || run.pdfName}。提交复核后会自动开始 OCR。`}
+      desc={readonly ? `来源：${run.paperTitle || run.pdfName}。` : `来源：${run.paperTitle || run.pdfName}。可仅提交复核，也可继续手动导入或开始 OCR。`}
       actions={readonly ? null : (
-        <Button size="sm" variant={splitMode ? 'default' : 'outline'} icon={Scissors} disabled={!active || splitSaving} onClick={() => setSplitMode((value) => !value)}>
-          细分题块
-        </Button>
+        <>
+          <Button
+            size="sm"
+            variant="outline"
+            icon={Trash2}
+            disabled={batchFigureSaving || !suspectFormulaTotal}
+            onClick={deleteAllSuspectFormulaFigures}
+          >
+            {batchFigureSaving ? '删除中...' : `删除疑似公式图（${suspectFormulaTotal}）`}
+          </Button>
+          <Button size="sm" variant={splitMode ? 'default' : 'outline'} icon={Scissors} disabled={!active || splitSaving} onClick={() => setSplitMode((value) => !value)}>
+            细分题块
+          </Button>
+        </>
       )}
       onClose={onClose}
       wide
@@ -310,14 +331,38 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
           </div>
         </section>
         <aside className="min-h-0 space-y-3 overflow-auto pr-1">
-          <Panel title="复核信息">
-            <Info label="总切片" value={String(totalItems)} />
-            <Info label={readonly ? '通过数' : '已选择'} value={readonly ? String(run.approvedQuestions ?? 0) : String(selected.size)} />
-            <Info label="页码" value={active ? `P${active.pageStart}-${active.pageEnd}` : '-'} />
-            <Info label="状态" value={active ? label(active.reviewStatus) : '-'} />
-            <Info label="边界" value={active?.bbox ? `x:${Math.round(active.bbox.x ?? 0)} y:${Math.round(active.bbox.y ?? 0)}` : '-'} />
-            <Info label="图框" value={active?.figures?.length ? `${active.figures.length} 个` : '-'} />
-          </Panel>
+          <section className="space-y-3">
+            <h3 className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">复核信息</h3>
+            <div className="space-y-3">
+              <div className="rounded-xl border bg-zinc-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/60">
+                <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">当前题块</p>
+                <div className="mt-1.5 flex items-center justify-between gap-3">
+                  <p className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-100">{active ? `第 ${active.questionLabel || '?'} 题` : '未选择'}</p>
+                  <Badge>{active ? label(active.reviewStatus) : '-'}</Badge>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-lg border bg-white px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
+                    <p className="text-zinc-400 dark:text-zinc-500">页码</p>
+                    <p className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">{active ? `P${active.pageStart}-${active.pageEnd}` : '-'}</p>
+                  </div>
+                  <div className="rounded-lg border bg-white px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
+                    <p className="text-zinc-400 dark:text-zinc-500">图框</p>
+                    <p className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">{active?.figures?.length ? `${active.figures.length} 个` : '无'}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl border bg-white px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/60">
+                  <p className="text-[11px] text-zinc-500">总切片</p>
+                  <p className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{totalItems}</p>
+                </div>
+                <div className="rounded-xl border bg-white px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/60">
+                  <p className="text-[11px] text-zinc-500">{readonly ? '通过数' : '已选择'}</p>
+                  <p className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{readonly ? (run.approvedQuestions ?? 0) : selected.size}</p>
+                </div>
+              </div>
+            </div>
+          </section>
           {readonly ? null : <Panel title="操作">
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
@@ -328,12 +373,10 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
                 {mergeSaving ? '合并中...' : `按顺序合并已选择题块（${selected.size}）`}
               </Button>
               <Button className="w-full justify-start" variant="danger" icon={Trash2} disabled={!selected.size} onClick={deleteSelected}>删除已选择题块（{selected.size}）</Button>
-              <Button className="w-full justify-start" variant="outline" icon={Trash2} disabled={batchFigureSaving || !suspectFormulaTotal} onClick={deleteAllSuspectFormulaFigures}>
-                {batchFigureSaving ? '删除疑似公式中...' : `删除疑似公式图（${suspectFormulaTotal}）`}
-              </Button>
               <div className="space-y-2.5 border-t pt-4">
-              <Button className="w-full justify-start" variant="outline" icon={FileJson} disabled={!selected.size} onClick={submitForJsonImport}>提交复核并手动导入（{selected.size}/{totalItems}）</Button>
-              <Button className="w-full justify-start" icon={BadgeCheck} disabled={!selected.size} onClick={submit}>提交复核并开始 OCR（{selected.size}/{totalItems}）</Button>
+                <Button className="w-full justify-start" variant="outline" icon={Check} disabled={!selected.size} onClick={submitReviewOnly}>仅提交复核（{selected.size}/{totalItems}）</Button>
+                <Button className="w-full justify-start" variant="outline" icon={FileJson} disabled={!selected.size} onClick={submitForJsonImport}>提交复核并手动导入（{selected.size}/{totalItems}）</Button>
+                <Button className="w-full justify-start" icon={BadgeCheck} disabled={!selected.size} onClick={submit}>提交复核并开始 OCR（{selected.size}/{totalItems}）</Button>
               </div>
               {reviewNotice ? <p className="rounded-lg border bg-zinc-50 px-2.5 py-2 text-xs text-zinc-500">{reviewNotice}</p> : null}
             </div>

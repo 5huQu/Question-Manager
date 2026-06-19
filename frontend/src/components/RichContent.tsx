@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react'
 import katex from 'katex'
 import type { QuestionFigure, RichBlock, RichInline } from '../types'
+import { choiceLayoutForTexts } from '../utils/choiceLayout'
 
 export function normalizeRichBlocks(value: unknown): RichBlock[] {
   if (!Array.isArray(value)) return []
@@ -96,7 +97,7 @@ export const RichContent = memo(function RichContent({
   className?: string
   prefix?: string
 }) {
-  const visibleFigures = figures.filter((figure) => figure.path)
+  const visibleFigures = figures.filter((figure) => figure.path && String(figure.usage || 'stem') === 'stem')
   return (
     <div className={`rich-content min-w-0 max-w-none text-zinc-950 dark:text-zinc-50 ${className}`}>
       {prefix ? <p className="mb-2 text-xs font-semibold text-zinc-500">{prefix}</p> : null}
@@ -109,12 +110,17 @@ export const RichContent = memo(function RichContent({
             return <div key={index} className="my-3"><MathSpan tex={block.tex} display /></div>
           }
           if (block.type === 'choices') {
+            const optionFigures = figures.filter((figure) => String(figure.usage || '') === 'options')
+            const layout = choiceLayoutForTexts(
+              block.options.map((option) => richBlocksPlainText(option.blocks)),
+              optionFigures.some((figure) => Boolean(figure.path)),
+            )
             return (
-              <div key={index} className="choice-options choice-options-single" data-layout="single">
+              <div key={index} className={`choice-options choice-options-${layout}`} data-layout={layout}>
                 {block.options.map((option) => (
                   <div className="choice-option" key={option.label}>
                     <span className="choice-label">{option.label}</span>
-                    <RichContent blocks={option.blocks} figures={figures.filter((figure) => String(figure.optionLabel || '').toUpperCase() === option.label)} className="choice-rich" />
+                    <RichContent blocks={option.blocks} figures={optionFigures.filter((figure) => String(figure.optionLabel || '').toUpperCase() === option.label)} className="choice-rich" />
                   </div>
                 ))}
               </div>

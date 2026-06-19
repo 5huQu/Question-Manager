@@ -35,6 +35,7 @@ export function ReviewFigureEditor({
   const [viewportWidth, setViewportWidth] = useState(0)
   const [splitRatio, setSplitRatio] = useState(0.5)
   const [splitDragging, setSplitDragging] = useState(false)
+  const previousSplitMode = useRef(splitMode)
 
   useEffect(() => {
     const nextFigures = item.figures ?? []
@@ -69,6 +70,22 @@ export function ReviewFigureEditor({
     return () => observer.disconnect()
   }, [item.resultId])
 
+  useEffect(() => {
+    if (!splitMode || previousSplitMode.current === splitMode) {
+      previousSplitMode.current = splitMode
+      return
+    }
+    previousSplitMode.current = splitMode
+    window.requestAnimationFrame(() => {
+      const viewportBounds = viewportRef.current?.getBoundingClientRect()
+      const imageBounds = imageRef.current?.getBoundingClientRect()
+      if (!viewportBounds || !imageBounds || imageBounds.height <= 0) return
+      const visibleMiddleY = viewportBounds.top + viewportBounds.height / 2
+      const middleInImage = visibleMiddleY - imageBounds.top
+      setSplitRatio(clampNumber(middleInImage / imageBounds.height, 0.01, 0.99))
+    })
+  }, [splitMode])
+
   function imageSize() {
     const bounds = imageRef.current?.getBoundingClientRect()
     return bounds ? { width: bounds.width, height: bounds.height } : { width: 0, height: 0 }
@@ -95,7 +112,7 @@ export function ReviewFigureEditor({
     if (splitMode && splitDragging) {
       event.preventDefault()
       const size = imageSize()
-      if (size.height > 0) setSplitRatio(clampNumber(point(event).y / size.height, 0.08, 0.92))
+      if (size.height > 0) setSplitRatio(clampNumber(point(event).y / size.height, 0.01, 0.99))
       return
     }
     if (!interaction) return
@@ -134,7 +151,7 @@ export function ReviewFigureEditor({
     event.currentTarget.setPointerCapture(event.pointerId)
     setSplitDragging(true)
     const size = imageSize()
-    if (size.height > 0) setSplitRatio(clampNumber(point(event).y / size.height, 0.08, 0.92))
+    if (size.height > 0) setSplitRatio(clampNumber(point(event).y / size.height, 0.01, 0.99))
   }
   function selectFigure(index: number, event?: PointerEvent<HTMLElement>, beginMove = false) {
     event?.preventDefault()
@@ -291,7 +308,10 @@ export function ReviewFigureEditor({
               style={{ top: `${splitRatio * 100}%` }}
               type="button"
             >
-              <span className="absolute left-0 top-1/2 block w-full -translate-y-1/2 border-t-2 border-dashed border-red-600 shadow-[0_0_0_1px_rgba(255,255,255,0.9)]" />
+              <span
+                className="absolute left-0 top-1/2 block h-1 w-full -translate-y-1/2 shadow-[0_0_0_1px_rgba(255,255,255,0.9)]"
+                style={{ backgroundImage: 'repeating-linear-gradient(to right, #dc2626 0 16px, transparent 16px 26px)' }}
+              />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white shadow">细分线</span>
             </button>
           ) : null}

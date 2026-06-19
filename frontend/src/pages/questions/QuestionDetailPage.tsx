@@ -37,6 +37,9 @@ export function QuestionDetailPage() {
   async function addFigure(payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
     return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(decodedId)}/figures`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox }) })
   }
+  async function updateFigure(figureId: string, payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
+    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(decodedId)}/figures/${encodeURIComponent(figureId)}`, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify({ usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox }) })
+  }
   async function deleteFigure(figureId: string) {
     await api(`/api/question-bank/items/${encodeURIComponent(decodedId)}/figures/${encodeURIComponent(figureId)}`, { method: 'DELETE' })
   }
@@ -320,7 +323,7 @@ export function QuestionDetailPage() {
         </Panel>
       </div>
       {editing ? <EditDialog draft={draft} setDraft={setDraft} onClose={() => setEditing(false)} onSave={save} /> : null}
-      {cropOpen ? <FigureCropDialog question={data} onClose={(changed) => { setCropOpen(false); if (changed) reload() }} onDelete={deleteFigure} onSave={addFigure} /> : null}
+      {cropOpen ? <FigureCropDialog question={data} onClose={(changed) => { setCropOpen(false); if (changed) reload() }} onDelete={deleteFigure} onSave={addFigure} onUpdate={updateFigure} /> : null}
     </section>
   )
 }

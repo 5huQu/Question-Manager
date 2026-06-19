@@ -16,7 +16,7 @@ export function OcrQueuePage() {
   }, [reload])
   return (
     <section className="space-y-4">
-      <PageTitle title="OCR 队列" desc="跟踪识别任务、断点续跑、格式清洗和失败处理。" path="/tools/pdf-slicer/ocr-jobs" />
+      <PageTitle title="OCR 队列" desc="跟踪识别任务、断点续跑和失败处理。" path="/tools/pdf-slicer/ocr-jobs" />
       <SummaryGrid items={[['OCR任务总数', data?.summary.totalJobs], ['排队中', data?.summary.queuedCount], ['运行中', data?.summary.runningCount], ['已完成', data?.summary.succeededCount], ['失败', data?.summary.failedCount]]} />
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel title="当前 OCR" actions={<Button size="sm" variant="outline" onClick={reload} icon={RefreshCcw}>刷新</Button>}>

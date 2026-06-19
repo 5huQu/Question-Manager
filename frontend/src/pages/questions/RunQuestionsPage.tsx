@@ -4,9 +4,9 @@ import { BadgeCheck, LoaderCircle, RefreshCcw, Tags } from 'lucide-react'
 import { api, jsonHeaders } from '@/api/client'
 import { RunExportDialog } from '@/components/pdf-slicer/RunExportDialog'
 import { WorkbenchQuestionCard } from '@/components/questions/WorkbenchQuestionCard'
-import { Button, Empty } from '@/components/ui'
+import { Button, Empty, SelectFilter } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
-import type { ApiRun, QuestionItem } from '@/types'
+import type { ApiRun, QuestionItem, TagLibraries } from '@/types'
 import { addQuestionToActiveBasket } from '@/utils/questionBasket'
 
 export function RunQuestionsPage() {
@@ -16,11 +16,18 @@ export function RunQuestionsPage() {
   const [localItems, setLocalItems] = useState<QuestionItem[]>([])
   const [exportOpen, setExportOpen] = useState(false)
   const [classifying, setClassifying] = useState(false)
+  const [query, setQuery] = useState('')
+  const [stage, setStage] = useState('')
+  const [questionType, setQuestionType] = useState('')
+  const [difficulty, setDifficulty] = useState('')
+  const [knowledgePoint, setKnowledgePoint] = useState('')
+  const [solutionMethod, setSolutionMethod] = useState('')
 
   const { data, error, loading, reload } = useAsync<{ run: ApiRun; items: QuestionItem[] }>(
     () => api(`/api/tools/pdf-slicer/runs/${encodeURIComponent(decodedRunId)}/questions`),
     [decodedRunId]
   )
+  const tagLibraries = useAsync<TagLibraries>(() => api('/api/question-bank/tag-libraries'), [])
 
   useEffect(() => {
     if (data?.items) setLocalItems(data.items)
@@ -50,7 +57,7 @@ export function RunQuestionsPage() {
 
   async function classifyRunQuestions() {
     if (!items.length) return
-    if (!window.confirm('确认对当前批次执行数据分类？本操作只更新知识点、解题方法和难度，不执行格式清洗。')) return
+    if (!window.confirm('确认对当前批次执行数据分类？本操作只更新知识点、解题方法和难度。')) return
     setClassifying(true)
     try {
       const result = await api<{ run: ApiRun; items: QuestionItem[]; report?: { total?: number; updated?: number; failed?: number } }>(
@@ -73,6 +80,25 @@ export function RunQuestionsPage() {
 
   const run = data.run
   const items = localItems
+  const filteredItems = items.filter((item) => {
+    const q = query.trim().toLowerCase()
+    const haystack = [
+      item.stemMarkdown,
+      item.answerText,
+      item.analysisMarkdown,
+      item.sourceTitle,
+      item.chapter,
+      ...(item.knowledgePoints ?? []),
+      ...(item.solutionMethods ?? []),
+    ].join('\n').toLowerCase()
+    return (!q || haystack.includes(q))
+      && (!stage || item.stage === stage)
+      && (!questionType || item.questionType === questionType)
+      && (!difficulty || item.difficultyLabel === difficulty)
+      && (!knowledgePoint || (item.knowledgePoints ?? []).includes(knowledgePoint))
+      && (!solutionMethod || (item.solutionMethods ?? []).includes(solutionMethod))
+  })
+  const hasActiveFilters = Boolean(query.trim() || stage || questionType || difficulty || knowledgePoint || solutionMethod)
   const allQuestionsBanked = items.length > 0 && items.every((item) => item.bankStatus === 'banked')
 
   return (
@@ -103,8 +129,23 @@ export function RunQuestionsPage() {
       </div>
       {exportOpen ? <RunExportDialog run={run} onClose={() => setExportOpen(false)} /> : null}
 
+      <div className="grid gap-2 rounded-xl border bg-white p-3 sm:grid-cols-2 lg:grid-cols-6">
+        <input className="h-9 rounded-md border px-3 text-xs bg-zinc-50 focus:bg-white" placeholder="搜索本批次题目..." value={query} onChange={(event) => setQuery(event.target.value)} />
+        <SelectFilter label="全部学段" value={stage} options={tagLibraries.data?.stages ?? ['高一', '高二', '高三']} onChange={setStage} />
+        <SelectFilter label="全部题型" value={questionType} options={tagLibraries.data?.questionTypes ?? ['单选题', '多选题', '填空题', '解答题']} onChange={setQuestionType} />
+        <SelectFilter label="全部难度" value={difficulty} options={tagLibraries.data?.difficultyLabels ?? ['基础', '中等', '较难', '压轴']} onChange={setDifficulty} />
+        <SelectFilter label="全部知识点" value={knowledgePoint} options={tagLibraries.data?.knowledgePoints ?? []} onChange={setKnowledgePoint} />
+        <SelectFilter label="全部解题方法" value={solutionMethod} options={tagLibraries.data?.solutionMethods ?? []} onChange={setSolutionMethod} />
+        {hasActiveFilters ? (
+          <div className="lg:col-span-6 flex items-center justify-between text-xs text-zinc-500">
+            <span>已筛选出 {filteredItems.length} / {items.length} 题</span>
+            <button className="font-semibold text-zinc-800 hover:text-zinc-950" type="button" onClick={() => { setQuery(''); setStage(''); setQuestionType(''); setDifficulty(''); setKnowledgePoint(''); setSolutionMethod('') }}>重置筛选</button>
+          </div>
+        ) : null}
+      </div>
+
       <div className="space-y-4 pr-1 pb-4">
-        {items.map((item) => (
+        {filteredItems.map((item) => (
           <WorkbenchQuestionCard
             key={item.id}
             item={item}
@@ -115,7 +156,9 @@ export function RunQuestionsPage() {
           />
         ))}
         {!items.length ? (
-          <Empty text="该批次下暂无题目。请先在该批次中执行 OCR 或格式清洗导入题目。" />
+          <Empty text="该批次下暂无题目。请先在该批次中执行 OCR 或导入题目。" />
+        ) : !filteredItems.length ? (
+          <Empty text="未找到匹配筛选条件的题目。" />
         ) : null}
       </div>
     </section>

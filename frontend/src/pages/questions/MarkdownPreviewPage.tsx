@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
-import { ArrowLeft, Code2, Eye } from 'lucide-react'
+import { ArrowLeft, Code2, Eye, Printer } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, jsonHeaders } from '@/api/client'
-import { MarkdownContent } from '@/components/MarkdownContent'
+import { QuestionDocumentMarkdownContent } from '@/components/questions/QuestionContent'
 import { Button, Empty } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { CollectionExport } from '@/types'
@@ -29,7 +29,46 @@ export function MarkdownPreviewPage() {
 
   return (
     <section className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-      <header className="flex flex-col gap-3 rounded-2xl border bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between">
+      <style>{`
+        @media print {
+          body {
+            background-color: white !important;
+            color: black !important;
+          }
+          aside, nav, header, .no-print, button, .button {
+            display: none !important;
+          }
+          main {
+            padding: 0 !important;
+            margin: 0 !important;
+            min-height: auto !important;
+            background: white !important;
+          }
+          section {
+            max-width: 100% !important;
+            width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+          }
+          article {
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            background: white !important;
+            color: black !important;
+          }
+          @page {
+            size: A4;
+            margin: 20mm;
+          }
+        }
+      `}</style>
+      <header className="flex flex-col gap-3 rounded-2xl border bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between no-print">
         <div className="flex items-center gap-3">
           <Button icon={ArrowLeft} variant="outline" onClick={() => navigate(-1)}>返回</Button>
           <div>
@@ -53,6 +92,11 @@ export function MarkdownPreviewPage() {
           <Button icon={showSource ? Eye : Code2} variant="outline" onClick={() => setShowSource(!showSource)}>
             {showSource ? '渲染预览' : 'Markdown 源码'}
           </Button>
+          {!showSource && (
+            <Button icon={Printer} onClick={() => window.print()}>
+              打印 / 导出 A4 PDF
+            </Button>
+          )}
         </div>
       </header>
 
@@ -65,7 +109,7 @@ export function MarkdownPreviewPage() {
           </pre>
         ) : (
           <article className="min-h-[60vh] rounded-2xl border bg-white px-6 py-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:px-10 lg:px-14">
-            <MarkdownContent className="text-[15px] leading-7" content={preview.data.content || ''} />
+            <QuestionDocumentMarkdownContent className="text-[15px] leading-7" content={preview.data.content || ''} />
           </article>
         )
       ) : null}

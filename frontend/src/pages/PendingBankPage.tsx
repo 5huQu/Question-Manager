@@ -20,6 +20,7 @@ import {
 import { api, jsonHeaders } from '../api/client'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { EditDialog } from '../components/questions/EditDialog'
+import { QuestionMarkdownContent } from '../components/questions/QuestionContent'
 import { Badge, Button, Empty } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
 import type {
@@ -222,20 +223,6 @@ export default function PendingBankPage() {
     })
   }
 
-  async function formatCleanupSingle(id: string) {
-    setActionBusy(true)
-    setActionNotice('格式清洗中...')
-    try {
-      await api(`/api/question-bank/items/${encodeURIComponent(id)}/format-cleanup`, { method: 'POST' })
-      await reload({ silent: true })
-      showNotice('格式清洗完成')
-    } catch (err) {
-      showNotice(`格式清洗失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setActionBusy(false)
-    }
-  }
-
   async function reOcrSingle(id: string) {
     const item = data?.items.find((entry) => entry.id === id)
     setConfirmDialog({
@@ -298,10 +285,6 @@ export default function PendingBankPage() {
 
   function handleBulkSkip() {
     runBulkAction('批量跳过', 'bulk-skip', [...selectedIds])
-  }
-
-  function handleBulkCleanup() {
-    runBulkAction('批量格式清洗', 'bulk-format-cleanup', [...selectedIds])
   }
 
   function handleBulkDelete() {
@@ -401,7 +384,6 @@ export default function PendingBankPage() {
           busy={actionBusy}
           onConfirm={handleBulkConfirm}
           onSkip={handleBulkSkip}
-          onCleanup={handleBulkCleanup}
           onDelete={handleBulkDelete}
         />
       ) : null}
@@ -447,7 +429,6 @@ export default function PendingBankPage() {
               onConfirm={() => confirmSingle(activeItem.id)}
               onEdit={() => openEditor(activeItem)}
               onReOcr={() => reOcrSingle(activeItem.id)}
-              onCleanup={() => formatCleanupSingle(activeItem.id)}
               onSkip={() => skipSingle(activeItem.id)}
               onDelete={() => deleteSingle(activeItem.id)}
             />
@@ -660,12 +641,11 @@ function QuestionCard({ item, active, selected, selectable, onSelect, onClick }:
 
 // ── Bulk Action Bar ─────────────────────────────────────────────────
 
-function BulkActionBar({ count, busy, onConfirm, onSkip, onCleanup, onDelete }: {
+function BulkActionBar({ count, busy, onConfirm, onSkip, onDelete }: {
   count: number
   busy: boolean
   onConfirm: () => void
   onSkip: () => void
-  onCleanup: () => void
   onDelete: () => void
 }) {
   const [moreOpen, setMoreOpen] = useState(false)
@@ -674,7 +654,6 @@ function BulkActionBar({ count, busy, onConfirm, onSkip, onCleanup, onDelete }: 
       <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mr-1">已选 {count} 题</span>
       <Button size="sm" icon={BadgeCheck} disabled={busy} onClick={onConfirm}>确认入库 {count} 题</Button>
       <Button size="sm" variant="outline" icon={SkipForward} disabled={busy} onClick={onSkip}>跳过</Button>
-      <Button size="sm" variant="outline" icon={RefreshCcw} disabled={busy} onClick={onCleanup}>格式清洗</Button>
       <div className="relative">
         <Button size="sm" variant="outline" icon={ChevronDown} disabled={busy} onClick={() => setMoreOpen(!moreOpen)}>更多</Button>
         {moreOpen ? (
@@ -698,18 +677,16 @@ function figuresByUsage(figures: QuestionFigure[], usage: string) {
   return figures.filter((fig) => String(fig.usage || 'stem') === usage)
 }
 
-function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, onCleanup, onSkip, onDelete }: {
+function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, onSkip, onDelete }: {
   item: QuestionItem
   busy: boolean
   onConfirm: () => void
   onEdit: () => void
   onReOcr: () => void
-  onCleanup: () => void
   onSkip: () => void
   onDelete: () => void
 }) {
   const [previewMode, setPreviewMode] = useState<'content' | 'images'>('content')
-  const stemFigures = figuresByUsage(item.figures, 'stem')
   const analysisFigures = figuresByUsage(item.figures, 'analysis')
   const isOcrFailed = !item.stemMarkdown || item.stemMarkdown.trim() === ''
   const readOnlyFailure = Boolean(item.pendingBankReadOnly)
@@ -749,7 +726,7 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, onCleanup, onSki
           <Button size="sm" icon={BadgeCheck} disabled={busy || readOnlyFailure || isOcrFailed || item.bankStatus === 'banked'} onClick={onConfirm}>确认入库</Button>
           <Button size="sm" variant="outline" icon={Edit3} disabled={busy} onClick={onEdit}>编辑题目</Button>
           <Button size="sm" variant="outline" icon={ScanSearch} disabled={busy} onClick={onReOcr}>重新 OCR</Button>
-          <MoreActionsDropdown busy={busy || readOnlyFailure} onCleanup={onCleanup} onSkip={onSkip} onDelete={onDelete} />
+          <MoreActionsDropdown busy={busy || readOnlyFailure} onSkip={onSkip} onDelete={onDelete} />
         </div>
       </div>
 
@@ -811,14 +788,7 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, onCleanup, onSki
             {/* Stem */}
             {item.stemMarkdown ? (
               <ContentSection title="题干">
-                <MarkdownContent content={item.stemMarkdown} />
-                {stemFigures.length ? (
-                  <div className="mt-2 flex gap-2 flex-wrap">
-                    {stemFigures.map((fig, i) => (
-                      <img key={i} src={`/assets/${fig.path}`} alt={`题图 ${i + 1}`} className="max-h-40 rounded-lg border" loading="lazy" />
-                    ))}
-                  </div>
-                ) : null}
+                <QuestionMarkdownContent content={item.stemMarkdown} figures={item.figures} />
               </ContentSection>
             ) : null}
 
@@ -910,9 +880,8 @@ function MetaField({ label, value }: { label: string; value: string }) {
   )
 }
 
-function MoreActionsDropdown({ busy, onCleanup, onSkip, onDelete }: {
+function MoreActionsDropdown({ busy, onSkip, onDelete }: {
   busy: boolean
-  onCleanup: () => void
   onSkip: () => void
   onDelete: () => void
 }) {
@@ -922,7 +891,6 @@ function MoreActionsDropdown({ busy, onCleanup, onSkip, onDelete }: {
       <Button size="sm" variant="outline" icon={ChevronDown} disabled={busy} onClick={() => setOpen(!open)}>更多</Button>
       {open ? (
         <div className="absolute top-full right-0 mt-1 z-10 w-36 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg py-1">
-          <DropdownItem icon={RefreshCcw} label="格式清洗" onClick={() => { setOpen(false); onCleanup() }} />
           <DropdownItem icon={SkipForward} label="跳过此题" onClick={() => { setOpen(false); onSkip() }} />
           <DropdownItem icon={Trash2} label="删除此题" danger onClick={() => { setOpen(false); onDelete() }} />
         </div>
@@ -1111,7 +1079,7 @@ function SimilarityQuestionPane({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
         <ContentSection title="题干">
-          {stemMarkdown ? <MarkdownContent content={stemMarkdown} /> : <span className="text-zinc-400">暂无题干</span>}
+          {stemMarkdown ? <QuestionMarkdownContent content={stemMarkdown} /> : <span className="text-zinc-400">暂无题干</span>}
         </ContentSection>
         {answerText ? (
           <ContentSection title="答案">

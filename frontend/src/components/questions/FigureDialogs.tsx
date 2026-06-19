@@ -7,7 +7,7 @@ import type { CropCorner, CropInteraction, QuestionFigure, QuestionItem } from '
 import { assetUrl, choiceLabelsForQuestion, figureCaption, isFormulaSuspectFigure } from '@/utils/questionDisplay'
 import { clampNumber, cropHandles, displayRectFromFigure, figureOverlayStyle, normalizeDisplayRect, resizeDisplayRect } from '@/utils/crop'
 
-export function FigureCropDialog({ question, onClose, onDelete, onSave }: { question: QuestionItem; onClose: (changed?: boolean) => void; onDelete: (figureId: string) => Promise<void>; onSave: (payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) => Promise<QuestionFigure> }) {
+export function FigureCropDialog({ question, onClose, onDelete, onSave, onUpdate }: { question: QuestionItem; onClose: (changed?: boolean) => void; onDelete: (figureId: string) => Promise<void>; onSave: (payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) => Promise<QuestionFigure>; onUpdate: (figureId: string, payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) => Promise<QuestionFigure> }) {
   const imageRef = useRef<HTMLImageElement | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const [usage, setUsage] = useState('stem')
@@ -19,6 +19,7 @@ export function FigureCropDialog({ question, onClose, onDelete, onSave }: { ques
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 })
   const [rect, setRect] = useState({ x: 0, y: 0, width: 0, height: 0 })
   const [hasChanges, setHasChanges] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   function scrollToRect(r: { y: number; height: number }) {
     const container = scrollContainerRef.current
@@ -133,10 +134,22 @@ export function FigureCropDialog({ question, onClose, onDelete, onSave }: { ques
     if (figure.optionLabel) setOptionLabel(String(figure.optionLabel).toUpperCase())
   }
   async function saveFigure() {
-    const figure = await onSave({ usage, optionLabel: usage === 'options' ? optionLabel : undefined, bbox: savedRect })
-    setLocalFigures((current) => [...current, figure])
-    setSelectedFigureId(figure.id || '')
-    setHasChanges(true)
+    setSaving(true)
+    try {
+      const payload = { usage, optionLabel: usage === 'options' ? optionLabel : undefined, bbox: savedRect }
+      if (selectedFigureId) {
+        const figure = await onUpdate(selectedFigureId, payload)
+        setLocalFigures((current) => current.map((item) => item.id === selectedFigureId ? figure : item))
+        setSelectedFigureId(figure.id || selectedFigureId)
+      } else {
+        const figure = await onSave(payload)
+        setLocalFigures((current) => [...current, figure])
+        setSelectedFigureId(figure.id || '')
+      }
+      setHasChanges(true)
+    } finally {
+      setSaving(false)
+    }
   }
   function addUploadedFigure(figure: QuestionFigure) {
     setLocalFigures((current) => [...current, figure])
@@ -255,11 +268,11 @@ export function FigureCropDialog({ question, onClose, onDelete, onSave }: { ques
           </div>
           <Button
             className="w-full justify-start"
-            disabled={!imageUrl || savedRect.width < 5 || savedRect.height < 5 || (usage === 'options' && !optionLabel)}
+            disabled={saving || !imageUrl || savedRect.width < 5 || savedRect.height < 5 || (usage === 'options' && !optionLabel)}
             icon={ImagePlus}
             onClick={saveFigure}
           >
-            {usage === 'options' ? `保存为选项 ${optionLabel} 图` : `保存为${usage === 'stem' ? '题干' : '解析'}图`}
+            {saving ? '保存中...' : selectedFigureId ? '更新选中题图' : usage === 'options' ? `保存为选项 ${optionLabel} 图` : `保存为${usage === 'stem' ? '题干' : '解析'}图`}
           </Button>
           <Button
             className="w-full justify-start"

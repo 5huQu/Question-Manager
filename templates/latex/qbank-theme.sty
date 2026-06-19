@@ -50,6 +50,10 @@
 \setlength{\parskip}{0.42em}
 \linespread{1.16}
 \sloppy
+% Avoid leaving a single first/last line of a question paragraph on another page.
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
 
 %% ---- 配色（改这一段即可换主题）---------------------------------------
 \definecolor{brandink}{HTML}{1B3A5B}   % 主色
@@ -150,8 +154,14 @@
 \newdimen\qbank@answerremain
 \newdimen\qbank@answeroverhead
 \newenvironment{answerarea}[1]{%
+  % Finish the question text first so \pagetotal includes its final paragraph.
+  % Measuring while still in horizontal mode can overestimate the available
+  % height and move an otherwise empty answer area onto a new page.
+  \par\nobreak
   \qbank@answerheight=#1\relax
-  \qbank@answeroverhead=1.75\baselineskip
+  % Include paragraph/display glue and the label/rule, not only the blank area.
+  % A conservative allowance is preferable to an answer area on its own page.
+  \qbank@answeroverhead=5\baselineskip
   \ifdim\pagegoal<10000pt
     \qbank@answerremain=\pagegoal
     \advance\qbank@answerremain by -\pagetotal
@@ -161,7 +171,7 @@
     \fi
   \fi
   \ifdim\qbank@answerheight>0.8cm
-    \par\nobreak\addvspace{0.4em}%
+    \addvspace{0.4em}%
     \noindent{\scriptsize\sffamily\color{brandink!55}作答区}\par\nobreak\vspace{0.15em}%
     \noindent{\color{brandline}\rule{\linewidth}{0.3pt}}\par\nobreak
     \vspace{\qbank@answerheight}%
@@ -216,7 +226,7 @@
 }{\end{enumerate}}
 
 \newenvironment{examquestion}[1]{%
-  \Needspace{4\baselineskip}%
+  \Needspace{17\baselineskip}%
   \par\addvspace{0.45em}\noindent
   \textbf{\normalsize\color{brandink}#1.}\hspace{0.4em}\small\ignorespaces
 }{\par\vspace{0.2em}}

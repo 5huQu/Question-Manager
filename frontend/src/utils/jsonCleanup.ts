@@ -230,11 +230,15 @@ export function splitTopLevelJsonSegments(text: string) {
 }
 
 export function questionsFromPayload(payload: unknown) {
-  return Array.isArray(payload)
-    ? payload
-    : (payload && typeof payload === 'object' && Array.isArray((payload as { questions?: unknown[] }).questions))
-      ? (payload as { questions: unknown[] }).questions
-      : []
+  if (Array.isArray(payload)) return payload
+  if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>
+    if (Array.isArray(record.questions)) return record.questions
+    const hasQuestionShape = ['problem_text', 'problemText', 'stemMarkdown', 'answer', 'answerText', 'analysis', 'analysisMarkdown', 'analysisText']
+      .some((key) => record[key] != null)
+    if (hasQuestionShape) return [payload]
+  }
+  return []
 }
 
 export function questionField(question: unknown, keys: string[]) {

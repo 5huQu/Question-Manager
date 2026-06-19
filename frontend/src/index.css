@@ -55,6 +55,22 @@ body {
   min-width: max-content;
 }
 
+.paper-grid {
+  background-color: #ffffff;
+  background-image:
+    radial-gradient(#e4e4e7 0.8px, transparent 0.8px),
+    radial-gradient(#e4e4e7 0.8px, #ffffff 0.8px);
+  background-position: 0 0, 8px 8px;
+  background-size: 16px 16px;
+}
+
+.dark .paper-grid {
+  background-color: #18181b;
+  background-image:
+    radial-gradient(#27272a 0.8px, transparent 0.8px),
+    radial-gradient(#27272a 0.8px, #18181b 0.8px);
+}
+
 .markdown-content img {
   max-width: 100%;
   border-radius: 0.5rem;
@@ -137,11 +153,11 @@ body {
 
 .choice-option {
   display: grid;
-  grid-template-columns: 1.85rem minmax(0, 1fr);
+  grid-template-columns: 1.8em minmax(0, 1fr);
   align-items: start;
   min-width: 0;
-  column-gap: 0.45rem;
-  font-size: 1rem;
+  column-gap: 0.45em;
+  font-size: inherit;
   line-height: 1.75;
 }
 
@@ -295,4 +311,14 @@ body {
   background-color: rgba(99, 102, 241, 0.15) !important;
   color: #a5b4fc !important;
   border-color: rgba(99, 102, 241, 0.3) !important;
+}
+
+/* Hide number input spin arrows globally */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number] {
+  -moz-appearance: textfield;
 }

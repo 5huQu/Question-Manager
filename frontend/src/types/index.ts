@@ -11,6 +11,7 @@ export type ApiRun = {
   sourceFileKind: string
   materialType?: 'exam' | 'lecture' | 'unknown'
   fileRole?: 'full' | 'questions' | 'solutions' | 'unknown'
+  stage?: string
   classificationConfidence?: number
   classificationReasons?: string[]
   runDir: string
@@ -179,6 +180,25 @@ export type CollectionExport = {
   path?: string
 }
 
+export type ExportRecord = {
+  id: string
+  sourceType: 'collection' | 'run'
+  collectionId: string
+  runId: string
+  title: string
+  format: string
+  variant: string
+  filename: string
+  path: string
+  url: string
+  items: Array<{ questionId: string; exportOrder: number }>
+  contentLength: number
+  questionCount: number
+  status: 'succeeded' | 'failed'
+  error: string
+  createdAt: string
+}
+
 export type OcrJobs = {
   summary: Record<string, number>
   currentRun: ApiRun | null
@@ -231,7 +251,53 @@ export type OcrProgress = {
   logTail: string
 }
 
+export type LearningLibraryType = 'knowledge_point' | 'method_tag'
+
+export type LearningTagPoint = {
+  id: string
+  code: string
+  name: string
+  description?: string
+  tagType?: 'knowledge' | 'method' | 'problem_type' | 'strategy' | 'other' | string
+  appliesTo?: string[]
+  sortOrder: number
+}
+
+export type LearningTagChapter = {
+  id: string
+  code: string
+  name: string
+  sortOrder: number
+  knowledgePoints: LearningTagPoint[]
+}
+
+export type LearningTagLibrary = {
+  id: string
+  code: string
+  name: string
+  subject: string
+  stage: string
+  locale: string
+  version: string
+  source: string
+  libraryType: LearningLibraryType
+  baseKnowledgeLibraryId?: string
+  baseKnowledgeLibraryCode?: string
+  baseKnowledgeLibraryName?: string
+  isDefault: boolean
+  chapters: LearningTagChapter[]
+}
+
 export type OcrSettings = {
+  setupCompleted: boolean
+  systemName: string
+  siteTitle: string
+  siteDescription: string
+  examExportTemplate: 'builtin' | 'examch'
+  worksheetWatermark: string
+  examWatermark: string
+  lectureWatermark: string
+  teachingStages: string[]
   apiBaseUrl: string
   apiKeyConfigured: boolean
   model: string
@@ -261,6 +327,7 @@ export type TagLibraries = {
   knowledgePoints: string[]
   solutionMethods: string[]
   stages: string[]
+  questionTypes: string[]
   difficultyLabels: string[]
 }
 
@@ -302,6 +369,7 @@ export type ChoiceOption = {
 export type ParsedChoiceQuestion = {
   stem: string
   options: ChoiceOption[]
+  remainder?: string
 }
 
 export type AppReactNode = ReactNode
