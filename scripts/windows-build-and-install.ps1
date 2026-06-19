@@ -70,14 +70,14 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $BuiltApp = Join-Path $Root "dist\win-unpacked"
-$ExePath = Join-Path $BuiltApp "Question Workbench.exe"
+$ExePath = Join-Path $BuiltApp "Question Manager.exe"
 if (-not (Test-Path $ExePath)) {
   throw "Built app was not found: $ExePath"
 }
 
-$InstallRoot = Join-Path $env:LOCALAPPDATA "QuestionWorkbench"
+$InstallRoot = Join-Path $env:LOCALAPPDATA "QuestionManager"
 $InstallApp = Join-Path $InstallRoot "app"
-$InstalledExe = Join-Path $InstallApp "Question Workbench.exe"
+$InstalledExe = Join-Path $InstallApp "Question Manager.exe"
 
 Step "Installing to $InstallApp"
 Copy-CleanDirectory $BuiltApp $InstallApp
@@ -85,16 +85,16 @@ Copy-CleanDirectory $BuiltApp $InstallApp
 if (-not $NoShortcut) {
   Step "Creating shortcuts"
   $Programs = [Environment]::GetFolderPath("Programs")
-  $StartMenuDir = Join-Path $Programs "Question Workbench"
+  $StartMenuDir = Join-Path $Programs "Question Manager"
   New-Item -ItemType Directory -Force -Path $StartMenuDir | Out-Null
-  New-Shortcut (Join-Path $StartMenuDir "Question Workbench.lnk") $InstalledExe $InstallApp
-  New-Shortcut (Join-Path ([Environment]::GetFolderPath("Desktop")) "Question Workbench.lnk") $InstalledExe $InstallApp
+  New-Shortcut (Join-Path $StartMenuDir "Question Manager.lnk") $InstalledExe $InstallApp
+  New-Shortcut (Join-Path ([Environment]::GetFolderPath("Desktop")) "Question Manager.lnk") $InstalledExe $InstallApp
 }
 
 Step "Installed"
 Write-Host "App: $InstalledExe"
 
 if (-not $NoLaunch) {
-  Step "Launching Question Workbench"
+  Step "Launching Question Manager"
   Start-Process $InstalledExe
 }

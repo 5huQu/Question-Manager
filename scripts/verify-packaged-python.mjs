@@ -57,7 +57,7 @@ try {
 function packagedRoot() {
   if (process.platform === 'darwin') {
     const arch = process.arch === 'arm64' ? 'mac-arm64' : 'mac'
-    return path.resolve('dist', arch, 'Question Workbench.app')
+    return path.resolve('dist', arch, 'Question Manager.app')
   }
   if (process.platform === 'win32') return path.resolve('dist', 'win-unpacked')
   throw new Error(`Unsupported packaged verification platform: ${process.platform}`)

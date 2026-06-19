@@ -1,8 +1,8 @@
 {
-  "name": "question-workbench",
+  "name": "question-manager",
   "version": "0.1.0",
-  "description": "Local-first desktop workbench for slicing PDFs, OCR review, and math question collections.",
-  "author": "Question Workbench contributors",
+  "description": "Local-first desktop manager for slicing PDFs, OCR review, and math question collections.",
+  "author": "Question Manager contributors",
   "private": false,
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -27,8 +27,8 @@
     "start": "PORT=8797 node server/dist/index.js"
   },
   "build": {
-    "appId": "dev.question-workbench.app",
-    "productName": "Question Workbench",
+    "appId": "dev.question-manager.app",
+    "productName": "Question Manager",
     "asar": false,
     "files": [
       "electron/**",

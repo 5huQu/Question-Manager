@@ -12,6 +12,7 @@ release/
 .env.*
 !.env.example
 server/python/.env
+config/
 
 # Runtime data
 runtime/
@@ -31,6 +32,7 @@ tools/test_brand_layout_optimization.py
 tmp/app-monolith-split/
 PROJECT_MEMORY.md
 .claude/settings.local.json
+frontend/*_design.html
 
 # Logs and caches
 *.log

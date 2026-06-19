@@ -58,7 +58,7 @@ async function startServer(port) {
   serverProcess.stderr.on('data', (chunk) => process.stderr.write(chunk))
   serverProcess.on('exit', (code) => {
     if (code && !app.isQuitting) {
-      dialog.showErrorBox('Question Workbench', `Local server exited with code ${code}.`)
+      dialog.showErrorBox('Question Manager', `Local server exited with code ${code}.`)
     }
   })
 }
@@ -119,7 +119,7 @@ async function createWindow() {
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (isMainFrame) {
       dialog.showErrorBox(
-        'Question Workbench',
+        'Question Manager',
         `Unable to load the application (${errorCode}: ${errorDescription}).\n${validatedURL}`,
       )
     }
@@ -128,7 +128,7 @@ async function createWindow() {
 }
 
 app.whenReady().then(createWindow).catch((error) => {
-  dialog.showErrorBox('Question Workbench', error instanceof Error ? error.message : String(error))
+  dialog.showErrorBox('Question Manager', error instanceof Error ? error.message : String(error))
   app.quit()
 })
 

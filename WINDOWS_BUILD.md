@@ -29,9 +29,9 @@ The script will:
 3. Build the frontend and backend.
 4. Package `dist\win-unpacked`.
 5. Verify the packaged Python runtime.
-6. Copy the app to `%LOCALAPPDATA%\QuestionWorkbench\app`.
+6. Copy the app to `%LOCALAPPDATA%\QuestionManager\app`.
 7. Create Start Menu and Desktop shortcuts.
-8. Launch Question Workbench.
+8. Launch Question Manager.
 
 ## Options
 
@@ -43,4 +43,4 @@ The script will:
 ## Output
 
 - Built package: `dist\win-unpacked`
-- Installed app: `%LOCALAPPDATA%\QuestionWorkbench\app\Question Workbench.exe`
+- Installed app: `%LOCALAPPDATA%\QuestionManager\app\Question Manager.exe`
