@@ -7359,6 +7359,10 @@ export function startServer(port = Number(process.env.PORT || 8797), host = proc
   return server
 }
 
+export function closeDatabase() {
+  db.close()
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   startServer()
 }

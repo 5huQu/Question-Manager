@@ -7,7 +7,7 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'question-manager-'))
 process.env.QUESTION_DATA_DIR = tempRoot
 process.env.PORT = '0'
 
-const { startServer } = await import('../dist/index.js')
+const { closeDatabase, startServer } = await import('../dist/index.js')
 const server = startServer(0)
 
 try {
@@ -40,5 +40,6 @@ try {
   console.log('smoke ok')
 } finally {
   await new Promise((resolve) => server.close(resolve))
-  fs.rmSync(tempRoot, { recursive: true, force: true })
+  closeDatabase()
+  fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }
