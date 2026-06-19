@@ -99,6 +99,18 @@ build-and-install-windows.cmd
 
 脚本会检查 Node.js、安装 npm 依赖、准备 Python 运行时、构建应用并启动生成的桌面程序。更详细的排错说明见 [`WINDOWS_BUILD.md`](WINDOWS_BUILD.md)。
 
+### GitHub Actions 跨平台打包
+
+仓库提供 `Desktop Build` 工作流，在 GitHub 仓库的 Actions 页面中手动运行后，会分别使用 macOS 和 Windows runner：
+
+1. 安装锁定的 npm 依赖。
+2. 运行数学渲染测试和 API smoke test。
+3. 下载并校验对应平台的内置 Python。
+4. 生成桌面应用并执行包内 Python 切题验证。
+5. 上传可直接解压运行的 macOS 和 Windows ZIP artifact。
+
+推送形如 `v0.1.0` 的版本标签也会自动触发同一套构建。当前产物未进行 Apple 或 Windows 代码签名，系统首次打开时可能显示安全提醒。
+
 ## 数据目录与环境变量
 
 桌面版把运行数据写入操作系统分配给 Question Manager 的用户数据目录。源码开发时默认使用仓库目录，也可以通过以下变量覆盖：

@@ -1,0 +1,82 @@
+name: Desktop Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            artifact: Question-Manager-macOS
+          - name: Windows
+            os: windows-latest
+            artifact: Question-Manager-Windows
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Restore Python runtime download cache
+        uses: actions/cache@v4
+        with:
+          path: runtime/cache
+          key: python-runtime-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('server/python/runtime-requirements.txt', 'scripts/prepare-python-runtime.mjs') }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run math rendering tests
+        run: npm run test:math-render
+
+      - name: Build application
+        run: npm run build
+
+      - name: Run API smoke test
+        run: npm run test:smoke
+
+      - name: Package and verify desktop application
+        run: npm run pack:desktop
+
+      - name: Create macOS archive
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app_path="$(find dist -maxdepth 3 -type d -name 'Question Manager.app' -print -quit)"
+          test -n "$app_path"
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "dist/${{ matrix.artifact }}-${{ runner.arch }}.zip"
+
+      - name: Create Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist\win-unpacked\Question Manager.exe")) {
+            throw "Packaged Windows executable was not found."
+          }
+          Compress-Archive -Path "dist\win-unpacked" -DestinationPath "dist\${{ matrix.artifact }}.zip" -CompressionLevel Optimal
+
+      - name: Upload desktop package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-${{ runner.arch }}
+          path: dist/${{ matrix.artifact }}-*.zip
+          if-no-files-found: error
+          retention-days: 14
