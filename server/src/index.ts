@@ -100,21 +100,43 @@ function firstExecutable(candidates: string[]) {
   return ''
 }
 
+function configuredSofficePath() {
+  try {
+    return String(readAppSettings().sofficePath || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+function windowsSofficeCandidates() {
+  if (process.platform !== 'win32') return []
+  const programFiles = process.env.ProgramFiles || 'C:\\Program Files'
+  const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)'
+  return [
+    path.join(programFiles, 'LibreOffice', 'program', 'soffice.exe'),
+    path.join(programFilesX86, 'LibreOffice', 'program', 'soffice.exe'),
+    'soffice.exe',
+  ]
+}
+
 function sofficePath() {
   return firstExecutable([
+    configuredSofficePath(),
     process.env.SOFFICE_PATH || '',
     process.platform === 'darwin' ? '/Applications/LibreOffice.app/Contents/MacOS/soffice' : '',
-    process.platform === 'win32' ? 'soffice.exe' : '',
+    ...windowsSofficeCandidates(),
     'soffice',
     'libreoffice',
   ])
 }
 
 function toolAvailability() {
+  const resolvedSofficePath = sofficePath()
   return {
     python: pythonDetails(),
     xelatex: Boolean(xelatexPath()),
-    soffice: Boolean(sofficePath()),
+    soffice: Boolean(resolvedSofficePath),
+    sofficePath: resolvedSofficePath,
   }
 }
 
@@ -1771,6 +1793,7 @@ const defaultAppSettings = {
   examWatermark: 'Qrane',
   lectureWatermark: '教师姓名 · 工作室',
   teachingStages: ['高中'],
+  sofficePath: '',
 }
 
 const teachingStageValues = ['小学', '初中', '高中', '其他']
@@ -1806,6 +1829,7 @@ function readAppSettings() {
     examWatermark: String(payload.examWatermark ?? defaultAppSettings.examWatermark),
     lectureWatermark: String(payload.lectureWatermark ?? defaultAppSettings.lectureWatermark),
     teachingStages: normalizeTeachingStages(payload.teachingStages),
+    sofficePath: String(payload.sofficePath ?? defaultAppSettings.sofficePath).trim(),
   }
 }
 
@@ -1821,6 +1845,7 @@ function writeAppSettings(input: Record<string, unknown>) {
     examWatermark: String(input.examWatermark ?? existing.examWatermark).trim() || defaultAppSettings.examWatermark,
     lectureWatermark: String(input.lectureWatermark ?? existing.lectureWatermark).trim() || defaultAppSettings.lectureWatermark,
     teachingStages: normalizeTeachingStages(input.teachingStages ?? existing.teachingStages),
+    sofficePath: String(input.sofficePath ?? existing.sofficePath ?? '').trim(),
   }
   fs.writeFileSync(appSettingsPath(), `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
   return readAppSettings()
@@ -1916,6 +1941,8 @@ function readOcrSettings() {
   }
   return {
     ...readAppSettings(),
+    sofficeAvailable: Boolean(sofficePath()),
+    sofficeDetectedPath: sofficePath(),
     apiBaseUrl: values.OCR_API_BASE_URL || '',
     apiKeyConfigured: Boolean(values.OCR_API_KEY || process.env.OCR_API_KEY),
     model: values.OCR_MODEL || '',

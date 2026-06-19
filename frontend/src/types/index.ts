@@ -298,6 +298,9 @@ export type OcrSettings = {
   examWatermark: string
   lectureWatermark: string
   teachingStages: string[]
+  sofficePath: string
+  sofficeAvailable: boolean
+  sofficeDetectedPath: string
   apiBaseUrl: string
   apiKeyConfigured: boolean
   model: string
