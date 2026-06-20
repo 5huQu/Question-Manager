@@ -197,7 +197,9 @@
 \newsavebox{\qbank@figbox}
 \newcommand{\qbankfigure}[3]{%
   \par\addvspace{0.2em}\noindent
-  \sbox{\qbank@figbox}{\includegraphics[width=#2\linewidth,keepaspectratio]{#3}}%
+  % Keep diagrams visually comparable: wide figures retain their requested
+  % width, while square/tall figures are capped at a common printed height.
+  \sbox{\qbank@figbox}{\includegraphics[width=#2\linewidth,height=120pt,keepaspectratio]{#3}}%
   \typeout{QBANKFIG id=#1\space page=\thepage\space pagetotal=\the\pagetotal\space pagegoal=\the\pagegoal\space figheight=\the\ht\qbank@figbox\space figdepth=\the\dp\qbank@figbox\space width=#2}%
   \usebox{\qbank@figbox}%
   \par\addvspace{0.15em}%
@@ -226,16 +228,19 @@
 }{\end{enumerate}}
 
 \newenvironment{examquestion}[1]{%
-  \Needspace{17\baselineskip}%
+  % Reserve only a question start. A fixed full-question reservation creates
+  % false page breaks for questions that would otherwise fit.
+  \Needspace{4\baselineskip}%
   \par\addvspace{0.45em}\noindent
   \textbf{\normalsize\color{brandink}#1.}\hspace{0.4em}\small\ignorespaces
 }{\par\vspace{0.2em}}
 
-%% \examsection{一、单项选择题}：试卷大题分节标题（不进目录）
-\newcommand{\examsection}[1]{%
-  \par\addvspace{0.9em}\Needspace{3\baselineskip}%
+%% 标题与下一题开头联合分页，避免标题孤悬页尾。
+\newcommand{\examsectionstart}[1]{%
+  \par\addvspace{0.9em}\Needspace{11\baselineskip}%
   \noindent\qbanksquare{\sffamily\large\bfseries\color{brandink}#1}\par
   \vspace{0.1em}\noindent{\color{brandline}\rule{\linewidth}{0.3pt}}\par\addvspace{0.35em}}
+\newcommand{\examsection}[1]{\examsectionstart{#1}}
 
 %% ---- 讲义定理类盒子 ---------------------------------------------------
 \newcounter{qbankbox}[section]

@@ -170,10 +170,13 @@ export function ExportRecordsPage() {
         )
         if (!confirmed) return
       }
+      const syncTitle = window.confirm(
+        `是否同时将当前试题篮名称改为「${item.title || item.filename}」？\n\n选择“确定”会同步名称；选择“取消”仅恢复题目。`
+      )
       await api(`/api/question-bank/export-records/${encodeURIComponent(item.id)}/restore-to-basket`, {
         method: 'POST',
         headers: jsonHeaders,
-        body: JSON.stringify({ collectionId }),
+        body: JSON.stringify({ collectionId, syncTitle }),
       })
       notifyBasketUpdated()
       alert(`已回填 ${item.items.length} 道题到试题篮。`)

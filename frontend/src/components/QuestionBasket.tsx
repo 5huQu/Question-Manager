@@ -145,7 +145,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
     notifyBasketUpdated()
   }
 
-  async function exportCollection(format: 'markdown' | 'pdf', variant: 'student' | 'teacher') {
+  async function exportCollection(format: 'markdown' | 'pdf', variant: 'student' | 'teacher', template: 'worksheet' | 'exam' = 'worksheet') {
     if (format === 'markdown') {
       setCollapsed(true)
       navigate(`/questions/collections/${encodeURIComponent(activeId)}/markdown-preview?variant=${variant}`)
@@ -157,13 +157,10 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
       const payload = await api<CollectionExport>(`/api/question-bank/collections/${encodeURIComponent(activeId)}/export`, {
         method: 'POST',
         headers: jsonHeaders,
-        body: JSON.stringify({ format, variant }),
+        body: JSON.stringify({ format, variant, template }),
       })
-      const link = document.createElement('a')
       if (payload.format === 'pdf' && payload.url) {
-        link.href = payload.url
-        link.download = payload.filename
-        link.click()
+        window.open(payload.url, '_blank', 'noopener,noreferrer')
         return
       }
     } catch (error) {
@@ -273,16 +270,24 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                     </div>
 
                     <div className="p-1 border-t border-zinc-100 dark:border-zinc-800 mt-1">
+                      <p className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2 py-1">试卷 PDF</p>
+                      <div className="grid grid-cols-2 gap-1 mt-1">
+                        <button onClick={() => { exportCollection('pdf', 'student', 'exam'); setExportMenuOpen(false); }} className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"><span>学生版</span></button>
+                        <button onClick={() => { exportCollection('pdf', 'teacher', 'exam'); setExportMenuOpen(false); }} className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"><span>教师版</span></button>
+                      </div>
+                    </div>
+
+                    <div className="p-1 border-t border-zinc-100 dark:border-zinc-800 mt-1">
                       <p className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2 py-1">练习单 PDF</p>
                       <div className="grid grid-cols-2 gap-1 mt-1">
-                        <button
-                          onClick={() => { exportCollection('pdf', 'student'); setExportMenuOpen(false); }}
+                      <button
+                        onClick={() => { exportCollection('pdf', 'student', 'worksheet'); setExportMenuOpen(false); }}
                           className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"
                         >
                           <span>学生版</span>
                         </button>
-                        <button
-                          onClick={() => { exportCollection('pdf', 'teacher'); setExportMenuOpen(false); }}
+                      <button
+                        onClick={() => { exportCollection('pdf', 'teacher', 'worksheet'); setExportMenuOpen(false); }}
                           className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"
                         >
                           <span>教师版</span>
@@ -820,13 +825,21 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                   </div>
 
                   <div className="p-1 border-t border-zinc-100 dark:border-zinc-800 mt-1">
+                    <p className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-505 uppercase tracking-wider px-2 py-1 select-none font-medium">试卷 PDF</p>
+                    <div className="grid grid-cols-2 gap-1 mt-1">
+                      <button onClick={() => { exportCollection('pdf', 'student', 'exam'); setExportMenuOpen(false) }} className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"><span>学生版</span></button>
+                      <button onClick={() => { exportCollection('pdf', 'teacher', 'exam'); setExportMenuOpen(false) }} className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"><span>教师版</span></button>
+                    </div>
+                  </div>
+
+                  <div className="p-1 border-t border-zinc-100 dark:border-zinc-800 mt-1">
                     <p className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-505 uppercase tracking-wider px-2 py-1 select-none font-medium">
                       练习单 PDF
                     </p>
                     <div className="grid grid-cols-2 gap-1 mt-1">
                       <button
                         onClick={() => {
-                          exportCollection('pdf', 'student')
+                          exportCollection('pdf', 'student', 'worksheet')
                           setExportMenuOpen(false)
                         }}
                         className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"
@@ -835,7 +848,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                       </button>
                       <button
                         onClick={() => {
-                          exportCollection('pdf', 'teacher')
+                          exportCollection('pdf', 'teacher', 'worksheet')
                           setExportMenuOpen(false)
                         }}
                         className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"
