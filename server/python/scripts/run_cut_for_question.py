@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import traceback
@@ -14,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.cutter.crop_questions import crop_question_images, detect_figures, infer_question_slices, render_page_images, summarize_graphic_candidates
 from src.cutter.detect_questions import detect_question_anchors
 from src.cutter.render_pdf import extract_answer_summaries, load_document
+from src.cutter.rules import compute_rules_hash, load_rules, validate_rules_data
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,6 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--asset-root", type=Path, required=True)
     parser.add_argument("--dpi", type=int, default=180)
+    parser.add_argument("--rules-config", type=Path, default=None)
     return parser.parse_args()
 
 
@@ -41,30 +44,44 @@ def main() -> None:
     page_image_map: dict[str, list[Path]] = {}
     total_pages = 0
     diagnostics: dict = {}
+    rules_meta: dict = {}
+
+    # Load PDF slicer rules
+    rules_config_path = args.rules_config.resolve() if args.rules_config else None
+    slicer_rules, fallback_used, rules_info = load_rules(rules_config_path)
+    rules_meta = {
+        "rules_version": slicer_rules.version,
+        "rules_hash": rules_info["hash"],
+        "rules_fallback_used": int(fallback_used),
+        "rules_warnings": rules_info["warnings"],
+    }
+    if rules_info["warnings"]:
+        print(f"规则加载告警: {rules_info['warnings']}", file=sys.stderr)
 
     try:
-      document = load_document(pdf_path)
-      diagnostics = {
-          "document_notes": list(document.notes),
-          "graphics": summarize_graphic_candidates(document),
-      }
-      if not any(page.has_text for page in document.pages):
-          raise RuntimeError("PDF 无可用文字层，不支持扫描件或图片型 PDF。")
+        document = load_document(pdf_path)
+        diagnostics = {
+            "document_notes": list(document.notes),
+            "graphics": summarize_graphic_candidates(document),
+            **rules_meta,
+        }
+        if not any(page.has_text for page in document.pages):
+            raise RuntimeError("PDF 无可用文字层，不支持扫描件或图片型 PDF。")
 
-      page_paths = render_page_images(document, pages_dir, dpi=args.dpi)
-      page_image_map[str(document.source_pdf)] = page_paths
-      total_pages += len(page_paths)
+        page_paths = render_page_images(document, pages_dir, dpi=args.dpi)
+        page_image_map[str(document.source_pdf)] = page_paths
+        total_pages += len(page_paths)
 
-      answer_summaries = extract_answer_summaries(document)
-      anchors = detect_question_anchors(document)
-      slices = infer_question_slices(document, anchors)
-      for item in slices:
-          item.answer_summary = answer_summaries.get(item.question_id)
-          item.figures = detect_figures(document, item)
-      slices = crop_question_images(slices, auto_cuts_dir, dpi=args.dpi)
-      results = build_results(slices, page_image_map, asset_root)
+        answer_summaries = extract_answer_summaries(document)
+        anchors = detect_question_anchors(document, rules=slicer_rules)
+        slices = infer_question_slices(document, anchors, rules=slicer_rules)
+        for item in slices:
+            item.answer_summary = answer_summaries.get(item.question_id)
+            item.figures = detect_figures(document, item)
+        slices = crop_question_images(slices, auto_cuts_dir, dpi=args.dpi)
+        results = build_results(slices, page_image_map, asset_root)
     except Exception as exc:
-      failed_pdfs.append({"pdf_name": pdf_path.name, "reason": str(exc), "traceback": traceback.format_exc()})
+        failed_pdfs.append({"pdf_name": pdf_path.name, "reason": str(exc), "traceback": traceback.format_exc()})
 
     payload = {
         "results": results,

@@ -303,6 +303,34 @@ export type OcrSettings = {
   classificationUserPrompt: string
 }
 
+export type SlicerRuleEntry = {
+  id: string
+  term: string
+  matchMode: 'contains' | 'exact'
+  enabled: boolean
+}
+
+export type SlicerRulesData = {
+  version: number
+  auxiliaryMarkers: SlicerRuleEntry[]
+  noticeTerms: SlicerRuleEntry[]
+  referenceFormulaMarkers: SlicerRuleEntry[]
+  trainingMarkers: SlicerRuleEntry[]
+  nonQuestionRemainders: SlicerRuleEntry[]
+  sectionMarkers: SlicerRuleEntry[]
+}
+
+export type SlicerRulesResponse = SlicerRulesData & {
+  baseVersion: number
+  hash: string
+}
+
+export type SlicerRulesHistoryEntry = {
+  version: number
+  timestamp: string
+  hash: string
+}
+
 export type TagLibraries = {
   knowledgePoints: string[]
   solutionMethods: string[]

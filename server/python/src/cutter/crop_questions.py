@@ -6,6 +6,8 @@ from pathlib import Path
 import fitz
 
 from ..common.paths import AUTO_CUTS_DIR
+from typing import Optional
+
 from ..common.schema import (
     BBox,
     Confidence,
@@ -16,6 +18,7 @@ from ..common.schema import (
     QuestionSlice,
     SliceSegment,
 )
+from .rules import SlicerRules
 
 TOP_PADDING = 10.0
 BOTTOM_PADDING = 8.0
@@ -54,7 +57,7 @@ def render_page_images(document: DocumentData, output_dir: Path, dpi: int = 180)
     return page_paths
 
 
-def infer_question_slices(document: DocumentData, anchors: list[QuestionAnchor]) -> list[QuestionSlice]:
+def infer_question_slices(document: DocumentData, anchors: list[QuestionAnchor], rules: SlicerRules | None = None) -> list[QuestionSlice]:
     slices: list[QuestionSlice] = []
 
     for index, anchor in enumerate(anchors):
@@ -72,7 +75,7 @@ def infer_question_slices(document: DocumentData, anchors: list[QuestionAnchor])
             page = document.pages[page_number - 1]
             max_segment_bottom = page.body_bbox[3]
             if page_number > anchor.page_number:
-                stop_marker_y = _find_top_stop_marker(page)
+                stop_marker_y = _find_top_stop_marker(page, rules=rules)
                 if stop_marker_y is not None:
                     candidate_bottom = min(page.body_bbox[3], stop_marker_y - BOTTOM_PADDING)
                     if candidate_bottom - page.body_bbox[1] <= MIN_SEGMENT_HEIGHT + 8.0:
@@ -348,8 +351,10 @@ def _score_slice(
     )
 
 
-def _find_top_stop_marker(page: PageData, top_limit: float = 220.0) -> float | None:
-    stop_patterns = ("题型", "【解题规律", "【典例训练】", "目录", "题型归纳", "题型探析")
+def _find_top_stop_marker(page: PageData, top_limit: float = 220.0, rules: SlicerRules | None = None) -> float | None:
+    stop_patterns: tuple[str, ...] = ("题型", "【解题规律", "【典例训练】", "目录", "题型归纳", "题型探析")
+    if rules is not None and rules.section_terms:
+        stop_patterns = rules.section_terms
     top_cutoff = page.body_bbox[1] + top_limit
     for line in page.text_lines:
         if line.bbox[1] > top_cutoff:

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import express from 'express'
 import multer from 'multer'
@@ -202,7 +203,17 @@ type RunRow = {
   ocr_provider_phase: string
   ocr_provider_progress: number
   ocr_provider_result_path: string
+  rules_version: number
+  rules_hash: string
+  rules_fallback_used: number
+  rules_warnings_json: string
 }
+
+type SlicerRuleEntry = { id: string; term: string; matchMode: 'contains' | 'exact'; enabled: boolean }
+type SlicerRulesData = Record<string, unknown> & { version: number }
+
+const SLICER_RULES_CATEGORIES = ['auxiliaryMarkers', 'noticeTerms', 'referenceFormulaMarkers', 'trainingMarkers', 'nonQuestionRemainders', 'sectionMarkers'] as const
+const VALID_MATCH_MODES = ['contains', 'exact']
 
 type QuestionRow = {
   id: string
@@ -715,6 +726,177 @@ function mergeDiagnostics(base: Record<string, any>, next: Record<string, any>) 
     docxFormulaAnalysis: base.docxFormulaAnalysis,
     cutDiagnostics: next.cutDiagnostics ?? base.cutDiagnostics,
   }
+}
+
+// ── PDF Slicer Rules: config management ──────────────────────────────────
+
+function pdfSlicerRulesPath() {
+  const configDir = path.join(storageRoot, 'config')
+  fs.mkdirSync(configDir, { recursive: true })
+  return path.join(configDir, 'pdf_slicer_rules.json')
+}
+
+function pdfSlicerRulesHistoryDir() {
+  const configDir = path.join(storageRoot, 'config', 'pdf_slicer_rules_history')
+  fs.mkdirSync(configDir, { recursive: true })
+  return configDir
+}
+
+function defaultPdfSlicerRules(): SlicerRulesData {
+  return {
+    version: 1,
+    auxiliaryMarkers: [
+      { id: 'aux_mulu', term: '目录', matchMode: 'contains', enabled: true },
+      { id: 'aux_jietiguilv', term: '解题规律', matchMode: 'contains', enabled: true },
+      { id: 'aux_tifenkuaizhao', term: '提分快招', matchMode: 'contains', enabled: true },
+      { id: 'aux_tixingguina', term: '题型归纳', matchMode: 'contains', enabled: true },
+      { id: 'aux_tixingtanxi', term: '题型探析', matchMode: 'contains', enabled: true },
+      { id: 'aux_siweidaotu', term: '思维导图', matchMode: 'contains', enabled: true },
+      { id: 'aux_zhishidian', term: '知识点', matchMode: 'contains', enabled: true },
+      { id: 'aux_guilvfangfa', term: '规律方法', matchMode: 'contains', enabled: true },
+      { id: 'aux_fangfajiqiao', term: '方法技巧', matchMode: 'contains', enabled: true },
+    ],
+    noticeTerms: [
+      { id: 'notice_dati', term: '答题', matchMode: 'contains', enabled: true },
+      { id: 'notice_zhuyishixiang', term: '注意事项', matchMode: 'contains', enabled: true },
+      { id: 'notice_zuoda', term: '作答', matchMode: 'contains', enabled: true },
+      { id: 'notice_kaoshijieshu', term: '考试结束', matchMode: 'contains', enabled: true },
+      { id: 'notice_dajuanqian', term: '答卷前', matchMode: 'contains', enabled: true },
+      { id: 'notice_dabunengda', term: '答案不能答在试卷上', matchMode: 'contains', enabled: true },
+    ],
+    referenceFormulaMarkers: [
+      { id: 'ref_cankaogongshi', term: '参考公式', matchMode: 'contains', enabled: true },
+      { id: 'ref_cankaoguanxishi', term: '参考关系式', matchMode: 'contains', enabled: true },
+      { id: 'ref_cankaoshuju', term: '参考数据', matchMode: 'contains', enabled: true },
+    ],
+    trainingMarkers: [
+      { id: 'tr_dianlixunlian', term: '【典例训练】', matchMode: 'contains', enabled: true },
+      { id: 'tr_liti', term: '【例题】', matchMode: 'contains', enabled: true },
+      { id: 'tr_jiedati', term: '一、解答题', matchMode: 'contains', enabled: true },
+      { id: 'tr_danxuanti', term: '一、单选题', matchMode: 'contains', enabled: true },
+      { id: 'tr_xuanzeti', term: '一、选择题', matchMode: 'contains', enabled: true },
+      { id: 'tr_tiankongti', term: '二、填空题', matchMode: 'contains', enabled: true },
+      { id: 'tr_duoxuanti_1', term: '三、多选题', matchMode: 'contains', enabled: true },
+      { id: 'tr_duoxuanti_2', term: '二、多选题', matchMode: 'contains', enabled: true },
+    ],
+    nonQuestionRemainders: [
+      { id: 'nqr_qitalleixing', term: '其他类型', matchMode: 'contains', enabled: true },
+      { id: 'nqr_changjianleixing', term: '常见类型', matchMode: 'contains', enabled: true },
+      { id: 'nqr_fangfazongjie', term: '方法总结', matchMode: 'contains', enabled: true },
+      { id: 'nqr_guilvzongjie', term: '规律总结', matchMode: 'contains', enabled: true },
+    ],
+    sectionMarkers: [
+      { id: 'sec_tixing', term: '题型', matchMode: 'contains', enabled: true },
+      { id: 'sec_jietiguilv', term: '【解题规律', matchMode: 'contains', enabled: true },
+      { id: 'sec_dianlixunlian', term: '【典例训练】', matchMode: 'contains', enabled: true },
+      { id: 'sec_mulu', term: '目录', matchMode: 'contains', enabled: true },
+      { id: 'sec_tixingguina', term: '题型归纳', matchMode: 'contains', enabled: true },
+      { id: 'sec_tixingtanxi', term: '题型探析', matchMode: 'contains', enabled: true },
+    ],
+  }
+}
+
+function readPdfSlicerRules(): SlicerRulesData {
+  const rulesPath = pdfSlicerRulesPath()
+  if (!fs.existsSync(rulesPath)) {
+    const defaults = defaultPdfSlicerRules()
+    try {
+      fs.writeFileSync(rulesPath, JSON.stringify(defaults, null, 2), 'utf8')
+    } catch {
+      console.warn('[pdf-slicer-rules] failed to write default rules file')
+    }
+    return defaults
+  }
+  try {
+    const raw = fs.readFileSync(rulesPath, 'utf8')
+    const parsed = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) {
+      console.warn('[pdf-slicer-rules] rules file is not an object, using defaults')
+      return defaultPdfSlicerRules()
+    }
+    return parsed as SlicerRulesData
+  } catch (error) {
+    console.warn('[pdf-slicer-rules] failed to parse rules file, using defaults:', error)
+    return defaultPdfSlicerRules()
+  }
+}
+
+function validatePdfSlicerRules(data: unknown): { valid: boolean; errors: string[] } {
+  const errors: string[] = []
+  if (!data || typeof data !== 'object') {
+    errors.push('规则数据必须是一个 JSON 对象')
+    return { valid: false, errors }
+  }
+  const obj = data as Record<string, unknown>
+  if (typeof obj.version !== 'number') errors.push('缺少 version 字段')
+  for (const category of SLICER_RULES_CATEGORIES) {
+    const entries = obj[category]
+    if (!Array.isArray(entries)) {
+      errors.push(`${category} 必须是数组`)
+      continue
+    }
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i]
+      if (!entry || typeof entry !== 'object') {
+        errors.push(`${category}[${i}]: 必须是对象`)
+        continue
+      }
+      const e = entry as Record<string, unknown>
+      if (!e.id || typeof e.id !== 'string') errors.push(`${category}[${i}]: 缺少 id`)
+      if (!e.term || typeof e.term !== 'string') errors.push(`${category}[${i}]: 缺少 term`)
+      if (String(e.term || '').trim() === '') errors.push(`${category}[${i}]: term 不能为空`)
+      if (e.matchMode && !VALID_MATCH_MODES.includes(String(e.matchMode))) {
+        errors.push(`${category}[${i}]: matchMode 必须为 contains 或 exact，实际为 '${e.matchMode}'`)
+      }
+    }
+  }
+  return { valid: errors.length === 0, errors }
+}
+
+function computeJsonHash(data: unknown): string {
+  return createHash('sha256').update(JSON.stringify(data)).digest('hex').slice(0, 16)
+}
+
+function takePdfSlicerRulesSnapshot(data: SlicerRulesData, version: number) {
+  const historyDir = pdfSlicerRulesHistoryDir()
+  const timestamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14)
+  fs.writeFileSync(
+    path.join(historyDir, `rules_v${version}_${timestamp}.json`),
+    JSON.stringify({ ...data, snapshotVersion: version, timestamp: new Date().toISOString() }, null, 2),
+    'utf8',
+  )
+}
+
+function writePdfSlicerRules(data: SlicerRulesData, baseVersion: number): SlicerRulesData & { baseVersion: number; hash: string } {
+  takePdfSlicerRulesSnapshot(data, baseVersion)
+  const nextVersion = baseVersion + 1
+  const payload: SlicerRulesData = { ...data, version: nextVersion }
+  const hash = computeJsonHash(payload)
+  // Atomic write: write to temp file then rename
+  const rulesPath = pdfSlicerRulesPath()
+  const tmpPath = rulesPath + '.tmp'
+  fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2), 'utf8')
+  fs.renameSync(tmpPath, rulesPath)
+  return { ...payload, baseVersion: nextVersion, hash }
+}
+
+function listPdfSlicerRulesHistory(): Array<{ version: number; timestamp: string; hash: string }> {
+  const historyDir = pdfSlicerRulesHistoryDir()
+  if (!fs.existsSync(historyDir)) return []
+  const entries: Array<{ version: number; timestamp: string; hash: string }> = []
+  for (const f of fs.readdirSync(historyDir).filter((f) => f.endsWith('.json'))) {
+    try {
+      const payload = JSON.parse(fs.readFileSync(path.join(historyDir, f), 'utf8')) as Record<string, unknown>
+      entries.push({
+        version: Number(payload.snapshotVersion || 0),
+        timestamp: String(payload.timestamp || ''),
+        hash: computeJsonHash(payload),
+      })
+    } catch {
+      // skip unreadable snapshot
+    }
+  }
+  return entries.sort((a, b) => b.version - a.version)
 }
 
 function normalizeTags(value: unknown) {
@@ -1285,6 +1467,10 @@ function ensureSchema() {
   ensureColumn('pdf_slicer_runs', 'ocr_provider_phase', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('pdf_slicer_runs', 'ocr_provider_progress', "INTEGER NOT NULL DEFAULT 0")
   ensureColumn('pdf_slicer_runs', 'ocr_provider_result_path', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('pdf_slicer_runs', 'rules_version', "INTEGER NOT NULL DEFAULT 0")
+  ensureColumn('pdf_slicer_runs', 'rules_hash', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('pdf_slicer_runs', 'rules_fallback_used', "INTEGER NOT NULL DEFAULT 0")
+  ensureColumn('pdf_slicer_runs', 'rules_warnings_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('question_bank_items', 'knowledge_points_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('question_bank_items', 'solution_methods_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('question_bank_items', 'difficulty_score_10', "INTEGER NOT NULL DEFAULT 0")
@@ -1500,6 +1686,10 @@ function mapRun(row: RunRow) {
     ocrProviderPhase: row.ocr_provider_phase || '',
     ocrProviderProgress: Number(row.ocr_provider_progress || 0),
     ocrProviderResultPath: row.ocr_provider_result_path || '',
+    rulesVersion: row.rules_version || 0,
+    rulesHash: row.rules_hash || '',
+    rulesFallbackUsed: Boolean(row.rules_fallback_used),
+    rulesWarnings: parseJson<string[]>(row.rules_warnings_json || '[]', []),
     progressPercent: ocrStatus === 'failed' && importedQuestions > 0 && row.approved_questions > 0 ? importedQuestions / row.approved_questions : progressPercent,
     totalOcrQuestions: row.approved_questions,
     processedQuestions: Math.max(importedQuestions, solutionItems) || (ocrStatus === 'succeeded' ? row.approved_questions : ocrStatus === 'running' ? Math.floor(row.approved_questions / 2) : 0),
@@ -1776,23 +1966,48 @@ function runMigratedPdfSlicer(runId: string) {
   fs.mkdirSync(outputDir, { recursive: true })
   db.prepare('DELETE FROM pdf_slicer_review_items WHERE run_id = ?').run(runId)
 
+  // Record rules config version before running
+  const rulesFile = pdfSlicerRulesPath()
+  const rulesConfig = readPdfSlicerRules()
+  const rulesHash = computeJsonHash(rulesConfig)
+  const rulesVersion = Number(rulesConfig.version || 1)
+  db.prepare('UPDATE pdf_slicer_runs SET rules_version = ?, rules_hash = ?, updated_at = ? WHERE run_id = ?')
+    .run(rulesVersion, rulesHash, nowIso(), runId)
+
+  const rulesArgs = fs.existsSync(rulesFile) ? ['--rules-config', rulesFile] : []
   execFileSync(pythonCommand(), [
     scriptPath,
     '--input-pdf', inputPdf,
     '--output-dir', outputDir,
     '--asset-root', storageRoot,
     '--dpi', '180',
+    ...rulesArgs,
   ], { cwd: pythonRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 
   const resultPath = path.join(outputDir, 'cut_results.json')
   const payload = JSON.parse(fs.readFileSync(resultPath, 'utf8')) as { results?: Array<Record<string, any>>; summary?: Record<string, any> }
   const results = payload.results ?? []
+  const diagnostics = payload.summary?.diagnostics ?? ({} as Record<string, any>)
+  const rulesMeta: Record<string, unknown> = {}
+  if (diagnostics.rules_version !== undefined) {
+    rulesMeta.rulesVersion = diagnostics.rules_version
+    rulesMeta.rulesHash = diagnostics.rules_hash
+    rulesMeta.rulesFallbackUsed = Boolean(diagnostics.rules_fallback_used)
+    rulesMeta.rulesWarnings = Array.isArray(diagnostics.rules_warnings) ? diagnostics.rules_warnings : []
+  }
   const nextDiagnostics = mergeDiagnostics(
     parseJson<Record<string, any>>(row.document_diagnostics_json || '{}', {}),
-    { cutDiagnostics: payload.summary?.diagnostics ?? {} }
+    { cutDiagnostics: diagnostics, ...rulesMeta }
   )
-  db.prepare('UPDATE pdf_slicer_runs SET document_diagnostics_json = ?, updated_at = ? WHERE run_id = ?')
-    .run(JSON.stringify(nextDiagnostics), nowIso(), runId)
+  // Update both document_diagnostics_json and the extracted rule columns
+  db.prepare('UPDATE pdf_slicer_runs SET document_diagnostics_json = ?, rules_fallback_used = ?, rules_warnings_json = ?, updated_at = ? WHERE run_id = ?')
+    .run(
+      JSON.stringify(nextDiagnostics),
+      rulesMeta.rulesFallbackUsed ? 1 : 0,
+      JSON.stringify(rulesMeta.rulesWarnings || []),
+      nowIso(),
+      runId,
+    )
   const insert = db.prepare(`
     INSERT INTO pdf_slicer_review_items (
       result_id, run_id, question_label, page_start, page_end, page_image_path, auto_image_path, bbox_json, segments_json, text_regions_json, figures_json, review_status, note, created_at, updated_at
@@ -2284,8 +2499,9 @@ function createQuestionBankRerunTask(questionIds: string[], options: { forceRegi
     INSERT INTO pdf_slicer_runs (
       run_id, batch_id, upload_mode, paper_title, pdf_name, pdf_path, source_file_name, source_file_kind, run_dir, document_diagnostics_json,
       material_type, file_role, stage, classification_confidence, classification_reasons_json,
-      created_at, updated_at, slice_status, quick_review_status, total_questions, approved_questions, unreviewed_questions, ocr_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'succeeded', 'submitted', ?, ?, 0, 'idle')
+      created_at, updated_at, slice_status, quick_review_status, total_questions, approved_questions, unreviewed_questions, ocr_status,
+      rules_version, rules_hash, rules_fallback_used, rules_warnings_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'succeeded', 'submitted', ?, ?, 0, 'idle', 0, '', 0, '[]')
   `)
   const insertReview = db.prepare(`
     INSERT INTO pdf_slicer_review_items (
@@ -2379,8 +2595,9 @@ function createPendingBankRerunTask(sourceRunId: string, resultId: string, optio
     INSERT INTO pdf_slicer_runs (
       run_id, batch_id, upload_mode, paper_title, pdf_name, pdf_path, source_file_name, source_file_kind, run_dir, document_diagnostics_json,
       material_type, file_role, stage, classification_confidence, classification_reasons_json,
-      created_at, updated_at, slice_status, quick_review_status, total_questions, approved_questions, unreviewed_questions, ocr_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'succeeded', 'submitted', 1, 1, 0, 'idle')
+      created_at, updated_at, slice_status, quick_review_status, total_questions, approved_questions, unreviewed_questions, ocr_status,
+      rules_version, rules_hash, rules_fallback_used, rules_warnings_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'succeeded', 'submitted', 1, 1, 0, 'idle', 0, '', 0, '[]')
   `).run(
     runId,
     batchId,
@@ -5315,6 +5532,91 @@ app.patch('/api/settings', (req, res) => {
   res.json(writeOcrSettings(req.body || {}))
 })
 
+// ── PDF Slicer Rules API ─────────────────────────────────────────────────
+
+app.get('/api/tools/pdf-slicer/rules', (_, res) => {
+  try {
+    const rules = readPdfSlicerRules()
+    const hash = computeJsonHash(rules)
+    res.json({ ...rules, baseVersion: rules.version, hash } as Record<string, unknown>)
+  } catch (error) {
+    res.status(500).json({ error: '读取切题规则失败' })
+  }
+})
+
+app.put('/api/tools/pdf-slicer/rules', (req, res) => {
+  try {
+    const { rules: rulesData, baseVersion } = (req.body || {}) as { rules: unknown; baseVersion: unknown }
+    if (!rulesData) {
+      res.status(400).json({ error: '缺少 rules 字段' })
+      return
+    }
+    const validation = validatePdfSlicerRules(rulesData)
+    if (!validation.valid) {
+      res.status(400).json({ error: '规则验证失败', details: validation.errors })
+      return
+    }
+    const currentRules = readPdfSlicerRules()
+    const expectedVersion = Number(baseVersion ?? currentRules.version)
+    if (currentRules.version !== expectedVersion) {
+      res.status(409).json({
+        error: '规则已被其他操作更新，请刷新后重试',
+        currentBaseVersion: currentRules.version,
+      })
+      return
+    }
+    const result = writePdfSlicerRules(rulesData as SlicerRulesData, expectedVersion)
+    res.json(result)
+  } catch (error) {
+    res.status(500).json({ error: '保存切题规则失败' })
+  }
+})
+
+app.post('/api/tools/pdf-slicer/rules/validate', (req, res) => {
+  try {
+    const validation = validatePdfSlicerRules(req.body?.rules)
+    res.json(validation)
+  } catch (error) {
+    res.status(500).json({ error: '验证规则失败' })
+  }
+})
+
+app.get('/api/tools/pdf-slicer/rules/history', (_, res) => {
+  try {
+    const history = listPdfSlicerRulesHistory()
+    res.json({ history })
+  } catch (error) {
+    res.status(500).json({ error: '读取规则历史失败' })
+  }
+})
+
+app.post('/api/tools/pdf-slicer/rules/rollback/:version', (req, res) => {
+  try {
+    const targetVersion = Number(req.params.version)
+    if (!Number.isFinite(targetVersion)) {
+      res.status(400).json({ error: '无效的版本号' })
+      return
+    }
+    const historyDir = pdfSlicerRulesHistoryDir()
+    const files = fs.readdirSync(historyDir).filter((f) => f.includes(`v${targetVersion}_`))
+    if (!files.length) {
+      res.status(404).json({ error: `未找到版本 v${targetVersion} 的快照` })
+      return
+    }
+    files.sort().reverse()
+    const snapshot = JSON.parse(fs.readFileSync(path.join(historyDir, files[0]), 'utf8')) as SlicerRulesData
+    if (!snapshot.version) {
+      res.status(500).json({ error: '快照数据损坏' })
+      return
+    }
+    const currentRules = readPdfSlicerRules()
+    const result = writePdfSlicerRules(snapshot, currentRules.version)
+    res.json(result)
+  } catch (error) {
+    res.status(500).json({ error: '回滚规则失败' })
+  }
+})
+
 app.get('/api/tools/pdf-slicer/dashboard', (_, res) => {
   const runs = (db.prepare('SELECT * FROM pdf_slicer_runs ORDER BY created_at DESC').all() as RunRow[]).map(mapRun)
   const batches = db.prepare(`
@@ -5378,8 +5680,9 @@ app.post('/api/tools/pdf-slicer/uploads', upload.array('files'), (req, res) => {
     INSERT INTO pdf_slicer_runs (
       run_id, batch_id, upload_mode, paper_title, pdf_name, pdf_path, source_file_name, source_file_kind, run_dir, document_diagnostics_json,
       material_type, file_role, stage, classification_confidence, classification_reasons_json,
-      created_at, updated_at, slice_status, quick_review_status, total_questions, approved_questions, unreviewed_questions, ocr_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'pending', 0, 0, 0, 'idle')
+      created_at, updated_at, slice_status, quick_review_status, total_questions, approved_questions, unreviewed_questions, ocr_status,
+      rules_version, rules_hash, rules_fallback_used, rules_warnings_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'pending', 0, 0, 0, 'idle', 0, '', 0, '[]')
   `)
   for (const [fileIndex, file] of files.entries()) {
     const originalName = normalizeUploadName(file.originalname)

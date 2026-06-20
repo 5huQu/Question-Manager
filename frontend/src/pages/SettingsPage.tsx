@@ -1,20 +1,111 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, Check, Settings2, Tags, AlertCircle, LoaderCircle, SlidersHorizontal, Wrench, ExternalLink } from 'lucide-react'
+import { BookOpen, Check, Settings2, Tags, AlertCircle, LoaderCircle, SlidersHorizontal, Wrench, ExternalLink, Scissors, Plus, Trash2, ToggleLeft, ToggleRight, RotateCcw } from 'lucide-react'
 import { api, jsonHeaders } from '@/api/client'
 import { Button, Empty, PageTitle } from '@/components/ui'
 import { Modal } from '@/components/dialogs/Modal'
 import { useAsync } from '@/hooks/useAsync'
-import type { OcrSettings } from '@/types'
+import type { OcrSettings, SlicerRuleEntry, SlicerRulesData, SlicerRulesResponse } from '@/types'
 import { teachingStageOptions } from '@/utils/stages'
 import { libreOfficeDownloadUrl } from '@/utils/wordFiles'
 
 export function SettingsPage() {
   const { data, error, loading, reload } = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
   const [draft, setDraft] = useState<Partial<OcrSettings & { apiKey: string; doc2xApiKey: string; cleanupApiKey: string }>>({})
-  const [activeTab, setActiveTab] = useState<'basic' | 'tools' | 'ocr' | 'classification' | 'prompts'>('basic')
+  const [activeTab, setActiveTab] = useState<'basic' | 'tools' | 'ocr' | 'classification' | 'prompts' | 'rules'>('basic')
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [showLibreOfficeAlert, setShowLibreOfficeAlert] = useState(false)
+
+  // Rules state
+  const rulesApi = useAsync<SlicerRulesResponse>(() => api('/api/tools/pdf-slicer/rules'), [])
+  const [rulesDraft, setRulesDraft] = useState<SlicerRulesData | null>(null)
+  const [rulesBaseVersion, setRulesBaseVersion] = useState<number>(0)
+  const [isRulesSaving, setIsRulesSaving] = useState(false)
+  const [rulesSaveStatus, setRulesSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  useEffect(() => {
+    if (rulesApi.data) {
+      setRulesDraft(rulesApi.data)
+      setRulesBaseVersion(rulesApi.data.baseVersion)
+    }
+  }, [rulesApi.data])
+
+  // Rules handlers
+  function addRule(category: string) {
+    if (!rulesDraft) return
+    const entries: SlicerRuleEntry[] = [...((rulesDraft as any)[category] || [])]
+    const newId = `${category}_${Date.now()}`
+    entries.push({ id: newId, term: '', matchMode: 'contains', enabled: true })
+    setRulesDraft({ ...rulesDraft, [category]: entries })
+  }
+
+  function updateRule(category: string, index: number, updated: SlicerRuleEntry) {
+    if (!rulesDraft) return
+    const entries: SlicerRuleEntry[] = [...((rulesDraft as any)[category] || [])]
+    entries[index] = updated
+    setRulesDraft({ ...rulesDraft, [category]: entries })
+  }
+
+  function deleteRule(category: string, index: number) {
+    if (!rulesDraft) return
+    const entries: SlicerRuleEntry[] = [...((rulesDraft as any)[category] || [])]
+    entries.splice(index, 1)
+    setRulesDraft({ ...rulesDraft, [category]: entries })
+  }
+
+  function validateRulesDraft() {
+    const draft = rulesDraft
+    if (!draft) return
+    api<{ valid: boolean; errors: string[] }>('/api/tools/pdf-slicer/rules/validate', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ rules: draft }),
+    }).then((result) => {
+      if (result.valid) {
+        setRulesSaveStatus({ type: 'success', message: '规则校验通过！' })
+        setTimeout(() => setRulesSaveStatus(null), 3000)
+      } else {
+        setRulesSaveStatus({ type: 'error', message: '校验失败：' + result.errors.join('；') })
+      }
+    }).catch((err: any) => {
+      setRulesSaveStatus({ type: 'error', message: '校验请求失败：' + (err?.message || '未知错误') })
+    })
+  }
+
+  function resetRulesDraft() {
+    rulesApi.reload()
+  }
+
+  function discardRulesDraft() {
+    if (rulesApi.data) {
+      setRulesDraft(rulesApi.data)
+      setRulesBaseVersion(rulesApi.data.baseVersion)
+    }
+    setRulesSaveStatus(null)
+  }
+
+  async function saveRules() {
+    const draft = rulesDraft
+    if (!draft) return
+    setIsRulesSaving(true)
+    setRulesSaveStatus(null)
+    try {
+      const saved = await api<SlicerRulesResponse>('/api/tools/pdf-slicer/rules', {
+        method: 'PUT',
+        headers: jsonHeaders,
+        body: JSON.stringify({ rules: draft, baseVersion: rulesBaseVersion }),
+      })
+      setRulesBaseVersion(saved.baseVersion)
+      setRulesDraft(saved)
+      rulesApi.setData(saved)
+      setRulesSaveStatus({ type: 'success', message: '规则已保存并生效！下次切题将使用新规则。' })
+      setTimeout(() => setRulesSaveStatus(null), 5000)
+    } catch (err: any) {
+      setRulesSaveStatus({ type: 'error', message: err?.message || '保存失败' })
+    } finally {
+      setIsRulesSaving(false)
+    }
+  }
 
   useEffect(() => {
     if (data) {
@@ -61,6 +152,7 @@ export function SettingsPage() {
     { id: 'ocr' as const, label: 'OCR 设置', icon: Settings2, desc: 'API、密钥与并发参数' },
     { id: 'classification' as const, label: '数据分类', icon: Tags, desc: '完成后的知识点与难度标签' },
     { id: 'prompts' as const, label: 'OCR 提示词', icon: BookOpen, desc: '整题与分区的大模型 Prompt' },
+    { id: 'rules' as const, label: '切题规则', icon: Scissors, desc: 'PDF 切题引擎的标记词与章节识别规则' },
   ]
 
   return (
@@ -576,27 +668,142 @@ export function SettingsPage() {
                   </div>
                 </div>
               )}
+
+              {activeTab === 'rules' && (
+                <div className="space-y-4">
+                  {/* Status header */}
+                  <div className="bg-zinc-50 dark:bg-zinc-800/20 rounded-xl p-4 border border-zinc-200 dark:border-zinc-800">
+                    <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">PDF 切题规则</p>
+                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed font-normal">
+                      维护 PDF 切题的题型标题、提示词和干扰词；发布后仅影响新的或重新执行的切题任务。
+                      {rulesApi.data && (
+                        <span className="block mt-1">当前版本：{rulesApi.data.version} {rulesApi.data.hash ? `(${rulesApi.data.hash.slice(0, 8)}...)` : ''}</span>
+                      )}
+                    </p>
+                  </div>
+
+                  {rulesSaveStatus && rulesSaveStatus.type === 'error' && (
+                    <div className="flex items-start gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3 rounded-xl border border-red-200 dark:border-red-900/30">
+                      <AlertCircle className="size-4 mt-0.5 shrink-0" />
+                      <span>{rulesSaveStatus.message}</span>
+                    </div>
+                  )}
+
+                  {rulesApi.loading ? (
+                    <Empty text="加载规则中..." />
+                  ) : rulesApi.error ? (
+                    <div className="text-xs text-red-500">{rulesApi.error}</div>
+                  ) : !rulesDraft ? (
+                    <Empty text="暂无规则数据" />
+                  ) : (
+                    <>
+                      {RULES_CATEGORIES.map((cat) => {
+                        const entries = (rulesDraft as any)[cat.key] as SlicerRuleEntry[] | undefined
+                        return (
+                          <div key={cat.key} className="rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+                            <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-800/30 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+                              <div>
+                                <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{cat.label}</span>
+                                <p className="text-[10px] text-zinc-400 mt-0.5">{cat.desc}</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => addRule(cat.key)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 px-2.5 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                              >
+                                <Plus className="size-3" />
+                                添加
+                              </button>
+                            </div>
+                            <div className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
+                              {!entries || entries.length === 0 ? (
+                                <div className="px-4 py-3 text-xs text-zinc-400">暂无规则</div>
+                              ) : (
+                                entries.map((entry, i) => (
+                                  <RuleRow
+                                    key={entry.id}
+                                    entry={entry}
+                                    index={i}
+                                    onChange={(updated) => updateRule(cat.key, i, updated)}
+                                    onDelete={() => deleteRule(cat.key, i)}
+                                  />
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      {/* Action buttons */}
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button
+                          variant="outline"
+                          onClick={validateRulesDraft}
+                          disabled={isRulesSaving}
+                        >
+                          校验草稿
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={resetRulesDraft}
+                          disabled={isRulesSaving}
+                        >
+                          <RotateCcw className="size-3.5" />
+                          恢复默认
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={discardRulesDraft}
+                          disabled={isRulesSaving}
+                        >
+                          放弃修改
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Panel Footer */}
             <div className="px-6 py-4 bg-zinc-50/50 dark:bg-zinc-900/50 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setDraft(data || {})
-                  setSaveStatus(null)
-                }}
-                disabled={isSaving}
-              >
-                重置修改
-              </Button>
-              <Button
-                icon={isSaving ? LoaderCircle : Check}
-                onClick={save}
-                disabled={isSaving}
-              >
-                {isSaving ? '保存中...' : '保存设置'}
-              </Button>
+              {activeTab === 'rules' ? (
+                <>
+                  {rulesSaveStatus && rulesSaveStatus.type === 'success' && (
+                    <div className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-900/30">
+                      <Check className="size-3.5" />
+                      <span>{rulesSaveStatus.message}</span>
+                    </div>
+                  )}
+                  <Button
+                    icon={isRulesSaving ? LoaderCircle : Check}
+                    onClick={saveRules}
+                    disabled={isRulesSaving}
+                  >
+                    {isRulesSaving ? '保存中...' : '保存并发布'}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setDraft(data || {})
+                      setSaveStatus(null)
+                    }}
+                    disabled={isSaving}
+                  >
+                    重置修改
+                  </Button>
+                  <Button
+                    icon={isSaving ? LoaderCircle : Check}
+                    onClick={save}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? '保存中...' : '保存设置'}
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -630,6 +837,62 @@ export function SettingsPage() {
         </Modal>
       ) : null}
     </section>
+  )
+}
+
+// ── Rule Category Constants ──────────────────────────────────────────────
+
+const RULES_CATEGORIES = [
+  { key: 'auxiliaryMarkers', label: '辅助标记', desc: '识别到这些词时标记为辅助页面，跳过题目检测' },
+  { key: 'noticeTerms', label: '注意事项', desc: '首页注意事项文字段，避免误判为题号' },
+  { key: 'referenceFormulaMarkers', label: '参考公式', desc: '参考公式/数据附近抑制题号识别' },
+  { key: 'trainingMarkers', label: '训练标记', desc: '正文训练区标题，重置辅助模式，不作为切片边界' },
+  { key: 'nonQuestionRemainders', label: '非题剩余文字', desc: '末尾总结性文字，不当作题号' },
+  { key: 'sectionMarkers', label: '章节标记', desc: '识别非标准题型标题，作为切片边界标记' },
+] as const
+
+// ── Rule Row Component ──────────────────────────────────────────────────
+
+function RuleRow({ entry, index, onChange, onDelete }: {
+  entry: SlicerRuleEntry
+  index: number
+  onChange: (entry: SlicerRuleEntry) => void
+  onDelete: () => void
+}) {
+  return (
+    <div className="px-4 py-2.5 flex items-center gap-3">
+      <span className="text-[10px] text-zinc-400 w-6 text-right shrink-0">{index + 1}</span>
+      <input
+        className="flex-1 min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2.5 py-1.5 text-xs"
+        value={entry.term}
+        onChange={(e) => onChange({ ...entry, term: e.target.value })}
+        placeholder="标记词"
+      />
+      <select
+        className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-1.5 text-xs"
+        value={entry.matchMode}
+        onChange={(e) => onChange({ ...entry, matchMode: e.target.value as 'contains' | 'exact' })}
+      >
+        <option value="contains">包含</option>
+        <option value="exact">精确</option>
+      </select>
+      <button
+        type="button"
+        onClick={() => onChange({ ...entry, enabled: !entry.enabled })}
+        className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+        title={entry.enabled ? '禁用' : '启用'}
+      >
+        {entry.enabled ? <ToggleRight className="size-4 text-emerald-500" /> : <ToggleLeft className="size-4" />}
+      </button>
+      <button
+        type="button"
+        onClick={onDelete}
+        className="text-zinc-400 hover:text-red-500"
+        title="删除"
+      >
+        <Trash2 className="size-3.5" />
+      </button>
+    </div>
   )
 }
 
