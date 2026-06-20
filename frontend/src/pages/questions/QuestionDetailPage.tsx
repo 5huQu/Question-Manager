@@ -23,6 +23,7 @@ export function QuestionDetailPage() {
   const [editNotice, setEditNotice] = useState<null | { kind: 'success' | 'error'; text: string }>(null)
   const [ocrAction, setOcrAction] = useState('')
   const [draft, setDraft] = useState<Partial<QuestionItem>>({})
+  const doc2xRerunUnavailable = data?.sourceOcrProvider === 'doc2x'
   useEffect(() => {
     if (data) setDraft(data)
   }, [data])
@@ -213,16 +214,16 @@ export function QuestionDetailPage() {
 	                <Button
 	                  className="w-full justify-start text-[13px] font-medium"
 	                  icon={ScanSearch}
-	                  disabled={!data.sourceRunId || ocrProgress?.active || Boolean(ocrAction)}
+	                  disabled={!data.sourceRunId || doc2xRerunUnavailable || ocrProgress?.active || Boolean(ocrAction)}
 	                  onClick={quickOcr}
 	                >
-	                  {ocrAction === 'whole' ? '整图 OCR 中...' : '重新 OCR'}
+	                  {doc2xRerunUnavailable ? 'Doc2X 不支持单题重识别' : ocrAction === 'whole' ? '整图 OCR 中...' : '重新 OCR'}
 	                </Button>
 	                <Button
 	                  className="w-full justify-start text-[13px] font-medium"
 	                  variant="outline"
 	                  icon={Scissors}
-	                  disabled={!data.sourceRunId || ocrProgress?.active || Boolean(ocrAction)}
+	                  disabled={!data.sourceRunId || doc2xRerunUnavailable || ocrProgress?.active || Boolean(ocrAction)}
 	                  onClick={chunkOcr}
 	                >
 	                  {ocrAction === 'region' ? '分块 OCR 中...' : '分块 OCR'}

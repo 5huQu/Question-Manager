@@ -33,6 +33,11 @@ export type ApiRun = {
   importedQuestions?: number
   bankedQuestions?: number
   solutionItems?: number
+  ocrProvider?: 'legacy' | 'doc2x'
+  ocrExternalUid?: string
+  ocrProviderPhase?: string
+  ocrProviderProgress?: number
+  ocrProviderResultPath?: string
 }
 
 export type ApiBatch = {
@@ -81,6 +86,7 @@ export type QuestionItem = {
   }>
   figures: QuestionFigure[]
   sourceRunId: string
+  sourceOcrProvider?: 'legacy' | 'doc2x'
   sourceSolutionRunId?: string
   mergeStatus?: string
   mergeNote?: string
@@ -268,6 +274,7 @@ export type OcrSettings = {
   sofficePath: string
   sofficeAvailable: boolean
   sofficeDetectedPath: string
+  ocrProvider: 'legacy' | 'doc2x'
   apiBaseUrl: string
   apiKeyConfigured: boolean
   model: string
@@ -278,6 +285,9 @@ export type OcrSettings = {
   retryDelaySeconds: string
   imageMaxWidth: string
   topK: string
+  doc2xApiBaseUrl: string
+  doc2xApiKeyConfigured: boolean
+  doc2xModel: string
   cleanupApiBaseUrl: string
   cleanupApiKeyConfigured: boolean
   cleanupModel: string

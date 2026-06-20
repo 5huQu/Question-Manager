@@ -15,9 +15,13 @@ server/python/.env
 config/
 
 # Runtime data
-runtime/
-data/
-experiments/pdf_slicer/runs/
+/runtime/
+/data/
+/experiments/
+/python/
+/uploads/
+/exports/
+/question_assets/
 server/python/ocr_drafts/
 server/python/ocr_jobs/
 server/python/output/
@@ -25,6 +29,8 @@ server/python/format_cleanup_reports/
 server/python/question_assets
 server/python/native_ocr_trials/
 output/
+*.sqlite
+*.sqlite-*
 tools/export_brand_samples.py
 tools/test_brand_layout_optimization.py
 

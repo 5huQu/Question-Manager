@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import katex from 'katex'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
 import remarkBreaks from 'remark-breaks'
@@ -46,7 +47,28 @@ export function plainTextLength(value: string) {
 }
 
 export function normalizeMarkdownForRender(value: string) {
-  return normalizeRawLatexOutsideMath(normalizeLatexArrays(normalizeMarkdownTables(normalizeNestedInlineMath(normalizeMathDelimiters(String(value || ''))))))
+  // Arrays must be lifted to protected display-math blocks before the generic
+  // inline-math repair runs; otherwise it can insert `$` inside array rows.
+  return normalizeRawLatexOutsideMath(normalizeMarkdownTables(normalizeNestedInlineMath(normalizeLatexArrays(normalizeMathDelimiters(normalizeHtmlTables(String(value || '')))))))
+}
+
+function normalizeHtmlTables(value: string) {
+  return value.replace(/<table\b[^>]*>([\s\S]*?)<\/table>/gi, (source, body: string) => {
+    const rows = Array.from(body.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi))
+      .map((row) => Array.from(row[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi))
+        .map((cell) => cell[1]
+          .replace(/<br\s*\/?>/gi, '<br>')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/&amp;/gi, '&')
+          .replace(/\|/g, '\\|')
+          .trim()))
+      .filter((row) => row.length)
+    if (!rows.length) return source
+    const width = Math.max(...rows.map((row) => row.length))
+    const markdownRow = (row: string[]) => `| ${Array.from({ length: width }, (_, index) => row[index] || '').join(' | ')} |`
+    return `\n\n${markdownRow(rows[0])}\n${normalizeTableSeparator(width)}\n${rows.slice(1).map(markdownRow).join('\n')}\n\n`
+  })
 }
 
 function normalizeAdjacentLogicMath(value: string) {
@@ -164,11 +186,12 @@ function normalizeTableSeparator(width: number) {
 }
 
 function normalizeLatexArrays(value: string) {
-  const normalizedBrokenInlineArrays = value.replace(/\$\\begin\{array\}\{([^{}]*)\}\$([\s\S]*?)\$\\end\{array\}\$/g, (_, columns: string, body: string) => {
+  const protectedMultilineArrays = value.replace(/\$([^$]*\\begin\{array\}\{[^{}]*\}[\s\S]*?\\end\{array\}[^$]*)\$/g, (_, body: string) => repairArrayMathBody(body))
+  const normalizedBrokenInlineArrays = protectedMultilineArrays.replace(/\$\\begin\{array\}\{([^{}]*)\}\$([\s\S]*?)\$\\end\{array\}\$/g, (_, columns: string, body: string) => {
     const rows = normalizeLatexArrayBody(body)
     return `\n\n$$\n\\begin{array}{${columns}}\n${rows}\n\\end{array}\n$$\n\n`
   })
-  return normalizedBrokenInlineArrays.replace(/\\begin\{array\}\{([^{}]*)\}([\s\S]*?)\\end\{array\}/g, (match, columns: string, body: string, offset: number) => {
+  const normalizedArrays = normalizedBrokenInlineArrays.replace(/\\begin\{array\}\{([^{}]*)\}([\s\S]*?)\\end\{array\}/g, (match, columns: string, body: string, offset: number) => {
     const previous = normalizedBrokenInlineArrays[offset - 1]
     const next = normalizedBrokenInlineArrays[offset + match.length]
     if (previous === '$' || next === '$') return match
@@ -176,6 +199,31 @@ function normalizeLatexArrays(value: string) {
     const array = `\\begin{array}{${columns}}\n${rows}\n\\end{array}`
     return isInsideMathAt(normalizedBrokenInlineArrays, offset) ? array : `\n\n$$\n${array}\n$$\n\n`
   })
+  return normalizeArrayMathSegments(normalizedArrays)
+}
+
+function normalizeArrayMathSegments(value: string) {
+  return splitMathSegments(value).map((part) => {
+    if (!part.math || !part.text.includes('\\begin{array}')) return part.text
+    const display = part.text.startsWith('$$')
+    const body = part.text.slice(display ? 2 : 1, display ? -2 : -1)
+    return repairArrayMathBody(body)
+  }).join('')
+}
+
+function repairArrayMathBody(value: string) {
+  const body = value
+    .replace(/\\left\{/g, '\\left\\{')
+    .replace(/\\right\}/g, '\\right\\}')
+    .trim()
+    try {
+      katex.renderToString(body, { displayMode: true, throwOnError: true, strict: 'ignore' })
+      return `\n\n$$\n${body}\n$$\n\n`
+    } catch {
+      const arrays = Array.from(body.matchAll(/\\begin\{array\}\{([^{}]*)\}([\s\S]*?)\\end\{array\}/g))
+        .map((match) => `\\begin{array}{${match[1]}}\n${normalizeLatexArrayBody(match[2])}\n\\end{array}`)
+      return arrays.length ? `\n\n${arrays.map((array) => `$$\n${array}\n$$`).join('\n\n')}\n\n` : value
+    }
 }
 
 function normalizeLatexArrayBody(body: string) {

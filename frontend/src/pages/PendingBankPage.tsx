@@ -20,7 +20,7 @@ import {
 import { api, jsonHeaders } from '../api/client'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { EditDialog } from '../components/questions/EditDialog'
-import { QuestionMarkdownContent } from '../components/questions/QuestionContent'
+import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '../components/questions/QuestionContent'
 import { Badge, Button, Empty } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
 import type {
@@ -427,6 +427,7 @@ export default function PendingBankPage() {
               onConfirm={() => confirmSingle(activeItem.id)}
               onEdit={() => openEditor(activeItem)}
               onReOcr={() => reOcrSingle(activeItem.id)}
+              rerunUnavailable={data?.run.ocrProvider === 'doc2x'}
               onSkip={() => skipSingle(activeItem.id)}
               onDelete={() => deleteSingle(activeItem.id)}
             />
@@ -673,12 +674,13 @@ function figuresByUsage(figures: QuestionFigure[], usage: string) {
   return figures.filter((fig) => String(fig.usage || 'stem') === usage)
 }
 
-function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, onSkip, onDelete }: {
+function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable, onSkip, onDelete }: {
   item: QuestionItem
   busy: boolean
   onConfirm: () => void
   onEdit: () => void
   onReOcr: () => void
+  rerunUnavailable: boolean
   onSkip: () => void
   onDelete: () => void
 }) {
@@ -721,7 +723,7 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, onSkip, onDelete
           </div>
           <Button size="sm" icon={BadgeCheck} disabled={busy || readOnlyFailure || isOcrFailed || item.bankStatus === 'banked'} onClick={onConfirm}>确认入库</Button>
           <Button size="sm" variant="outline" icon={Edit3} disabled={busy} onClick={onEdit}>编辑题目</Button>
-          <Button size="sm" variant="outline" icon={ScanSearch} disabled={busy} onClick={onReOcr}>重新 OCR</Button>
+          {!rerunUnavailable ? <Button size="sm" variant="outline" icon={ScanSearch} disabled={busy} onClick={onReOcr}>重新 OCR</Button> : null}
           <MoreActionsDropdown busy={busy || readOnlyFailure} onSkip={onSkip} onDelete={onDelete} />
         </div>
       </div>
@@ -776,7 +778,7 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, onSkip, onDelete
             {isOcrFailed ? (
               <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
                 <p className="font-semibold">识别失败</p>
-                <p className="mt-1 text-xs">OCR 未能提取到可用内容。建议重新 OCR。</p>
+                <p className="mt-1 text-xs">OCR 未能提取到可用内容。{rerunUnavailable ? 'Doc2X 首版请使用整批完全重跑，或手动编辑补录。' : '建议重新 OCR。'}</p>
                 {readOnlyFailure ? <p className="mt-1 text-xs">这道题尚未生成待入库候选，可打开编辑题目手动补录，或只重跑当前题 OCR。</p> : null}
               </div>
             ) : null}
@@ -791,17 +793,17 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, onSkip, onDelete
             {/* Answer */}
             {item.answerText ? (
               <ContentSection title="答案">
-                <MarkdownContent content={item.answerText} />
+                <MarkdownWithInlineFigures content={item.answerText} figures={item.figures} />
               </ContentSection>
             ) : null}
 
             {/* Analysis */}
             {item.analysisMarkdown ? (
               <ContentSection title="解析">
-                <MarkdownContent content={item.analysisMarkdown} />
-                {analysisFigures.length ? (
+                <MarkdownWithInlineFigures content={item.analysisMarkdown} figures={analysisFigures} />
+                {analysisFigures.filter((figure) => !String(item.analysisMarkdown || '').includes(`DOC2X_FIGURE:${String(figure.blockId || figure.id)}`)).length ? (
                   <div className="mt-2 flex gap-2 flex-wrap">
-                    {analysisFigures.map((fig, i) => (
+                    {analysisFigures.filter((figure) => !String(item.analysisMarkdown || '').includes(`DOC2X_FIGURE:${String(figure.blockId || figure.id)}`)).map((fig, i) => (
                       <img key={i} src={`/assets/${fig.path}`} alt={`解析图 ${i + 1}`} className="max-h-40 rounded-lg border" loading="lazy" />
                     ))}
                   </div>

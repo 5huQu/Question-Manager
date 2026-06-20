@@ -147,6 +147,7 @@ type MaterialType = 'exam' | 'lecture' | 'unknown'
 type FileRole = 'full' | 'questions' | 'solutions' | 'unknown'
 type WorkflowMode = 'single' | 'separated_exam'
 type WorkflowStatus = 'ready' | 'needs_classification' | 'processing' | 'ready_for_bank' | 'needs_review'
+type OcrProvider = 'legacy' | 'doc2x'
 
 type RichInline =
   | { type: 'text'; text: string }
@@ -196,6 +197,11 @@ type RunRow = {
   ocr_error: string
   ocr_started_at: string
   ocr_finished_at: string
+  ocr_provider: string
+  ocr_external_uid: string
+  ocr_provider_phase: string
+  ocr_provider_progress: number
+  ocr_provider_result_path: string
 }
 
 type QuestionRow = {
@@ -1141,6 +1147,11 @@ function ensureSchema() {
       ocr_error TEXT NOT NULL DEFAULT '',
       ocr_started_at TEXT NOT NULL DEFAULT '',
       ocr_finished_at TEXT NOT NULL DEFAULT '',
+      ocr_provider TEXT NOT NULL DEFAULT '',
+      ocr_external_uid TEXT NOT NULL DEFAULT '',
+      ocr_provider_phase TEXT NOT NULL DEFAULT '',
+      ocr_provider_progress INTEGER NOT NULL DEFAULT 0,
+      ocr_provider_result_path TEXT NOT NULL DEFAULT '',
       FOREIGN KEY (batch_id) REFERENCES pdf_slicer_batches(id) ON DELETE CASCADE
     );
 
@@ -1269,6 +1280,11 @@ function ensureSchema() {
   ensureColumn('pdf_slicer_runs', 'classification_confidence', "REAL NOT NULL DEFAULT 0")
   ensureColumn('pdf_slicer_runs', 'classification_reasons_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('pdf_slicer_runs', 'document_diagnostics_json', "TEXT NOT NULL DEFAULT '{}'")
+  ensureColumn('pdf_slicer_runs', 'ocr_provider', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('pdf_slicer_runs', 'ocr_external_uid', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('pdf_slicer_runs', 'ocr_provider_phase', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('pdf_slicer_runs', 'ocr_provider_progress', "INTEGER NOT NULL DEFAULT 0")
+  ensureColumn('pdf_slicer_runs', 'ocr_provider_result_path', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_bank_items', 'knowledge_points_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('question_bank_items', 'solution_methods_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('question_bank_items', 'difficulty_score_10', "INTEGER NOT NULL DEFAULT 0")
@@ -1325,7 +1341,70 @@ function ensureSchema() {
   }
 }
 
+function backfillDoc2xFigureAssets() {
+  const rows = db.prepare("SELECT id, figures_json FROM question_bank_items WHERE figures_json LIKE '%doc2x_v3%'").all() as Array<{ id: string; figures_json: string }>
+  for (const row of rows) {
+    const draftPath = path.join(pythonDataRoot, 'ocr_drafts', row.id, 'ocr_result.json')
+    if (!fs.existsSync(draftPath)) continue
+    const draft = parseJson<Record<string, any>>(fs.readFileSync(draftPath, 'utf8'), {})
+    const figures = Array.isArray(draft.figures) ? draft.figures : []
+    const directAssets = figures.filter((figure) => {
+      if (!figure || figure.origin !== 'doc2x_v3' || !figure.path) return false
+      return fs.existsSync(resolveStoragePath(stripAssetPrefix(String(figure.path))))
+    })
+    if (!directAssets.length) continue
+    const normalizedAssets = directAssets.map((figure) => {
+      const usage = String(figure.usage || figure.category || 'stem') === 'question' ? 'stem' : String(figure.usage || figure.category || 'stem')
+      return { ...figure, usage, category: String(figure.category || (usage === 'stem' ? 'question' : usage)) }
+    })
+    const current = parseJson<Array<Record<string, any>>>(row.figures_json, [])
+    const currentPaths = current.map((figure) => String(figure.path || '')).join('|')
+    const nextPaths = normalizedAssets.map((figure) => `${String(figure.path || '')}:${String(figure.usage || '')}`).join('|')
+    const currentWithUsage = current.map((figure) => `${String(figure.path || '')}:${String(figure.usage || '')}`).join('|')
+    if (currentPaths === nextPaths || currentWithUsage === nextPaths) continue
+    db.prepare('UPDATE question_bank_items SET figures_json = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(normalizedAssets), nowIso(), row.id)
+  }
+}
+
+function doc2xInlineFigureMarkdown(content: string, figures: Array<Record<string, any>>) {
+  let nextFigure = 0
+  const mediaPair = /<!--\s*Media\s*-->\s*(?:<!--\s*Media\s*-->\s*)+/gi
+  const withMarkers = String(content || '').replace(mediaPair, () => {
+    const figure = figures[nextFigure++]
+    const id = String(figure?.blockId || figure?.id || '')
+    return id ? `\n\n<!-- DOC2X_FIGURE:${id} -->\n\n` : ''
+  })
+  return withMarkers.replace(/<!--\s*Media\s*-->/gi, '').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+// Older Doc2X drafts removed expiring <img> URLs but left the paired Media
+// comments behind. Reconnect those placeholders to the already-downloaded
+// figures so pre-existing runs gain inline placement too.
+function backfillDoc2xInlineFigures() {
+  const rows = db.prepare(`
+    SELECT id, stem_markdown, answer_text, analysis_markdown, figures_json
+    FROM question_bank_items WHERE figures_json LIKE '%doc2x_v3%'
+  `).all() as Array<{ id: string; stem_markdown: string; answer_text: string; analysis_markdown: string; figures_json: string }>
+  for (const row of rows) {
+    const figures = parseJson<Array<Record<string, any>>>(row.figures_json, [])
+    const stemFigures = figures.filter((figure) => String(figure.usage || figure.category || '') === 'stem' || String(figure.category || '') === 'question')
+    const analysisFigures = figures.filter((figure) => String(figure.usage || figure.category || '') === 'analysis')
+    const stem = doc2xInlineFigureMarkdown(row.stem_markdown, stemFigures)
+    const answer = doc2xInlineFigureMarkdown(row.answer_text, analysisFigures)
+    const analysis = doc2xInlineFigureMarkdown(row.analysis_markdown, analysisFigures)
+    if (stem === row.stem_markdown && answer === row.answer_text && analysis === row.analysis_markdown) continue
+    db.prepare(`
+      UPDATE question_bank_items
+      SET stem_markdown = ?, answer_text = ?, analysis_markdown = ?, updated_at = ?
+      WHERE id = ?
+    `).run(stem, answer, analysis, nowIso(), row.id)
+  }
+}
+
 ensureSchema()
+backfillDoc2xFigureAssets()
+backfillDoc2xInlineFigures()
 repairLegacyQuestionTypes()
 
 function batchRuns(batchId: string) {
@@ -1344,14 +1423,48 @@ function mapBatch(row: BatchRow) {
   }
 }
 
+function doc2xArtifactDir(row: RunRow) {
+  return path.join(resolveStoragePath(row.run_dir), 'doc2x')
+}
+
+function readDoc2xState(row: RunRow) {
+  return parseJson<Record<string, any>>(
+    fs.existsSync(path.join(doc2xArtifactDir(row), 'state.json'))
+      ? fs.readFileSync(path.join(doc2xArtifactDir(row), 'state.json'), 'utf8')
+      : '{}',
+    {},
+  )
+}
+
+function syncDoc2xState(row: RunRow) {
+  if (normalizeOcrProvider(row.ocr_provider) !== 'doc2x') return row
+  const state = readDoc2xState(row)
+  if (!Object.keys(state).length) return row
+  const progress = Math.max(0, Math.min(100, Number(state.progress || 0)))
+  const uid = String(state.uid || row.ocr_external_uid || '')
+  const phase = String(state.phase || row.ocr_provider_phase || '')
+  const resultPath = String(state.result_path || row.ocr_provider_result_path || '')
+  if (uid !== row.ocr_external_uid || phase !== row.ocr_provider_phase || progress !== row.ocr_provider_progress || resultPath !== row.ocr_provider_result_path) {
+    db.prepare(`
+      UPDATE pdf_slicer_runs
+      SET ocr_external_uid = ?, ocr_provider_phase = ?, ocr_provider_progress = ?, ocr_provider_result_path = ?, updated_at = ?
+      WHERE run_id = ?
+    `).run(uid, phase, progress, resultPath, nowIso(), row.run_id)
+  }
+  return { ...row, ocr_external_uid: uid, ocr_provider_phase: phase, ocr_provider_progress: progress, ocr_provider_result_path: resultPath }
+}
+
 function mapRun(row: RunRow) {
+  row = syncDoc2xState(row)
   const importedQuestions = (db.prepare('SELECT COUNT(*) AS count FROM question_bank_items WHERE source_run_id = ?').get(row.run_id) as { count: number }).count
   const bankedQuestions = (db.prepare("SELECT COUNT(*) AS count FROM question_bank_items WHERE source_run_id = ? AND bank_status = 'banked'").get(row.run_id) as { count: number }).count
   const solutionItems = (db.prepare('SELECT COUNT(*) AS count FROM pdf_slicer_solution_items WHERE source_run_id = ?').get(row.run_id) as { count: number }).count
   const expectedQuestions = row.approved_questions || row.total_questions || 0
   const completedByImport = expectedQuestions > 0 && Math.max(importedQuestions, solutionItems) >= expectedQuestions
   const ocrStatus = row.ocr_status === 'succeeded' || completedByImport ? 'succeeded' : row.ocr_status
-  const progressPercent = ocrStatus === 'succeeded' ? 1 : ocrStatus === 'running' ? 0.5 : ocrStatus === 'failed' ? 0.2 : 0
+  const provider = normalizeOcrProvider(row.ocr_provider)
+  const providerProgress = Math.max(0, Math.min(100, Number(row.ocr_provider_progress || 0))) / 100
+  const progressPercent = ocrStatus === 'succeeded' ? 1 : provider === 'doc2x' && providerProgress > 0 ? providerProgress : ocrStatus === 'running' ? 0.5 : ocrStatus === 'failed' ? 0.2 : 0
   const documentDiagnostics = parseJson<Record<string, any>>(row.document_diagnostics_json || '{}', {})
   return {
     runId: row.run_id,
@@ -1382,6 +1495,11 @@ function mapRun(row: RunRow) {
     ocrError: row.ocr_error,
     ocrStartedAt: row.ocr_started_at,
     ocrFinishedAt: row.ocr_finished_at,
+    ocrProvider: provider,
+    ocrExternalUid: row.ocr_external_uid || '',
+    ocrProviderPhase: row.ocr_provider_phase || '',
+    ocrProviderProgress: Number(row.ocr_provider_progress || 0),
+    ocrProviderResultPath: row.ocr_provider_result_path || '',
     progressPercent: ocrStatus === 'failed' && importedQuestions > 0 && row.approved_questions > 0 ? importedQuestions / row.approved_questions : progressPercent,
     totalOcrQuestions: row.approved_questions,
     processedQuestions: Math.max(importedQuestions, solutionItems) || (ocrStatus === 'succeeded' ? row.approved_questions : ocrStatus === 'running' ? Math.floor(row.approved_questions / 2) : 0),
@@ -1399,6 +1517,7 @@ function mapQuestion(row: QuestionRow) {
   const answerText = row.answer_text || ''
   const analysisMarkdown = row.analysis_markdown || ''
   const questionType = normalizeQuestionType(row.question_type, stemMarkdown, answerText)
+  const sourceOcrProvider = row.source_run_id ? getRun(row.source_run_id)?.ocrProvider || 'legacy' : 'legacy'
   return {
     id: row.id,
     serialNo: row.serial_no,
@@ -1424,6 +1543,7 @@ function mapQuestion(row: QuestionRow) {
     ocrSegmentImages: ocrSegmentImages(row.id),
     figures,
     sourceRunId: row.source_run_id,
+    sourceOcrProvider,
     sourceSolutionRunId: row.source_solution_run_id,
     mergeStatus: row.merge_status,
     mergeNote: row.merge_note,
@@ -1751,10 +1871,17 @@ function ensureQuestionAssetLink() {
   }
 }
 
-function hasOcrConfig() {
+function normalizeOcrProvider(value: unknown): OcrProvider {
+  return String(value || '').toLowerCase() === 'doc2x' ? 'doc2x' : 'legacy'
+}
+
+function hasOcrConfig(provider: OcrProvider = normalizeOcrProvider(readOcrSettings().ocrProvider)) {
   const envPath = ocrEnvPath()
   const envText = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
   const hasInText = (key: string) => new RegExp(`^${key}=.+`, 'm').test(envText)
+  if (provider === 'doc2x') {
+    return Boolean(process.env.DOC2X_API_KEY || hasInText('DOC2X_API_KEY'))
+  }
   return Boolean(
     (process.env.OCR_API_BASE_URL || hasInText('OCR_API_BASE_URL')) &&
     (process.env.OCR_API_KEY || hasInText('OCR_API_KEY')) &&
@@ -1950,6 +2077,7 @@ function readOcrSettings() {
     ...readAppSettings(),
     sofficeAvailable: Boolean(sofficePath()),
     sofficeDetectedPath: sofficePath(),
+    ocrProvider: normalizeOcrProvider(values.OCR_PROVIDER || 'legacy'),
     apiBaseUrl: values.OCR_API_BASE_URL || '',
     apiKeyConfigured: Boolean(values.OCR_API_KEY || process.env.OCR_API_KEY),
     model: values.OCR_MODEL || '',
@@ -1960,6 +2088,9 @@ function readOcrSettings() {
     retryDelaySeconds: values.OCR_RETRY_DELAY_SECONDS || '3',
     imageMaxWidth: values.OCR_IMAGE_MAX_WIDTH || '900',
     topK: values.OCR_TOP_K || '1',
+    doc2xApiBaseUrl: values.DOC2X_API_BASE_URL || 'https://v2.doc2x.noedgeai.com',
+    doc2xApiKeyConfigured: Boolean(values.DOC2X_API_KEY || process.env.DOC2X_API_KEY),
+    doc2xModel: values.DOC2X_MODEL || 'v3-2026',
     cleanupApiBaseUrl: values.OCR_CLEANUP_API_BASE_URL || values.OCR_API_BASE_URL || '',
     cleanupApiKeyConfigured: Boolean(values.OCR_CLEANUP_API_KEY || process.env.OCR_CLEANUP_API_KEY || values.OCR_API_KEY || process.env.OCR_API_KEY),
     cleanupModel: values.OCR_CLEANUP_MODEL || values.OCR_MODEL || '',
@@ -1979,6 +2110,7 @@ function writeOcrSettings(input: Record<string, unknown>) {
     values[key.trim()] = rest.join('=').trim()
   }
   const map: Record<string, string> = {
+    OCR_PROVIDER: normalizeOcrProvider(input.ocrProvider ?? values.OCR_PROVIDER ?? 'legacy'),
     OCR_API_BASE_URL: String(input.apiBaseUrl ?? values.OCR_API_BASE_URL ?? ''),
     OCR_API_KEY: String(input.apiKey || values.OCR_API_KEY || ''),
     OCR_MODEL: String(input.model ?? values.OCR_MODEL ?? ''),
@@ -1989,6 +2121,9 @@ function writeOcrSettings(input: Record<string, unknown>) {
     OCR_RETRY_DELAY_SECONDS: String(input.retryDelaySeconds ?? values.OCR_RETRY_DELAY_SECONDS ?? '3'),
     OCR_IMAGE_MAX_WIDTH: String(input.imageMaxWidth ?? values.OCR_IMAGE_MAX_WIDTH ?? '900'),
     OCR_TOP_K: String(input.topK ?? values.OCR_TOP_K ?? '1'),
+    DOC2X_API_BASE_URL: String(input.doc2xApiBaseUrl ?? values.DOC2X_API_BASE_URL ?? 'https://v2.doc2x.noedgeai.com'),
+    DOC2X_API_KEY: String(input.doc2xApiKey || values.DOC2X_API_KEY || ''),
+    DOC2X_MODEL: String(input.doc2xModel ?? values.DOC2X_MODEL ?? 'v3-2026'),
     OCR_CLEANUP_API_BASE_URL: String(input.cleanupApiBaseUrl ?? values.OCR_CLEANUP_API_BASE_URL ?? values.OCR_API_BASE_URL ?? ''),
     OCR_CLEANUP_API_KEY: String(input.cleanupApiKey || values.OCR_CLEANUP_API_KEY || ''),
     OCR_CLEANUP_MODEL: String(input.cleanupModel ?? values.OCR_CLEANUP_MODEL ?? values.OCR_MODEL ?? ''),
@@ -2786,6 +2921,7 @@ function pendingBankOcrFailureItems(runId: string, importedIds: Set<string>, sou
       ocrSegmentImages: [],
       figures: item.figures || [],
       sourceRunId: runId,
+      sourceOcrProvider: getRun(runId)?.ocrProvider || 'legacy',
       sourceSolutionRunId: '',
       mergeStatus: '',
       mergeNote: '',
@@ -2830,7 +2966,9 @@ function getOcrProgress(runId: string) {
   const draftStats = getOcrDraftStats(runId)
   const total = run.approvedQuestions || run.totalQuestions || 0
   const processed = Math.max(importedQuestions, draftStats.total, run.processedQuestions || 0)
-  const progressPercent = total ? Math.min(1, processed / total) : (run.progressPercent || 0)
+  const itemProgress = total ? Math.min(1, processed / total) : 0
+  const providerProgress = run.ocrProvider === 'doc2x' ? Math.max(0, Math.min(1, Number(run.ocrProviderProgress || 0) / 100)) : 0
+  const progressPercent = Math.max(itemProgress, providerProgress, run.progressPercent || 0)
   return {
     run: { ...run, processedQuestions: processed, progressPercent, totalOcrQuestions: total },
     active: activeOcrProcesses.has(runId),
@@ -2845,8 +2983,12 @@ function getOcrProgress(runId: string) {
 }
 
 function runMigratedOcr(runId: string) {
-  if (!hasOcrConfig()) {
+  const provider = normalizeOcrProvider(readOcrSettings().ocrProvider)
+  if (!hasOcrConfig(provider)) {
     throw new Error('缺少 OCR 配置：请在应用 OCR 设置或进程环境中配置 OCR_API_BASE_URL、OCR_API_KEY、OCR_MODEL。')
+  }
+  if (provider === 'doc2x') {
+    throw new Error('Doc2X 仅支持后台任务模式。')
   }
   const count = exportRunForMigratedOcr(runId)
   const settings = readOcrSettings()
@@ -2864,6 +3006,13 @@ function runMigratedOcr(runId: string) {
 
 async function finishMigratedOcrBackground(runId: string, count: number, code: number | null, signal: NodeJS.Signals | null, logPath: string) {
   try {
+    const sourceRow = db.prepare('SELECT * FROM pdf_slicer_runs WHERE run_id = ?').get(runId) as RunRow | undefined
+    if (sourceRow) syncDoc2xState(sourceRow)
+    const current = db.prepare('SELECT ocr_error FROM pdf_slicer_runs WHERE run_id = ?').get(runId) as { ocr_error?: string } | undefined
+    if (current?.ocr_error === '用户强制中断') {
+      tryAutoMergeSeparatedExamForRun(runId)
+      return
+    }
     if (code === 0) {
       const imported = importMigratedOcrResults(runId)
       classifyRunAfterImport(runId, logPath)
@@ -2902,17 +3051,47 @@ function startMigratedOcrBackground(runId: string, options: { force?: boolean } 
   if (activeOcrProcesses.has(runId)) {
     throw new Error('该 OCR 任务已经在运行。')
   }
-  if (!hasOcrConfig()) {
-    throw new Error('缺少 OCR 配置：请在应用 OCR 设置或进程环境中配置 OCR_API_BASE_URL、OCR_API_KEY、OCR_MODEL。')
+  const runRow = db.prepare('SELECT * FROM pdf_slicer_runs WHERE run_id = ?').get(runId) as RunRow | undefined
+  if (!runRow) throw new Error('批次不存在。')
+  const settings = readOcrSettings()
+  const provider = runRow.ocr_provider === 'doc2x' || runRow.ocr_provider === 'legacy'
+    ? normalizeOcrProvider(runRow.ocr_provider)
+    : normalizeOcrProvider(settings.ocrProvider)
+  if (!hasOcrConfig(provider)) {
+    throw new Error(provider === 'doc2x'
+      ? '缺少 Doc2X 配置：请在 OCR 设置中配置 Doc2X API Key。'
+      : '缺少 OCR 配置：请在应用 OCR 设置或进程环境中配置 OCR_API_BASE_URL、OCR_API_KEY、OCR_MODEL。')
   }
   const count = exportRunForMigratedOcr(runId)
   const pythonRoot = path.join(sourceRoot, 'server', 'python')
   const logPath = ocrJobLogPath(runId)
   fs.mkdirSync(path.dirname(logPath), { recursive: true })
-  const settings = readOcrSettings()
-  fs.writeFileSync(logPath, `[${nowIso()}] OCR runner started. total=${count} concurrency=${settings.concurrency || '20'}\n`)
-  const args = ['scripts/run_ocr_trial.py', '--max-items', String(count), '--concurrency', settings.concurrency || '20', '--skip-manifest-check']
-  if (options.force !== false) args.push('--force')
+  db.prepare(`
+    UPDATE pdf_slicer_runs
+    SET ocr_provider = ?, ocr_provider_phase = ?, ocr_provider_progress = ?, updated_at = ?
+    WHERE run_id = ?
+  `).run(provider, provider === 'doc2x' ? 'starting' : '', provider === 'doc2x' ? 1 : 0, nowIso(), runId)
+  fs.writeFileSync(logPath, `[${nowIso()}] OCR runner started. provider=${provider} total=${count} concurrency=${settings.concurrency || '20'}\n`)
+  let args: string[]
+  if (provider === 'doc2x') {
+    const artifactDir = doc2xArtifactDir(runRow)
+    fs.mkdirSync(artifactDir, { recursive: true })
+    const pdfPath = resolveStoragePath(runRow.pdf_path)
+    if (!pdfPath || !fs.existsSync(pdfPath)) throw new Error('Doc2X 找不到当前批次的原始 PDF。')
+    args = [
+      'scripts/run_doc2x_ocr.py',
+      '--run-id', runId,
+      '--pdf', pdfPath,
+      '--manifest', path.join(pythonDataRoot, 'output', 'ocr_manifest.json'),
+      '--drafts-root', path.join(pythonDataRoot, 'ocr_drafts'),
+      '--artifact-dir', artifactDir,
+      '--storage-root', storageRoot,
+    ]
+    if (options.force === true) args.push('--force')
+  } else {
+    args = ['scripts/run_ocr_trial.py', '--max-items', String(count), '--concurrency', settings.concurrency || '20', '--skip-manifest-check']
+    if (options.force !== false) args.push('--force')
+  }
   const child = spawn(pythonCommand(), args, {
     cwd: pythonRoot,
     env: process.env,
@@ -2952,6 +3131,7 @@ function removeRunArtifacts(runId: string) {
 }
 
 function removeRunOcrOutputs(runId: string) {
+  const row = db.prepare('SELECT * FROM pdf_slicer_runs WHERE run_id = ?').get(runId) as RunRow | undefined
   const questionIds = (db.prepare('SELECT id FROM question_bank_items WHERE source_run_id = ?').all(runId) as Array<{ id: string }>).map((item) => item.id)
   db.prepare('DELETE FROM question_bank_items WHERE source_run_id = ?').run(runId)
   for (const id of questionIds) {
@@ -2964,6 +3144,12 @@ function removeRunOcrOutputs(runId: string) {
     }
   }
   fs.rmSync(ocrJobLogPath(runId), { force: true })
+  if (row) fs.rmSync(doc2xArtifactDir(row), { recursive: true, force: true })
+  db.prepare(`
+    UPDATE pdf_slicer_runs
+    SET ocr_external_uid = '', ocr_provider_phase = '', ocr_provider_progress = 0, ocr_provider_result_path = ''
+    WHERE run_id = ?
+  `).run(runId)
   db.prepare('DELETE FROM pdf_slicer_solution_items WHERE source_run_id = ?').run(runId)
 }
 
@@ -3176,7 +3362,7 @@ function backfillExportRecordItems() {
   return updated
 }
 
-function restoreExportRecordToCollection(recordId: string, targetCollectionId: string) {
+function restoreExportRecordToCollection(recordId: string, targetCollectionId: string, options: { syncTitle?: boolean } = {}) {
   const record = db.prepare('SELECT * FROM question_bank_export_records WHERE id = ?').get(recordId) as ExportRecordRow | undefined
   if (!record) throw new Error('导出记录不存在。')
   if (!collectionExists(targetCollectionId)) throw new Error('目标试题篮不存在。')
@@ -3225,7 +3411,12 @@ function restoreExportRecordToCollection(recordId: string, targetCollectionId: s
         now
       )
     })
-    db.prepare('UPDATE question_bank_collections SET updated_at = ? WHERE id = ?').run(now, targetCollectionId)
+    const restoredTitle = String(record.title || '').trim()
+    if (options.syncTitle && restoredTitle) {
+      db.prepare('UPDATE question_bank_collections SET title = ?, updated_at = ? WHERE id = ?').run(restoredTitle, now, targetCollectionId)
+    } else {
+      db.prepare('UPDATE question_bank_collections SET updated_at = ? WHERE id = ?').run(now, targetCollectionId)
+    }
     refreshCollectionScore(targetCollectionId)
     db.exec('COMMIT')
   } catch (error) {
@@ -3349,9 +3540,57 @@ function questionPlainText(value: string) {
   return String(value || '').replace(/\r\n?/g, '\n').trim()
 }
 
-function markdownQuestionLine(index: number, item: any) {
+const DOC2X_FIGURE_MARKER_RE = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/g
+
+function doc2xInlineFigureIds(content: string) {
+  DOC2X_FIGURE_MARKER_RE.lastIndex = 0
+  return new Set(Array.from(String(content || '').matchAll(DOC2X_FIGURE_MARKER_RE), (match) => match[1]))
+}
+
+function removeDoc2xFigurePlaceholders(content: string) {
+  return String(content || '')
+    .replace(DOC2X_FIGURE_MARKER_RE, '')
+    .replace(/<!--\s*Media\s*-->/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function figuresWithoutInlineMarkers(content: string, figures: Array<Record<string, any>>) {
+  const inlineIds = doc2xInlineFigureIds(content)
+  return figures.filter((figure) => !inlineIds.has(String(figure.blockId || figure.id || '')))
+}
+
+function markdownWithInlineFigures(content: string, figures: Array<Record<string, any>>) {
+  const figureById = new Map(figures.map((figure) => [String(figure.blockId || figure.id || ''), figure]))
+  return String(content || '')
+    .replace(DOC2X_FIGURE_MARKER_RE, (_marker, id) => markdownFigureLines(figureById.get(id) ? [figureById.get(id)!] : []).join('\n'))
+    .replace(/<!--\s*Media\s*-->/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function latexWithInlineFigures(content: string, figures: Array<Record<string, any>>) {
+  const figureById = new Map(figures.map((figure) => [String(figure.blockId || figure.id || ''), figure]))
+  const source = String(content || '')
+  const lines: string[] = []
+  let cursor = 0
+  let match: RegExpExecArray | null
+  DOC2X_FIGURE_MARKER_RE.lastIndex = 0
+  while ((match = DOC2X_FIGURE_MARKER_RE.exec(source))) {
+    const text = removeDoc2xFigurePlaceholders(source.slice(cursor, match.index))
+    if (text) lines.push(escapeLatex(text))
+    const figure = figureById.get(match[1])
+    if (figure) lines.push(...latexFigureLines([figure]))
+    cursor = match.index + match[0].length
+  }
+  const tail = removeDoc2xFigurePlaceholders(source.slice(cursor))
+  if (tail) lines.push(escapeLatex(tail))
+  return lines.join('\n\n')
+}
+
+function markdownQuestionLine(index: number, item: any, figures: Array<Record<string, any>> = []) {
   const score = Number(item.score || 0)
-  const stem = stripLeadingQuestionNo(item.item.stemMarkdown, item.item.questionNo).trim()
+  const stem = markdownWithInlineFigures(stripLeadingQuestionNo(item.item.stemMarkdown, item.item.questionNo), figures)
   const scoreText = score ? `（${score} 分）` : ''
   return `**${index}.** ${scoreText}${stem || '（题干待补充）'}`
 }
@@ -3560,6 +3799,19 @@ function figuresForImportedOcrResult(result: Record<string, any>, runId: string)
   const sourceAbs = sourceRel ? resolveStoragePath(sourceRel) : ''
   return sourceFigures.map((figure, index) => {
     const figureId = normalizedFigureId(figure.id, index)
+    const doc2xAssetPath = String(figure.origin || '') === 'doc2x_v3' ? stripAssetPrefix(String(figure.path || '')) : ''
+    if (doc2xAssetPath && fs.existsSync(resolveStoragePath(doc2xAssetPath))) {
+      const usage = String(figure.usage || figure.category || 'stem')
+      return {
+        ...figure,
+        id: figureId,
+        origin: 'doc2x_v3',
+        usage,
+        category: String(figure.category || figure.usage || usage),
+        pageNumber: Number(figure.pageNumber ?? figure.page_number ?? 1),
+        path: doc2xAssetPath,
+      }
+    }
     const outputRel = path.join('data', 'question_figures', String(result.id), `${figureId}.png`)
     const outputAbs = resolveStoragePath(outputRel)
     const sourceBBox = figure.bbox || {}
@@ -3791,12 +4043,14 @@ function buildCollectionMarkdown(collection: NonNullable<ReturnType<typeof getCo
       currentSection = entry.sectionName
       lines.push('', `## ${currentSection}`, '')
     }
-    lines.push(markdownQuestionLine(index + 1, entry), '')
-    lines.push(...markdownFigureLines(questionFigures(entry)), '')
+    const stemFigures = questionFigures(entry)
+    lines.push(markdownQuestionLine(index + 1, entry, stemFigures), '')
+    lines.push(...markdownFigureLines(figuresWithoutInlineMarkers(entry.item.stemMarkdown, stemFigures)), '')
     if (variant === 'teacher') {
-      lines.push(`参考答案：${entry.item.answerText || '暂无'}`, '')
-      lines.push(`解析：${entry.item.analysisMarkdown || '暂无'}`, '')
-      lines.push(...markdownFigureLines(analysisFigures(entry)), '')
+      const solutionFigures = analysisFigures(entry)
+      lines.push(`参考答案：${markdownWithInlineFigures(entry.item.answerText || '暂无', solutionFigures)}`, '')
+      lines.push(`解析：${markdownWithInlineFigures(entry.item.analysisMarkdown || '暂无', solutionFigures)}`, '')
+      lines.push(...markdownFigureLines(figuresWithoutInlineMarkers(`${entry.item.answerText || ''}\n${entry.item.analysisMarkdown || ''}`, solutionFigures)), '')
     }
   })
   return lines.join('\n').replace(/\n{4,}/g, '\n\n\n').trim() + '\n'
@@ -3830,12 +4084,15 @@ function buildCollectionLatex(collection: NonNullable<ReturnType<typeof getColle
     }
     const score = Number(entry.score || 0)
     lines.push(`\\textbf{${index + 1}.}${score ? `（${score} 分）` : ''}`)
-    lines.push(escapeLatex(stripLeadingQuestionNo(entry.item.stemMarkdown, entry.item.questionNo) || '（题干待补充）'))
-    lines.push(...latexFigureLines(questionFigures(entry)))
+    const stemFigures = questionFigures(entry)
+    const stem = stripLeadingQuestionNo(entry.item.stemMarkdown, entry.item.questionNo)
+    lines.push(latexWithInlineFigures(stem || '（题干待补充）', stemFigures))
+    lines.push(...latexFigureLines(figuresWithoutInlineMarkers(stem, stemFigures)))
     if (variant === 'teacher') {
-      lines.push(`\\textbf{参考答案：}${escapeLatex(entry.item.answerText || '暂无')}`)
-      lines.push(`\\textbf{解析：}${escapeLatex(entry.item.analysisMarkdown || '暂无')}`)
-      lines.push(...latexFigureLines(analysisFigures(entry)))
+      const solutionFigures = analysisFigures(entry)
+      lines.push(`\\textbf{参考答案：}${latexWithInlineFigures(entry.item.answerText || '暂无', solutionFigures)}`)
+      lines.push(`\\textbf{解析：}${latexWithInlineFigures(entry.item.analysisMarkdown || '暂无', solutionFigures)}`)
+      lines.push(...latexFigureLines(figuresWithoutInlineMarkers(`${entry.item.answerText || ''}\n${entry.item.analysisMarkdown || ''}`, solutionFigures)))
     }
   })
   lines.push('\\end{document}')
@@ -3860,9 +4117,7 @@ type WorksheetFigureTelemetry = {
 }
 
 const worksheetMaxLayoutIterations = 3
-const worksheetShrinkFactor = 0.88
-const worksheetSafetyMarginPt = 18
-const worksheetMinReadableHeightPt = 72
+const worksheetFigureFitPaddingPt = 4
 
 function worksheetFigureWidthLimits(imagePath: string) {
   try {
@@ -4004,6 +4259,7 @@ function worksheetQuestionLatex(
 ) {
   const lines = [`\\begin{examquestion}{${index + 1}}`]
   const { prompt, choices } = splitChoiceStemForExport(entry.item.stemMarkdown)
+  const stemFigures = questionFigures(entry)
   lines.push(keepSubquestionsTogether(renderExamZhPrompt(prompt || entry.item.stemMarkdown, entry.item.questionType) || '（题干待补充）'))
   if (choices.length) {
     lines.push(worksheetChoicesLatex(choices))
@@ -4025,14 +4281,16 @@ function worksheetQuestionLatex(
     })
   }
 
-  appendFigures(questionFigures(entry), 'stem')
+  appendFigures(stemFigures, 'stem')
   if (variant === 'teacher') {
     lines.push('\\begin{solutionbox}')
     lines.push(`\\anslabel ${worksheetAnswerLatex(entry.item.answerText) || '暂无'}\\par`)
     lines.push(`\\sollabel ${markdownToExamLatex(entry.item.analysisMarkdown || '暂无', true)}`)
     appendFigures(analysisFigures(entry), 'analysis')
     lines.push('\\end{solutionbox}')
-  } else if (normalizeQuestionType(entry.item.questionType, entry.item.stemMarkdown, entry.item.answerText) === '解答题') {
+  } else if (normalizeQuestionType(entry.item.questionType, entry.item.stemMarkdown, entry.item.answerText) === '解答题' && !stemFigures.length) {
+    // In compact exam output, a stem diagram takes precedence over a blank
+    // response area so it is not separated from its question.
     lines.push('\\nobreak\\begin{answerarea}{4.2cm}\\end{answerarea}')
   }
   lines.push('\\end{examquestion}')
@@ -4070,7 +4328,7 @@ function buildCollectionWorksheetLatex(
     const sectionName = scorePlan.entrySections.get(key) || ''
     if (sectionName && sectionName !== currentSection) {
       currentSection = sectionName
-      lines.push(`\\examsection{${markdownToExamLatex(worksheetSectionTitle(currentSection, scorePlan.sectionScores.get(currentSection)), false)}}`)
+      lines.push(`\\examsectionstart{${markdownToExamLatex(worksheetSectionTitle(currentSection, scorePlan.sectionScores.get(currentSection)), false)}}`)
     }
     lines.push(worksheetQuestionLatex(entry, index, variant, collection.id, figuresDir, adjustments, specs))
   })
@@ -4106,16 +4364,14 @@ function optimizeWorksheetFigures(
   telemetry.forEach((record) => {
     const spec = specs.get(record.id)
     if (!spec || record.width <= spec.minWidth + 0.0005 || record.pageGoal > 100000) return
-    const remaining = record.pageGoal - record.pageTotal - worksheetSafetyMarginPt
+    const remaining = record.pageGoal - record.pageTotal
     const needed = record.height + record.depth
-    if (remaining < worksheetMinReadableHeightPt || needed <= remaining) return
-    const minNeeded = needed * (spec.minWidth / record.width)
-    const nextNeeded = needed * worksheetShrinkFactor
-    const nearFit = needed - remaining <= Math.max(24, needed * 0.18)
-    if (minNeeded > remaining + 2 && nextNeeded > remaining && !nearFit) return
-    const nextWidth = Math.max(spec.minWidth, Number((record.width * worksheetShrinkFactor).toFixed(4)))
-    if (nextWidth >= record.width - 0.0005) return
-    adjustments.set(record.id, nextWidth)
+    if (remaining <= worksheetFigureFitPaddingPt || needed <= remaining) return
+    // Compute the fitting scale directly; repeated 0.88 scaling could stop
+    // short and leave an otherwise fitting diagram alone on the next page.
+    const targetWidth = Number((record.width * ((remaining - worksheetFigureFitPaddingPt) / needed)).toFixed(4))
+    if (targetWidth < spec.minWidth || targetWidth >= record.width - 0.0005) return
+    adjustments.set(record.id, targetWidth)
     changed = true
   })
   return changed
@@ -4139,7 +4395,8 @@ function exportCollectionWorksheetPdf(collection: NonNullable<ReturnType<typeof 
   for (const templateName of ['qbank-theme.sty', `${documentClass}.cls`]) {
     fs.copyFileSync(path.join(sourceRoot, 'templates', 'latex', templateName), path.join(exportRoot, templateName))
   }
-  const baseName = `${safeName(collection.title || '练习单')}-${variant === 'teacher' ? 'teacher' : 'student'}`
+  const templateName = documentClass === 'qbank-exam' ? 'exam' : 'worksheet'
+  const baseName = `${safeName(collection.title || '练习单')}-${templateName}-${variant === 'teacher' ? 'teacher' : 'student'}`
   const texPath = path.join(exportRoot, `${baseName}.tex`)
   const adjustments = new Map<string, number>()
   for (let iteration = 0; iteration < worksheetMaxLayoutIterations; iteration += 1) {
@@ -4315,6 +4572,26 @@ function isMarkdownTableRow(line: string) {
   return trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.slice(1, -1).includes('|')
 }
 
+function normalizeHtmlTablesForExport(value: string) {
+  return String(value || '').replace(/<table\b[^>]*>([\s\S]*?)<\/table>/gi, (source, body: string) => {
+    const rows = Array.from(body.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi))
+      .map((row) => Array.from(row[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi))
+        .map((cell) => cell[1]
+          .replace(/<br\s*\/?>/gi, '<br>')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/&amp;/gi, '&')
+          .replace(/\|/g, '\\|')
+          .trim()))
+      .filter((row) => row.length)
+    if (!rows.length) return source
+    const width = Math.max(...rows.map((row) => row.length))
+    const markdownRow = (row: string[]) => `| ${Array.from({ length: width }, (_, index) => row[index] || '').join(' | ')} |`
+    const separator = `| ${Array.from({ length: width }, () => '---').join(' | ')} |`
+    return `\n\n${markdownRow(rows[0])}\n${separator}\n${rows.slice(1).map(markdownRow).join('\n')}\n\n`
+  })
+}
+
 function splitMarkdownTableRow(line: string) {
   const source = String(line || '').trim().replace(/^\|/, '').replace(/\|$/, '')
   const cells: string[] = []
@@ -4375,7 +4652,7 @@ function markdownTableToExamLatex(lines: string[]) {
 }
 
 function markdownToExamLatex(value: string, preserveBreaks = true) {
-  const lines = String(value || '').replace(/\r\n?/g, '\n').split('\n')
+  const lines = normalizeHtmlTablesForExport(removeDoc2xFigurePlaceholders(value)).replace(/\r\n?/g, '\n').split('\n')
   const output: string[] = []
   let textLines: string[] = []
   const flushText = () => {
@@ -4472,6 +4749,52 @@ function examZhFigureLines(figures: Array<Record<string, any>>) {
       '\\end{flushleft}',
     ]
   })
+}
+
+function renderExamZhPromptWithInlineFigures(
+  prompt: string,
+  figures: Array<Record<string, any>>,
+  questionType: string,
+  variant: ExportVariant,
+  answer = '',
+) {
+  if (!doc2xInlineFigureIds(prompt).size) return renderExamZhPrompt(prompt, questionType, variant, answer)
+  const figureById = new Map(figures.map((figure) => [String(figure.blockId || figure.id || ''), figure]))
+  const lines: string[] = []
+  const source = String(prompt || '')
+  let cursor = 0
+  let match: RegExpExecArray | null
+  DOC2X_FIGURE_MARKER_RE.lastIndex = 0
+  while ((match = DOC2X_FIGURE_MARKER_RE.exec(source))) {
+    const text = removeDoc2xFigurePlaceholders(source.slice(cursor, match.index))
+    if (text) lines.push(renderExamZhPrompt(text, questionType, variant))
+    const figure = figureById.get(match[1])
+    if (figure) lines.push(...examZhFigureLines([figure]))
+    cursor = match.index + match[0].length
+  }
+  const tail = removeDoc2xFigurePlaceholders(source.slice(cursor))
+  if (tail) lines.push(renderExamZhPrompt(tail, questionType, variant, answer))
+  return lines.join('\n')
+}
+
+function renderExamZhMarkdownWithInlineFigures(content: string, figures: Array<Record<string, any>>) {
+  if (!doc2xInlineFigureIds(content).size) return markdownToExamLatex(content, true)
+  const figureById = new Map(figures.map((figure) => [String(figure.blockId || figure.id || ''), figure]))
+  const lines: string[] = []
+  const source = String(content || '')
+  let cursor = 0
+  let match: RegExpExecArray | null
+  DOC2X_FIGURE_MARKER_RE.lastIndex = 0
+  while ((match = DOC2X_FIGURE_MARKER_RE.exec(source))) {
+    const text = removeDoc2xFigurePlaceholders(source.slice(cursor, match.index))
+    if (text) lines.push(markdownToExamLatex(text, true))
+    const figure = figureById.get(match[1])
+    if (figure) lines.push(...examZhFigureLines([figure]))
+    cursor = match.index + match[0].length
+  }
+  const tail = removeDoc2xFigurePlaceholders(source.slice(cursor))
+  if (tail) lines.push(markdownToExamLatex(tail, true))
+  return lines.join('\n')
 }
 
 function examZhAnswerBlank(serialNo: number) {
@@ -4631,24 +4954,26 @@ function buildRunExamZhLatex(
     const { prompt, choices } = splitChoiceStemForExport(item.stemMarkdown)
     const questionScore = scorePlan.questionScores.get(item.id)
     lines.push('', '\\begin{question}')
-    lines.push(`${questionScore ? `\\textbf{（${scoreText(questionScore)}分）}\\quad ` : ''}${renderExamZhPrompt(prompt, questionType, variant, item.answerText) || '（题干待补充）'}`)
+    const stemFigures = questionFigures({ item })
+    lines.push(`${questionScore ? `\\textbf{（${scoreText(questionScore)}分）}\\quad ` : ''}${renderExamZhPromptWithInlineFigures(prompt, stemFigures, questionType, variant, item.answerText) || '（题干待补充）'}`)
     if (choices.length) {
       lines.push('\\begin{choices}')
       for (const choice of choices) lines.push(`  \\item ${markdownToExamLatex(choice, true)}`)
       lines.push('\\end{choices}')
     }
-    lines.push(...examZhFigureLines(questionFigures({ item })))
+    lines.push(...examZhFigureLines(figuresWithoutInlineMarkers(prompt, stemFigures)))
     if (questionType === '解答题' && paperNo >= 15 && variant !== 'teacher') {
       lines.push(examZhAnswerBlank(paperNo))
     }
     if (variant === 'teacher') {
       lines.push('\\begin{solution}')
-      lines.push(`\\textbf{【答案】} ${markdownToExamLatex(item.answerText, true) || '暂无'}`)
+      const solutionFigures = analysisFigures({ item })
+      lines.push(`\\textbf{【答案】} ${renderExamZhMarkdownWithInlineFigures(item.answerText, solutionFigures) || '暂无'}`)
       lines.push('')
-      lines.push(`\\textbf{【解析】} ${markdownToExamLatex(item.analysisMarkdown, true) || '暂无'}`)
-      const anaFigs = analysisFigures({ item })
-      if (anaFigs.length) {
-        lines.push(...examZhFigureLines(anaFigs))
+      lines.push(`\\textbf{【解析】} ${renderExamZhMarkdownWithInlineFigures(item.analysisMarkdown, solutionFigures) || '暂无'}`)
+      const remainingSolutionFigures = figuresWithoutInlineMarkers(`${item.answerText || ''}\n${item.analysisMarkdown || ''}`, solutionFigures)
+      if (remainingSolutionFigures.length) {
+        lines.push(...examZhFigureLines(remainingSolutionFigures))
       }
       lines.push('\\end{solution}')
     }
@@ -5689,6 +6014,11 @@ app.post('/api/tools/pdf-slicer/runs/:runId/pending-bank/manual-candidate', (req
 
 app.post('/api/tools/pdf-slicer/runs/:runId/pending-bank/:id/rerun-ocr', (req, res) => {
   const runId = req.params.runId
+  const sourceRun = getRun(runId)
+  if (sourceRun?.ocrProvider === 'doc2x' || normalizeOcrProvider(readOcrSettings().ocrProvider) === 'doc2x') {
+    res.status(400).json({ error: 'Doc2X 首版仅支持整批完全重跑，暂不支持单题重新 OCR。' })
+    return
+  }
   const id = decodeURIComponent(String(req.params.id || ''))
   const route = String(req.body?.route || 'whole_question_json')
   const forceRegionOcr = route === 'region_chunks'
@@ -5825,7 +6155,7 @@ app.post('/api/tools/pdf-slicer/runs/:runId/force-rerun-ocr', (req, res) => {
   db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'running', ocr_error = '', ocr_started_at = ?, ocr_finished_at = '', updated_at = ? WHERE run_id = ?")
     .run(now, now, req.params.runId)
   try {
-    const totalQuestions = startMigratedOcrBackground(req.params.runId)
+    const totalQuestions = startMigratedOcrBackground(req.params.runId, { force: true })
     res.json({ run: getRun(req.params.runId), totalQuestions, progress: getOcrProgress(req.params.runId) })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -5908,6 +6238,14 @@ app.post('/api/tools/pdf-slicer/runs/:runId/force-interrupt-ocr', (req, res) => 
   }
   db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'failed', ocr_error = '用户强制中断', ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")
     .run(nowIso(), nowIso(), req.params.runId)
+  const row = db.prepare('SELECT * FROM pdf_slicer_runs WHERE run_id = ?').get(req.params.runId) as RunRow | undefined
+  if (row && normalizeOcrProvider(row.ocr_provider) === 'doc2x') {
+    const statePath = path.join(doc2xArtifactDir(row), 'state.json')
+    const state = parseJson<Record<string, any>>(fs.existsSync(statePath) ? fs.readFileSync(statePath, 'utf8') : '{}', {})
+    fs.mkdirSync(path.dirname(statePath), { recursive: true })
+    fs.writeFileSync(statePath, JSON.stringify({ ...state, phase: 'interrupted', updated_at: Date.now() / 1000 }, null, 2), 'utf8')
+    db.prepare("UPDATE pdf_slicer_runs SET ocr_provider_phase = 'interrupted', updated_at = ? WHERE run_id = ?").run(nowIso(), req.params.runId)
+  }
   tryAutoMergeSeparatedExamForRun(req.params.runId)
   res.json(getRun(req.params.runId))
 })
@@ -5980,6 +6318,11 @@ app.post('/api/question-bank/items/:id/rerun-ocr', (req, res) => {
   }
   if (!item.sourceRunId) {
     res.status(400).json({ error: '当前题目没有原始 OCR 来源，无法重新 OCR。' })
+    return
+  }
+  const sourceRun = getRun(item.sourceRunId)
+  if (sourceRun?.ocrProvider === 'doc2x' || normalizeOcrProvider(readOcrSettings().ocrProvider) === 'doc2x') {
+    res.status(400).json({ error: 'Doc2X 首版仅支持整批完全重跑，暂不支持单题重新 OCR。' })
     return
   }
   const route = String(req.body?.route || 'whole_question_json')
@@ -6357,7 +6700,7 @@ app.post('/api/question-bank/export-records/:id/restore-to-basket', (req, res) =
   const id = decodeURIComponent(req.params.id)
   const targetCollectionId = String(req.body?.collectionId || 'basket').trim() || 'basket'
   try {
-    res.json(restoreExportRecordToCollection(id, targetCollectionId))
+    res.json(restoreExportRecordToCollection(id, targetCollectionId, { syncTitle: Boolean(req.body?.syncTitle) }))
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
   }
@@ -6592,14 +6935,15 @@ app.post('/api/question-bank/collections/:id/export', (req, res) => {
   const variant = normalizeExportVariant(req.body?.variant)
   if (req.body?.format === 'pdf') {
     try {
-      const pdfPath = exportCollectionWorksheetPdf(collection, variant)
+      const template = req.body?.template === 'exam' ? 'exam' : 'worksheet'
+      const pdfPath = exportCollectionWorksheetPdf(collection, variant, template === 'exam' ? 'qbank-exam' : 'qbank-worksheet')
       const relativePath = assetPathFor(pdfPath)
       const record = createExportRecord({
         sourceType: 'collection',
         collectionId: collection.id,
         title: collection.title,
         format: 'pdf',
-        variant,
+        variant: `${template}-${variant}`,
         filename: path.basename(pdfPath),
         path: relativePath,
         url: `/assets/${relativePath}`,

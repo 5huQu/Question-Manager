@@ -10,7 +10,7 @@ import { libreOfficeDownloadUrl } from '@/utils/wordFiles'
 
 export function SettingsPage() {
   const { data, error, loading, reload } = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
-  const [draft, setDraft] = useState<Partial<OcrSettings & { apiKey: string; cleanupApiKey: string }>>({})
+  const [draft, setDraft] = useState<Partial<OcrSettings & { apiKey: string; doc2xApiKey: string; cleanupApiKey: string }>>({})
   const [activeTab, setActiveTab] = useState<'basic' | 'tools' | 'ocr' | 'classification' | 'prompts'>('basic')
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -257,6 +257,48 @@ export function SettingsPage() {
 
               {activeTab === 'ocr' && (
                 <div className="space-y-6">
+                  <div className="space-y-2">
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">默认 OCR 提供方</span>
+                    <div className="grid grid-cols-2 gap-2 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800">
+                      {([
+                        { value: 'legacy', label: '现有 OCR' },
+                        { value: 'doc2x', label: 'Doc2X' },
+                      ] as const).map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setDraft({ ...draft, ocrProvider: option.value })}
+                          className={`h-9 rounded-lg text-sm font-medium transition-colors ${
+                            (draft.ocrProvider ?? 'legacy') === option.value
+                              ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-100'
+                              : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] leading-5 text-zinc-400">Doc2X 会整份上传 PDF，并在切题复核后按题号映射识别结果。</p>
+                  </div>
+                  {(draft.ocrProvider ?? 'legacy') === 'doc2x' ? (
+                    <div className="grid gap-4">
+                      <label className="space-y-1.5 block">
+                        <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">Doc2X API 地址</span>
+                        <input className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700" value={draft.doc2xApiBaseUrl ?? ''} onChange={(e) => setDraft({ ...draft, doc2xApiBaseUrl: e.target.value })} placeholder="https://v2.doc2x.noedgeai.com" />
+                      </label>
+                      <label className="space-y-1.5 block">
+                        <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">Doc2X API Key</span>
+                        <input className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700" placeholder={data?.doc2xApiKeyConfigured ? '已配置密钥，留空表示不修改' : '未配置密钥'} value={draft.doc2xApiKey ?? ''} onChange={(e) => setDraft({ ...draft, doc2xApiKey: e.target.value })} type="password" />
+                      </label>
+                      <label className="space-y-1.5 block">
+                        <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">Doc2X 模型</span>
+                        <select className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700" value={draft.doc2xModel ?? 'v3-2026'} onChange={(e) => setDraft({ ...draft, doc2xModel: e.target.value })}>
+                          <option value="v3-2026">v3-2026</option>
+                          <option value="v2">v2</option>
+                        </select>
+                      </label>
+                    </div>
+                  ) : (
                   <div className="grid gap-4">
                     <label className="space-y-1.5 block">
                       <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">API 地址</span>
@@ -287,6 +329,7 @@ export function SettingsPage() {
                       />
                     </label>
                   </div>
+                  )}
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <label className="space-y-1.5 block">

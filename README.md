@@ -122,6 +122,8 @@ build-and-install-windows.cmd
 - `OCR_API_BASE_URL`：OCR 接口地址。
 - `OCR_API_KEY`：OCR 接口密钥。
 - `OCR_MODEL`：OCR 模型名称。
+- `OCR_PROVIDER`：`legacy`（现有逐题 OCR）或 `doc2x`（整份 PDF 的 Doc2X v3 识别）。
+- `DOC2X_API_BASE_URL`、`DOC2X_API_KEY`、`DOC2X_MODEL`：Doc2X 配置；Doc2X 结果会立即下载 JSON 与题图，首版支持整批完全重跑，不支持单题重新 OCR。
 
 不要提交 `config/`、`data/`、`output/`、OCR 草稿、上传的 PDF 或任何真实密钥。
 

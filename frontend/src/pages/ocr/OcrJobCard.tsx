@@ -25,6 +25,11 @@ export function OcrJobCard({ run, onReload }: { run: ApiRun; onReload: () => voi
   const showProgressBar = displayOcrStatus !== 'succeeded' && !allQuestionsBanked
   const canInterrupt = Boolean(progress?.active || visibleRun.ocrStatus === 'running' || visibleRun.ocrStatus === 'queued')
   const canStartOcr = visibleRun.ocrStatus === 'idle' && !progress?.active && Math.max(visibleRun.processedQuestions ?? 0, progress?.draftCount ?? 0, progress?.importedQuestions ?? 0) <= 0
+  const providerLabel = visibleRun.ocrProvider === 'doc2x' ? 'Doc2X' : '现有 OCR'
+  const providerPhase = visibleRun.ocrProviderPhase
+  const providerPhaseLabel: Record<string, string> = {
+    starting: '准备任务', preupload: '申请上传', uploading: '上传 PDF', parsing: '云端解析', normalizing: '拆分题目', downloading_assets: '下载题图', importing: '导入题库', interrupted: '已中断', succeeded: '已完成', failed: '失败',
+  }
   async function loadProgress() {
     const next = await api<OcrProgress>(`/api/tools/pdf-slicer/runs/${run.runId}/ocr-progress`)
     setProgress(next)
@@ -84,13 +89,14 @@ export function OcrJobCard({ run, onReload }: { run: ApiRun; onReload: () => voi
             <p className="text-lg font-semibold">{visibleRun.paperTitle || visibleRun.pdfName}</p>
             <Badge variant={materialType === 'lecture' ? 'warning' : materialType === 'exam' ? 'success' : 'default'}>{materialTypeLabel(materialType)}</Badge>
             <Badge variant={fileRole === 'solutions' ? 'warning' : fileRole === 'questions' ? 'default' : 'success'}>{fileRoleLabel(fileRole)}</Badge>
+            <Badge variant={visibleRun.ocrProvider === 'doc2x' ? 'warning' : 'default'}>{providerLabel}</Badge>
             <Badge variant={statusVariant(displayOcrStatus)}>{label(displayOcrStatus)}{progress?.active ? ' · 执行中' : ''}</Badge>
           </div>
           <p className="mt-1 break-all text-xs text-zinc-500">{run.runId}</p>
         </div>
       </div>
       {showProgressBar ? <div className="mt-4">
-        <div className="flex justify-between text-sm font-medium text-zinc-500"><span>{visibleRun.processedQuestions ?? progress?.draftCount ?? 0}/{visibleRun.totalOcrQuestions ?? visibleRun.approvedQuestions}</span><span>{Math.round((visibleRun.progressPercent ?? 0) * 100)}%</span></div>
+        <div className="flex justify-between text-sm font-medium text-zinc-500"><span>{providerPhase ? `Doc2X · ${providerPhaseLabel[providerPhase] || providerPhase}` : `${visibleRun.processedQuestions ?? progress?.draftCount ?? 0}/${visibleRun.totalOcrQuestions ?? visibleRun.approvedQuestions}`}</span><span>{Math.round((visibleRun.progressPercent ?? 0) * 100)}%</span></div>
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-100"><div className="h-full rounded-full bg-zinc-950 transition-all" style={{ width: `${Math.round((visibleRun.progressPercent ?? 0) * 100)}%` }} /></div>
       </div> : null}
       {progress ? <div className="mt-4 grid gap-2 sm:grid-cols-3"><MiniMetric label="总题数" value={progress.totalQuestions} /><MiniMetric label={generatedLabel} value={generatedCount} /><MiniMetric label="失败题数" value={failedCount} /></div> : null}

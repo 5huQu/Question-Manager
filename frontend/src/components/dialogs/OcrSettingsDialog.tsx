@@ -8,7 +8,7 @@ import type { OcrSettings } from '@/types'
 
 export function OcrSettingsDialog({ onClose }: { onClose: () => void }) {
   const { data, error, loading, reload } = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
-  const [draft, setDraft] = useState<Partial<OcrSettings & { apiKey: string; cleanupApiKey: string }>>({})
+  const [draft, setDraft] = useState<Partial<OcrSettings & { apiKey: string; doc2xApiKey: string; cleanupApiKey: string }>>({})
   const [activeTab, setActiveTab] = useState<'ocr' | 'classification' | 'prompts'>('ocr')
   useEffect(() => {
     if (data) setDraft(data)
@@ -65,11 +65,27 @@ export function OcrSettingsDialog({ onClose }: { onClose: () => void }) {
           <div className="flex-1 overflow-y-auto min-h-0 pr-1 space-y-4 pb-4">
             {activeTab === 'ocr' && (
               <div className="space-y-4">
+                <label className="space-y-1 block">
+                  <span className="text-xs text-zinc-500 font-medium">默认 OCR 提供方</span>
+                  <select className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.ocrProvider ?? 'legacy'} onChange={(e) => setDraft({ ...draft, ocrProvider: e.target.value as 'legacy' | 'doc2x' })}>
+                    <option value="legacy">现有 OCR</option>
+                    <option value="doc2x">Doc2X</option>
+                  </select>
+                </label>
+                {(draft.ocrProvider ?? 'legacy') === 'doc2x' ? (
+                  <div className="grid gap-3">
+                    <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">Doc2X API 地址</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.doc2xApiBaseUrl ?? ''} onChange={(e) => setDraft({ ...draft, doc2xApiBaseUrl: e.target.value })} placeholder="https://v2.doc2x.noedgeai.com" /></label>
+                    <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">Doc2X API Key</span><input className="w-full rounded-xl border px-3 py-2 text-sm" placeholder={data?.doc2xApiKeyConfigured ? '已配置，留空不修改' : '未配置'} value={draft.doc2xApiKey ?? ''} onChange={(e) => setDraft({ ...draft, doc2xApiKey: e.target.value })} type="password" /></label>
+                    <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">Doc2X 模型</span><select className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.doc2xModel ?? 'v3-2026'} onChange={(e) => setDraft({ ...draft, doc2xModel: e.target.value })}><option value="v3-2026">v3-2026</option><option value="v2">v2</option></select></label>
+                    <p className="text-xs leading-5 text-zinc-500">Doc2X 首版支持整批识别与完全重跑，暂不支持单题重新 OCR。</p>
+                  </div>
+                ) : (
                 <div className="grid gap-3">
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">API 地址</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.apiBaseUrl ?? ''} onChange={(e) => setDraft({ ...draft, apiBaseUrl: e.target.value })} /></label>
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">API Key</span><input className="w-full rounded-xl border px-3 py-2 text-sm" placeholder={data?.apiKeyConfigured ? '已配置，留空不修改' : '未配置'} value={draft.apiKey ?? ''} onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })} type="password" /></label>
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">模型</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.model ?? ''} onChange={(e) => setDraft({ ...draft, model: e.target.value })} /></label>
                 </div>
+                )}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">Dry Run</span><select className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.dryRun ?? 'false'} onChange={(e) => setDraft({ ...draft, dryRun: e.target.value })}><option value="false">false</option><option value="true">true</option></select></label>
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">最大题数</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.maxItems ?? ''} onChange={(e) => setDraft({ ...draft, maxItems: e.target.value })} /></label>
