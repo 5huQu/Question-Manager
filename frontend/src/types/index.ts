@@ -33,7 +33,7 @@ export type ApiRun = {
   importedQuestions?: number
   bankedQuestions?: number
   solutionItems?: number
-  ocrProvider?: 'legacy' | 'doc2x'
+  ocrProvider?: 'legacy' | 'doc2x' | 'glm'
   ocrExternalUid?: string
   ocrProviderPhase?: string
   ocrProviderProgress?: number
@@ -86,7 +86,7 @@ export type QuestionItem = {
   }>
   figures: QuestionFigure[]
   sourceRunId: string
-  sourceOcrProvider?: 'legacy' | 'doc2x'
+  sourceOcrProvider?: 'legacy' | 'doc2x' | 'glm'
   sourceSolutionRunId?: string
   mergeStatus?: string
   mergeNote?: string
@@ -274,7 +274,7 @@ export type OcrSettings = {
   sofficePath: string
   sofficeAvailable: boolean
   sofficeDetectedPath: string
-  ocrProvider: 'legacy' | 'doc2x'
+  ocrProvider: 'legacy' | 'doc2x' | 'glm'
   apiBaseUrl: string
   apiKeyConfigured: boolean
   model: string
@@ -288,6 +288,9 @@ export type OcrSettings = {
   doc2xApiBaseUrl: string
   doc2xApiKeyConfigured: boolean
   doc2xModel: string
+  glmOcrApiBaseUrl: string
+  glmOcrApiKeyConfigured: boolean
+  glmOcrModel: string
   cleanupApiBaseUrl: string
   cleanupApiKeyConfigured: boolean
   cleanupModel: string

@@ -148,7 +148,7 @@ type MaterialType = 'exam' | 'lecture' | 'unknown'
 type FileRole = 'full' | 'questions' | 'solutions' | 'unknown'
 type WorkflowMode = 'single' | 'separated_exam'
 type WorkflowStatus = 'ready' | 'needs_classification' | 'processing' | 'ready_for_bank' | 'needs_review'
-type OcrProvider = 'legacy' | 'doc2x'
+type OcrProvider = 'legacy' | 'doc2x' | 'glm'
 
 type RichInline =
   | { type: 'text'; text: string }
@@ -1613,6 +1613,10 @@ function doc2xArtifactDir(row: RunRow) {
   return path.join(resolveStoragePath(row.run_dir), 'doc2x')
 }
 
+function glmArtifactDir(row: RunRow) {
+  return path.join(resolveStoragePath(row.run_dir), 'glm')
+}
+
 function readDoc2xState(row: RunRow) {
   return parseJson<Record<string, any>>(
     fs.existsSync(path.join(doc2xArtifactDir(row), 'state.json'))
@@ -1623,8 +1627,10 @@ function readDoc2xState(row: RunRow) {
 }
 
 function syncDoc2xState(row: RunRow) {
-  if (normalizeOcrProvider(row.ocr_provider) !== 'doc2x') return row
-  const state = readDoc2xState(row)
+  const provider = normalizeOcrProvider(row.ocr_provider)
+  if (provider !== 'doc2x' && provider !== 'glm') return row
+  const statePath = provider === 'glm' ? path.join(glmArtifactDir(row), 'state.json') : path.join(doc2xArtifactDir(row), 'state.json')
+  const state = parseJson<Record<string, any>>(fs.existsSync(statePath) ? fs.readFileSync(statePath, 'utf8') : '{}', {})
   if (!Object.keys(state).length) return row
   const progress = Math.max(0, Math.min(100, Number(state.progress || 0)))
   const uid = String(state.uid || row.ocr_external_uid || '')
@@ -1650,7 +1656,7 @@ function mapRun(row: RunRow) {
   const ocrStatus = row.ocr_status === 'succeeded' || completedByImport ? 'succeeded' : row.ocr_status
   const provider = normalizeOcrProvider(row.ocr_provider)
   const providerProgress = Math.max(0, Math.min(100, Number(row.ocr_provider_progress || 0))) / 100
-  const progressPercent = ocrStatus === 'succeeded' ? 1 : provider === 'doc2x' && providerProgress > 0 ? providerProgress : ocrStatus === 'running' ? 0.5 : ocrStatus === 'failed' ? 0.2 : 0
+  const progressPercent = ocrStatus === 'succeeded' ? 1 : (provider === 'doc2x' || provider === 'glm') && providerProgress > 0 ? providerProgress : ocrStatus === 'running' ? 0.5 : ocrStatus === 'failed' ? 0.2 : 0
   const documentDiagnostics = parseJson<Record<string, any>>(row.document_diagnostics_json || '{}', {})
   return {
     runId: row.run_id,
@@ -2087,7 +2093,10 @@ function ensureQuestionAssetLink() {
 }
 
 function normalizeOcrProvider(value: unknown): OcrProvider {
-  return String(value || '').toLowerCase() === 'doc2x' ? 'doc2x' : 'legacy'
+  const provider = String(value || '').toLowerCase()
+  if (provider === 'doc2x') return 'doc2x'
+  if (provider === 'glm') return 'glm'
+  return 'legacy'
 }
 
 function hasOcrConfig(provider: OcrProvider = normalizeOcrProvider(readOcrSettings().ocrProvider)) {
@@ -2096,6 +2105,9 @@ function hasOcrConfig(provider: OcrProvider = normalizeOcrProvider(readOcrSettin
   const hasInText = (key: string) => new RegExp(`^${key}=.+`, 'm').test(envText)
   if (provider === 'doc2x') {
     return Boolean(process.env.DOC2X_API_KEY || hasInText('DOC2X_API_KEY'))
+  }
+  if (provider === 'glm') {
+    return Boolean(process.env.GLM_OCR_API_KEY || hasInText('GLM_OCR_API_KEY'))
   }
   return Boolean(
     (process.env.OCR_API_BASE_URL || hasInText('OCR_API_BASE_URL')) &&
@@ -2292,7 +2304,7 @@ function readOcrSettings() {
     ...readAppSettings(),
     sofficeAvailable: Boolean(sofficePath()),
     sofficeDetectedPath: sofficePath(),
-    ocrProvider: normalizeOcrProvider(values.OCR_PROVIDER || 'legacy'),
+    ocrProvider: normalizeOcrProvider(values.OCR_PROVIDER) === 'glm' ? 'glm' : 'doc2x',
     apiBaseUrl: values.OCR_API_BASE_URL || '',
     apiKeyConfigured: Boolean(values.OCR_API_KEY || process.env.OCR_API_KEY),
     model: values.OCR_MODEL || '',
@@ -2306,6 +2318,9 @@ function readOcrSettings() {
     doc2xApiBaseUrl: values.DOC2X_API_BASE_URL || 'https://v2.doc2x.noedgeai.com',
     doc2xApiKeyConfigured: Boolean(values.DOC2X_API_KEY || process.env.DOC2X_API_KEY),
     doc2xModel: values.DOC2X_MODEL || 'v3-2026',
+    glmOcrApiBaseUrl: values.GLM_OCR_API_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4/layout_parsing',
+    glmOcrApiKeyConfigured: Boolean(values.GLM_OCR_API_KEY || process.env.GLM_OCR_API_KEY),
+    glmOcrModel: values.GLM_OCR_MODEL || 'glm-ocr',
     cleanupApiBaseUrl: values.OCR_CLEANUP_API_BASE_URL || values.OCR_API_BASE_URL || '',
     cleanupApiKeyConfigured: Boolean(values.OCR_CLEANUP_API_KEY || process.env.OCR_CLEANUP_API_KEY || values.OCR_API_KEY || process.env.OCR_API_KEY),
     cleanupModel: values.OCR_CLEANUP_MODEL || values.OCR_MODEL || '',
@@ -2325,7 +2340,7 @@ function writeOcrSettings(input: Record<string, unknown>) {
     values[key.trim()] = rest.join('=').trim()
   }
   const map: Record<string, string> = {
-    OCR_PROVIDER: normalizeOcrProvider(input.ocrProvider ?? values.OCR_PROVIDER ?? 'legacy'),
+    OCR_PROVIDER: normalizeOcrProvider(input.ocrProvider ?? values.OCR_PROVIDER) === 'glm' ? 'glm' : 'doc2x',
     OCR_API_BASE_URL: String(input.apiBaseUrl ?? values.OCR_API_BASE_URL ?? ''),
     OCR_API_KEY: String(input.apiKey || values.OCR_API_KEY || ''),
     OCR_MODEL: String(input.model ?? values.OCR_MODEL ?? ''),
@@ -2339,6 +2354,9 @@ function writeOcrSettings(input: Record<string, unknown>) {
     DOC2X_API_BASE_URL: String(input.doc2xApiBaseUrl ?? values.DOC2X_API_BASE_URL ?? 'https://v2.doc2x.noedgeai.com'),
     DOC2X_API_KEY: String(input.doc2xApiKey || values.DOC2X_API_KEY || ''),
     DOC2X_MODEL: String(input.doc2xModel ?? values.DOC2X_MODEL ?? 'v3-2026'),
+    GLM_OCR_API_BASE_URL: String(input.glmOcrApiBaseUrl ?? values.GLM_OCR_API_BASE_URL ?? 'https://open.bigmodel.cn/api/paas/v4/layout_parsing'),
+    GLM_OCR_API_KEY: String(input.glmOcrApiKey || values.GLM_OCR_API_KEY || ''),
+    GLM_OCR_MODEL: String(input.glmOcrModel ?? values.GLM_OCR_MODEL ?? 'glm-ocr'),
     OCR_CLEANUP_API_BASE_URL: String(input.cleanupApiBaseUrl ?? values.OCR_CLEANUP_API_BASE_URL ?? values.OCR_API_BASE_URL ?? ''),
     OCR_CLEANUP_API_KEY: String(input.cleanupApiKey || values.OCR_CLEANUP_API_KEY || ''),
     OCR_CLEANUP_MODEL: String(input.cleanupModel ?? values.OCR_CLEANUP_MODEL ?? values.OCR_MODEL ?? ''),
@@ -3184,7 +3202,7 @@ function getOcrProgress(runId: string) {
   const total = run.approvedQuestions || run.totalQuestions || 0
   const processed = Math.max(importedQuestions, draftStats.total, run.processedQuestions || 0)
   const itemProgress = total ? Math.min(1, processed / total) : 0
-  const providerProgress = run.ocrProvider === 'doc2x' ? Math.max(0, Math.min(1, Number(run.ocrProviderProgress || 0) / 100)) : 0
+  const providerProgress = run.ocrProvider === 'doc2x' || run.ocrProvider === 'glm' ? Math.max(0, Math.min(1, Number(run.ocrProviderProgress || 0) / 100)) : 0
   const progressPercent = Math.max(itemProgress, providerProgress, run.progressPercent || 0)
   return {
     run: { ...run, processedQuestions: processed, progressPercent, totalOcrQuestions: total },
@@ -3206,6 +3224,9 @@ function runMigratedOcr(runId: string) {
   }
   if (provider === 'doc2x') {
     throw new Error('Doc2X 仅支持后台任务模式。')
+  }
+  if (provider === 'glm') {
+    throw new Error('GLM-OCR 仅支持后台任务模式。')
   }
   const count = exportRunForMigratedOcr(runId)
   const settings = readOcrSettings()
@@ -3271,13 +3292,18 @@ function startMigratedOcrBackground(runId: string, options: { force?: boolean } 
   const runRow = db.prepare('SELECT * FROM pdf_slicer_runs WHERE run_id = ?').get(runId) as RunRow | undefined
   if (!runRow) throw new Error('批次不存在。')
   const settings = readOcrSettings()
-  const provider = runRow.ocr_provider === 'doc2x' || runRow.ocr_provider === 'legacy'
+  const provider = runRow.ocr_provider === 'doc2x' || runRow.ocr_provider === 'glm' || runRow.ocr_provider === 'legacy'
     ? normalizeOcrProvider(runRow.ocr_provider)
     : normalizeOcrProvider(settings.ocrProvider)
+  if (provider === 'legacy') {
+    throw new Error('历史 OCR 已下线，无法重新启动；请在 OCR 设置中选择 GLM-OCR 后从题库或待入库页面重新识别。')
+  }
   if (!hasOcrConfig(provider)) {
     throw new Error(provider === 'doc2x'
       ? '缺少 Doc2X 配置：请在 OCR 设置中配置 Doc2X API Key。'
-      : '缺少 OCR 配置：请在应用 OCR 设置或进程环境中配置 OCR_API_BASE_URL、OCR_API_KEY、OCR_MODEL。')
+      : provider === 'glm'
+        ? '缺少 GLM-OCR 配置：请在 OCR 设置中配置 GLM-OCR API Key。'
+        : '缺少 OCR 配置：请在应用 OCR 设置或进程环境中配置 OCR_API_BASE_URL、OCR_API_KEY、OCR_MODEL。')
   }
   const count = exportRunForMigratedOcr(runId)
   const pythonRoot = path.join(sourceRoot, 'server', 'python')
@@ -3287,7 +3313,7 @@ function startMigratedOcrBackground(runId: string, options: { force?: boolean } 
     UPDATE pdf_slicer_runs
     SET ocr_provider = ?, ocr_provider_phase = ?, ocr_provider_progress = ?, updated_at = ?
     WHERE run_id = ?
-  `).run(provider, provider === 'doc2x' ? 'starting' : '', provider === 'doc2x' ? 1 : 0, nowIso(), runId)
+  `).run(provider, provider === 'doc2x' || provider === 'glm' ? 'starting' : '', provider === 'doc2x' || provider === 'glm' ? 1 : 0, nowIso(), runId)
   fs.writeFileSync(logPath, `[${nowIso()}] OCR runner started. provider=${provider} total=${count} concurrency=${settings.concurrency || '20'}\n`)
   let args: string[]
   if (provider === 'doc2x') {
@@ -3304,6 +3330,23 @@ function startMigratedOcrBackground(runId: string, options: { force?: boolean } 
       '--artifact-dir', artifactDir,
       '--storage-root', storageRoot,
     ]
+    if (options.force === true) args.push('--force')
+  } else if (provider === 'glm') {
+    const artifactDir = glmArtifactDir(runRow)
+    fs.mkdirSync(artifactDir, { recursive: true })
+    const pdfPath = resolveStoragePath(runRow.pdf_path)
+    const isSingleQuestion = runRow.upload_mode === 'question_bank_rerun' || runRow.upload_mode === 'pending_bank_rerun'
+    if (!isSingleQuestion && (!pdfPath || !fs.existsSync(pdfPath))) throw new Error('GLM-OCR 找不到当前批次的原始 PDF。')
+    args = [
+      'scripts/run_glm_ocr.py',
+      '--run-id', runId,
+      '--pdf', pdfPath || path.join(artifactDir, 'placeholder.pdf'),
+      '--manifest', path.join(pythonDataRoot, 'output', 'ocr_manifest.json'),
+      '--drafts-root', path.join(pythonDataRoot, 'ocr_drafts'),
+      '--artifact-dir', artifactDir,
+      '--storage-root', storageRoot,
+    ]
+    if (isSingleQuestion) args.push('--single-question')
     if (options.force === true) args.push('--force')
   } else {
     args = ['scripts/run_ocr_trial.py', '--max-items', String(count), '--concurrency', settings.concurrency || '20', '--skip-manifest-check']
@@ -4016,17 +4059,18 @@ function figuresForImportedOcrResult(result: Record<string, any>, runId: string)
   const sourceAbs = sourceRel ? resolveStoragePath(sourceRel) : ''
   return sourceFigures.map((figure, index) => {
     const figureId = normalizedFigureId(figure.id, index)
-    const doc2xAssetPath = String(figure.origin || '') === 'doc2x_v3' ? stripAssetPrefix(String(figure.path || '')) : ''
-    if (doc2xAssetPath && fs.existsSync(resolveStoragePath(doc2xAssetPath))) {
+    const providerAssetOrigin = String(figure.origin || '')
+    const providerAssetPath = providerAssetOrigin === 'doc2x_v3' || providerAssetOrigin === 'glm_ocr' ? stripAssetPrefix(String(figure.path || '')) : ''
+    if (providerAssetPath && fs.existsSync(resolveStoragePath(providerAssetPath))) {
       const usage = String(figure.usage || figure.category || 'stem')
       return {
         ...figure,
         id: figureId,
-        origin: 'doc2x_v3',
+        origin: providerAssetOrigin,
         usage,
         category: String(figure.category || figure.usage || usage),
         pageNumber: Number(figure.pageNumber ?? figure.page_number ?? 1),
-        path: doc2xAssetPath,
+        path: providerAssetPath,
       }
     }
     const outputRel = path.join('data', 'question_figures', String(result.id), `${figureId}.png`)
