@@ -1,6 +1,6 @@
 {
   "name": "question-manager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-first desktop manager for slicing PDFs, OCR review, and math question collections.",
   "author": "Question Manager contributors",
   "private": false,

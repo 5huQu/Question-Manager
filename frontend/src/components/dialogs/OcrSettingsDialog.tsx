@@ -86,14 +86,14 @@ export function OcrSettingsDialog({ onClose }: { onClose: () => void }) {
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">模型</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.model ?? ''} onChange={(e) => setDraft({ ...draft, model: e.target.value })} /></label>
                 </div>
                 )}
-                <div className="grid gap-3 sm:grid-cols-2">
+                {(draft.ocrProvider ?? 'legacy') === 'legacy' ? <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">Dry Run</span><select className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.dryRun ?? 'false'} onChange={(e) => setDraft({ ...draft, dryRun: e.target.value })}><option value="false">false</option><option value="true">true</option></select></label>
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">最大题数</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.maxItems ?? ''} onChange={(e) => setDraft({ ...draft, maxItems: e.target.value })} /></label>
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">OCR 并发（1-20）</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.concurrency ?? ''} onChange={(e) => setDraft({ ...draft, concurrency: e.target.value })} /></label>
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">最大重试</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.maxRetries ?? ''} onChange={(e) => setDraft({ ...draft, maxRetries: e.target.value })} /></label>
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">重试间隔秒</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.retryDelaySeconds ?? ''} onChange={(e) => setDraft({ ...draft, retryDelaySeconds: e.target.value })} /></label>
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">图片最大宽度</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.imageMaxWidth ?? ''} onChange={(e) => setDraft({ ...draft, imageMaxWidth: e.target.value })} /></label>
-                </div>
+                </div> : null}
               </div>
             )}
 

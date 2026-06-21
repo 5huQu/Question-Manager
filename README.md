@@ -109,7 +109,7 @@ build-and-install-windows.cmd
 4. 生成桌面应用并执行包内 Python 切题验证。
 5. 上传 macOS ZIP 和 Windows NSIS 安装器 artifact。
 
-推送形如 `v0.1.0` 的版本标签也会自动触发同一套构建。当前产物未进行 Apple 或 Windows 代码签名，系统首次打开时可能显示安全提醒。
+推送形如 `v0.1.1` 的版本标签也会自动触发同一套构建。当前产物未进行 Apple 或 Windows 代码签名，系统首次打开时可能显示安全提醒。
 
 ## 数据目录与环境变量
 

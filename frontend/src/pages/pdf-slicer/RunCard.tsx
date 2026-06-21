@@ -155,7 +155,7 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
               更多 <span className="text-[8px] ml-0.5">▼</span>
             </button>
             {moreOpen ? (
-            <div className="absolute right-0 bottom-full mb-1 w-48 bg-white rounded-xl shadow-lg border border-zinc-200 py-2 z-10">
+            <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-lg border border-zinc-200 py-2 z-10">
               <div className="px-3 pb-2 mb-2 border-b border-zinc-100 space-y-2">
                 <label className="text-[10px] text-zinc-500 block">修改分类与角色</label>
                 <select className="h-7 w-full rounded border bg-zinc-50 px-2 text-xs outline-none" disabled={classificationBusy} value={materialType} onChange={(event) => updateClassification({ materialType: event.target.value })}>

@@ -423,7 +423,7 @@ export function SettingsPage() {
                   </div>
                   )}
 
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  {(draft.ocrProvider ?? 'legacy') === 'legacy' ? <div className="grid gap-4 sm:grid-cols-2">
                     <label className="space-y-1.5 block">
                       <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">Dry Run</span>
                       <select
@@ -480,7 +480,7 @@ export function SettingsPage() {
                         onChange={(e) => setDraft({ ...draft, imageMaxWidth: e.target.value })}
                       />
                     </label>
-                  </div>
+                  </div> : null}
                 </div>
               )}
 

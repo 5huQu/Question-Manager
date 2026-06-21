@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Optional release tag to publish, for example v0.1.0'
+        description: 'Optional release tag to publish, for example v0.1.1'
         required: false
         type: string
   push:
