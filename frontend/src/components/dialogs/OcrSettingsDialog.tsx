@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, Check, Settings2, Tags } from 'lucide-react'
+import { Check, Settings2, Tags } from 'lucide-react'
 import { api, jsonHeaders } from '@/api/client'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button, Empty, SelectFilter } from '@/components/ui'
@@ -8,7 +8,7 @@ import type { OcrSettings } from '@/types'
 
 export function OcrSettingsDialog({ onClose }: { onClose: () => void }) {
   const { data, error, loading, reload } = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
-  const [draft, setDraft] = useState<Partial<OcrSettings & { apiKey: string; doc2xApiKey: string; cleanupApiKey: string }>>({})
+  const [draft, setDraft] = useState<Partial<OcrSettings & { apiKey: string; doc2xApiKey: string; glmOcrApiKey: string; cleanupApiKey: string }>>({})
   const [activeTab, setActiveTab] = useState<'ocr' | 'classification' | 'prompts'>('ocr')
   useEffect(() => {
     if (data) setDraft(data)
@@ -18,7 +18,7 @@ export function OcrSettingsDialog({ onClose }: { onClose: () => void }) {
     reload()
   }
   return (
-    <Modal title="系统设置" desc="配置迁入的原项目 OCR runner。密钥留空时保留现有值。" onClose={onClose} locked={true}>
+    <Modal title="系统设置" desc="配置 Doc2X、GLM-OCR 与题目数据分类。密钥留空时保留现有值。" onClose={onClose} locked={true}>
       {loading ? <Empty text="读取中..." /> : error ? <Empty text={error} /> : (
         <div className="flex flex-col h-full min-h-0">
           {/* Tab Headers */}
@@ -47,18 +47,6 @@ export function OcrSettingsDialog({ onClose }: { onClose: () => void }) {
               <Tags className="size-4" />
               <span>数据分类</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('prompts')}
-              className={`flex items-center gap-2 px-4 py-2.5 border-b-2 text-sm font-semibold transition-colors focus:outline-none -mb-px cursor-pointer ${
-                activeTab === 'prompts'
-                  ? 'border-zinc-950 dark:border-zinc-200 text-zinc-950 dark:text-zinc-50'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'
-              }`}
-            >
-              <BookOpen className="size-4" />
-              <span>OCR 提示词</span>
-            </button>
           </div>
 
           {/* Tab Contents (Scrollable) */}
@@ -67,12 +55,12 @@ export function OcrSettingsDialog({ onClose }: { onClose: () => void }) {
               <div className="space-y-4">
                 <label className="space-y-1 block">
                   <span className="text-xs text-zinc-500 font-medium">默认 OCR 提供方</span>
-                  <select className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.ocrProvider ?? 'legacy'} onChange={(e) => setDraft({ ...draft, ocrProvider: e.target.value as 'legacy' | 'doc2x' })}>
-                    <option value="legacy">现有 OCR</option>
+                  <select className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.ocrProvider === 'glm' ? 'glm' : 'doc2x'} onChange={(e) => setDraft({ ...draft, ocrProvider: e.target.value as 'doc2x' | 'glm' })}>
                     <option value="doc2x">Doc2X</option>
+                    <option value="glm">GLM-OCR</option>
                   </select>
                 </label>
-                {(draft.ocrProvider ?? 'legacy') === 'doc2x' ? (
+                {(draft.ocrProvider ?? 'doc2x') === 'doc2x' ? (
                   <div className="grid gap-3">
                     <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">Doc2X API 地址</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.doc2xApiBaseUrl ?? ''} onChange={(e) => setDraft({ ...draft, doc2xApiBaseUrl: e.target.value })} placeholder="https://v2.doc2x.noedgeai.com" /></label>
                     <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">Doc2X API Key</span><input className="w-full rounded-xl border px-3 py-2 text-sm" placeholder={data?.doc2xApiKeyConfigured ? '已配置，留空不修改' : '未配置'} value={draft.doc2xApiKey ?? ''} onChange={(e) => setDraft({ ...draft, doc2xApiKey: e.target.value })} type="password" /></label>
@@ -81,12 +69,12 @@ export function OcrSettingsDialog({ onClose }: { onClose: () => void }) {
                   </div>
                 ) : (
                 <div className="grid gap-3">
-                  <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">API 地址</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.apiBaseUrl ?? ''} onChange={(e) => setDraft({ ...draft, apiBaseUrl: e.target.value })} /></label>
-                  <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">API Key</span><input className="w-full rounded-xl border px-3 py-2 text-sm" placeholder={data?.apiKeyConfigured ? '已配置，留空不修改' : '未配置'} value={draft.apiKey ?? ''} onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })} type="password" /></label>
-                  <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">模型</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.model ?? ''} onChange={(e) => setDraft({ ...draft, model: e.target.value })} /></label>
+                  <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">GLM-OCR API 地址</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.glmOcrApiBaseUrl ?? ''} onChange={(e) => setDraft({ ...draft, glmOcrApiBaseUrl: e.target.value })} placeholder="https://open.bigmodel.cn/api/paas/v4/layout_parsing" /></label>
+                  <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">GLM-OCR API Key</span><input className="w-full rounded-xl border px-3 py-2 text-sm" placeholder={data?.glmOcrApiKeyConfigured ? '已配置，留空不修改' : '未配置'} value={draft.glmOcrApiKey ?? ''} onChange={(e) => setDraft({ ...draft, glmOcrApiKey: e.target.value })} type="password" /></label>
+                  <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">模型</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.glmOcrModel ?? 'glm-ocr'} onChange={(e) => setDraft({ ...draft, glmOcrModel: e.target.value })} /></label>
                 </div>
                 )}
-                {(draft.ocrProvider ?? 'legacy') === 'legacy' ? <div className="grid gap-3 sm:grid-cols-2">
+                {false ? <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">Dry Run</span><select className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.dryRun ?? 'false'} onChange={(e) => setDraft({ ...draft, dryRun: e.target.value })}><option value="false">false</option><option value="true">true</option></select></label>
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">最大题数</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.maxItems ?? ''} onChange={(e) => setDraft({ ...draft, maxItems: e.target.value })} /></label>
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">OCR 并发（1-20）</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.concurrency ?? ''} onChange={(e) => setDraft({ ...draft, concurrency: e.target.value })} /></label>

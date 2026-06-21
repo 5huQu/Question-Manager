@@ -2,11 +2,13 @@ import { Wifi, Cpu } from 'lucide-react'
 import type { OcrSettings } from '@/types'
 
 export function OcrEngineStatus({ ocrSettings }: { ocrSettings: OcrSettings | null }) {
-  const provider = ocrSettings?.ocrProvider ?? 'legacy'
+  const provider = ocrSettings?.ocrProvider ?? 'doc2x'
   const configured = provider === 'doc2x'
     ? Boolean(ocrSettings?.doc2xApiBaseUrl && ocrSettings.doc2xApiKeyConfigured && ocrSettings.doc2xModel)
-    : Boolean(ocrSettings?.apiBaseUrl && ocrSettings.apiKeyConfigured && ocrSettings.model)
-  const model = provider === 'doc2x' ? ocrSettings?.doc2xModel : ocrSettings?.model
+    : provider === 'glm'
+      ? Boolean(ocrSettings?.glmOcrApiBaseUrl && ocrSettings.glmOcrApiKeyConfigured && ocrSettings.glmOcrModel)
+      : Boolean(ocrSettings?.apiBaseUrl && ocrSettings.apiKeyConfigured && ocrSettings.model)
+  const model = provider === 'doc2x' ? ocrSettings?.doc2xModel : provider === 'glm' ? ocrSettings?.glmOcrModel : ocrSettings?.model
 
   return (
     <div className="space-y-4.5 text-[13px] py-1.5">
@@ -37,7 +39,7 @@ export function OcrEngineStatus({ ocrSettings }: { ocrSettings: OcrSettings | nu
           <span>OCR 运算模型</span>
         </span>
         <span className="font-mono text-xs font-bold bg-zinc-100 dark:bg-zinc-950/50 border border-zinc-200/50 dark:border-zinc-800/40 px-2.5 py-1 rounded-lg text-zinc-700 dark:text-zinc-300 truncate max-w-[170px]" title={model || '未设置'}>
-          {provider === 'doc2x' ? 'Doc2X · ' : ''}{model || '未设置'}
+          {provider === 'doc2x' ? 'Doc2X · ' : provider === 'glm' ? 'GLM-OCR · ' : ''}{model || '未设置'}
         </span>
       </div>
     </div>

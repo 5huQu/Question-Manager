@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, Check, Settings2, Tags, AlertCircle, LoaderCircle, SlidersHorizontal, Wrench, ExternalLink, Scissors, Plus, Trash2, ToggleLeft, ToggleRight, RotateCcw } from 'lucide-react'
+import { Check, Settings2, Tags, AlertCircle, LoaderCircle, SlidersHorizontal, Wrench, ExternalLink, Scissors, Plus, Trash2, ToggleLeft, ToggleRight, RotateCcw } from 'lucide-react'
 import { api, jsonHeaders } from '@/api/client'
 import { Button, Empty, PageTitle } from '@/components/ui'
 import { Modal } from '@/components/dialogs/Modal'
@@ -10,7 +10,7 @@ import { libreOfficeDownloadUrl } from '@/utils/wordFiles'
 
 export function SettingsPage() {
   const { data, error, loading, reload } = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
-  const [draft, setDraft] = useState<Partial<OcrSettings & { apiKey: string; doc2xApiKey: string; cleanupApiKey: string }>>({})
+  const [draft, setDraft] = useState<Partial<OcrSettings & { apiKey: string; doc2xApiKey: string; glmOcrApiKey: string; cleanupApiKey: string }>>({})
   const [activeTab, setActiveTab] = useState<'basic' | 'tools' | 'ocr' | 'classification' | 'prompts' | 'rules'>('basic')
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -149,9 +149,8 @@ export function SettingsPage() {
   const tabItems = [
     { id: 'basic' as const, label: '基础设置', icon: SlidersHorizontal, desc: '系统名称、网站信息与导出水印' },
     { id: 'tools' as const, label: '外部工具', icon: Wrench, desc: 'LibreOffice 与本地转换工具' },
-    { id: 'ocr' as const, label: 'OCR 设置', icon: Settings2, desc: 'API、密钥与并发参数' },
+    { id: 'ocr' as const, label: 'OCR 设置', icon: Settings2, desc: 'Doc2X、GLM-OCR API 与密钥' },
     { id: 'classification' as const, label: '数据分类', icon: Tags, desc: '完成后的知识点与难度标签' },
-    { id: 'prompts' as const, label: 'OCR 提示词', icon: BookOpen, desc: '整题与分区的大模型 Prompt' },
     { id: 'rules' as const, label: '切题规则', icon: Scissors, desc: 'PDF 切题引擎的标记词与章节识别规则' },
   ]
 
@@ -353,15 +352,15 @@ export function SettingsPage() {
                     <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">默认 OCR 提供方</span>
                     <div className="grid grid-cols-2 gap-2 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800">
                       {([
-                        { value: 'legacy', label: '现有 OCR' },
                         { value: 'doc2x', label: 'Doc2X' },
+                        { value: 'glm', label: 'GLM-OCR' },
                       ] as const).map((option) => (
                         <button
                           key={option.value}
                           type="button"
                           onClick={() => setDraft({ ...draft, ocrProvider: option.value })}
                           className={`h-9 rounded-lg text-sm font-medium transition-colors ${
-                            (draft.ocrProvider ?? 'legacy') === option.value
+                            (draft.ocrProvider === 'doc2x' || draft.ocrProvider === 'glm' ? draft.ocrProvider : 'doc2x') === option.value
                               ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-100'
                               : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
                           }`}
@@ -370,9 +369,9 @@ export function SettingsPage() {
                         </button>
                       ))}
                     </div>
-                    <p className="text-[11px] leading-5 text-zinc-400">Doc2X 会整份上传 PDF，并在切题复核后按题号映射识别结果。</p>
+                    <p className="text-[11px] leading-5 text-zinc-400">Doc2X 整卷上传后按题号映射；GLM-OCR 会保留页级布局、题号和图像，并支持跨页题重新 OCR。</p>
                   </div>
-                  {(draft.ocrProvider ?? 'legacy') === 'doc2x' ? (
+                  {(draft.ocrProvider === 'doc2x' || (!draft.ocrProvider || draft.ocrProvider === 'legacy')) ? (
                     <div className="grid gap-4">
                       <label className="space-y-1.5 block">
                         <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">Doc2X API 地址</span>
@@ -393,21 +392,21 @@ export function SettingsPage() {
                   ) : (
                   <div className="grid gap-4">
                     <label className="space-y-1.5 block">
-                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">API 地址</span>
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">GLM-OCR API 地址</span>
                       <input
                         className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
-                        value={draft.apiBaseUrl ?? ''}
-                        onChange={(e) => setDraft({ ...draft, apiBaseUrl: e.target.value })}
-                        placeholder="https://api.openai.com/v1"
+                        value={draft.glmOcrApiBaseUrl ?? ''}
+                        onChange={(e) => setDraft({ ...draft, glmOcrApiBaseUrl: e.target.value })}
+                        placeholder="https://open.bigmodel.cn/api/paas/v4/layout_parsing"
                       />
                     </label>
                     <label className="space-y-1.5 block">
-                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">API Key</span>
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">GLM-OCR API Key</span>
                       <input
                         className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
-                        placeholder={data?.apiKeyConfigured ? '已配置密钥，留空表示不修改' : '未配置密钥'}
-                        value={draft.apiKey ?? ''}
-                        onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })}
+                        placeholder={data?.glmOcrApiKeyConfigured ? '已配置密钥，留空表示不修改' : '未配置密钥'}
+                        value={draft.glmOcrApiKey ?? ''}
+                        onChange={(e) => setDraft({ ...draft, glmOcrApiKey: e.target.value })}
                         type="password"
                       />
                     </label>
@@ -415,15 +414,15 @@ export function SettingsPage() {
                       <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">模型</span>
                       <input
                         className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
-                        value={draft.model ?? ''}
-                        onChange={(e) => setDraft({ ...draft, model: e.target.value })}
-                        placeholder="gpt-4o"
+                        value={draft.glmOcrModel ?? 'glm-ocr'}
+                        onChange={(e) => setDraft({ ...draft, glmOcrModel: e.target.value })}
+                        placeholder="glm-ocr"
                       />
                     </label>
                   </div>
                   )}
 
-                  {(draft.ocrProvider ?? 'legacy') === 'legacy' ? <div className="grid gap-4 sm:grid-cols-2">
+                  {false ? <div className="grid gap-4 sm:grid-cols-2">
                     <label className="space-y-1.5 block">
                       <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">Dry Run</span>
                       <select
