@@ -283,9 +283,108 @@ def _download_asset(url: str, target: Path) -> str:
     return str(target)
 
 
-def _glm_figures(record: dict[str, Any], payload: dict[str, Any], artifact_dir: Path, storage_root: Path) -> list[dict[str, Any]]:
+def _page_span(record: dict[str, Any]) -> set[int]:
+    span = record.get("page_span") or [record.get("page") or 1]
+    try:
+        start = int(record.get("page") or span[0])
+        end = int(span[-1])
+    except (TypeError, ValueError, IndexError):
+        return set()
+    return set(range(min(start, end), max(start, end) + 1))
+
+
+def _record_segments(record: dict[str, Any]) -> list[dict[str, Any]]:
+    segments = record.get("segments") or record.get("reviewed_segments") or []
+    return [segment for segment in segments if isinstance(segment, dict)]
+
+
+def _glm_figure_diagnostics(record: dict[str, Any], manifest: list[dict[str, Any]], payload: dict[str, Any]) -> dict[str, Any]:
+    """Describe the current page-span binding without changing it.
+
+    GLM supplies page-level image blocks while the reviewed cuts carry the
+    authoritative geometry.  Keeping both candidate sets in the draft makes a
+    boundary conflict inspectable before the binding rule is switched.
+    """
+    record_pages = _page_span(record)
+    infos = ((payload.get("data_info") or {}).get("pages") or [])
+    blocks: list[dict[str, Any]] = []
+    warnings: set[str] = set()
+    for page_index, page in enumerate(payload.get("layout_details") or []):
+        page_number = page_index + 1
+        if page_number not in record_pages:
+            continue
+        page_info = infos[page_index] if page_index < len(infos) and isinstance(infos[page_index], dict) else {}
+        for block in page:
+            if not isinstance(block, dict) or str(block.get("label") or "") != "image":
+                continue
+            figure_box = _bbox_fraction(block, page_info)
+            segment_candidates: list[str] = []
+            page_candidates: list[str] = []
+            for candidate in manifest:
+                question_no = normalize_question_no(candidate.get("question_no"))
+                if not question_no:
+                    continue
+                if page_number in _page_span(candidate):
+                    page_candidates.append(question_no)
+                if figure_box:
+                    for segment in _record_segments(candidate):
+                        if int(segment.get("page_number") or segment.get("pageNumber") or 0) != page_number:
+                            continue
+                        target = _region_fraction(segment)
+                        if target and _overlap(target, figure_box) > 0.0001:
+                            segment_candidates.append(question_no)
+                            break
+            page_candidates = list(dict.fromkeys(page_candidates))
+            segment_candidates = list(dict.fromkeys(segment_candidates))
+            question_no = normalize_question_no(record.get("question_no"))
+            current_matches_segment = question_no in segment_candidates
+            binding = "segment_overlap" if current_matches_segment else "page_span_only"
+            block_warnings: list[str] = []
+            if not figure_box:
+                block_warnings.append("ocr_image_missing_bbox")
+            if binding == "page_span_only":
+                block_warnings.append("ocr_image_page_span_only")
+            if len(page_candidates) > 1:
+                block_warnings.append("ocr_image_on_shared_question_page")
+            if segment_candidates and not current_matches_segment:
+                block_warnings.append("ocr_image_outside_review_segments")
+            warnings.update(block_warnings)
+            blocks.append({
+                "block_id": str(block.get("index") or ""),
+                "page_number": page_number,
+                "bbox": {"x": figure_box[0], "y": figure_box[1], "width": figure_box[2] - figure_box[0], "height": figure_box[3] - figure_box[1]} if figure_box else None,
+                "current_binding": binding,
+                "page_span_candidates": page_candidates,
+                "segment_candidates": segment_candidates,
+                "warnings": block_warnings,
+            })
+    return {
+        "source": "glm",
+        "matched": sum(1 for block in blocks if block["current_binding"] == "segment_overlap"),
+        "page_span_only": sum(1 for block in blocks if block["current_binding"] == "page_span_only"),
+        "warnings": sorted(warnings),
+        "image_blocks": blocks,
+    }
+
+
+def _formula_diagnostics(fields: dict[str, str]) -> list[dict[str, str]]:
+    diagnostics: list[dict[str, str]] = []
+    for field, value in fields.items():
+        delimiters = value.count("$")
+        if delimiters % 2:
+            diagnostics.append({"field": field, "code": "math_delimiter_unclosed", "snippet": value, "message": "数学定界符 $ 未成对。"})
+        for match in re.finditer(r"\$(.+?)\$", value, re.DOTALL):
+            formula = match.group(1).strip()
+            left_count = len(re.findall(r"\\left(?:\\[{}()|]|.)", formula))
+            right_count = len(re.findall(r"\\right(?:\\[{}()|]|.)", formula))
+            if left_count != right_count:
+                diagnostics.append({"field": field, "code": "latex_left_right_unbalanced", "snippet": formula, "message": "公式中的 \\left 与 \\right 未配对。"})
+    return diagnostics
+
+
+def _glm_figures(record: dict[str, Any], manifest: list[dict[str, Any]], payload: dict[str, Any], artifact_dir: Path, storage_root: Path) -> list[dict[str, Any]]:
     figures: list[dict[str, Any]] = []
-    page_span = set(range(int(record.get("page") or 1), int((record.get("page_span") or [record.get("page") or 1])[-1]) + 1))
+    page_span = _page_span(record)
     infos = ((payload.get("data_info") or {}).get("pages") or [])
     for page_index, page in enumerate(payload.get("layout_details") or []):
         page_number = page_index + 1
@@ -295,6 +394,22 @@ def _glm_figures(record: dict[str, Any], payload: dict[str, Any], artifact_dir: 
         for block in page:
             if str(block.get("label") or "") != "image" or not str(block.get("content") or "").startswith("http"):
                 continue
+            fraction = _bbox_fraction(block, page_info)
+            if not fraction:
+                continue
+            current_question_no = normalize_question_no(record.get("question_no"))
+            matches_review_segment = any(
+                current_question_no == normalize_question_no(candidate.get("question_no"))
+                and any(
+                    int(segment.get("page_number") or segment.get("pageNumber") or 0) == page_number
+                    and (target := _region_fraction(segment)) is not None
+                    and _overlap(target, fraction) > 0.0001
+                    for segment in _record_segments(candidate)
+                )
+                for candidate in manifest
+            )
+            if not matches_review_segment:
+                continue
             url = str(block["content"])
             digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:12]
             target = artifact_dir / "assets" / f"glm_{page_number}_{digest}.jpg"
@@ -303,7 +418,6 @@ def _glm_figures(record: dict[str, Any], payload: dict[str, Any], artifact_dir: 
                 relative = local.resolve().relative_to(storage_root.resolve()).as_posix()
             except (OSError, urllib.error.URLError, ValueError):
                 continue
-            fraction = _bbox_fraction(block, page_info)
             bbox = {"x": fraction[0] if fraction else 0, "y": fraction[1] if fraction else 0, "width": (fraction[2] - fraction[0]) if fraction else 0, "height": (fraction[3] - fraction[1]) if fraction else 0}
             figures.append({"id": f"glm_{page_number}_{digest}", "origin": "glm_ocr", "usage": "stem", "category": "question", "pageNumber": page_number, "bbox": bbox, "path": relative, "blockId": str(block.get("index") or digest)})
     return figures
@@ -338,8 +452,11 @@ def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any
             problem = item["stem"]
             answer = item["answer"]
             analysis = item["analysis"]
-            figures = _glm_figures(record, result_payload, artifact_dir, storage_root) or (record.get("figures") or [])
-            result = {**record, "id": record_id, "question_no": record.get("question_no", question_no), "ocr_status": "draft", "problem_text": normalize_math_delimiters(problem), "answer": normalize_math_delimiters(answer), "analysis": normalize_math_delimiters(analysis), "figures": figures, "needs_human_review": not bool(problem) or (not bool(answer) and not bool(analysis)), "raw_model_output": item["raw"], "post_processing": {"provider": "glm", "page_indices": item.get("page_indices") or [], "used_text_regions": False, "has_answer_analysis_markers": bool(item.get("has_markers")), "parse_confidence": item.get("parse_confidence", "high"), "parse_warnings": item.get("parse_warnings") or []}}
+            reviewed_figures = list(record.get("figures") or [])
+            glm_figures = _glm_figures(record, manifest, result_payload, artifact_dir, storage_root)
+            figures = list({str(figure.get("id") or index): figure for index, figure in enumerate([*reviewed_figures, *glm_figures])}.values())
+            normalized_fields = {"problem_text": normalize_math_delimiters(problem), "answer": normalize_math_delimiters(answer), "analysis": normalize_math_delimiters(analysis)}
+            result = {**record, "id": record_id, "question_no": record.get("question_no", question_no), "ocr_status": "draft", **normalized_fields, "figures": figures, "needs_human_review": not bool(problem) or (not bool(answer) and not bool(analysis)), "raw_model_output": item["raw"], "post_processing": {"provider": "glm", "page_indices": item.get("page_indices") or [], "used_text_regions": False, "has_answer_analysis_markers": bool(item.get("has_markers")), "parse_confidence": item.get("parse_confidence", "high"), "parse_warnings": item.get("parse_warnings") or [], "figure_binding": _glm_figure_diagnostics(record, manifest, result_payload), "render_diagnostics": _formula_diagnostics(normalized_fields)}}
             successes += 1
         _atomic_json(draft_dir / "ocr_result.json", result)
         _atomic_text(draft_dir / "question.md", f"# 题目\n\n{result.get('problem_text') or ''}\n\n# 答案\n\n{result.get('answer') or ''}\n\n# 解析\n\n{result.get('analysis') or ''}\n")

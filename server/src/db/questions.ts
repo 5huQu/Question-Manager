@@ -1,7 +1,7 @@
 import { db } from './connection.js'
 import type { QuestionRow, BankStatus } from '../types/index.js'
 import { duplicateSimilarityThreshold } from '../types/index.js'
-import { formatIssueFromReviewJson, type FormatIssue } from '../utils/validation.js'
+import { formatIssueFromReviewJson, formatReviewPayload, validateQuestionMarkdown, type FormatIssue } from '../utils/validation.js'
 import type { RichBlock } from '../types/index.js'
 import { parseJson } from '../utils/json.js'
 import { nowIso, createId } from '../utils/ids.js'
@@ -114,6 +114,9 @@ export function createQuestion(input: Record<string, any> = {}) {
   const solutionMethods = normalizeTags(input.solutionMethods)
   const sourceTitle = input.sourceTitle || '手动创建'
   const chapter = input.chapter || knowledgePoints[0] || '知识点未设置'
+  const validationIssues = validateQuestionMarkdown({ problem_text: stemMarkdown, answer: answerText, analysis: analysisMarkdown })
+  const formatIssues = [...(input.formatIssue ? [input.formatIssue] : []), ...validationIssues]
+  const needsFormatReview = Boolean(input.needsFormatReview || formatIssues.length)
   db.prepare(`
     INSERT INTO question_bank_items (
       id, serial_no, question_no, stage, question_type, difficulty_score, chapter, source_title, bank_status,
@@ -128,7 +131,7 @@ export function createQuestion(input: Record<string, any> = {}) {
     input.difficultyScore ?? 0,
     chapter,
     sourceTitle,
-    input.bankStatus || 'ready',
+    needsFormatReview && (input.bankStatus || 'ready') === 'ready' ? 'blocked' : (input.bankStatus || 'ready'),
     normalizeDifficultyScore10(input.difficultyScore10),
     input.difficultyLabel || difficultyLabel10(normalizeDifficultyScore10(input.difficultyScore10)),
     JSON.stringify(knowledgePoints),
@@ -143,13 +146,8 @@ export function createQuestion(input: Record<string, any> = {}) {
     input.sourceSolutionRunId || '',
     input.mergeStatus || '',
     input.mergeNote || '',
-    input.needsFormatReview ? 1 : 0,
-    input.needsFormatReview ? JSON.stringify({
-      issue: input.formatIssue || null,
-      reasons: [],
-      renderErrors: input.formatIssue ? [input.formatIssue] : [],
-      updatedAt: now,
-    }) : '{}',
+    needsFormatReview ? 1 : 0,
+    needsFormatReview ? JSON.stringify(formatReviewPayload(formatIssues, now)) : '{}',
     now,
     now,
   )

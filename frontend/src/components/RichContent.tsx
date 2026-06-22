@@ -24,20 +24,20 @@ function inlinePlainText(inlines: RichInline[]) {
 }
 
 function MathSpan({ tex, display = false }: { tex: string; display?: boolean }) {
-  const html = useMemo(() => {
+  const rendered = useMemo(() => {
     try {
-      return katex.renderToString(tex, { displayMode: display, throwOnError: true, strict: 'ignore' })
+      return { html: katex.renderToString(tex, { displayMode: display, throwOnError: true, strict: 'ignore' }), error: '' }
     } catch {
-      return ''
+      return { html: '', error: '公式未规范化' }
     }
   }, [display, tex])
-  if (!html) {
-    return <code className="rounded bg-red-50 px-1 py-0.5 text-red-600">{tex || '公式为空'}</code>
+  if (!rendered.html) {
+    return <span className={display ? 'block rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-900' : 'inline-flex items-baseline gap-1 rounded bg-amber-50 px-1 text-amber-900'}><code>{tex || '公式为空'}</code><span className="text-[10px] text-amber-700">{rendered.error}</span></span>
   }
   return (
     <span
       className={display ? 'block overflow-x-auto py-1' : 'inline-block max-w-full align-baseline'}
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={{ __html: rendered.html }}
     />
   )
 }

@@ -28,6 +28,41 @@ export type FormatIssue = {
   end?: number
 }
 
+export function validateQuestionMarkdown(fields: Record<string, string>): FormatIssue[] {
+  const issues: FormatIssue[] = []
+  for (const [field, text] of Object.entries(fields)) {
+    const value = String(text || '')
+    const spans = Array.from(value.matchAll(/\$\$([\s\S]*?)\$\$|\$([^$\n]+?)\$/g))
+    const consumed = spans.reduce((output, match) => output.slice(0, Number(match.index || 0)) + ' '.repeat(match[0].length) + output.slice(Number(match.index || 0) + match[0].length), value)
+    if (/(^|[^\\])\$/.test(consumed)) {
+      issues.push({ field, code: 'math_delimiter_unclosed', message: '数学定界符 $ 未成对。', snippet: value })
+      continue
+    }
+    for (const match of spans) {
+      const tex = String(match[1] ?? match[2] ?? '').trim()
+      if (!tex) continue
+      try {
+        katex.renderToString(tex, { displayMode: Boolean(match[1]), throwOnError: true, strict: 'ignore' })
+      } catch (error) {
+        issues.push({ field, code: 'katex_parse_error', message: error instanceof Error ? error.message : String(error), snippet: tex })
+      }
+    }
+  }
+  return issues
+}
+
+export function formatReviewPayload(issues: FormatIssue[], updatedAt: string) {
+  return {
+    issue: issues[0] || null,
+    reasons: issues.map((issue) => `${issue.field}:${issue.code}`),
+    renderErrors: issues,
+    previewWarnings: issues,
+    importBlockingIssues: issues,
+    exportBlockingIssues: issues,
+    updatedAt,
+  }
+}
+
 // ── validateBlocks ────────────────────────────────────────────────
 
 /**
