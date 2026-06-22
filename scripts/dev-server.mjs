@@ -7,7 +7,9 @@ const tsxCli = path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs')
 
 const child = spawn(process.execPath, [tsxCli, 'watch', 'server/src/index.ts'], {
   cwd: root,
-  env: { ...process.env, PORT: process.env.PORT || '8797' },
+  // Some preview tools inject PORT for the frontend (usually 5174).  The API
+  // server must not inherit it, otherwise it races Vite for the same port.
+  env: { ...process.env, PORT: process.env.QUESTION_SERVER_PORT || '8797' },
   stdio: 'inherit',
 })
 
