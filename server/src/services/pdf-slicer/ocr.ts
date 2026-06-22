@@ -412,11 +412,11 @@ export function exportRunForMigratedOcr(runId: string) {
   return records.length
 }
 
-export function importMigratedOcrResults(runId: string) {
+export async function importMigratedOcrResults(runId: string) {
   const runRow = db.prepare('SELECT * FROM pdf_slicer_runs WHERE run_id = ?').get(runId) as RunRow | undefined
   const roleRow = runRow ? { file_role: runRow.file_role } : undefined
   if (normalizeFileRole(roleRow?.file_role) === 'solutions') {
-    const imported = importMigratedOcrSolutionResults(runId)
+    const imported = await importMigratedOcrSolutionResults(runId)
     tryAutoMergeSeparatedExamForRun(runId)
     return imported
   }
@@ -426,11 +426,12 @@ export function importMigratedOcrResults(runId: string) {
   const isQuestionBankRerun = runRow?.upload_mode === 'question_bank_rerun'
   if (!fs.existsSync(draftsDir)) return 0
   let imported = 0
-  for (const entry of fs.readdirSync(draftsDir)) {
+  const entries = await fs.promises.readdir(draftsDir)
+  for (const [index, entry] of entries.entries()) {
     if (!entry.startsWith(runId)) continue
     const resultPath = path.join(draftsDir, entry, 'ocr_result.json')
     if (!fs.existsSync(resultPath)) continue
-    const result = JSON.parse(fs.readFileSync(resultPath, 'utf8')) as Record<string, any>
+    const result = JSON.parse(await fs.promises.readFile(resultPath, 'utf8')) as Record<string, any>
     const targetQuestionId = isQuestionBankRerun
       ? String(result.original_question_id || entry.split('__').slice(1).join('__') || result.id || '')
       : String(result.id || '')
@@ -466,7 +467,7 @@ export function importMigratedOcrResults(runId: string) {
     } | undefined
     const originalSourceRunId = String(result.original_source_run_id || '')
     if (existing) {
-      const draftUpdatedAtMs = fs.statSync(resultPath).mtime.getTime()
+      const draftUpdatedAtMs = (await fs.promises.stat(resultPath)).mtime.getTime()
       if (!isQuestionBankRerun && parseTimestampMs(existing.updated_at) > draftUpdatedAtMs) {
         continue
       }
@@ -570,6 +571,7 @@ export function importMigratedOcrResults(runId: string) {
         )
       }
       imported += 1
+      if (index > 0 && index % 5 === 0) await new Promise<void>((resolve) => setImmediate(resolve))
       continue
     }
     const targetSourceRunId = isQuestionBankRerun ? originalSourceRunId : runId
@@ -600,12 +602,13 @@ export function importMigratedOcrResults(runId: string) {
       formatIssue: needsFormatReview ? formatIssueFromReviewJson(formatReviewJson) : undefined,
     })
     imported += 1
+    if (index > 0 && index % 5 === 0) await new Promise<void>((resolve) => setImmediate(resolve))
   }
   tryAutoMergeSeparatedExamForRun(runId)
   return imported
 }
 
-export function importMigratedOcrSolutionResults(runId: string) {
+export async function importMigratedOcrSolutionResults(runId: string) {
   const draftsDir = path.join(pythonDataRoot, 'ocr_drafts')
   const runRow = db.prepare('SELECT * FROM pdf_slicer_runs WHERE run_id = ?').get(runId) as RunRow | undefined
   if (!runRow || !fs.existsSync(draftsDir)) return 0
@@ -617,11 +620,12 @@ export function importMigratedOcrSolutionResults(runId: string) {
   `)
   let imported = 0
   const now = nowIso()
-  for (const entry of fs.readdirSync(draftsDir)) {
+  const entries = await fs.promises.readdir(draftsDir)
+  for (const [index, entry] of entries.entries()) {
     if (!entry.startsWith(runId)) continue
     const resultPath = path.join(draftsDir, entry, 'ocr_result.json')
     if (!fs.existsSync(resultPath)) continue
-    const result = JSON.parse(fs.readFileSync(resultPath, 'utf8')) as Record<string, any>
+    const result = JSON.parse(await fs.promises.readFile(resultPath, 'utf8')) as Record<string, any>
     const questionNo = cleanQuestionNoLabel(String(result.question_no || ''))
     const stem = stripOcrTemplateNoise(stripLeadingQuestionNo(String(result.problem_text || '').trim(), questionNo)).trim()
     const answer = stripOcrTemplateNoise(String(result.answer || '').trim()).trim()
@@ -641,6 +645,7 @@ export function importMigratedOcrSolutionResults(runId: string) {
       now
     )
     imported += 1
+    if (index > 0 && index % 5 === 0) await new Promise<void>((resolve) => setImmediate(resolve))
   }
   updateBatchWorkflow(runRow.batch_id)
   return imported
@@ -737,7 +742,7 @@ export async function finishMigratedOcrBackground(runId: string, count: number, 
       return
     }
     if (code === 0) {
-      const imported = importMigratedOcrResults(runId)
+      const imported = await importMigratedOcrResults(runId)
       await classifyRunAfterImport(runId, logPath)
       const finishedAt = nowIso()
       if (imported >= count) {
@@ -753,7 +758,7 @@ export async function finishMigratedOcrBackground(runId: string, count: number, 
           .run(message, finishedAt, finishedAt, runId)
       }
     } else {
-      const imported = importMigratedOcrResults(runId)
+      const imported = await importMigratedOcrResults(runId)
       const finishedAt = nowIso()
       const message = imported > 0
         ? `OCR 部分完成：已生成 ${imported}/${count} 道待入库题目；请查看 server/python/ocr_jobs/${runId}.log。`
@@ -770,7 +775,7 @@ export async function finishMigratedOcrBackground(runId: string, count: number, 
   tryAutoMergeSeparatedExamForRun(runId)
 }
 
-export function runMigratedOcr(runId: string) {
+export async function runMigratedOcr(runId: string) {
   const provider = normalizeOcrProvider(readOcrSettings().ocrProvider)
   if (!hasOcrConfig(provider)) {
     throw new Error('缺少 OCR 配置：请在应用 OCR 设置或进程环境中配置 OCR_API_BASE_URL、OCR_API_KEY、OCR_MODEL。')
@@ -788,7 +793,7 @@ export function runMigratedOcr(runId: string) {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   })
-  const imported = importMigratedOcrResults(runId)
+  const imported = await importMigratedOcrResults(runId)
   if (imported <= 0) {
     throw new Error('OCR runner 已结束，但没有产生待入库的题目内容；请检查 server/python/ocr_drafts/ocr_trial_report.md。')
   }
