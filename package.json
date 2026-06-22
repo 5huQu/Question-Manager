@@ -20,6 +20,7 @@
     "prepare:python-runtime": "node scripts/prepare-python-runtime.mjs",
     "verify:python-runtime": "node scripts/verify-python-runtime.mjs",
     "verify:packaged-python": "node scripts/verify-packaged-python.mjs",
+    "test:updates": "node scripts/update-manifest.test.mjs",
     "desktop": "npm run build && npm run prepare:python-runtime && electron .",
     "pack:desktop": "npm run build && npm run prepare:python-runtime && electron-builder --dir && npm run verify:packaged-python",
     "pack:windows-installer": "npm run pack:desktop && electron-builder --win nsis --x64 --publish never",

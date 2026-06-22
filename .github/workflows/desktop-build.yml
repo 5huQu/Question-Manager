@@ -24,13 +24,21 @@ jobs:
       matrix:
         include:
           - name: macOS
-            os: macos-latest
-            artifact: Question-Manager-macOS
+            os: macos-26
+            artifact: Question-Manager-macOS-arm64
+            asset_arch: arm64
             package_command: npm run pack:desktop
-            package_path: dist/Question-Manager-macOS-*.zip
+            package_path: dist/Question-Manager-macOS-arm64.zip
+          - name: macOS x64
+            os: macos-26-intel
+            artifact: Question-Manager-macOS-x64
+            asset_arch: x64
+            package_command: npm run pack:desktop
+            package_path: dist/Question-Manager-macOS-x64.zip
           - name: Windows
             os: windows-latest
             artifact: Question-Manager-Windows-Installer
+            asset_arch: x64
             package_command: npm run pack:windows-installer
             package_path: dist/Question-Manager-Setup-*.exe
 
@@ -56,11 +64,29 @@ jobs:
       - name: Run math rendering tests
         run: npm run test:math-render
 
+      - name: Run update manifest tests
+        run: npm run test:updates
+
       - name: Build application
         run: npm run build
 
       - name: Run API smoke test
         run: npm run test:smoke
+
+      - name: Configure update manifest URL
+        shell: bash
+        env:
+          ALIYUN_OSS_PUBLIC_BASE_URL: ${{ vars.ALIYUN_OSS_PUBLIC_BASE_URL }}
+          ALIYUN_OSS_PREFIX: ${{ vars.ALIYUN_OSS_PREFIX }}
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const base = (process.env.ALIYUN_OSS_PUBLIC_BASE_URL || '').replace(/\/+$/, '')
+          const prefix = (process.env.ALIYUN_OSS_PREFIX || '').replace(/^\/+|\/+$/g, '')
+          const manifestUrl = base ? [base, prefix, 'latest.json'].filter(Boolean).join('/') : ''
+          fs.writeFileSync('electron/update-config.json', JSON.stringify({ manifestUrl }, null, 2) + '\n')
+          console.log(manifestUrl ? 'Update manifest URL: ' + manifestUrl : 'Update manifest URL is not configured for this build.')
+          NODE
 
       - name: Package and verify desktop application
         run: ${{ matrix.package_command }}
@@ -71,7 +97,7 @@ jobs:
         run: |
           app_path="$(find dist -maxdepth 3 -type d -name 'Question Manager.app' -print -quit)"
           test -n "$app_path"
-          ditto -c -k --sequesterRsrc --keepParent "$app_path" "dist/${{ matrix.artifact }}-${{ runner.arch }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "dist/Question-Manager-macOS-${{ matrix.asset_arch }}.zip"
 
       - name: Upload desktop package
         uses: actions/upload-artifact@v7
@@ -103,3 +129,86 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "Question Manager $RELEASE_TAG" \
             --generate-notes
+
+      - name: Prepare OSS update manifest
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          ALIYUN_OSS_PUBLIC_BASE_URL: ${{ vars.ALIYUN_OSS_PUBLIC_BASE_URL }}
+          ALIYUN_OSS_PREFIX: ${{ vars.ALIYUN_OSS_PREFIX }}
+        run: |
+          node - <<'NODE'
+          const crypto = require('node:crypto')
+          const fs = require('node:fs')
+          const path = require('node:path')
+
+          const releaseTag = process.env.RELEASE_TAG
+          const version = releaseTag.replace(/^v/i, '')
+          const publicBase = (process.env.ALIYUN_OSS_PUBLIC_BASE_URL || '').replace(/\/+$/, '')
+          const prefix = (process.env.ALIYUN_OSS_PREFIX || '').replace(/^\/+|\/+$/g, '')
+          if (!publicBase) throw new Error('ALIYUN_OSS_PUBLIC_BASE_URL repository variable is required')
+
+          const releaseDir = path.join('release-artifacts', 'oss', 'releases', releaseTag)
+          fs.mkdirSync(releaseDir, { recursive: true })
+
+          const files = fs.readdirSync('release-artifacts')
+            .filter((name) => /\.(exe|zip)$/i.test(name))
+            .sort()
+          if (!files.length) throw new Error('No release package files found')
+
+          const assets = {}
+          const checksums = []
+          for (const file of files) {
+            const source = path.join('release-artifacts', file)
+            const target = path.join(releaseDir, file)
+            fs.copyFileSync(source, target)
+            const bytes = fs.readFileSync(source)
+            const sha256 = crypto.createHash('sha256').update(bytes).digest('hex')
+            checksums.push(sha256 + '  ' + file)
+            const key = file.endsWith('.exe')
+              ? 'win32-x64'
+              : file.includes('arm64')
+                ? 'darwin-arm64'
+                : 'darwin-x64'
+            const url = [publicBase, prefix, 'releases', releaseTag, file].filter(Boolean).join('/')
+            assets[key] = { url, sha256, size: bytes.length }
+          }
+
+          const manifest = {
+            version,
+            releaseDate: new Date().toISOString(),
+            notes: 'Question Manager ' + releaseTag,
+            mandatory: false,
+            assets,
+          }
+          fs.writeFileSync(path.join(releaseDir, 'checksums.txt'), checksums.join('\n') + '\n')
+          fs.writeFileSync(path.join(releaseDir, 'latest.json'), JSON.stringify(manifest, null, 2) + '\n')
+          fs.writeFileSync(path.join('release-artifacts', 'oss', 'latest.json'), JSON.stringify(manifest, null, 2) + '\n')
+          NODE
+
+      - name: Install ossutil
+        run: |
+          curl -L -o ossutil64 https://gosspublic.alicdn.com/ossutil/1.7.19/ossutil64
+          chmod +x ossutil64
+
+      - name: Upload update files to Aliyun OSS
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_OSS_BUCKET: ${{ vars.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_ENDPOINT: ${{ vars.ALIYUN_OSS_ENDPOINT }}
+          ALIYUN_OSS_PREFIX: ${{ vars.ALIYUN_OSS_PREFIX }}
+        run: |
+          test -n "$ALIYUN_ACCESS_KEY_ID"
+          test -n "$ALIYUN_ACCESS_KEY_SECRET"
+          test -n "$ALIYUN_OSS_BUCKET"
+          test -n "$ALIYUN_OSS_ENDPOINT"
+          prefix="${ALIYUN_OSS_PREFIX#/}"
+          prefix="${prefix%/}"
+          if [ -n "$prefix" ]; then
+            oss_root="oss://$ALIYUN_OSS_BUCKET/$prefix"
+          else
+            oss_root="oss://$ALIYUN_OSS_BUCKET"
+          fi
+          ./ossutil64 config -e "$ALIYUN_OSS_ENDPOINT" -i "$ALIYUN_ACCESS_KEY_ID" -k "$ALIYUN_ACCESS_KEY_SECRET" -L CH
+          ./ossutil64 cp -r -f release-artifacts/oss/releases "$oss_root/"
+          ./ossutil64 cp -f release-artifacts/oss/latest.json "$oss_root/latest.json"

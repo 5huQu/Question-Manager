@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Check, Settings2, Tags, AlertCircle, LoaderCircle, SlidersHorizontal, Wrench, ExternalLink, Scissors, Plus, Trash2, ToggleLeft, ToggleRight, RotateCcw } from 'lucide-react'
 import { api, jsonHeaders } from '@/api/client'
 import { Button, Empty, PageTitle } from '@/components/ui'
+import { UpdateCard } from '@/components/UpdateCard'
 import { Modal } from '@/components/dialogs/Modal'
 import { useAsync } from '@/hooks/useAsync'
 import type { OcrSettings, SlicerRuleEntry, SlicerRulesData, SlicerRulesResponse } from '@/types'
@@ -11,7 +12,9 @@ import { libreOfficeDownloadUrl } from '@/utils/wordFiles'
 export function SettingsPage() {
   const { data, error, loading, reload } = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
   const [draft, setDraft] = useState<Partial<OcrSettings & { apiKey: string; doc2xApiKey: string; glmOcrApiKey: string; cleanupApiKey: string }>>({})
-  const [activeTab, setActiveTab] = useState<'basic' | 'tools' | 'ocr' | 'classification' | 'prompts' | 'rules'>('basic')
+  const [activeTab, setActiveTab] = useState<'basic' | 'tools' | 'ocr' | 'classification' | 'prompts' | 'updates' | 'rules'>(() => {
+    return new URLSearchParams(window.location.search).get('tab') === 'updates' ? 'updates' : 'basic'
+  })
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [showLibreOfficeAlert, setShowLibreOfficeAlert] = useState(false)
@@ -151,6 +154,7 @@ export function SettingsPage() {
     { id: 'tools' as const, label: '外部工具', icon: Wrench, desc: 'LibreOffice 与本地转换工具' },
     { id: 'ocr' as const, label: 'OCR 设置', icon: Settings2, desc: 'Doc2X、GLM-OCR API 与密钥' },
     { id: 'classification' as const, label: '数据分类', icon: Tags, desc: '完成后的知识点与难度标签' },
+    { id: 'updates' as const, label: '应用更新', icon: ExternalLink, desc: '检查、下载并覆盖安装新版' },
     { id: 'rules' as const, label: '切题规则', icon: Scissors, desc: 'PDF 切题引擎的标记词与章节识别规则' },
   ]
 
@@ -532,6 +536,12 @@ export function SettingsPage() {
                       默认安装通常无需填写。当前检测路径：{data?.sofficeDetectedPath || '未检测到'}
                     </p>
                   </label>
+                </div>
+              )}
+
+              {activeTab === 'updates' && (
+                <div className="space-y-6">
+                  <UpdateCard autoCheck />
                 </div>
               )}
 

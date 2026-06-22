@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import 'katex/dist/katex.min.css'
+import { FilterX, Plus } from 'lucide-react'
 import { api } from '@/api/client'
 import { QuestionBasket } from '@/components/QuestionBasket'
+import { UpdateCard } from '@/components/UpdateCard'
+import { AppPageHeader } from '@/components/layout/AppPageHeader'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import TraditionalWorkbenchPage from '@/pages/workbench/TraditionalWorkbenchPage'
 import PdfSlicerPage from '@/pages/pdf-slicer/PdfSlicerPage'
@@ -18,6 +21,7 @@ import SettingsPage from '@/pages/SettingsPage'
 import ExportRecordsPage from '@/pages/ExportRecordsPage'
 import { SetupPage } from '@/pages/SetupPage'
 import type { OcrSettings } from '@/types'
+import type { UpdateCheckResult } from '@/api/client'
 
 function NavigateToWorkbench() {
   const navigate = useNavigate()
@@ -29,9 +33,11 @@ function NavigateToWorkbench() {
 
 export default function App() {
   const location = useLocation()
+  const navigate = useNavigate()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('theme') === 'dark')
   const [settingsReady, setSettingsReady] = useState(false)
+  const [availableUpdate, setAvailableUpdate] = useState<UpdateCheckResult | null>(null)
   const [appSettings, setAppSettings] = useState({
     setupCompleted: false,
     systemName: 'Question Manager',
@@ -77,7 +83,7 @@ export default function App() {
   }
 
   if (!settingsReady) {
-    return <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950" />
+    return <div className="min-h-screen bg-background" />
   }
 
   if (!appSettings.setupCompleted || location.pathname === '/setup') {
@@ -85,9 +91,7 @@ export default function App() {
   }
 
   return (
-    <div className={`flex min-h-screen text-[var(--app-body-text)] transition-colors duration-150 ${
-      darkMode ? 'dark bg-zinc-950 text-zinc-100' : 'bg-zinc-50 text-zinc-900'
-    }`}>
+    <div className={`flex h-screen overflow-hidden bg-background text-[var(--app-body-text)] text-foreground transition-colors duration-150 ${darkMode ? 'dark' : ''}`}>
       <AppSidebar
         collapsed={sidebarCollapsed}
         darkMode={darkMode}
@@ -96,8 +100,10 @@ export default function App() {
         onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
 
-      <main className="flex-1 flex flex-col min-w-0 min-h-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950 transition-colors duration-150">
-        <div className="flex-1 p-5 sm:p-6 lg:p-8 overflow-auto">
+      <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden bg-background transition-colors duration-150">
+        <AppPageHeader actions={location.pathname === '/questions' ? <QuestionBankHeaderActions /> : undefined} />
+        <div className="flex-1 overflow-auto">
+          <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 md:p-6">
           <Routes>
             <Route path="/" element={<NavigateToWorkbench />} />
             <Route path="/workbench" element={<TraditionalWorkbenchPage />} />
@@ -114,9 +120,81 @@ export default function App() {
             <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<RunQuestionsPage />} />
             <Route path="/tools/pdf-slicer/runs/:runId/pending-bank" element={<PendingBankPage />} />
           </Routes>
+          </div>
         </div>
       </main>
       <QuestionBasket mode="drawer" />
+      {availableUpdate && location.pathname !== '/settings' ? (
+        <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-2xl border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+          <UpdateCard compact initialResult={availableUpdate} onUpdateAvailable={setAvailableUpdate} />
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setAvailableUpdate(null)}
+              className="h-8 rounded-lg px-2.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              稍后
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/settings?tab=updates')}
+              className="h-8 rounded-lg bg-zinc-950 px-2.5 text-xs font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950"
+            >
+              去更新
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <UpdateAutoCheck enabled={!availableUpdate} onUpdateAvailable={setAvailableUpdate} />
     </div>
+  )
+}
+
+function UpdateAutoCheck({ enabled, onUpdateAvailable }: {
+  enabled: boolean
+  onUpdateAvailable: (result: UpdateCheckResult) => void
+}) {
+  useEffect(() => {
+    const updates = window.questionWorkbench?.updates
+    if (!enabled || !updates) return undefined
+    const timer = window.setTimeout(() => {
+      updates.check({ silent: true })
+        .then((result) => {
+          if (result.updateAvailable) onUpdateAvailable(result)
+        })
+        .catch(() => undefined)
+    }, 8000)
+    return () => window.clearTimeout(timer)
+  }, [enabled, onUpdateAvailable])
+
+  return null
+}
+
+const RESET_FILTERS_EVENT = 'question-bank-reset-filters'
+
+export function dispatchResetFilters() {
+  window.dispatchEvent(new Event(RESET_FILTERS_EVENT))
+}
+
+export function QuestionBankHeaderActions() {
+  const navigate = useNavigate()
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={dispatchResetFilters}
+        className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+      >
+        <FilterX className="size-3.5" /> 重置筛选
+      </button>
+      <button
+        type="button"
+        onClick={() => navigate('/questions/new')}
+        className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors"
+      >
+        <Plus className="size-3.5" /> 新增题目
+      </button>
+    </>
   )
 }

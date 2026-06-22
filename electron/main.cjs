@@ -4,8 +4,11 @@ const fs = require('node:fs')
 const http = require('node:http')
 const net = require('node:net')
 const path = require('node:path')
+const { initUpdateHandlers } = require('./updater.cjs')
 
 let serverProcess = null
+
+initUpdateHandlers()
 
 function getFreePort() {
   return new Promise((resolve, reject) => {

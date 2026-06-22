@@ -40,6 +40,13 @@ PROJECT_MEMORY.md
 .claude/settings.local.json
 pdf_slicer_design.html
 frontend/*_design.html
+/.claude/
+/design_drafts/
+/design_workbench.html
+/docs/design-integration-conflicts.md
+/docs/export-template-integration.md
+/docs/updates.md
+/tmp/
 
 # Logs and caches
 *.log
