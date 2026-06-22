@@ -1,4 +1,5 @@
 import { Wifi, Cpu } from 'lucide-react'
+import { Badge } from '@/components/ui'
 import type { OcrSettings } from '@/types'
 
 export function OcrEngineStatus({ ocrSettings }: { ocrSettings: OcrSettings | null }) {
@@ -20,15 +21,9 @@ export function OcrEngineStatus({ ocrSettings }: { ocrSettings: OcrSettings | nu
         </span>
 
         {configured ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/50 bg-emerald-50/80 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-900/30 dark:text-emerald-400 select-none">
-            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-            <span>已就绪</span>
-          </span>
+          <Badge variant="success">已就绪</Badge>
         ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/50 bg-amber-50/80 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-950/40 dark:border-amber-900/30 dark:text-amber-400 select-none">
-            <span className="size-1.5 rounded-full bg-amber-500 shrink-0"></span>
-            <span>未配置</span>
-          </span>
+          <Badge variant="warning">未配置</Badge>
         )}
       </div>
 

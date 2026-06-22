@@ -351,18 +351,18 @@ export default function PendingBankPage() {
       : `共 ${items.length} 题`
 
   return (
-    <section className="flex h-[calc(100vh-3rem)] flex-col overflow-hidden">
+    <section className="flex h-[calc(100vh-7rem)] min-h-[640px] flex-col overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 border-b border-zinc-200 dark:border-zinc-800 pb-4 space-y-3">
-        <div className="flex items-center justify-between">
+      <div className="shrink-0 space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">系统功能 / OCR 队列 / 待入库确认</p>
-            <h2 className="text-base font-bold mt-0.5 text-zinc-900 dark:text-zinc-50">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">OCR 队列 / 待入库确认</p>
+            <h1 className="mt-0.5 text-2xl font-bold tracking-tight">
               待入库确认
-            </h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">复核 OCR 结果，确认后进入题库核心主库。</p>
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">复核 OCR 结果，确认后进入题库核心主库。</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button size="sm" icon={BadgeCheck} disabled={actionBusy || confirmAllCount === 0} onClick={() => confirmAll()}>全部入库</Button>
             <Button size="sm" variant="outline" asLink to={`/tools/pdf-slicer/runs/${encodeURIComponent(decodedRunId)}/questions`}>查看切题结果</Button>
             <Button size="sm" variant="outline" asLink to="/tools/pdf-slicer/ocr-jobs">OCR 队列</Button>
@@ -380,7 +380,7 @@ export default function PendingBankPage() {
 
       {/* Action notice */}
       {actionNotice ? (
-        <div className="shrink-0 flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300 mt-2 mx-1">
+        <div className="shrink-0 flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm text-card-foreground shadow-sm mt-2">
           {actionBusy ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4 text-emerald-500" />}
           <span>{actionNotice}</span>
         </div>
@@ -400,11 +400,11 @@ export default function PendingBankPage() {
       {/* Main content: left list + right preview */}
       <div className="flex flex-1 min-h-0 mt-2 gap-3">
         {/* Left: Question list */}
-        <div className="w-[38%] min-w-[280px] shrink-0 flex flex-col border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 overflow-hidden">
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-500 dark:text-zinc-400">
-            <button onClick={selectAll} className="flex items-center gap-1.5 hover:text-zinc-700 dark:hover:text-zinc-200 cursor-pointer transition-colors">
+        <div className="w-[38%] min-w-[280px] shrink-0 flex flex-col border rounded-xl bg-card text-card-foreground overflow-hidden shadow-sm">
+          <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/20 text-xs text-muted-foreground">
+            <button onClick={selectAll} className="flex items-center gap-1.5 hover:text-foreground cursor-pointer transition-colors">
               {allSelectableSelected
-                ? <CheckSquare className="size-3.5 text-zinc-900 dark:text-white" />
+                ? <CheckSquare className="size-3.5 text-foreground" />
                 : <Square className="size-3.5" />
               }
               <span>{selectLabel}</span>
@@ -412,7 +412,7 @@ export default function PendingBankPage() {
           </div>
           <div className="flex-1 overflow-y-auto">
             {items.length === 0 ? (
-              <div className="p-6 text-center text-sm text-zinc-400">当前筛选条件下没有题目</div>
+              <div className="p-6 text-center text-sm text-muted-foreground">当前筛选条件下没有题目</div>
             ) : (
               items.map((item) => (
                 <QuestionCard
@@ -430,7 +430,7 @@ export default function PendingBankPage() {
         </div>
 
         {/* Right: Preview panel */}
-        <div className="flex-1 min-w-0 border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 overflow-hidden">
+        <div className="flex-1 min-w-0 border rounded-xl bg-card text-card-foreground overflow-hidden shadow-sm">
           {activeItem ? (
             <PreviewPanel
               item={activeItem}
@@ -443,7 +443,7 @@ export default function PendingBankPage() {
               onDelete={() => deleteSingle(activeItem.id)}
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-sm text-zinc-400 dark:text-zinc-500">
+            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
               <div className="text-center space-y-2">
                 <Eye className="size-8 mx-auto opacity-40" />
                 <p>点击左侧题目查看详情</p>

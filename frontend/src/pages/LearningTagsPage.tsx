@@ -502,10 +502,10 @@ export default function LearningTagsPage() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(340px,0.85fr)_minmax(520px,1.15fr)]">
         <div className="space-y-5">
-          <section className="rounded-2xl border bg-white p-4 shadow-sm dark:bg-zinc-900">
+          <section className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="size-4 text-zinc-500" />
+                <CheckCircle2 className="size-4 text-muted-foreground" />
                 <h2 className="font-semibold">已安装标签库</h2>
               </div>
               <Button size="sm" variant="outline" icon={Plus} onClick={openAddDialog}>新增</Button>
@@ -518,14 +518,14 @@ export default function LearningTagsPage() {
                 const itemStats = stats(library)
                 const meta = typeMeta(library.libraryType)
                 return (
-                  <article key={library.id} className={`grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-xl border p-3 transition ${selected ? 'border-zinc-400 bg-zinc-100 dark:bg-zinc-800' : 'bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800/60'}`}>
+                  <article key={library.id} className={`grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-xl border p-3 transition ${selected ? 'border-primary bg-accent' : 'bg-card hover:bg-accent/40'}`}>
                     <button className="min-w-0 text-left" onClick={() => selectLibrary(library)} type="button">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="break-words text-sm font-semibold">{library.name}</span>
                         <Badge>{meta.label}</Badge>
                         {library.isDefault ? <Badge variant="success">默认</Badge> : null}
                       </div>
-                      <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-zinc-500">
+                      <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground">
                         <span>{library.subject}</span>
                         <span>{stageLabel(library.stage)}</span>
                         <span>{itemStats.sections} {meta.sectionLabel}</span>
@@ -549,13 +549,13 @@ export default function LearningTagsPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border bg-white p-4 shadow-sm dark:bg-zinc-900">
+          <section className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm">
             <div className="flex items-center gap-2">
-              <BookOpenCheck className="size-4 text-zinc-500" />
+              <BookOpenCheck className="size-4 text-muted-foreground" />
               <h2 className="font-semibold">当前模板</h2>
             </div>
-            <div className="mt-3 grid gap-2 text-sm text-zinc-500">
-              <div className="font-semibold text-zinc-900 dark:text-zinc-100">{activeLibrary?.name ?? '未选择'}</div>
+            <div className="mt-3 grid gap-2 text-sm text-muted-foreground">
+              <div className="font-semibold text-foreground">{activeLibrary?.name ?? '未选择'}</div>
               <div>科目：{activeLibrary?.subject ?? '-'}</div>
               <div>{activeMeta.sectionLabel}：{activeStats.sections}</div>
               <div>{activeMeta.pointLabel}：{activeStats.points}</div>
@@ -564,15 +564,15 @@ export default function LearningTagsPage() {
           </section>
         </div>
 
-        <section className="rounded-2xl border bg-white p-5 shadow-sm dark:bg-zinc-900">
+        <section className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <h2 className="text-lg font-semibold">{activeLibrary?.name ?? '标签库编辑器'}</h2>
-              <p className="mt-1 text-sm text-zinc-500">可切换 JSON 与直观视图编辑；内容有效时会自动实时保存。</p>
+              <p className="mt-1 text-sm text-muted-foreground">可切换 JSON 与直观视图编辑；内容有效时会自动实时保存。</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm ${mode === 'visual' ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950' : 'bg-white dark:bg-zinc-900'}`} onClick={() => setMode('visual')} type="button"><ListTree className="size-4" />直观视图</button>
-              <button className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm ${mode === 'json' ? 'bg-zinc-950 text-white dark:bg-zinc-100 dark:text-zinc-950' : 'bg-white dark:bg-zinc-900'}`} onClick={() => { if (editor) setJsonText(stringifyLibrary(editor)); setMode('json') }} type="button"><Code2 className="size-4" />JSON</button>
+              <button className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm ${mode === 'visual' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-accent'}`} onClick={() => setMode('visual')} type="button"><ListTree className="size-4" />直观视图</button>
+              <button className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm ${mode === 'json' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-accent'}`} onClick={() => { if (editor) setJsonText(stringifyLibrary(editor)); setMode('json') }} type="button"><Code2 className="size-4" />JSON</button>
               <Button icon={Save} disabled={!activeLibrary || Boolean(validationError) || saveState === 'saving'} onClick={() => activeLibrary && void saveLibrary(activeLibrary, false)}>保存</Button>
             </div>
           </div>

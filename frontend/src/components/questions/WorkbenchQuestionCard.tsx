@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Crop, PencilLine, Plus, RefreshCcw, Trash2 } from 'lucide-react'
+import { Crop, PencilLine, Search, Trash2 } from 'lucide-react'
 import { api, jsonHeaders } from '@/api/client'
 import { FigureCropDialog } from '@/components/questions/FigureDialogs'
 import { EditDialog } from '@/components/questions/EditDialog'
@@ -51,27 +51,27 @@ export function WorkbenchQuestionCard({ item, onAddToBasket, onDelete, onReload,
     else onReload()
   }
   return (
-    <article className="rounded-2xl border bg-white p-5 space-y-4">
+    <article className="space-y-4 rounded-xl border bg-card p-5 text-card-foreground shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-3">
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-base font-semibold text-zinc-900">#{item.serialNo ?? item.questionNo}</p>
+            <p className="text-sm font-bold text-foreground">#{item.serialNo ?? item.questionNo}</p>
             {[item.questionType || '未设题型', difficultyLabel10(item), item.stage].filter(t => t && t !== 'OCRT').map((t, i) => <Badge key={i}>{t}</Badge>)}
           </div>
           <TagRow label="知识点" tags={item.knowledgePoints?.length ? item.knowledgePoints : (item.chapter ? [item.chapter] : [])} />
           <TagRow label="解题方法" tags={item.solutionMethods ?? []} />
-          <p className="text-xs text-zinc-500">试卷来源：{displaySource(item.sourceTitle || '')}</p>
+          <p className="text-xs text-muted-foreground">来源：{displaySource(item.sourceTitle || '')}</p>
         </div>
-        <div className="flex gap-2">
-          <Button size="sm" variant="outline" icon={PencilLine} onClick={() => setEditing(true)}>编辑题目</Button>
+        <div className="flex flex-wrap gap-1.5">
+          <Button size="sm" variant="outline" icon={PencilLine} onClick={() => setEditing(true)}>编辑</Button>
           <Button size="sm" variant="outline" icon={Crop} onClick={() => setCropOpen(true)}>框选题图</Button>
           <Button size="sm" variant="outline" onClick={() => onAddToBasket(item.id)}>加入试题篮</Button>
-          <Button size="sm" asLink variant="default" to={`/questions/${encodeURIComponent(item.id)}`}>进入详情</Button>
-          <Button size="sm" variant="danger" icon={Trash2} onClick={() => onDelete(item.id)}>删除题目</Button>
+          <Button size="sm" asLink variant="outline" to={`/questions/${encodeURIComponent(item.id)}`}>详情</Button>
+          <Button size="sm" variant="danger" icon={Trash2} onClick={() => onDelete(item.id)}>删除</Button>
         </div>
       </div>
 
-      <div className="text-sm text-zinc-800 leading-relaxed">
+      <div className="text-sm leading-relaxed text-foreground">
         <QuestionMarkdownContent content={item.stemMarkdown || richBlocksPlainText(item.problemBlocks)} figures={item.figures} />
       </div>
 
@@ -145,6 +145,21 @@ export function BankTab({
     setPage(1)
   }
 
+  // Listen for reset-filters event from the header actions
+  useEffect(() => {
+    function handleReset() {
+      setQuery('')
+      setStage('')
+      setQuestionType('')
+      setDifficulty('')
+      setKnowledgePoint('')
+      setSolutionMethod('')
+      setPage(1)
+    }
+    window.addEventListener('question-bank-reset-filters', handleReset)
+    return () => window.removeEventListener('question-bank-reset-filters', handleReset)
+  }, [setQuery, setStage, setQuestionType, setDifficulty, setKnowledgePoint, setSolutionMethod, setPage])
+
   async function addToBasket(id: string) {
     if (id.startsWith('mock_')) {
       alert('已将模拟题目加入试题篮 (静态操作)')
@@ -164,28 +179,36 @@ export function BankTab({
   }
 
   return (
-    <div className="flex flex-col gap-4 h-[calc(100vh-9rem)] min-h-[580px] overflow-hidden">
-      {/* Header & Filter Row */}
-      <div className="flex flex-col gap-3 shrink-0 border-b pb-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-sm text-zinc-800">题目列表</h3>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" icon={RefreshCcw} onClick={() => { setQuery(''); setStage(''); setQuestionType(''); setDifficulty(''); setKnowledgePoint(''); setSolutionMethod(''); setPage(1); }}>重置筛选</Button>
-            <Button size="sm" asLink icon={Plus} to="/questions/new">新增题目</Button>
+    <div className="flex flex-col gap-4">
+      {/* Filter Card — matches design_drafts/question_bank.html */}
+      <div className="shrink-0 rounded-xl border bg-card text-card-foreground shadow-sm">
+        <div className="space-y-3 p-4">
+          {/* Search Bar with icon */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="flex h-9 w-full rounded-md border border-input bg-transparent pl-9 pr-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              placeholder="搜索题干、来源、标签..."
+              value={query}
+              onChange={(e) => updateFilter(setQuery, e.target.value)}
+            />
           </div>
-        </div>
-        <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-6">
-          <input className="h-9 rounded-md border px-3 text-xs bg-zinc-50 focus:bg-white" placeholder="搜索题干/来源/标签..." value={query} onChange={(e) => updateFilter(setQuery, e.target.value)} />
-          <SelectFilter label="全部学段" value={stage} options={tagLibraries.data?.stages ?? ['高一', '高二', '高三', '高中']} onChange={(value) => updateFilter(setStage, value)} />
-          <SelectFilter label="全部题型" value={questionType} options={tagLibraries.data?.questionTypes ?? ['单选题', '多选题', '填空题', '解答题']} onChange={(value) => updateFilter(setQuestionType, value)} />
-          <SelectFilter label="全部难度" value={difficulty} options={tagLibraries.data?.difficultyLabels ?? ['基础', '中等', '较难', '压轴']} onChange={(value) => updateFilter(setDifficulty, value)} />
-          <SelectFilter label="全部知识点" value={knowledgePoint} options={tagLibraries.data?.knowledgePoints ?? []} onChange={(value) => updateFilter(setKnowledgePoint, value)} />
-          <SelectFilter label="全部解题方法" value={solutionMethod} options={tagLibraries.data?.solutionMethods ?? []} onChange={(value) => updateFilter(setSolutionMethod, value)} />
+          {/* Filter Row */}
+          <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+            <SelectFilter label="全部学段" value={stage} options={tagLibraries.data?.stages ?? ['高一', '高二', '高三', '高中']} onChange={(value) => updateFilter(setStage, value)} />
+            <SelectFilter label="全部题型" value={questionType} options={tagLibraries.data?.questionTypes ?? ['单选题', '多选题', '填空题', '解答题']} onChange={(value) => updateFilter(setQuestionType, value)} />
+            <SelectFilter label="全部难度" value={difficulty} options={tagLibraries.data?.difficultyLabels ?? ['基础', '中等', '较难', '压轴']} onChange={(value) => updateFilter(setDifficulty, value)} />
+            <SelectFilter label="全部知识点" value={knowledgePoint} options={tagLibraries.data?.knowledgePoints ?? []} onChange={(value) => updateFilter(setKnowledgePoint, value)} />
+            <SelectFilter label="全部解题方法" value={solutionMethod} options={tagLibraries.data?.solutionMethods ?? []} onChange={(value) => updateFilter(setSolutionMethod, value)} />
+            <div className="flex items-center text-xs text-muted-foreground pl-1">
+              <span>找到 {totalItems} 道题目</span>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Questions List */}
-      <div className="flex-1 overflow-auto space-y-4 pr-1 pb-4">
+      <div className="space-y-4 pb-4">
         {items.map((item) => (
           <WorkbenchQuestionCard key={item.id} item={item} onAddToBasket={addToBasket} onDelete={deleteQuestion} onReload={reload} onQuestionSaved={onQuestionSaved} />
         ))}
@@ -195,8 +218,8 @@ export function BankTab({
           <Empty text={hasActiveFilters ? '未找到匹配筛选条件的题目' : '题库中暂无题目'} />
         ) : null}
         {totalItems > 0 ? (
-          <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white/95 px-3 py-2 text-xs text-zinc-500 shadow-sm backdrop-blur">
-            <span>第 {currentPage}/{totalPages} 页，共 {totalItems} 题</span>
+          <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/50 bg-background/40 px-4 py-3 text-sm text-muted-foreground shadow-sm backdrop-blur-md">
+            <span>第 {currentPage} / {totalPages} 页，共 {totalItems} 题</span>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" disabled={currentPage <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}>上一页</Button>
               <Button size="sm" variant="outline" disabled={currentPage >= totalPages || loading} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>下一页</Button>

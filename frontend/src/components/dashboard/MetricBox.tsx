@@ -14,24 +14,24 @@ export function MetricBox({
   color?: MetricColor
 }) {
   const bgStyles = {
-    zinc: 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-50',
-    amber: 'bg-gradient-to-br from-amber-500/5 via-transparent to-transparent bg-white dark:bg-zinc-900 border-amber-200/60 dark:border-amber-900/20 text-zinc-900 dark:text-zinc-50',
-    indigo: 'bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent bg-white dark:bg-zinc-900 border-indigo-200/60 dark:border-indigo-900/20 text-zinc-900 dark:text-zinc-50',
-    emerald: 'bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent bg-white dark:bg-zinc-900 border-emerald-200/60 dark:border-emerald-900/20 text-zinc-900 dark:text-zinc-50',
+    zinc: 'bg-card border-border text-card-foreground',
+    amber: 'bg-card border-border text-card-foreground',
+    indigo: 'bg-card border-border text-card-foreground',
+    emerald: 'bg-card border-border text-card-foreground',
   }
 
   const iconColors = {
-    zinc: 'text-zinc-505 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800/80',
-    amber: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/10 dark:border-amber-900/10',
-    indigo: 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/10 dark:border-indigo-900/10',
-    emerald: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/10 dark:border-emerald-900/10',
+    zinc: 'text-foreground bg-muted border border-border/40',
+    amber: 'text-foreground bg-muted border border-border/40',
+    indigo: 'text-foreground bg-muted border border-border/40',
+    emerald: 'text-foreground bg-muted border border-border/40',
   }
 
   const pulseColors = {
-    zinc: 'bg-zinc-450 dark:bg-zinc-500',
-    amber: 'bg-amber-500',
-    indigo: 'bg-indigo-500',
-    emerald: 'bg-emerald-500',
+    zinc: 'bg-zinc-400 dark:bg-zinc-500',
+    amber: 'bg-zinc-400 dark:bg-zinc-500',
+    indigo: 'bg-zinc-400 dark:bg-zinc-500',
+    emerald: 'bg-zinc-400 dark:bg-zinc-500',
   }
 
   // Get matching icon
@@ -49,13 +49,13 @@ export function MetricBox({
   })()
 
   return (
-    <div className={`p-4 rounded-2xl border ${bgStyles[color]} flex flex-col justify-between h-28 shadow-sm hover:shadow-md transition-all duration-300 relative group overflow-hidden`}>
+    <div className={`p-4 rounded-xl border ${bgStyles[color]} flex flex-col justify-between h-28 shadow-sm hover:shadow-md transition-all duration-300 relative group overflow-hidden`}>
       {/* Light gradient hover flash */}
       <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-[1200ms] ease-out"></div>
 
       <div className="flex justify-between items-start">
         <div className="space-y-1">
-          <span className="text-[10px] font-semibold tracking-wider uppercase text-zinc-400 dark:text-zinc-500">{title}</span>
+          <span className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">{title}</span>
           <h3 className="text-2xl font-bold leading-none tracking-tight">{value}</h3>
         </div>
 
@@ -66,10 +66,10 @@ export function MetricBox({
       </div>
 
       <div className="flex items-center justify-between mt-auto">
-        <p className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium truncate max-w-[80%]">{subtitle}</p>
+        <p className="text-[10px] text-muted-foreground font-medium truncate max-w-[80%]">{subtitle}</p>
 
         {/* Status Dot */}
-        <span className="flex items-center gap-1.5 text-[9px] font-semibold text-zinc-400 dark:text-zinc-500 select-none">
+        <span className="flex items-center gap-1.5 text-[9px] font-semibold text-muted-foreground select-none">
           <span className="relative flex h-1.5 w-1.5">
             <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${pulseColors[color]}`} />
             <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${pulseColors[color]}`} />

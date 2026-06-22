@@ -13,19 +13,19 @@ export function TraditionalWorkbenchPage() {
   const navigate = useNavigate()
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6">
       {/* Workbench Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-zinc-200/60 dark:border-zinc-800/40 pb-4.5 gap-4 shrink-0">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-550 uppercase tracking-wider">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
               工作空间 / 概览
             </span>
             <Badge variant="success" className="text-[9px] py-0 px-1.5 leading-none">系统正常</Badge>
           </div>
-          <h2 className="text-xl font-bold tracking-tight mt-1 text-zinc-900 dark:text-zinc-50 bg-gradient-to-r from-zinc-900 to-zinc-700 bg-clip-text dark:from-white dark:to-zinc-300">
+          <h1 className="text-2xl font-bold tracking-tight mt-1 text-foreground">
             智能题库工作台控制中心
-          </h2>
+          </h1>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">

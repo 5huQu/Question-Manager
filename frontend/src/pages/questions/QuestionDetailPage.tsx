@@ -122,17 +122,17 @@ export function QuestionDetailPage() {
           <div className="space-y-4">
             {/* Primary Grid info */}
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-xl border bg-zinc-100 p-2.5 flex flex-col justify-between">
-                <span className="text-[10px] text-zinc-400 font-medium">学段</span>
-                <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-1">{data.stage || '未设学段'}</span>
+              <div className="rounded-lg border bg-muted/50 p-2.5 flex flex-col justify-between">
+                <span className="text-[10px] text-muted-foreground font-medium">学段</span>
+                <span className="text-xs font-semibold text-foreground mt-1">{data.stage || '未设学段'}</span>
               </div>
-              <div className="rounded-xl border bg-zinc-100 p-2.5 flex flex-col justify-between">
-                <span className="text-[10px] text-zinc-400 font-medium">题型</span>
-                <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-1">{data.questionType || '未设题型'}</span>
+              <div className="rounded-lg border bg-muted/50 p-2.5 flex flex-col justify-between">
+                <span className="text-[10px] text-muted-foreground font-medium">题型</span>
+                <span className="text-xs font-semibold text-foreground mt-1">{data.questionType || '未设题型'}</span>
               </div>
-              <div className="rounded-xl border bg-zinc-100 p-2.5 flex flex-col justify-between col-span-2">
-                <span className="text-[10px] text-zinc-400 font-medium">来源</span>
-                <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 mt-1 truncate" title={data.sourceTitle}>{data.sourceTitle || '来源待补充'}</span>
+              <div className="rounded-lg border bg-muted/50 p-2.5 flex flex-col justify-between col-span-2">
+                <span className="text-[10px] text-muted-foreground font-medium">来源</span>
+                <span className="text-xs font-semibold text-foreground mt-1 truncate" title={data.sourceTitle}>{data.sourceTitle || '来源待补充'}</span>
               </div>
               <div className="col-span-2 mt-1">
                 <Badge variant={
@@ -148,22 +148,22 @@ export function QuestionDetailPage() {
             {/* Knowledge points & Solution methods */}
             <div className="space-y-3 pt-2 border-t">
               <div className="space-y-1.5">
-                <span className="text-[10px] text-zinc-400 font-semibold block">知识点</span>
+                <span className="text-[10px] text-muted-foreground font-semibold block">知识点</span>
                 <div className="flex flex-wrap gap-1">
                   {((data.knowledgePoints?.length ? data.knowledgePoints : [data.chapter]).filter(Boolean).length > 0) ? (
                     (data.knowledgePoints?.length ? data.knowledgePoints : [data.chapter]).filter(Boolean).map((kp, i) => (
-                      <span key={i} className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200/50 dark:border-zinc-700/50">
+                      <span key={i} className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground border">
                         {kp}
                       </span>
                     ))
                   ) : (
-                    <span className="text-xs text-zinc-400 italic">知识点未设置</span>
+                    <span className="text-xs text-muted-foreground italic">知识点未设置</span>
                   )}
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <span className="text-[10px] text-zinc-400 font-semibold block">解题方法</span>
+                <span className="text-[10px] text-muted-foreground font-semibold block">解题方法</span>
                 <div className="flex flex-wrap gap-1">
                   {data.solutionMethods?.length ? (
                     data.solutionMethods.map((sm, i) => (
@@ -172,24 +172,24 @@ export function QuestionDetailPage() {
                       </span>
                     ))
                   ) : (
-                    <span className="text-xs text-zinc-400 italic">方法未设置</span>
+                    <span className="text-xs text-muted-foreground italic">方法未设置</span>
                   )}
                 </div>
               </div>
             </div>
 
             {/* Database & Resource info */}
-            <div className="pt-2 border-t space-y-1.5 text-xs text-zinc-500">
+            <div className="pt-2 border-t space-y-1.5 text-xs text-muted-foreground">
               <div className="flex justify-between items-center py-1">
                 <span>题图资源</span>
-                <span className="font-semibold text-zinc-700 dark:text-zinc-300">{data.figures.length} 个</span>
+                <span className="font-semibold text-foreground">{data.figures.length} 个</span>
               </div>
             </div>
           </div>
         </Panel>
 
         <Panel title="题目内容预览" className="xl:flex xl:min-h-0 xl:flex-col" bodyClassName="xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:overflow-x-hidden">
-          <article className="space-y-4 rounded-2xl border bg-white p-5 xl:min-h-full">
+          <article className="space-y-4 rounded-xl border bg-card p-5 text-card-foreground xl:min-h-full">
             <QuestionMarkdownContent
               className="text-sm leading-7"
               content={data.stemMarkdown || richBlocksPlainText(data.problemBlocks)}
@@ -209,7 +209,7 @@ export function QuestionDetailPage() {
           <div className="space-y-4">
             {/* Primary Action Buttons */}
             <div className="space-y-2">
-              <span className="text-[10px] text-zinc-400 font-semibold block">题目工具</span>
+              <span className="text-[10px] text-muted-foreground font-semibold block">题目工具</span>
               <div className="grid gap-2">
 	                <Button
 	                  className="w-full justify-start text-[13px] font-medium"
@@ -249,7 +249,7 @@ export function QuestionDetailPage() {
 
             {/* Editing actions */}
             <div className="space-y-2 pt-2 border-t">
-              <span className="text-[10px] text-zinc-400 font-semibold block">数据维护</span>
+              <span className="text-[10px] text-muted-foreground font-semibold block">数据维护</span>
               <div className="grid gap-2">
                 <Button
                   className="w-full justify-start text-[13px] font-medium"
@@ -273,7 +273,7 @@ export function QuestionDetailPage() {
 
             {/* Danger actions */}
             <div className="space-y-2 pt-2 border-t">
-              <span className="text-[10px] text-zinc-400 font-semibold block">危险操作</span>
+              <span className="text-[10px] text-muted-foreground font-semibold block">危险操作</span>
               <Button
                 className="w-full justify-start text-[13px] font-medium"
                 variant="danger"
@@ -297,7 +297,7 @@ export function QuestionDetailPage() {
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                   : isRunning
                     ? 'bg-amber-50 border-amber-200 text-amber-700'
-                    : 'bg-zinc-100 border-zinc-200 text-zinc-700'
+                    : 'bg-muted border-border text-foreground'
 
               const labelText = isFailed
                 ? 'OCR 识别失败'
@@ -309,7 +309,7 @@ export function QuestionDetailPage() {
 
               return (
                 <div className="space-y-2 pt-2 border-t">
-                  <span className="text-[10px] text-zinc-400 font-semibold block">识别状态</span>
+                  <span className="text-[10px] text-muted-foreground font-semibold block">识别状态</span>
                   <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${boxClass}`}>
                     {isSucceeded && <Check className="size-4 shrink-0" />}
                     {isFailed && <X className="size-4 shrink-0" />}

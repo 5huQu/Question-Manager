@@ -82,7 +82,7 @@ export function OcrJobCard({ run, onReload }: { run: ApiRun; onReload: () => voi
     })
   }
   return (
-    <article className="rounded-2xl border bg-white p-5">
+    <article className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -92,15 +92,15 @@ export function OcrJobCard({ run, onReload }: { run: ApiRun; onReload: () => voi
             <Badge variant={visibleRun.ocrProvider === 'doc2x' ? 'warning' : visibleRun.ocrProvider === 'glm' ? 'success' : 'default'}>{providerLabel}</Badge>
             <Badge variant={statusVariant(displayOcrStatus)}>{label(displayOcrStatus)}{progress?.active ? ' · 执行中' : ''}</Badge>
           </div>
-          <p className="mt-1 break-all text-xs text-zinc-500">{run.runId}</p>
+          <p className="mt-1 break-all text-xs text-muted-foreground">{run.runId}</p>
         </div>
       </div>
       {showProgressBar ? <div className="mt-4">
-        <div className="flex justify-between text-sm font-medium text-zinc-500"><span>{providerPhase ? `${providerLabel} · ${providerPhaseLabel[providerPhase] || providerPhase}` : `${visibleRun.processedQuestions ?? progress?.draftCount ?? 0}/${visibleRun.totalOcrQuestions ?? visibleRun.approvedQuestions}`}</span><span>{Math.round((visibleRun.progressPercent ?? 0) * 100)}%</span></div>
-        <div className="mt-2 h-2 overflow-hidden rounded-full bg-zinc-100"><div className="h-full rounded-full bg-zinc-950 transition-all" style={{ width: `${Math.round((visibleRun.progressPercent ?? 0) * 100)}%` }} /></div>
+        <div className="flex justify-between text-sm font-medium text-muted-foreground"><span>{providerPhase ? `${providerLabel} · ${providerPhaseLabel[providerPhase] || providerPhase}` : `${visibleRun.processedQuestions ?? progress?.draftCount ?? 0}/${visibleRun.totalOcrQuestions ?? visibleRun.approvedQuestions}`}</span><span>{Math.round((visibleRun.progressPercent ?? 0) * 100)}%</span></div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round((visibleRun.progressPercent ?? 0) * 100)}%` }} /></div>
       </div> : null}
       {progress ? <div className="mt-4 grid gap-2 sm:grid-cols-3"><MiniMetric label="总题数" value={progress.totalQuestions} /><MiniMetric label={generatedLabel} value={generatedCount} /><MiniMetric label="失败题数" value={failedCount} /></div> : null}
-      {notice ? <div className="mt-3 flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">{action ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}<span>{notice}</span></div> : null}
+      {notice ? <div className="mt-3 flex items-center gap-2 rounded-xl border bg-muted/40 px-3 py-2 text-sm text-foreground">{action ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}<span>{notice}</span></div> : null}
       {canOpenPendingBank ? (
         <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           {fileRole === 'solutions'

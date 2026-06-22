@@ -28,7 +28,7 @@ export function MarkdownPreviewPage() {
   }
 
   return (
-    <section className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+    <section className="flex w-full flex-col gap-4">
       <style>{`
         @media print {
           body {
@@ -68,19 +68,19 @@ export function MarkdownPreviewPage() {
           }
         }
       `}</style>
-      <header className="flex flex-col gap-3 rounded-2xl border bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between no-print">
+      <header className="flex flex-col gap-3 rounded-xl border bg-card p-4 text-card-foreground shadow-sm sm:flex-row sm:items-center sm:justify-between no-print">
         <div className="flex items-center gap-3">
           <Button icon={ArrowLeft} variant="outline" onClick={() => navigate(-1)}>返回</Button>
           <div>
             <h1 className="text-lg font-semibold">Markdown 预览</h1>
-            <p className="mt-0.5 text-xs text-zinc-500">仅实时显示预览，不生成或下载 Markdown 文件。</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">仅实时显示预览，不生成或下载 Markdown 文件。</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex rounded-lg border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-950">
+          <div className="flex rounded-lg border bg-muted p-1">
             {(['student', 'teacher'] as const).map((item) => (
               <button
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${variant === item ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-800 dark:text-white' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'}`}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${variant === item ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 key={item}
                 onClick={() => switchVariant(item)}
                 type="button"
@@ -108,7 +108,7 @@ export function MarkdownPreviewPage() {
             {preview.data.content || ''}
           </pre>
         ) : (
-          <article className="min-h-[60vh] rounded-2xl border bg-white px-6 py-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:px-10 lg:px-14">
+          <article className="min-h-[60vh] rounded-xl border bg-card px-6 py-8 text-card-foreground shadow-sm sm:px-10 lg:px-14">
             <QuestionDocumentMarkdownContent className="text-[15px] leading-7" content={preview.data.content || ''} />
           </article>
         )

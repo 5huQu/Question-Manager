@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom'
-import { BookOpen, BookOpenCheck, Database, FileStack, LayoutDashboard, Moon, ScanSearch, Scissors, Settings2, Sun, ShoppingBag, DownloadCloud } from 'lucide-react'
+import { BookOpen, BookOpenCheck, Database, DownloadCloud, GraduationCap, LayoutDashboard, Moon, PanelLeftClose, PanelLeftOpen, ScanSearch, Scissors, Settings2, Sun, ShoppingBag } from 'lucide-react'
 import { SidebarItem } from './SidebarItem'
 
 type AppSidebarProps = {
@@ -18,80 +18,82 @@ export function AppSidebar({
   onToggleCollapsed,
 }: AppSidebarProps) {
   const location = useLocation()
+  const collapsedClass = collapsed ? 'w-14' : 'w-56'
 
   return (
-    <aside className={`${
-      collapsed ? 'w-14 px-2 py-4' : 'w-56 p-4'
-    } h-screen sticky top-0 bg-white dark:bg-zinc-950 text-zinc-600 dark:text-zinc-400 flex flex-col justify-between shadow-sm border-r border-zinc-200 dark:border-zinc-800 shrink-0 transition-all duration-200`}>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-4">
-          <button
-            onClick={onToggleCollapsed}
-            className="flex items-center gap-2.5 px-1.5 py-1 text-left hover:opacity-80 transition-opacity cursor-pointer focus:outline-none min-w-0 flex-1"
-            title={collapsed ? '展开侧边栏' : '收起侧边栏'}
-            type="button"
-          >
-            <div className="flex size-7 items-center justify-center rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-950 shrink-0 mx-auto sm:mx-0">
-              <FileStack className="size-4" />
-            </div>
-            {!collapsed && (
-              <div className="min-w-0">
-                <p className="font-semibold text-xs leading-none text-zinc-900 dark:text-white truncate">{systemName}</p>
-                <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-medium mt-1 block">版本 v1.2.0</span>
-              </div>
-            )}
-          </button>
-          {!collapsed && (
-            <button
-              onClick={onThemeToggle}
-              className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer mr-1 focus:outline-none shrink-0"
-              title={darkMode ? '切换到浅色模式' : '切换到深色模式'}
-              type="button"
-            >
-              {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            </button>
-          )}
-        </div>
-
-        <nav className="space-y-1">
-          <SidebarItem active={location.pathname === '/' || location.pathname === '/workbench'} icon={LayoutDashboard} label="工作台概览" to="/workbench" collapsed={collapsed} />
-          <SidebarItem active={location.pathname.startsWith('/tools/pdf-slicer') && !location.pathname.endsWith('ocr-jobs') && !location.pathname.includes('pending-bank')} icon={Scissors} label="PDF 切分中心" to="/tools/pdf-slicer" collapsed={collapsed} />
-          <SidebarItem active={location.pathname.endsWith('ocr-jobs')} icon={ScanSearch} label="OCR 识别队列" to="/tools/pdf-slicer/ocr-jobs" collapsed={collapsed} />
-          <SidebarItem active={location.pathname.startsWith('/questions') && location.pathname !== '/questions/new' && location.pathname !== '/questions/basket'} icon={Database} label="题库核心主库" to="/questions" collapsed={collapsed} />
-          <SidebarItem active={location.pathname === '/questions/new'} icon={BookOpen} label="新建题目/试卷" to="/questions/new" collapsed={collapsed} />
-          <SidebarItem active={location.pathname === '/questions/basket'} icon={ShoppingBag} label="组卷工作台" to="/questions/basket" collapsed={collapsed} />
-          <SidebarItem active={location.pathname === '/exports'} icon={DownloadCloud} label="导出记录" to="/exports" collapsed={collapsed} />
-          <SidebarItem active={location.pathname.startsWith('/learning-tags')} icon={BookOpenCheck} label="学习标签库" to="/learning-tags" collapsed={collapsed} />
-          <SidebarItem active={location.pathname === '/settings'} icon={Settings2} label="系统设置" to="/settings" collapsed={collapsed} />
-        </nav>
-      </div>
-
-      <div className="space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-        {collapsed && (
-          <div className="flex flex-col gap-2.5 items-center px-1.5">
-            <button
-              onClick={onThemeToggle}
-              className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer focus:outline-none"
-              title={darkMode ? '切换到浅色模式' : '切换到深色模式'}
-              type="button"
-            >
-              {darkMode ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            </button>
+    <aside className={`${collapsedClass} flex h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200`}>
+      <div className={`flex h-14 items-center gap-2 border-b border-sidebar-border transition-all duration-200 ${collapsed ? 'justify-center px-2' : 'px-4'}`}>
+        {!collapsed && (
+          <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+            <GraduationCap className="size-4" />
           </div>
         )}
         {!collapsed && (
-          <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800/40 p-3 border border-zinc-200 dark:border-zinc-700/20 space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-              </span>
-              <span className="text-[9px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase">运行中</span>
-            </div>
-            <p className="text-[9px] text-zinc-400 dark:text-zinc-500 leading-normal">双端连接 · SQLite 正常</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold leading-none">{systemName}</p>
+            <p className="mt-0.5 text-[10px] font-medium text-muted-foreground">v2.0.0</p>
           </div>
         )}
+        <button
+          onClick={onToggleCollapsed}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          title={collapsed ? '展开侧边栏' : '收起侧边栏'}
+          type="button"
+        >
+          {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+        </button>
+      </div>
+
+      <nav className="flex-1 space-y-1 overflow-auto p-3">
+        {!collapsed && <NavSection label="平台" />}
+        <SidebarItem active={location.pathname === '/' || location.pathname === '/workbench'} icon={LayoutDashboard} label="工作台概览" to="/workbench" collapsed={collapsed} />
+
+        {!collapsed && <NavSection label="工具" className="mt-4" />}
+        <SidebarItem active={location.pathname.startsWith('/tools/pdf-slicer') && !location.pathname.endsWith('ocr-jobs') && !location.pathname.includes('pending-bank')} icon={Scissors} label="PDF 切分中心" to="/tools/pdf-slicer" collapsed={collapsed} />
+        <SidebarItem active={location.pathname.endsWith('ocr-jobs')} icon={ScanSearch} label="OCR 识别队列" to="/tools/pdf-slicer/ocr-jobs" collapsed={collapsed} />
+
+        {!collapsed && <NavSection label="题库" className="mt-4" />}
+        <SidebarItem active={location.pathname.startsWith('/questions') && location.pathname !== '/questions/new' && location.pathname !== '/questions/basket'} icon={Database} label="题库主库" to="/questions" collapsed={collapsed} />
+        <SidebarItem active={location.pathname === '/questions/new'} icon={BookOpen} label="新建题目" to="/questions/new" collapsed={collapsed} />
+        <SidebarItem active={location.pathname === '/questions/basket'} icon={ShoppingBag} label="组卷工作台" to="/questions/basket" collapsed={collapsed} />
+        <SidebarItem active={location.pathname.startsWith('/learning-tags')} icon={BookOpenCheck} label="学习标签库" to="/learning-tags" collapsed={collapsed} />
+        <SidebarItem active={location.pathname === '/exports'} icon={DownloadCloud} label="导出记录" to="/exports" collapsed={collapsed} />
+        <SidebarItem active={location.pathname === '/settings'} icon={Settings2} label="系统设置" to="/settings" collapsed={collapsed} />
+      </nav>
+
+      <div className="border-t border-sidebar-border p-3">
+        {!collapsed && (
+          <div className="space-y-1 rounded-lg bg-sidebar-accent/50 px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className="relative flex size-1.5">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+              </span>
+              <span className="text-[10px] font-semibold text-muted-foreground">系统运行中</span>
+            </div>
+            <p className="text-[10px] leading-relaxed text-muted-foreground">引擎正常 · SQLite 正常</p>
+          </div>
+        )}
+        <div className={`mt-2 flex items-center ${collapsed ? 'justify-center' : 'justify-between'} px-1`}>
+          {!collapsed && <span className="text-[10px] text-muted-foreground">© 2026</span>}
+          <button
+            onClick={onThemeToggle}
+            className="flex size-7 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            title={darkMode ? '切换到浅色模式' : '切换到深色模式'}
+            type="button"
+          >
+            {darkMode ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
+          </button>
+        </div>
       </div>
     </aside>
+  )
+}
+
+function NavSection({ label, className = '' }: { label: string; className?: string }) {
+  return (
+    <p className={`mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground ${className}`}>
+      {label}
+    </p>
   )
 }

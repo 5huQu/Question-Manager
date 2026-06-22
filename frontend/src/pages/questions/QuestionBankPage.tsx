@@ -33,35 +33,27 @@ export function QuestionBankPage() {
     } : current)
   }
   return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between border-b pb-3 shrink-0 border-zinc-200 dark:border-zinc-800">
-        <div>
-          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">系统功能 / 题库</p>
-          <h2 className="text-base font-bold mt-0.5 text-zinc-900 dark:text-zinc-50">主库题目检索与详情管理</h2>
-        </div>
-      </div>
-      <BankTab
-        questionBank={questionBank.data}
-        reload={questionBank.reload}
-        loading={questionBank.loading}
-        error={questionBank.error}
-        query={query}
-        setQuery={setQuery}
-        stage={stage}
-        setStage={setStage}
-        questionType={questionType}
-        setQuestionType={setQuestionType}
-        difficulty={difficulty}
-        setDifficulty={setDifficulty}
-        knowledgePoint={knowledgePoint}
-        setKnowledgePoint={setKnowledgePoint}
-        solutionMethod={solutionMethod}
-        setSolutionMethod={setSolutionMethod}
-        page={page}
-        setPage={setPage}
-        onQuestionSaved={replaceQuestionInBank}
-      />
-    </section>
+    <BankTab
+      questionBank={questionBank.data}
+      reload={questionBank.reload}
+      loading={questionBank.loading}
+      error={questionBank.error}
+      query={query}
+      setQuery={setQuery}
+      stage={stage}
+      setStage={setStage}
+      questionType={questionType}
+      setQuestionType={setQuestionType}
+      difficulty={difficulty}
+      setDifficulty={setDifficulty}
+      knowledgePoint={knowledgePoint}
+      setKnowledgePoint={setKnowledgePoint}
+      solutionMethod={solutionMethod}
+      setSolutionMethod={setSolutionMethod}
+      page={page}
+      setPage={setPage}
+      onQuestionSaved={replaceQuestionInBank}
+    />
   )
 }
 

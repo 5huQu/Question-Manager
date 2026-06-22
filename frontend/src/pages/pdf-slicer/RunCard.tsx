@@ -76,17 +76,17 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
     }
   }
   return (
-    <div className="bg-white rounded-xl border border-zinc-200 p-4 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-card rounded-xl border p-4 shadow-sm transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-1">
-            <h3 className="text-sm font-semibold text-zinc-900 break-words">{run.paperTitle || run.pdfName}</h3>
+            <h3 className="text-sm font-semibold text-foreground break-words">{run.paperTitle || run.pdfName}</h3>
             {hasImageFormula ? (
               <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">图片型公式</span>
             ) : null}
-            <span className="inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">{materialTypeLabel(materialType)}</span>
+            <span className="inline-flex items-center rounded-md border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{materialTypeLabel(materialType)}</span>
           </div>
-          <p className="text-xs text-zinc-500 flex flex-wrap items-center gap-2 mt-1">
+          <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-2 mt-1">
             <span className="flex min-w-0 items-center gap-1">
               <FileText className="size-3.5 shrink-0" />
               <span className="shrink-0">{recognitionFileKind}：</span>
@@ -105,11 +105,11 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
       </div>
 
       {showIntermediateStatus && run.ocrStatus !== 'queued' && run.ocrStatus !== 'failed' && run.ocrStatus !== 'succeeded' && (
-        <div className="mt-4 pt-4 border-t border-zinc-100">
+        <div className="mt-4 pt-4 border-t">
            <div className="flex justify-between text-xs mb-1.5">
-             <span className="text-zinc-500">处理中...</span>
+             <span className="text-muted-foreground">处理中...</span>
            </div>
-           <div className="w-full bg-zinc-100 rounded-full h-1.5 overflow-hidden">
+           <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
              <div className="bg-emerald-500 h-1.5 rounded-full w-full relative overflow-hidden">
                <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
              </div>
@@ -117,19 +117,19 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
         </div>
       )}
 
-      <div className="mt-4 pt-4 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-4">
+      <div className="mt-4 pt-4 border-t flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4 text-xs">
           <div className="flex flex-col">
-            <span className="text-zinc-400">识别进度</span>
-            <span className="font-medium text-zinc-700">{run.ocrStatus === 'succeeded' ? '100%' : '处理中'}</span>
+            <span className="text-muted-foreground">识别进度</span>
+            <span className="font-medium text-foreground">{run.ocrStatus === 'succeeded' ? '100%' : '处理中'}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-zinc-400">题目数量</span>
-            <span className="font-medium text-zinc-700">{run.totalQuestions} 题</span>
+            <span className="text-muted-foreground">题目数量</span>
+            <span className="font-medium text-foreground">{run.totalQuestions} 题</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-zinc-400">待复核</span>
-            <span className="font-medium text-zinc-700">{run.unreviewedQuestions ?? 0}</span>
+            <span className="text-muted-foreground">待复核</span>
+            <span className="font-medium text-foreground">{run.unreviewedQuestions ?? 0}</span>
           </div>
         </div>
 
@@ -143,7 +143,7 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
 	          {canOpenPendingBank ? (
 	            <button
 	              onClick={() => navigate(`/tools/pdf-slicer/runs/${encodeURIComponent(run.runId)}/pending-bank`)}
-	              className="px-3 py-1.5 bg-zinc-950 hover:bg-zinc-800 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm cursor-pointer inline-flex items-center gap-1.5"
+	              className="px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-xs font-semibold transition-colors shadow-sm cursor-pointer inline-flex items-center gap-1.5"
 	            >
 	              <BadgeCheck className="size-3.5" />
 	              进入待入库确认
@@ -151,36 +151,36 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
 	          ) : null}
 
 	          <div className="relative">
-            <button onClick={() => setMoreOpen((open) => !open)} className="px-3 py-1.5 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer">
+            <button onClick={() => setMoreOpen((open) => !open)} className="px-3 py-1.5 bg-background border border-input hover:bg-accent hover:text-accent-foreground text-foreground rounded-md text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer">
               更多 <span className="text-[8px] ml-0.5">▼</span>
             </button>
             {moreOpen ? (
-            <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-lg border border-zinc-200 py-2 z-10">
-              <div className="px-3 pb-2 mb-2 border-b border-zinc-100 space-y-2">
-                <label className="text-[10px] text-zinc-500 block">修改分类与角色</label>
-                <select className="h-7 w-full rounded border bg-zinc-50 px-2 text-xs outline-none" disabled={classificationBusy} value={materialType} onChange={(event) => updateClassification({ materialType: event.target.value })}>
+            <div className="absolute right-0 top-full mt-1 w-48 bg-popover text-popover-foreground rounded-xl shadow-lg border py-2 z-10">
+              <div className="px-3 pb-2 mb-2 border-b space-y-2">
+                <label className="text-[10px] text-muted-foreground block">修改分类与角色</label>
+                <select className="h-7 w-full rounded border bg-background px-2 text-xs outline-none" disabled={classificationBusy} value={materialType} onChange={(event) => updateClassification({ materialType: event.target.value })}>
                   <option value="exam">试卷</option>
                   <option value="lecture">讲义</option>
                   <option value="unknown">未确认</option>
                 </select>
-                <select className="h-7 w-full rounded border bg-zinc-50 px-2 text-xs outline-none" disabled={classificationBusy} value={fileRole} onChange={(event) => updateClassification({ fileRole: event.target.value })}>
+                <select className="h-7 w-full rounded border bg-background px-2 text-xs outline-none" disabled={classificationBusy} value={fileRole} onChange={(event) => updateClassification({ fileRole: event.target.value })}>
                   <option value="full">解析版一体</option>
                   <option value="questions">原卷</option>
                   <option value="solutions">解析文件</option>
                   <option value="unknown">未确认</option>
                 </select>
               </div>
-              <button onClick={queueOcr} className="w-full text-left px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 flex items-center gap-2 cursor-pointer">
+              <button onClick={queueOcr} className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent flex items-center gap-2 cursor-pointer">
                 <ScanSearch className="size-3.5" /> 重新识别
               </button>
-              <button onClick={openPdfFolder} className="w-full text-left px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 flex items-center gap-2 cursor-pointer">
+              <button onClick={openPdfFolder} className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent flex items-center gap-2 cursor-pointer">
                 <FolderOpen className="size-3.5" /> 打开 PDF 文件夹
               </button>
               {hasImageFormula ? (
                 <button
                   onClick={goManualImport}
                   disabled={manualImportBusy}
-                  className="w-full text-left px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {manualImportBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : <FileJson className="size-3.5" />}
                   前往手动导入

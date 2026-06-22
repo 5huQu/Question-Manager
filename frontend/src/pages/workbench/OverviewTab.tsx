@@ -85,7 +85,7 @@ export function OverviewTab({
   }
 
   return (
-    <div className="space-y-5 h-[calc(100vh-9rem)] min-h-[580px] overflow-auto pr-1">
+    <div className="space-y-5">
       {/* Visual Metrics */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricBox
@@ -121,7 +121,7 @@ export function OverviewTab({
             title="活跃切片与识别批次"
             actions={
               <button
-                className="text-xs font-bold text-zinc-400 dark:text-zinc-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer flex items-center gap-1 focus:outline-none"
+                className="text-xs font-bold text-zinc-400 dark:text-zinc-500 hover:text-foreground dark:hover:text-foreground hover:underline transition-colors cursor-pointer flex items-center gap-1 focus:outline-none"
                 onClick={() => setActiveTab('slicer')}
               >
                 <span>查看全部</span>
@@ -147,7 +147,7 @@ export function OverviewTab({
                     >
                       <td className="min-w-0 p-3">
                         <button
-                          className="block max-w-full truncate text-left font-semibold text-zinc-900 transition-colors hover:text-blue-600 focus:outline-none dark:text-zinc-100 dark:hover:text-blue-400"
+                          className="block max-w-full truncate text-left font-semibold text-zinc-900 transition-colors hover:text-foreground hover:underline focus:outline-none dark:text-zinc-100 dark:hover:text-foreground"
                           title={run.paperTitle || run.pdfName}
                           onClick={() => openRun(run)}
                         >
@@ -187,7 +187,7 @@ export function OverviewTab({
             title="最近录入记录"
             actions={
               <button
-                className="text-xs font-bold text-zinc-400 dark:text-zinc-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer flex items-center gap-1 focus:outline-none"
+                className="text-xs font-bold text-zinc-400 dark:text-zinc-500 hover:text-foreground dark:hover:text-foreground hover:underline transition-colors cursor-pointer flex items-center gap-1 focus:outline-none"
                 onClick={() => setActiveTab('bank')}
               >
                 <span>前往题库</span>
@@ -205,7 +205,7 @@ export function OverviewTab({
                     #{item.questionNo}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs text-zinc-850 dark:text-zinc-250 line-clamp-2 max-h-12 overflow-hidden leading-relaxed font-medium group-hover/item:text-blue-600 dark:group-hover/item:text-blue-400 transition-colors">
+                    <div className="text-xs text-zinc-850 dark:text-zinc-250 line-clamp-2 max-h-12 overflow-hidden leading-relaxed font-medium group-hover/item:text-foreground dark:group-hover/item:text-foreground group-hover/item:underline transition-colors">
                       <RichContent blocks={item.problemBlocks} className="text-xs text-zinc-800 dark:text-zinc-200" />
                     </div>
                     <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1.5 truncate font-medium">{item.sourceTitle || '未知来源'}</p>

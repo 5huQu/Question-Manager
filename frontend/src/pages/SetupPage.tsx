@@ -84,47 +84,40 @@ export function SetupPage({
   }
 
   return (
-    <div className="relative min-h-screen bg-zinc-55 px-4 py-12 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 sm:px-6 overflow-hidden flex items-center justify-center">
-      {/* Premium Ambient Background Effects */}
-      <div className="absolute top-[-10%] left-[-10%] -z-10 size-[500px] rounded-full bg-blue-500/10 blur-[100px] dark:bg-blue-900/10 animate-pulse duration-[8000ms]"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] -z-10 size-[500px] rounded-full bg-emerald-500/10 blur-[100px] dark:bg-emerald-900/10 animate-pulse duration-[6000ms]"></div>
-
-      {/* Decorative Grid Overlay */}
-      <div className="absolute inset-0 -z-20 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:14px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)]"></div>
-
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-12 text-foreground sm:px-6">
       <main className="w-full max-w-4xl flex flex-col gap-8 relative">
         {/* Sleek Installation Wizard Header */}
-        <header className="flex flex-col sm:flex-row items-center gap-4 sm:gap-5 text-center sm:text-left justify-between border-b border-zinc-200/60 dark:border-zinc-800/40 pb-6">
+        <header className="flex flex-col sm:flex-row items-center gap-4 sm:gap-5 text-center sm:text-left justify-between border-b pb-6">
           <div className="flex flex-col sm:flex-row items-center gap-4">
-            <div className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-zinc-900 to-zinc-700 text-white dark:from-white dark:to-zinc-200 dark:text-zinc-950 shadow-lg shadow-zinc-950/20 dark:shadow-white/10 shrink-0 transform transition hover:scale-105 duration-300">
+            <div className="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm shrink-0">
               <FileStack className="size-6" />
             </div>
             <div>
               <div className="flex items-center justify-center sm:justify-start gap-2">
-                <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-600 bg-clip-text text-transparent dark:from-white dark:via-zinc-250 dark:to-zinc-400">
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">
                   Question Manager
                 </h1>
                 <Badge variant="default" className="text-[10px] py-0.5 px-2 font-mono">Setup</Badge>
               </div>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-450">
+              <p className="mt-1 text-sm text-muted-foreground">
                 首次启动配置指南 · 完成设置以初始化智能题库系统
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 text-xs text-zinc-455 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-900/50 px-3 py-1.5 rounded-full border border-zinc-200/50 dark:border-zinc-800/50 shadow-inner">
+          <div className="flex items-center gap-1.5 rounded-full border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
             <Sparkles className="size-3.5 text-amber-500 animate-spin duration-[6000ms]" />
             <span>智能本地化部署</span>
           </div>
         </header>
 
         {/* Glassmorphic Form Card */}
-        <section className="overflow-hidden rounded-3xl border border-zinc-200/80 bg-white/80 shadow-2xl backdrop-blur-xl dark:border-zinc-800/80 dark:bg-zinc-900/80 transition-all duration-300">
+        <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm transition-all duration-300">
 
           {/* Form Header Banner */}
-          <div className="border-b border-zinc-200/60 bg-gradient-to-r from-zinc-50/50 to-zinc-100/30 px-6 py-5 dark:border-zinc-800/60 dark:from-zinc-900/40 dark:to-zinc-900/20">
-            <h2 className="text-sm font-bold text-zinc-800 dark:text-zinc-250">基础配置选项</h2>
-            <p className="mt-1 text-xs leading-relaxed text-zinc-400 dark:text-zinc-400 font-normal">
+          <div className="border-b bg-muted/20 px-6 py-5">
+            <h2 className="text-sm font-bold">基础配置选项</h2>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground font-normal">
               设置项包括侧边栏名称、网页标题、文档导出水印以及题库年级，所有选项后续均可在系统管理中随时更改。
             </p>
           </div>

@@ -188,7 +188,7 @@ export function ExportRecordsPage() {
   }
 
   return (
-    <section className="space-y-6 max-w-7xl mx-auto">
+    <section className="space-y-6">
       {/* Title Header */}
       <PageTitle
         title="导出记录"
@@ -198,32 +198,32 @@ export function ExportRecordsPage() {
 
       {/* Stats Summary Dashboard */}
       <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5">
-        <div className="bg-white dark:bg-zinc-900 p-4.5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
-          <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">总导出记录</span>
-          <span className="text-2xl font-bold mt-2 text-zinc-900 dark:text-zinc-50">{stats.total} 次</span>
+        <div className="bg-card p-4 rounded-xl border shadow-sm flex flex-col justify-between text-card-foreground">
+          <span className="text-xs text-muted-foreground font-medium">总导出记录</span>
+          <span className="text-2xl font-bold mt-2">{stats.total} 次</span>
         </div>
-        <div className="bg-white dark:bg-zinc-900 p-4.5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
-          <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">导出成功 / 失败</span>
-          <span className="text-2xl font-bold mt-2 text-zinc-900 dark:text-zinc-50 flex items-center gap-1.5">
+        <div className="bg-card p-4 rounded-xl border shadow-sm flex flex-col justify-between text-card-foreground">
+          <span className="text-xs text-muted-foreground font-medium">导出成功 / 失败</span>
+          <span className="text-2xl font-bold mt-2 flex items-center gap-1.5">
             <span className="text-emerald-600 dark:text-emerald-505">{stats.succeeded}</span>
             <span className="text-zinc-300 dark:text-zinc-700">/</span>
-            <span className={stats.failed > 0 ? 'text-red-600 dark:text-red-500' : 'text-zinc-500'}>{stats.failed}</span>
+            <span className={stats.failed > 0 ? 'text-red-600 dark:text-red-500' : 'text-muted-foreground'}>{stats.failed}</span>
           </span>
         </div>
-        <div className="bg-white dark:bg-zinc-900 p-4.5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
-          <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">导出总题目数</span>
-          <span className="text-2xl font-bold mt-2 text-zinc-900 dark:text-zinc-50">{stats.totalQuestions} 题</span>
+        <div className="bg-card p-4 rounded-xl border shadow-sm flex flex-col justify-between text-card-foreground">
+          <span className="text-xs text-muted-foreground font-medium">导出总题目数</span>
+          <span className="text-2xl font-bold mt-2">{stats.totalQuestions} 题</span>
         </div>
-        <div className="bg-white dark:bg-zinc-900 p-4.5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
-          <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">格式分布</span>
-          <span className="text-[13px] font-semibold mt-2 text-zinc-900 dark:text-zinc-50 flex flex-wrap gap-2">
-            <span className="flex items-center gap-1"><Badge variant="danger">PDF</Badge> <span className="text-xs text-zinc-500 font-medium">{stats.pdfCount}</span></span>
-            <span className="flex items-center gap-1"><Badge variant="default">LaTeX</Badge> <span className="text-xs text-zinc-500 font-medium">{stats.latexCount}</span></span>
-            <span className="flex items-center gap-1"><Badge variant="success">MD</Badge> <span className="text-xs text-zinc-500 font-medium">{stats.mdCount}</span></span>
+        <div className="bg-card p-4 rounded-xl border shadow-sm flex flex-col justify-between text-card-foreground">
+          <span className="text-xs text-muted-foreground font-medium">格式分布</span>
+          <span className="text-[13px] font-semibold mt-2 flex flex-wrap gap-2">
+            <span className="flex items-center gap-1"><Badge variant="danger">PDF</Badge> <span className="text-xs text-muted-foreground font-medium">{stats.pdfCount}</span></span>
+            <span className="flex items-center gap-1"><Badge variant="default">LaTeX</Badge> <span className="text-xs text-muted-foreground font-medium">{stats.latexCount}</span></span>
+            <span className="flex items-center gap-1"><Badge variant="success">MD</Badge> <span className="text-xs text-muted-foreground font-medium">{stats.mdCount}</span></span>
           </span>
         </div>
-        <div className="hidden lg:flex bg-white dark:bg-zinc-900 p-4.5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex-col justify-between col-span-1">
-          <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">系统连接</span>
+        <div className="hidden lg:flex bg-card p-4 rounded-xl border shadow-sm flex-col justify-between col-span-1 text-card-foreground">
+          <span className="text-xs text-muted-foreground font-medium">系统连接</span>
           <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 mt-3">
             <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
             <span>双端运行正常</span>
@@ -232,16 +232,16 @@ export function ExportRecordsPage() {
       </div>
 
       {/* Filter and Content Panel */}
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+      <div className="bg-card rounded-xl border shadow-sm overflow-hidden text-card-foreground">
         {/* Filter Bar */}
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+        <div className="p-4 border-b bg-muted/20 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
           <div className="flex flex-wrap gap-3 items-center flex-1">
             {/* Keyword Search */}
             <div className="relative min-w-[200px] md:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <input
                 type="text"
-                className="w-full h-9 pl-9 pr-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
+                className="w-full h-9 pl-9 pr-3 rounded-md border border-input bg-background text-sm shadow-sm focus:ring-1 focus:ring-ring focus:outline-none"
                 placeholder="搜索标题、文件名、格式..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -250,7 +250,7 @@ export function ExportRecordsPage() {
 
             {/* Source Type Filter */}
             <select
-              className="h-9 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:ring-1 focus:ring-ring focus:outline-none"
               value={sourceType}
               onChange={(e) => setSourceType(e.target.value as any)}
             >
@@ -261,7 +261,7 @@ export function ExportRecordsPage() {
 
             {/* Limit Selector */}
             <select
-              className="h-9 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 text-sm focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:focus:ring-zinc-700"
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:ring-1 focus:ring-ring focus:outline-none"
               value={limit}
               onChange={(e) => setLimit(Number(e.target.value))}
             >
@@ -300,7 +300,7 @@ export function ExportRecordsPage() {
           ) : (
             <table className="w-full text-left border-collapse text-[13px]">
               <thead>
-                <tr className="border-b border-zinc-150 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500 font-semibold bg-zinc-50/30 dark:bg-zinc-900/10">
+                <tr className="border-b text-muted-foreground font-semibold bg-muted/30">
                   <th className="py-3.5 px-4 font-semibold w-[22%]">导出标题 / 文件名</th>
                   <th className="py-3.5 px-4 font-semibold w-[14%]">来源</th>
                   <th className="py-3.5 px-4 font-semibold w-[10%]">导出格式</th>
@@ -332,14 +332,14 @@ export function ExportRecordsPage() {
                   return (
                     <tr
                       key={item.id}
-                      className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/10 transition-colors group"
+                      className="hover:bg-muted/40 transition-colors group"
                     >
                       {/* Name / Title */}
                       <td className="py-3 px-4 min-w-0">
-                        <div className="font-semibold text-zinc-900 dark:text-zinc-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" title={item.title}>
+                        <div className="font-semibold text-foreground truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" title={item.title}>
                           {item.title || '未命名导出'}
                         </div>
-                        <div className="text-[11px] text-zinc-400 dark:text-zinc-500 truncate mt-0.5" title={item.filename}>
+                        <div className="text-[11px] text-muted-foreground truncate mt-0.5" title={item.filename}>
                           {item.filename}
                         </div>
                       </td>

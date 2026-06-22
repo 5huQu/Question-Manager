@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { api, jsonHeaders } from '../api/client'
 import { useAsync } from '../hooks/useAsync'
 import type { Basket, CollectionExport, CollectionSummary } from '../types'
-import { Button, Empty } from './ui'
+import { Button, Empty, Badge } from './ui'
 import { QuestionMarkdownContent } from './questions/QuestionContent'
 
 const activeBasketStorageKey = 'question-manager.activeCollectionId'
@@ -178,162 +178,134 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
   // Render Page Mode
   if (mode === 'page') {
     return (
-      <div className="flex-1 overflow-auto p-4 md:p-8 bg-zinc-50/50 dark:bg-zinc-950/50">
-        <div className="max-w-5xl mx-auto space-y-6">
-          {/* Page Header & Stats */}
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-sm flex flex-col md:flex-row gap-6 items-start">
-            <div className="flex-1 space-y-5 w-full">
-              <div>
-                <input
-                  type="text"
-                  value={localTitle}
-                  onChange={(event) => setLocalTitle(event.target.value)}
-                  onBlur={() => localTitle !== active.data?.title && patchCollection({ title: localTitle })}
-                  className="text-2xl font-bold bg-transparent border-none outline-none w-full text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:ring-2 focus:ring-blue-105 dark:focus:ring-blue-900/30 rounded-lg px-2 py-1 -ml-2 transition-all"
-                  placeholder="试卷标题"
-                />
-                <input
-                  type="text"
-                  value={localSubtitle}
-                  onChange={(event) => setLocalSubtitle(event.target.value)}
-                  onBlur={() => localSubtitle !== (active.data?.subtitle || '') && patchCollection({ subtitle: localSubtitle })}
-                  className="text-sm bg-transparent border-none outline-none w-full text-zinc-500 dark:text-zinc-400 placeholder-zinc-400 mt-1 focus:ring-2 focus:ring-blue-105 dark:focus:ring-blue-900/30 rounded-md px-2 py-1 -ml-2 transition-all"
-                  placeholder="添加副标题..."
-                />
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">组卷工作台</h1>
+          <p className="mt-1 text-sm text-muted-foreground">管理试题篮、设置试卷元信息并导出。</p>
+        </div>
+
+        <div className="grid items-start gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="space-y-5 xl:sticky xl:top-6">
+            <section className="rounded-xl border bg-card text-card-foreground shadow-sm">
+              <div className="flex items-center gap-2 border-b px-5 py-4">
+                <ListChecks className="size-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold">试卷元信息</h2>
               </div>
-
-              <div className="flex flex-wrap gap-4">
-                <div className="px-4 py-2.5 bg-blue-50/50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-400 rounded-xl border border-blue-100/50 dark:border-blue-800/30 flex items-center gap-3 select-none">
-                  <div className="p-2 bg-white dark:bg-blue-950 rounded-lg shadow-sm text-blue-600 dark:text-blue-500"><Hash className="w-4 h-4" /></div>
-                  <div>
-                    <div className="text-xs font-medium opacity-80">题数</div>
-                    <div className="font-bold text-lg leading-none mt-0.5">{active.data?.questionCount ?? 0}</div>
-                  </div>
-                </div>
-
-                <div className="px-4 py-2.5 bg-amber-50/50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400 rounded-xl border border-amber-100/50 dark:border-amber-800/30 flex items-center gap-3 select-none">
-                  <div className="p-2 bg-white dark:bg-amber-950 rounded-lg shadow-sm text-amber-600 dark:text-amber-500"><Award className="w-4 h-4" /></div>
-                  <div>
-                    <div className="text-xs font-medium opacity-80">总分</div>
-                    <div className="font-bold text-lg leading-none mt-0.5">{totalScore}</div>
-                  </div>
-                </div>
-
-                <div className="px-4 py-2.5 bg-emerald-50/50 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400 rounded-xl border border-emerald-100/50 dark:border-emerald-800/30 flex items-center gap-3 focus-within:ring-2 ring-emerald-200 dark:ring-emerald-900/50 transition-all">
-                  <div className="p-2 bg-white dark:bg-emerald-950 rounded-lg shadow-sm text-emerald-600 dark:text-emerald-500"><Clock className="w-4 h-4" /></div>
-                  <div>
-                    <div className="text-xs font-medium opacity-80 select-none">时长(分钟)</div>
+              <div className="space-y-4 p-5">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium">当前试卷</span>
+                  <select
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm outline-none focus:ring-1 focus:ring-ring"
+                    value={activeId}
+                    onChange={(event) => setActiveId(event.target.value)}
+                  >
+                    {(collections.data?.items ?? []).map((item) => (
+                      <option key={item.id} value={item.id}>{item.title} ({item.questionCount}题)</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium">试卷标题</span>
+                  <input
+                    value={localTitle}
+                    onChange={(event) => setLocalTitle(event.target.value)}
+                    onBlur={() => localTitle !== active.data?.title && patchCollection({ title: localTitle })}
+                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm outline-none focus:ring-1 focus:ring-ring"
+                    placeholder="试卷标题"
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium">副标题</span>
+                  <input
+                    value={localSubtitle}
+                    onChange={(event) => setLocalSubtitle(event.target.value)}
+                    onBlur={() => localSubtitle !== (active.data?.subtitle || '') && patchCollection({ subtitle: localSubtitle })}
+                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm outline-none focus:ring-1 focus:ring-ring"
+                    placeholder="可选副标题"
+                  />
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium">总分</span>
+                    <div className="flex h-9 items-center rounded-md border border-input bg-muted/30 px-3 text-sm font-semibold">{totalScore}</div>
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium">时长(分钟)</span>
                     <input
                       type="number"
                       value={localTimeLimit}
                       onChange={(event) => setLocalTimeLimit(event.target.value)}
                       onBlur={() => Number(localTimeLimit) !== (active.data?.timeLimit || 0) && patchCollection({ timeLimit: Number(localTimeLimit || 0) })}
-                      className="font-bold text-lg leading-none mt-0.5 w-16 bg-transparent border-none p-0 outline-none focus:ring-0 text-emerald-700 dark:text-emerald-400"
+                      className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm outline-none focus:ring-1 focus:ring-ring"
                       placeholder="-"
                     />
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateInput(true)}
+                  className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  <FilePlus2 className="size-3.5" /> 新建试卷
+                </button>
+                {showCreateInput ? (
+                  <div className="flex gap-2">
+                    <input
+                      autoFocus
+                      value={newTitle}
+                      onChange={(event) => setNewTitle(event.target.value)}
+                      className="h-9 min-w-0 flex-1 rounded-md border border-input bg-transparent px-3 text-xs outline-none focus:ring-1 focus:ring-ring"
+                      placeholder="输入试卷名称"
+                    />
+                    <button type="button" onClick={() => { createPaper(); setShowCreateInput(false) }} className="h-9 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground">确定</button>
                   </div>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="rounded-xl border bg-card text-card-foreground shadow-sm">
+              <div className="flex items-center gap-2 border-b px-5 py-4">
+                <Download className="size-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold">导出模板</h2>
+              </div>
+              <div className="space-y-4 p-5">
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={() => exportCollection('pdf', 'teacher', 'exam')} className="flex flex-col items-center gap-1 rounded-lg border-2 border-primary bg-accent px-3 py-2.5 text-foreground transition-all"><span className="text-xs font-medium">试卷</span></button>
+                  <button onClick={() => exportCollection('pdf', 'teacher', 'worksheet')} className="flex flex-col items-center gap-1 rounded-lg border border-input bg-transparent px-3 py-2.5 text-muted-foreground transition-all hover:bg-accent"><span className="text-xs font-medium">练习单</span></button>
+                  <button onClick={() => exportCollection('markdown', 'teacher')} className="flex flex-col items-center gap-1 rounded-lg border border-input bg-transparent px-3 py-2.5 text-muted-foreground transition-all hover:bg-accent"><span className="text-xs font-medium">Markdown</span></button>
+                </div>
+                <div className="grid grid-cols-2 gap-2 border-t pt-4">
+                  <button onClick={() => exportCollection('pdf', 'teacher', 'exam')} disabled={exporting} className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm disabled:opacity-50">教师版</button>
+                  <button onClick={() => exportCollection('pdf', 'student', 'exam')} disabled={exporting} className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm hover:bg-accent disabled:opacity-50">学生版</button>
                 </div>
               </div>
+            </section>
+
+            <section className="space-y-3 rounded-xl border bg-card px-5 py-4 text-sm">
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">题数</span><span className="font-semibold">{active.data?.questionCount ?? 0}</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">总分</span><span className="font-semibold">{totalScore}</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">时长</span><span className="font-semibold">{localTimeLimit || '-'} 分钟</span></div>
+            </section>
+          </aside>
+
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">试题篮内容</h2>
+              <div className="flex gap-2">
+                <button onClick={() => navigate('/questions')} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm hover:bg-accent"><ChevronLeft className="size-3.5" />返回题库</button>
+                {active.data?.questions.length ? <button onClick={clearCollection} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium text-destructive shadow-sm hover:bg-destructive/10"><Trash2 className="size-3.5" />清空</button> : null}
+              </div>
             </div>
-
-            <div className="flex flex-col gap-2 w-full md:w-48 shrink-0 relative">
-              <button
-                onClick={() => setExportMenuOpen(!exportMenuOpen)}
-                disabled={exporting}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-950 hover:bg-zinc-900 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 disabled:opacity-50 rounded-xl font-medium shadow-sm shadow-zinc-950/20 dark:shadow-white/10 transition-all text-sm cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>{exporting ? '正在生成...' : '导出试卷'}</span>
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${exportMenuOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {exportMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-30" onClick={() => setExportMenuOpen(false)} />
-                  <div className="absolute right-0 left-0 top-11 z-40 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-800 dark:bg-zinc-950 animate-in fade-in slide-in-from-top-1 duration-150">
-                    <div className="p-1">
-                      <p className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2 py-1">Markdown 格式</p>
-                      <div className="grid grid-cols-2 gap-1 mt-1">
-                        <button
-                          onClick={() => { exportCollection('markdown', 'student'); setExportMenuOpen(false); }}
-                          className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"
-                        >
-                          <span>学生版</span>
-                        </button>
-                        <button
-                          onClick={() => { exportCollection('markdown', 'teacher'); setExportMenuOpen(false); }}
-                          className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"
-                        >
-                          <span>教师版</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="p-1 border-t border-zinc-100 dark:border-zinc-800 mt-1">
-                      <p className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2 py-1">试卷 PDF</p>
-                      <div className="grid grid-cols-2 gap-1 mt-1">
-                        <button onClick={() => { exportCollection('pdf', 'student', 'exam'); setExportMenuOpen(false); }} className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"><span>学生版</span></button>
-                        <button onClick={() => { exportCollection('pdf', 'teacher', 'exam'); setExportMenuOpen(false); }} className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"><span>教师版</span></button>
-                      </div>
-                    </div>
-
-                    <div className="p-1 border-t border-zinc-100 dark:border-zinc-800 mt-1">
-                      <p className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2 py-1">练习单 PDF</p>
-                      <div className="grid grid-cols-2 gap-1 mt-1">
-                      <button
-                        onClick={() => { exportCollection('pdf', 'student', 'worksheet'); setExportMenuOpen(false); }}
-                          className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"
-                        >
-                          <span>学生版</span>
-                        </button>
-                      <button
-                        onClick={() => { exportCollection('pdf', 'teacher', 'worksheet'); setExportMenuOpen(false); }}
-                          className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 cursor-pointer"
-                        >
-                          <span>教师版</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <button
-                onClick={() => navigate('/questions')}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl font-medium transition-all text-sm cursor-pointer bg-white dark:bg-zinc-900"
-              >
-                <ChevronLeft className="w-4 h-4" /> 返回题库
-              </button>
-
-              {active.data?.questions.length ? (
-                <button
-                  onClick={clearCollection}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-red-200 hover:bg-red-50 hover:border-red-300 text-red-600 dark:border-red-900/30 dark:hover:bg-red-950/20 dark:text-red-400 rounded-xl font-medium transition-all text-sm cursor-pointer bg-white dark:bg-zinc-900"
-                >
-                  <Trash2 className="w-4 h-4" /> 清空试卷
-                </button>
-              ) : null}
-            </div>
-          </div>
-
-          {/* Questions List (Full Page) */}
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 flex justify-between items-center select-none">
-              <h3 className="font-semibold text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
-                <ListChecks className="w-4 h-4 text-zinc-400" /> 试题列表
-              </h3>
-            </div>
-
-            <div className="p-4 space-y-2">
+            <div className="space-y-3">
               {!active.data?.questions.length ? (
                 <Empty text="还没有题目。在题库中点击“加入试题篮”即可加入当前试卷。" />
               ) : (
                 active.data.questions.map((entry, index) => (
                   <div key={entry.relationId || entry.item.id} className="space-y-2">
                     {entry.sectionName ? (
-                      <div className="group flex items-center gap-3 px-4 py-2.5 bg-zinc-50/80 dark:bg-zinc-800/50 rounded-xl border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
-                        <GripVertical className="w-4 h-4 text-zinc-300 dark:text-zinc-600 cursor-grab" />
-                        <div className="font-semibold text-zinc-800 dark:text-zinc-200 text-sm flex-1">
+                      <div className="group flex items-center gap-2.5 px-4 py-2.5 bg-muted/65 dark:bg-zinc-800/40 rounded-xl border border-border/60 transition-colors mt-6 first:mt-0">
+                        <span className="w-1 h-3.5 bg-primary rounded-full shrink-0" />
+                        <div className="font-bold text-foreground text-sm flex-1">
                           {entry.sectionName}
                         </div>
                       </div>
@@ -366,62 +338,62 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                         setDraggedIndex(null)
                       }}
                       onDragEnd={() => setDraggedIndex(null)}
-                      className={`group flex items-start gap-4 px-4 py-4 rounded-xl border border-transparent hover:bg-white dark:hover:bg-zinc-900 hover:border-zinc-200 dark:hover:border-zinc-700 hover:shadow-sm transition-all ${draggedIndex === index ? 'opacity-40 border-dashed border-zinc-300 dark:border-zinc-700' : ''}`}
+                      className={`group flex cursor-default items-start gap-3 rounded-xl border bg-card p-4 shadow-sm transition-all hover:border-ring ${draggedIndex === index ? 'opacity-40 border-dashed' : ''}`}
                     >
-                      <div className="mt-1 cursor-grab text-zinc-300 hover:text-zinc-500 dark:text-zinc-600 dark:hover:text-zinc-400 shrink-0">
+                      <div className="mt-1 cursor-grab text-muted-foreground/40 hover:text-muted-foreground shrink-0">
                         <GripVertical className="w-4 h-4" />
                       </div>
+                      <span className="mt-1 flex size-6 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-bold text-muted-foreground">{index + 1}</span>
 
                       <div
                         className="flex-1 min-w-0 cursor-pointer"
                         onClick={() => navigate(`/questions/${encodeURIComponent(entry.item.id)}`)}
                       >
-                        <div className="flex gap-2.5">
-                          <span className="font-bold text-zinc-400 dark:text-zinc-500 mt-0.5 text-sm shrink-0">{index + 1}.</span>
-                          <div className="min-w-0 flex-1 overflow-hidden">
-                            <QuestionMarkdownContent
-                              content={stripLeadingQuestionNo(entry.item.stemMarkdown || '未命名题目', entry.item.questionNo)}
-                              className="text-zinc-800 dark:text-zinc-200 leading-relaxed text-sm font-medium"
-                            />
-                          </div>
+                        <div className="min-w-0 overflow-hidden text-sm leading-relaxed">
+                          <QuestionMarkdownContent
+                            content={stripLeadingQuestionNo(entry.item.stemMarkdown || '未命名题目', entry.item.questionNo)}
+                            className="text-foreground"
+                          />
                         </div>
-                        <div className="mt-3 flex gap-2 pl-6">
+                        <div className="mt-3 flex items-center gap-2">
                           {entry.item.questionType && (
-                            <span className="px-2 py-1 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 text-xs font-medium border border-zinc-200/50 dark:border-zinc-700/50">
+                            <Badge className="bg-primary/10 text-primary border-transparent">
                               {entry.item.questionType}
-                            </span>
+                            </Badge>
                           )}
                           {entry.item.difficultyLabel && (
-                            <span className={`px-2 py-1 rounded-md text-xs font-medium border ${
-                              entry.item.difficultyLabel.includes('难')
-                                ? 'bg-red-50 text-red-700 border-red-200/50 dark:bg-red-900/20 dark:text-red-400'
-                                : entry.item.difficultyLabel.includes('中') || entry.item.difficultyLabel.includes('较')
-                                  ? 'bg-amber-50 text-amber-700 border-amber-200/50 dark:bg-amber-900/20 dark:text-amber-400'
-                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200/50 dark:bg-emerald-900/20 dark:text-emerald-400'
-                            }`}>
+                            <Badge
+                              variant={
+                                entry.item.difficultyLabel.includes('难')
+                                  ? 'danger'
+                                  : entry.item.difficultyLabel.includes('中') || entry.item.difficultyLabel.includes('较')
+                                    ? 'warning'
+                                    : 'success'
+                              }
+                            >
                               {entry.item.difficultyLabel}
-                            </span>
+                            </Badge>
                           )}
                         </div>
                       </div>
 
                       <div className="flex flex-col items-end gap-3 shrink-0">
-                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 focus-within:border-blue-400 dark:focus-within:border-blue-500 transition-colors">
+                        <div className="flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs">
                           <input
                             type="number"
                             value={entry.score || ''}
                             placeholder={String(getDefaultScore(entry.item.questionType))}
                             onChange={(event) => entry.relationId && patchItem(entry.relationId, { score: Number(event.target.value || 0) })}
-                            className="w-10 text-center text-sm font-bold text-zinc-800 dark:text-zinc-100 bg-transparent outline-none border-none p-0 focus:ring-0"
+                            className="w-8 bg-transparent p-0 text-center text-xs font-bold outline-none"
                           />
-                          <span className="text-xs text-zinc-400 dark:text-zinc-505 font-medium select-none">分</span>
+                          <span className="text-[10px] text-muted-foreground">分</span>
                         </div>
 
-                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-lg p-0.5">
+                        <div className="flex gap-0.5 rounded-lg border bg-muted/40 p-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                           <button
                             onClick={() => entry.relationId && moveItem(entry.relationId, -1)}
                             disabled={index === 0}
-                            className="p-1.5 text-zinc-400 hover:text-zinc-800 hover:bg-white dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors disabled:opacity-20 cursor-pointer"
+                            className="p-1.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-20 cursor-pointer"
                             title="上移"
                           >
                             <ArrowUp className="w-3.5 h-3.5" />
@@ -429,15 +401,15 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                           <button
                             onClick={() => entry.relationId && moveItem(entry.relationId, 1)}
                             disabled={index === active.data.questions.length - 1}
-                            className="p-1.5 text-zinc-400 hover:text-zinc-800 hover:bg-white dark:hover:bg-zinc-800 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors disabled:opacity-20 cursor-pointer"
+                            className="p-1.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-20 cursor-pointer"
                             title="下移"
                           >
                             <ArrowDown className="w-3.5 h-3.5" />
                           </button>
-                          <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-700 my-auto mx-0.5"></div>
+                          <div className="w-px h-4 bg-border my-auto mx-0.5"></div>
                           <button
                             onClick={() => entry.relationId && removeItem(entry.relationId)}
-                            className="p-1.5 text-zinc-400 hover:text-red-650 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/30 rounded-md transition-colors cursor-pointer"
+                            className="p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive rounded-md transition-colors cursor-pointer"
                             title="移除"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -449,7 +421,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                 ))
               )}
             </div>
-          </div>
+          </section>
         </div>
       </div>
     )
