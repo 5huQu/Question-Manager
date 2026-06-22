@@ -12,7 +12,7 @@
   },
   "scripts": {
     "dev": "concurrently -n server,frontend -c blue,green \"npm run dev:server\" \"npm run dev:frontend\"",
-    "dev:server": "set PORT=8797 && tsx watch server/src/index.ts",
+    "dev:server": "PORT=8797 tsx watch server/src/index.ts",
     "dev:frontend": "vite --config frontend/vite.config.ts --host 127.0.0.1 --port 5174",
     "build": "npm run build:server && npm run build:frontend",
     "build:server": "tsc -p server/tsconfig.json",
