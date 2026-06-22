@@ -122,11 +122,20 @@ export function mountRunRoutes(app: Express) {
   })
 
   app.delete('/api/tools/pdf-slicer/runs/:runId', (req, res) => {
-    const row = db.prepare('SELECT batch_id FROM pdf_slicer_runs WHERE run_id = ?').get(req.params.runId) as Pick<RunRow, 'batch_id'> | undefined
-    removeRunArtifacts(req.params.runId)
-    db.prepare('DELETE FROM question_bank_items WHERE source_run_id = ?').run(req.params.runId)
-    db.prepare('DELETE FROM pdf_slicer_runs WHERE run_id = ?').run(req.params.runId)
-    if (row?.batch_id) updateBatchWorkflow(row.batch_id)
-    res.json({ deleted: true })
+    try {
+      const row = db.prepare('SELECT batch_id FROM pdf_slicer_runs WHERE run_id = ?').get(req.params.runId) as Pick<RunRow, 'batch_id'> | undefined
+      removeRunArtifacts(req.params.runId)
+      db.prepare('DELETE FROM question_bank_items WHERE source_run_id = ?').run(req.params.runId)
+      db.prepare('DELETE FROM pdf_slicer_runs WHERE run_id = ?').run(req.params.runId)
+      if (row?.batch_id) {
+        const remaining = db.prepare('SELECT COUNT(*) AS count FROM pdf_slicer_runs WHERE batch_id = ?').get(row.batch_id) as { count: number }
+        if (remaining.count > 0) updateBatchWorkflow(row.batch_id)
+        else db.prepare('DELETE FROM pdf_slicer_batches WHERE id = ?').run(row.batch_id)
+      }
+      res.json({ deleted: true })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      res.status(500).json({ error: `删除批次失败：${message}` })
+    }
   })
 }

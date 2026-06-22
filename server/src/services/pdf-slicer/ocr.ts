@@ -5,7 +5,7 @@ import { db } from '../../db/connection.js'
 import { runsRoot, sourceRoot, pythonRoot, pythonDataRoot, storageRoot } from '../../config.js'
 import { nowIso, createId } from '../../utils/ids.js'
 import { parseJson } from '../../utils/json.js'
-import { pythonCommand } from '../settings/python.js'
+import { pythonCommand, pythonEnv } from '../settings/python.js'
 import { stripOcrTemplateNoise } from '../../utils/rich-content.js'
 import { buildSearchText, difficultyLabel10, normalizeDifficultyScore10, parseTimestampMs } from '../../utils/search.js'
 import {
@@ -38,6 +38,7 @@ import {
 import { resolveStoragePath, stripAssetPrefix, assetPathFor } from '../../utils/paths.js'
 import { configuredGradeStages } from '../settings/app-settings.js'
 import { activeOcrProcesses } from '../../types/index.js'
+import { formatReviewPayload, validateQuestionMarkdown } from '../../utils/validation.js'
 import type { RunRow, OcrProvider } from '../../types/index.js'
 import {
   inferQuestionType,
@@ -450,10 +451,9 @@ export async function importMigratedOcrResults(runId: string) {
     const questionType = inferQuestionType(stem, answer)
     const figures = inlineImages ? inlineImages.figures : localFigures
     const sliceImagePath = sliceImagePathForOcrResult(result, runId)
-    const needsFormatReview = Boolean(inlineImages?.issue)
-    const formatReviewJson = needsFormatReview
-      ? JSON.stringify({ issue: inlineImages?.issue, reasons: [inlineImages?.issue], renderErrors: [], updatedAt: nowIso() })
-      : '{}'
+    const formatIssues = [inlineImages?.issue, ...validateQuestionMarkdown({ problem_text: stem, answer, analysis })].filter(Boolean) as Array<any>
+    const needsFormatReview = Boolean(formatIssues.length)
+    const formatReviewJson = needsFormatReview ? JSON.stringify(formatReviewPayload(formatIssues, nowIso())) : '{}'
     const isQuestionOnlyRun = normalizeFileRole(runRow?.file_role) === 'questions'
     const existing = db.prepare('SELECT id, chapter, source_title, source_run_id, source_solution_run_id, merge_status, merge_note, bank_status, slice_image_path, updated_at FROM question_bank_items WHERE id = ?').get(targetQuestionId) as {
       id: string
@@ -792,6 +792,7 @@ export async function runMigratedOcr(runId: string) {
   const settings = readOcrSettings()
   execFileSync(pythonCommand(), ['scripts/run_ocr_trial.py', '--max-items', String(count), '--concurrency', settings.concurrency || '20', '--force', '--skip-manifest-check'], {
     cwd: pythonRoot,
+    env: pythonEnv(),
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   })

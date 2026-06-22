@@ -6,6 +6,7 @@ import {
   Check,
   CheckSquare,
   ChevronDown,
+  Crop,
   Edit3,
   Eye,
   ImageIcon,
@@ -20,6 +21,7 @@ import {
 import { api, jsonHeaders } from '../api/client'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { EditDialog } from '../components/questions/EditDialog'
+import { FigureCropDialog } from '../components/questions/FigureDialogs'
 import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '../components/questions/QuestionContent'
 import { Badge, Button, Empty } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
@@ -43,6 +45,10 @@ function canSelectForBulk(item: QuestionItem) {
   return !item.pendingBankReadOnly
 }
 
+function hasFormulaRenderRisk(item: QuestionItem) {
+  return ['katex_parse_error', 'math_delimiter_unclosed', 'latex_left_right_unbalanced'].includes(String(item.formatIssue?.code || ''))
+}
+
 function similarItems(items: QuestionItem[]) {
   return items.filter((item) => (item.similarQuestions?.length ?? 0) > 0)
 }
@@ -63,6 +69,7 @@ export default function PendingBankPage() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [editingItem, setEditingItem] = useState<QuestionItem | null>(null)
   const [editingDraft, setEditingDraft] = useState<Partial<QuestionItem>>({})
+  const [croppingItem, setCroppingItem] = useState<QuestionItem | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogProps | null>(null)
   const [similarityReview, setSimilarityReview] = useState<SimilarityReviewDialogProps | null>(null)
   const [actionNotice, setActionNotice] = useState('')
@@ -260,6 +267,22 @@ export default function PendingBankPage() {
     })
   }
 
+  async function addFigure(questionId: string, payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
+    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures`, {
+      method: 'POST', headers: jsonHeaders, body: JSON.stringify({ ...payload, pageNumber: 1 }),
+    })
+  }
+
+  async function updateFigure(questionId: string, figureId: string, payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
+    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/${encodeURIComponent(figureId)}`, {
+      method: 'PATCH', headers: jsonHeaders, body: JSON.stringify({ ...payload, pageNumber: 1 }),
+    })
+  }
+
+  async function deleteFigure(questionId: string, figureId: string) {
+    await api(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/${encodeURIComponent(figureId)}`, { method: 'DELETE' })
+  }
+
   // ── Bulk actions ──
 
   function handleBulkConfirm() {
@@ -439,6 +462,7 @@ export default function PendingBankPage() {
               onEdit={() => openEditor(activeItem)}
               onReOcr={() => reOcrSingle(activeItem.id)}
               rerunUnavailable={data?.run.ocrProvider === 'doc2x'}
+              onCrop={() => setCroppingItem(activeItem)}
               onSkip={() => skipSingle(activeItem.id)}
               onDelete={() => deleteSingle(activeItem.id)}
             />
@@ -465,6 +489,13 @@ export default function PendingBankPage() {
           onSave={saveEditedQuestion}
         />
       ) : null}
+      {croppingItem ? <FigureCropDialog
+        question={croppingItem}
+        onClose={async (changed) => { setCroppingItem(null); if (changed) await reload({ silent: true }) }}
+        onDelete={(figureId) => deleteFigure(croppingItem.id, figureId)}
+        onSave={(payload) => addFigure(croppingItem.id, payload)}
+        onUpdate={(figureId, payload) => updateFigure(croppingItem.id, figureId, payload)}
+      /> : null}
       {confirmDialog ? <ConfirmDialog {...confirmDialog} /> : null}
       {similarityReview ? <SimilarityReviewDialog {...similarityReview} /> : null}
     </section>
@@ -622,6 +653,12 @@ function QuestionCard({ item, active, selected, selectable, onSelect, onClick }:
           <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
             {item.questionNo ? `第 ${item.questionNo} 题` : `#${item.serialNo ?? item.id.slice(0, 6)}`}
           </span>
+          {item.formatIssue?.code === 'inline_image_reference_mismatch' ? (
+            <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">题图风险</span>
+          ) : null}
+          {hasFormulaRenderRisk(item) ? (
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">公式未规范化</span>
+          ) : null}
           <Badge variant={bankStatusVariant(item.bankStatus, item)}>
             {bankStatusLabel(item.bankStatus, item)}
           </Badge>
@@ -685,13 +722,14 @@ function figuresByUsage(figures: QuestionFigure[], usage: string) {
   return figures.filter((fig) => String(fig.usage || 'stem') === usage)
 }
 
-function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable, onSkip, onDelete }: {
+function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable, onCrop, onSkip, onDelete }: {
   item: QuestionItem
   busy: boolean
   onConfirm: () => void
   onEdit: () => void
   onReOcr: () => void
   rerunUnavailable: boolean
+  onCrop: () => void
   onSkip: () => void
   onDelete: () => void
 }) {
@@ -734,8 +772,8 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
           </div>
           <Button size="sm" icon={BadgeCheck} disabled={busy || readOnlyFailure || isOcrFailed || item.bankStatus === 'banked'} onClick={onConfirm}>确认入库</Button>
           <Button size="sm" variant="outline" icon={Edit3} disabled={busy} onClick={onEdit}>编辑题目</Button>
-          {!rerunUnavailable ? <Button size="sm" variant="outline" icon={ScanSearch} disabled={busy} onClick={onReOcr}>重新 OCR</Button> : null}
-          <MoreActionsDropdown busy={busy || readOnlyFailure} onSkip={onSkip} onDelete={onDelete} />
+          <Button size="sm" variant="outline" icon={Crop} disabled={busy || readOnlyFailure} onClick={onCrop}>框选题图</Button>
+          <MoreActionsDropdown busy={busy || readOnlyFailure} onReOcr={rerunUnavailable ? undefined : onReOcr} onSkip={onSkip} onDelete={onDelete} />
         </div>
       </div>
 
@@ -753,8 +791,8 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
         ) : null}
         {item.needsFormatReview && item.formatIssue ? (
           <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-            <p className="font-semibold">需要确认题图</p>
-            <p className="mt-1 leading-5">{item.formatIssue.message || '图片引用与本地切分题图不一致。'}</p>
+            <p className="font-semibold">{item.formatIssue.code === 'inline_image_reference_mismatch' ? '需要确认题图' : '公式未规范化'}</p>
+            <p className="mt-1 leading-5">{item.formatIssue.message || '可阅读，入库和导出前需修复。'}</p>
           </div>
         ) : null}
         {previewMode === 'images' ? (
@@ -887,8 +925,9 @@ function MetaField({ label, value }: { label: string; value: string }) {
   )
 }
 
-function MoreActionsDropdown({ busy, onSkip, onDelete }: {
+function MoreActionsDropdown({ busy, onReOcr, onSkip, onDelete }: {
   busy: boolean
+  onReOcr?: () => void
   onSkip: () => void
   onDelete: () => void
 }) {
@@ -898,6 +937,7 @@ function MoreActionsDropdown({ busy, onSkip, onDelete }: {
       <Button size="sm" variant="outline" icon={ChevronDown} disabled={busy} onClick={() => setOpen(!open)}>更多</Button>
       {open ? (
         <div className="absolute top-full right-0 mt-1 z-10 w-36 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg py-1">
+          {onReOcr ? <DropdownItem icon={ScanSearch} label="重新 OCR" onClick={() => { setOpen(false); onReOcr() }} /> : null}
           <DropdownItem icon={SkipForward} label="跳过此题" onClick={() => { setOpen(false); onSkip() }} />
           <DropdownItem icon={Trash2} label="删除此题" danger onClick={() => { setOpen(false); onDelete() }} />
         </div>

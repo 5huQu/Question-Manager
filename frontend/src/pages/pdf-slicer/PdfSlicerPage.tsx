@@ -259,8 +259,8 @@ export function PdfSlicerPage() {
           </div>
         </div>
 
-        <div className="bg-card rounded-xl shadow-sm border overflow-hidden flex flex-col text-card-foreground">
-          <div className="px-5 py-4 border-b flex items-center justify-between">
+        <div className="bg-card rounded-xl shadow-sm border flex flex-col text-card-foreground">
+          <div className="px-5 py-4 border-b flex items-center justify-between rounded-t-xl">
             <h2 className="text-sm font-semibold">任务进度与批次</h2>
             <button onClick={reload} className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-accent">
               <RefreshCcw className="size-3.5" /> 刷新

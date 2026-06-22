@@ -21,6 +21,9 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
           strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
           blockquote: ({ children }) => <blockquote className="my-2 border-l-2 border-zinc-300 pl-3 text-zinc-600">{children}</blockquote>,
           code: ({ children }) => <code className="rounded bg-zinc-100 px-1 py-0.5 text-[0.92em]">{children}</code>,
+          span: ({ className, children, node: _node, ...props }) => String(className || '').includes('katex-error')
+            ? <span {...props} className="inline-flex items-baseline gap-1 rounded bg-amber-50 px-1 text-amber-900"><code>{children}</code><span className="text-[10px] text-amber-700">公式未规范化</span></span>
+            : <span {...props} className={className}>{children}</span>,
           pre: ({ children }) => <pre className="my-2 overflow-auto rounded-lg border bg-zinc-50 p-3 text-xs leading-5">{children}</pre>,
           table: ({ children }) => <div className="question-table-wrap"><table className="question-table">{children}</table></div>,
           th: ({ children }) => <th>{children}</th>,

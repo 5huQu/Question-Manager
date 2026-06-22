@@ -46,6 +46,7 @@ import { getRun } from '../../db/runs.js'
 import { resolveStoragePath } from '../../utils/paths.js'
 import { stripAssetPrefix } from '../../utils/ocr-helpers.js'
 import { stripLeadingQuestionNo } from '../../utils/question-type.js'
+import { validateQuestionMarkdown } from '../../utils/validation.js'
 import type { QuestionRow } from '../../types/index.js'
 
 /**
@@ -112,6 +113,7 @@ function buildRunWorksheetCollection(run: NonNullable<ReturnType<typeof getRun>>
  * snapshot or stops with an actionable question number.
  */
 function questionForExport(item: ReturnType<typeof mapQuestion>, runId: string) {
+  assertQuestionExportable(item)
   const binding = bindInlineImageReferences(
     {
       id: item.id,
@@ -134,6 +136,18 @@ function questionForExport(item: ReturnType<typeof mapQuestion>, runId: string) 
     analysisMarkdown: binding.analysis,
     figures: binding.figures,
   }
+}
+
+function assertQuestionExportable(item: Pick<ReturnType<typeof mapQuestion>, 'id' | 'questionNo' | 'stemMarkdown' | 'answerText' | 'analysisMarkdown'>) {
+  const issues = validateQuestionMarkdown({ problem_text: item.stemMarkdown, answer: item.answerText, analysis: item.analysisMarkdown })
+  if (!issues.length) return
+  const label = item.questionNo ? `第 ${item.questionNo} 题` : `题目 #${item.id}`
+  const issue = issues[0]
+  throw new Error(`${label}${issue.field}存在公式格式问题：${issue.snippet}。请修复后再导出。`)
+}
+
+function assertCollectionExportable(collection: ExportCollection) {
+  collection.questions.forEach((entry) => assertQuestionExportable(entry.item))
 }
 
 /** Build section-name hints from question types in the same order as index.ts. */
@@ -183,6 +197,7 @@ export function buildCollectionMarkdown(
   collection: ExportCollection,
   variant: ExportVariant,
 ) {
+  assertCollectionExportable(collection)
   const lines: string[] = []
   lines.push(`# ${collection.title || '未命名试卷'}（${variant === 'teacher' ? '教师版' : '学生版'}）`)
   if (collection.subtitle) lines.push('', collection.subtitle)
@@ -223,6 +238,7 @@ export function buildCollectionLatex(
   collection: ExportCollection,
   variant: ExportVariant,
 ) {
+  assertCollectionExportable(collection)
   const lines: string[] = [
     '\\documentclass[12pt]{ctexart}',
     '\\usepackage{amsmath,amssymb}',
@@ -517,6 +533,7 @@ export function exportCollectionWorksheetPdf(
   documentClass = 'qbank-worksheet',
 ) {
   if (!collection.questions.length) throw new Error('当前试题篮没有题目，无法导出。')
+  assertCollectionExportable(collection)
   const exportRoot = path.join(storageRoot, 'output', 'pdf', 'collection-exports', safeName(collection.id))
   const figuresDir = path.join(exportRoot, 'figures')
   fs.mkdirSync(figuresDir, { recursive: true })

@@ -75,7 +75,7 @@ export function SlicerTab({ dashboard, reload }: { dashboard: Dashboard | null; 
       </div>
 
       {/* Slices Queue List */}
-      <div className="h-full flex flex-col gap-2 overflow-hidden">
+      <div className="h-full flex flex-col gap-2">
         <div className="flex items-center justify-between border-b pb-2 shrink-0">
           <h3 className="font-semibold text-xs text-zinc-500">切题与复核批次队列</h3>
           <span className="text-[10px] text-zinc-400">总共 {runs.length} 个批次</span>

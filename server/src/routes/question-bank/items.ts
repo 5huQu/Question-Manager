@@ -15,6 +15,7 @@ import { blocksToMarkdown } from '../../utils/rich-content.js'
 import { nowIso, createId } from '../../utils/ids.js'
 import { bindInlineImageReferences, imageExtension } from '../../utils/figure-helpers.js'
 import { normalizeTags } from '../../services/tags/tag-libraries.js'
+import { formatReviewPayload, validateQuestionMarkdown } from '../../utils/validation.js'
 import { pythonCommand } from '../../services/settings/python.js'
 import { normalizeOcrProvider, readOcrSettings } from '../../services/settings/ocr-settings.js'
 import { createQuestionBankRerunTask, startMigratedOcrBackground } from '../../services/pdf-slicer/ocr.js'
@@ -199,6 +200,8 @@ export function mountQuestionBankItemsRoutes(app: Express) {
     const solutionMethods = body.solutionMethods ? normalizeTags(body.solutionMethods) : before.solutionMethods
     const sourceTitle = body.sourceTitle ?? before.sourceTitle
     const chapter = body.chapter ?? before.chapter
+    const formatIssues = validateQuestionMarkdown({ problem_text: stemMarkdown, answer: answerText, analysis: analysisMarkdown })
+    const requiresFormatReview = Boolean(formatIssues.length)
     db.prepare(`
       UPDATE question_bank_items SET
         question_no = COALESCE(?, question_no),
@@ -211,11 +214,13 @@ export function mountQuestionBankItemsRoutes(app: Express) {
         knowledge_points_json = COALESCE(?, knowledge_points_json),
         solution_methods_json = COALESCE(?, solution_methods_json),
         source_title = COALESCE(?, source_title),
-        bank_status = COALESCE(?, bank_status),
         stem_markdown = ?,
         answer_text = ?,
         analysis_markdown = ?,
         search_text = ?,
+        format_review_required = CASE WHEN ? THEN 1 ELSE format_review_required END,
+        format_review_reasons_json = CASE WHEN ? THEN ? ELSE format_review_reasons_json END,
+        bank_status = CASE WHEN ? AND bank_status = 'ready' THEN 'blocked' ELSE COALESCE(?, bank_status) END,
         updated_at = ?
       WHERE id = ?
     `).run(
@@ -229,11 +234,15 @@ export function mountQuestionBankItemsRoutes(app: Express) {
       body.knowledgePoints ? JSON.stringify(knowledgePoints) : null,
       body.solutionMethods ? JSON.stringify(solutionMethods) : null,
       body.sourceTitle ?? null,
-      body.bankStatus ?? null,
       stemMarkdown,
       answerText,
       analysisMarkdown,
       buildSearchText(stemMarkdown, answerText, analysisMarkdown, [String(sourceTitle), String(chapter), knowledgePoints.join(' '), solutionMethods.join(' ')]),
+      requiresFormatReview ? 1 : 0,
+      requiresFormatReview ? 1 : 0,
+      requiresFormatReview ? JSON.stringify(formatReviewPayload(formatIssues, nowIso())) : null,
+      requiresFormatReview ? 1 : 0,
+      body.bankStatus ?? null,
       nowIso(),
       id
     )

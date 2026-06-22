@@ -4,6 +4,15 @@ export function pythonCommand() {
   return process.env.PYTHON_PATH || (process.platform === 'win32' ? 'python' : 'python3')
 }
 
+export function pythonEnv(extra: NodeJS.ProcessEnv = {}) {
+  return {
+    ...process.env,
+    PYTHONIOENCODING: 'utf-8',
+    PYTHONUTF8: '1',
+    ...extra,
+  }
+}
+
 export function pythonDetails() {
   const command = pythonCommand()
   try {
@@ -16,6 +25,7 @@ export function pythonDetails() {
     ].join('; ')
     const value = JSON.parse(
       execFileSync(command, ['-I', '-c', code], {
+        env: pythonEnv(),
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
         timeout: 5000,

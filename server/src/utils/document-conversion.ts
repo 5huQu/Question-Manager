@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { pythonRoot } from '../config.js'
-import { pythonCommand } from '../services/settings/python.js'
+import { pythonCommand, pythonEnv } from '../services/settings/python.js'
 import { firstExecutable, sofficePath } from '../services/settings/tools.js'
 
 // ── Exported functions ──────────────────────────────────────────────────────
@@ -36,6 +36,7 @@ export function analyzeDocxFormulaTypes(inputPath: string) {
   try {
     const output = execFileSync(pythonCommand(), ['-c', code, inputPath], {
       cwd: pythonRoot,
+      env: pythonEnv(),
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     })
