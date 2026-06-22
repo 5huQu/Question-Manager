@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type DragEvent, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type DragEvent, type FormEvent } from 'react'
 import { BookOpen, FileStack, FileText, FileUp, RefreshCcw, ScanSearch } from 'lucide-react'
 import { api } from '@/api/client'
 import { SeparatedFileInput } from '@/components/pdf-slicer/SeparatedFileInput'
@@ -31,6 +31,17 @@ export function PdfSlicerPage() {
     const technicalTitle = title === batch.id || /^batch_\d+/.test(title) || /^lecture_trial_batch_/.test(title)
     return runCount > 0 && !technicalTitle && batch.workflowMode === 'separated_exam'
   })
+  const hasActiveRuns = (data?.runs ?? []).some((run) =>
+    ['queued', 'running'].includes(run.sliceStatus) || ['queued', 'running'].includes(run.ocrStatus)
+  )
+
+  useEffect(() => {
+    if (!hasActiveRuns) return
+    const timer = window.setInterval(() => {
+      reload({ silent: true })
+    }, 2500)
+    return () => window.clearInterval(timer)
+  }, [hasActiveRuns, reload])
 
   const handleDrag = (e: DragEvent) => {
     e.preventDefault()

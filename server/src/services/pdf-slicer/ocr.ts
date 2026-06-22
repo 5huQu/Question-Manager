@@ -16,7 +16,7 @@ import {
 import { createQuestion, getQuestion } from '../../db/questions.js'
 import { getRun, updateBatchWorkflow } from '../../db/runs.js'
 import { getReviewItems } from '../../db/review.js'
-import { readOcrSettings } from '../settings/ocr-settings.js'
+import { ocrRunnerEnv, readOcrSettings } from '../settings/ocr-settings.js'
 import { classifyRunAfterImport } from './classification.js'
 import { tryAutoMergeSeparatedExamForRun, formatIssueFromReviewJson } from './review.js'
 import {
@@ -31,6 +31,8 @@ import {
   reviewFigurePixelBBox,
   imageDimensions,
   figuresForImportedOcrResult,
+  bindInlineImageReferences,
+  sliceImagePathForOcrResult,
 } from '../../utils/figure-helpers.js'
 import { resolveStoragePath, stripAssetPrefix, assetPathFor } from '../../utils/paths.js'
 import { configuredGradeStages } from '../settings/app-settings.js'
@@ -387,6 +389,7 @@ export function exportRunForMigratedOcr(runId: string) {
       page: item.pageStart,
       page_span: [item.pageStart, item.pageEnd],
       question_no: item.questionLabel,
+      material_type: run.materialType,
       reviewed_image_path: reviewedPath,
       auto_image_path: reviewedPath,
       reviewed_bbox: cutRecord?.bbox || item.bbox,
@@ -432,20 +435,24 @@ export function importMigratedOcrResults(runId: string) {
       ? String(result.original_question_id || entry.split('__').slice(1).join('__') || result.id || '')
       : String(result.id || '')
     const questionNo = cleanQuestionNoLabel(String(result.question_no || ''))
-    const stem = stripOcrTemplateNoise(stripLeadingQuestionNo(String(result.problem_text || '').trim(), questionNo)).trim()
-    const answer = stripOcrTemplateNoise(String(result.answer || '').trim()).trim()
-    const analysis = stripOcrTemplateNoise(String(result.analysis || '').trim()).trim()
+    const inlineImages = bindInlineImageReferences(result, runId)
+    const stem = stripOcrTemplateNoise(stripLeadingQuestionNo(String(inlineImages?.stem ?? result.problem_text ?? '').trim(), questionNo)).trim()
+    const answer = stripOcrTemplateNoise(String(inlineImages?.answer ?? result.answer ?? '').trim()).trim()
+    const analysis = stripOcrTemplateNoise(String(inlineImages?.analysis ?? result.analysis ?? '').trim()).trim()
     const knowledgePoints = normalizeTags(result.knowledge_points)
     const solutionMethods = normalizeTags(result.solution_methods)
     const difficultyScore10 = normalizeDifficultyScore10(result.difficulty_score_10)
     const difficultyLabel = String(result.difficulty_label || difficultyLabel10(difficultyScore10))
     if (!stem && !answer && !analysis) continue
     const questionType = inferQuestionType(stem, answer)
-    const figures = figuresForImportedOcrResult(result, runId)
-    const needsFormatReview = false
-    const formatReviewJson = '{}'
+    const figures = inlineImages ? inlineImages.figures : figuresForImportedOcrResult(result, runId)
+    const sliceImagePath = sliceImagePathForOcrResult(result, runId)
+    const needsFormatReview = Boolean(inlineImages?.issue)
+    const formatReviewJson = needsFormatReview
+      ? JSON.stringify({ issue: inlineImages?.issue, reasons: [inlineImages?.issue], renderErrors: [], updatedAt: nowIso() })
+      : '{}'
     const isQuestionOnlyRun = normalizeFileRole(runRow?.file_role) === 'questions'
-    const existing = db.prepare('SELECT id, chapter, source_title, source_run_id, source_solution_run_id, merge_status, merge_note, bank_status, updated_at FROM question_bank_items WHERE id = ?').get(targetQuestionId) as {
+    const existing = db.prepare('SELECT id, chapter, source_title, source_run_id, source_solution_run_id, merge_status, merge_note, bank_status, slice_image_path, updated_at FROM question_bank_items WHERE id = ?').get(targetQuestionId) as {
       id: string
       chapter: string
       source_title: string
@@ -454,6 +461,7 @@ export function importMigratedOcrResults(runId: string) {
       merge_status: string
       merge_note: string
       bank_status: string
+      slice_image_path: string
       updated_at: string
     } | undefined
     const originalSourceRunId = String(result.original_source_run_id || '')
@@ -478,6 +486,7 @@ export function importMigratedOcrResults(runId: string) {
             answer_text = ?,
             analysis_markdown = ?,
             search_text = ?,
+            slice_image_path = ?,
             figures_json = ?,
             format_review_required = ?,
             format_review_reasons_json = ?,
@@ -497,6 +506,7 @@ export function importMigratedOcrResults(runId: string) {
           answer,
           analysis,
           buildSearchText(stem, answer, analysis, [sourceTitle, knowledgePoints.join(' '), solutionMethods.join(' ')]),
+          sliceImagePath || existing.slice_image_path,
           JSON.stringify(figures),
           needsFormatReview ? 1 : 0,
           formatReviewJson,
@@ -546,10 +556,10 @@ export function importMigratedOcrResults(runId: string) {
           answer,
           analysis,
           buildSearchText(stem, answer, analysis, [sourceTitle, knowledgePoints.join(' '), solutionMethods.join(' ')]),
-          stripAssetPrefix(String(result.image_path || '')),
+          sliceImagePath,
           JSON.stringify(figures),
           runId,
-          'ready',
+          needsFormatReview ? 'blocked' : 'ready',
           isQuestionOnlyRun ? 1 : 0,
           isQuestionOnlyRun ? 'waiting_solution' : '',
           isQuestionOnlyRun ? '等待同组解析文件合并。' : '',
@@ -581,7 +591,7 @@ export function importMigratedOcrResults(runId: string) {
       stemMarkdown: stem,
       answerText: answer,
       analysisMarkdown: analysis,
-      sliceImagePath: stripAssetPrefix(String(result.image_path || '')),
+      sliceImagePath,
       figures,
       sourceRunId: targetSourceRunId,
       mergeStatus: normalizeFileRole(runRow?.file_role) === 'questions' ? 'waiting_solution' : '',
@@ -703,7 +713,7 @@ export function startMigratedOcrBackground(runId: string, options: { force?: boo
   }
   const child = spawn(pythonCommand(), args, {
     cwd: pythonRoot,
-    env: process.env,
+    env: ocrRunnerEnv(),
   })
   activeOcrProcesses.set(runId, child)
   const append = (chunk: Buffer) => fs.appendFileSync(logPath, chunk)
@@ -728,7 +738,7 @@ export async function finishMigratedOcrBackground(runId: string, count: number, 
     }
     if (code === 0) {
       const imported = importMigratedOcrResults(runId)
-      classifyRunAfterImport(runId, logPath)
+      await classifyRunAfterImport(runId, logPath)
       const finishedAt = nowIso()
       if (imported >= count) {
         db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'succeeded', ocr_error = '', ocr_finished_at = ?, updated_at = ? WHERE run_id = ?")

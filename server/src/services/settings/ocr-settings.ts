@@ -15,6 +15,17 @@ export function ocrEnvPath() {
   return path.join(configDir, 'ocr.env')
 }
 
+// Python OCR runners load this file through QUESTION_OCR_ENV_PATH.  The app
+// settings are deliberately stored outside the process environment, so simply
+// inheriting process.env would otherwise make a saved API key invisible to the
+// child process.
+export function ocrRunnerEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    QUESTION_OCR_ENV_PATH: ocrEnvPath(),
+  }
+}
+
 export function ocrPromptSettingsPath() {
   const configDir = path.join(storageRoot, 'config')
   fs.mkdirSync(configDir, { recursive: true })

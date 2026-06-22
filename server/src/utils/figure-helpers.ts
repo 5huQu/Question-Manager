@@ -3,8 +3,14 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { parseJson } from './json.js'
 import { resolveStoragePath, stripAssetPrefix } from './paths.js'
+import { db } from '../db/connection.js'
 import { getRun } from '../db/runs.js'
 import { pythonCommand } from '../services/settings/python.js'
+
+const INLINE_IMAGE_REFERENCE_RE = /<img\b[^>]*\bsrc\s*=\s*['"][^'"]+['"][^>]*>/gi
+const INLINE_IMAGE_PLACEHOLDER_RE = /<!--\s*OCR_IMAGE_REFERENCE:(stem|answer|analysis):\d+\s*-->/gi
+const INLINE_BOUND_FIGURE_RE = /<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->/gi
+const INLINE_IMAGE_WARNING_RE = /\n?>\s*⚠️\s*缺少可绑定的(?:题干|答案|解析)图（引用\s*\d+\/\d+）\s*\n?/g
 
 // ── Exported functions ───────────────────────────────────────────────────────
 
@@ -234,17 +240,54 @@ export function loadCutResultRecord(runId: string, resultId: string): Record<str
   return payload.results?.find((item) => String(item.id || '') === cutId || String(item.question_no || '') === cutId) || null
 }
 
+function normalizedRectangle(value: Record<string, any>, sourceIsPdfPoints = false) {
+  const x = Number(value.x ?? value.x0 ?? 0)
+  const y = Number(value.y ?? value.y0 ?? 0)
+  const width = Number(value.width ?? value.w ?? Number(value.x1 ?? 0) - x)
+  const height = Number(value.height ?? value.h ?? Number(value.y1 ?? 0) - y)
+  return sourceIsPdfPoints
+    ? { x: x / 595.3, y: y / 841.9, width: width / 595.3, height: height / 841.9 }
+    : { x, y, width, height }
+}
+
+function rectanglesOverlap(left: ReturnType<typeof normalizedRectangle>, right: ReturnType<typeof normalizedRectangle>) {
+  return left.x < right.x + right.width && right.x < left.x + left.width &&
+    left.y < right.y + right.height && right.y < left.y + left.height
+}
+
+// GLM reports every image found on each parsed page.  A page can contain
+// several questions, so page membership alone must not become figure binding.
+function figureBelongsToReview(reviewRow: ReviewRow | undefined, figure: Record<string, any>) {
+  if (String(figure.origin || '') !== 'glm_ocr' || !reviewRow) return true
+  const figureBox = normalizedRectangle(figure.bbox || {})
+  if (figureBox.width <= 0 || figureBox.height <= 0) return false
+  const figurePage = Number(figure.pageNumber ?? figure.page_number ?? 0)
+  const segments = parseJson<Array<Record<string, any>>>(reviewRow.segments_json || '[]', [])
+  const candidates = segments.length
+    ? segments
+    : [{ page_number: reviewRow.page_start, bbox: parseJson<Record<string, any>>(reviewRow.bbox_json || '{}', {}) }]
+  return candidates.some((segment) =>
+    Number(segment.page_number ?? segment.pageNumber ?? reviewRow.page_start) === figurePage &&
+    rectanglesOverlap(figureBox, normalizedRectangle(segment.bbox || {}, true)),
+  )
+}
+
+export function sliceImagePathForOcrResult(result: Record<string, any>, runId: string) {
+  const reviewRow = db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ? AND result_id = ?')
+    .get(runId, String(result.id || '')) as ReviewRow | undefined
+  return stripAssetPrefix(String(result.image_path || reviewRow?.auto_image_path || reviewRow?.page_image_path || ''))
+}
+
 /**
  * Build the figure list for an imported OCR result, cropping review images
  * as needed.  Used by question-bank import and OCR re-run pipelines.
  */
 export function figuresForImportedOcrResult(result: Record<string, any>, runId: string) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { db } = require('../db/connection.js')
   const reviewRow = db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ? AND result_id = ?')
     .get(runId, String(result.id || '')) as ReviewRow | undefined
   const reviewFigures = reviewRow ? parseJson<Array<Record<string, any>>>(reviewRow.figures_json || '[]', []) : []
-  const sourceFigures = Array.isArray(result.figures) && result.figures.length ? result.figures : reviewFigures
+  const sourceFigures = (Array.isArray(result.figures) && result.figures.length ? result.figures : reviewFigures)
+    .filter((figure) => figureBelongsToReview(reviewRow, figure))
   const sourceRel = stripAssetPrefix(String(result.image_path || reviewRow?.auto_image_path || ''))
   const sourceAbs = sourceRel ? resolveStoragePath(sourceRel) : ''
   return sourceFigures.map((figure, index) => {
@@ -286,4 +329,113 @@ export function figuresForImportedOcrResult(result: Record<string, any>, runId: 
       path: fs.existsSync(outputAbs) ? outputRel : String(figure.path || ''),
     }
   })
+}
+
+type InlineImageField = 'stem' | 'answer' | 'analysis'
+
+const inlineImageFields: Array<{ field: InlineImageField; resultKey: string; label: string }> = [
+  { field: 'stem', resultKey: 'problem_text', label: '题干' },
+  { field: 'answer', resultKey: 'answer', label: '答案' },
+  { field: 'analysis', resultKey: 'analysis', label: '解析' },
+]
+
+function inlineImageReferenceCount(value: string) {
+  INLINE_IMAGE_REFERENCE_RE.lastIndex = 0
+  INLINE_IMAGE_PLACEHOLDER_RE.lastIndex = 0
+  INLINE_BOUND_FIGURE_RE.lastIndex = 0
+  return Array.from(value.matchAll(INLINE_IMAGE_REFERENCE_RE)).length + Array.from(value.matchAll(INLINE_IMAGE_PLACEHOLDER_RE)).length + Array.from(value.matchAll(INLINE_BOUND_FIGURE_RE)).length
+}
+
+function cleanOcrPresentationHtml(value: string) {
+  return String(value || '')
+    .replace(/<div\b[^>]*>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|center)>/gi, '\n')
+    .replace(/<(?:p|center)\b[^>]*>/gi, '\n')
+    .replace(INLINE_IMAGE_WARNING_RE, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+/**
+ * Replace remote OCR image tags with local cut figures, but only when the
+ * number of references and locally cut figures agrees for every content area.
+ * A mismatch is deliberately left unresolved and returned as a review issue;
+ * falling back to page-wide provider images is what previously caused figures
+ * from neighbouring questions to be bound to the current question.
+ */
+export function bindInlineImageReferences(result: Record<string, any>, runId: string, options: { localFigures?: Array<Record<string, any>> } = {}) {
+  const reviewRow = db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ? AND result_id = ?')
+    .get(runId, String(result.id || '')) as ReviewRow | undefined
+  const reviewFigures = reviewRow ? parseJson<Array<Record<string, any>>>(reviewRow.figures_json || '[]', []) : []
+  const references = inlineImageFields.map((entry) => ({
+    ...entry,
+    value: cleanOcrPresentationHtml(String(result[entry.resultKey] || '')),
+    count: inlineImageReferenceCount(cleanOcrPresentationHtml(String(result[entry.resultKey] || ''))),
+  }))
+  const totalReferences = references.reduce((sum, entry) => sum + entry.count, 0)
+  if (!totalReferences) return null
+
+  // Force the existing review/cut figures to be the only source for inline
+  // binding.  This produces stable local paths through figuresForImported...
+  const localFigures = options.localFigures?.length
+    ? options.localFigures
+    : figuresForImportedOcrResult({ ...result, figures: reviewFigures }, runId)
+  const byUsage = new Map<InlineImageField, Array<Record<string, any>>>()
+  for (const field of inlineImageFields) byUsage.set(field.field, [])
+  for (const figure of localFigures) {
+    const rawUsage = String(figure.usage || 'stem')
+    const usage: InlineImageField = rawUsage === 'analysis' ? 'analysis' : rawUsage === 'answer' ? 'answer' : 'stem'
+    byUsage.get(usage)?.push(figure)
+  }
+
+  const issues: Array<{ field: InlineImageField; expected: number; available: number; label: string }> = []
+  const selected: Array<Record<string, any>> = []
+  const content: Record<InlineImageField, string> = { stem: String(result.problem_text || ''), answer: String(result.answer || ''), analysis: String(result.analysis || '') }
+  for (const entry of references) {
+    if (!entry.count) continue
+    const candidates = byUsage.get(entry.field) || []
+    if (candidates.length !== entry.count) {
+      issues.push({ field: entry.field, expected: entry.count, available: candidates.length, label: entry.label })
+      let missingIndex = 0
+      const referencePattern = new RegExp(`${INLINE_IMAGE_REFERENCE_RE.source}|${INLINE_IMAGE_PLACEHOLDER_RE.source}|${INLINE_BOUND_FIGURE_RE.source}`, 'gi')
+      content[entry.field] = entry.value.replace(referencePattern, () => {
+        missingIndex += 1
+        return `\n\n<!-- OCR_IMAGE_REFERENCE:${entry.field}:${missingIndex} -->\n> ⚠️ 缺少可绑定的${entry.label}图（引用 ${missingIndex}/${entry.count}）\n\n`
+      })
+      continue
+    }
+    let index = 0
+    const referencePattern = new RegExp(`${INLINE_IMAGE_REFERENCE_RE.source}|${INLINE_IMAGE_PLACEHOLDER_RE.source}|${INLINE_BOUND_FIGURE_RE.source}`, 'gi')
+    const isFourImageChoice = entry.field === 'stem' && entry.count === 4
+    const sourceValue = isFourImageChoice
+      ? entry.value.replace(/^\s*[A-D][.．、]\s*$/gm, '')
+      : entry.value
+    content[entry.field] = sourceValue.replace(referencePattern, () => {
+      const optionLabel = isFourImageChoice ? String.fromCharCode(65 + index) : ''
+      const figure = {
+        ...candidates[index],
+        usage: isFourImageChoice ? 'options' : entry.field,
+        category: isFourImageChoice ? 'options' : entry.field,
+        optionLabel,
+        blockId: `cut_inline_${entry.field}_${index + 1}`,
+      }
+      selected.push(figure)
+      index += 1
+      return isFourImageChoice
+        ? `\n\n${optionLabel}.\n<!-- DOC2X_FIGURE:${figure.blockId} -->\n\n`
+        : `\n\n<!-- DOC2X_FIGURE:${figure.blockId} -->\n\n`
+    })
+  }
+  return {
+    ...content,
+    figures: selected,
+    issue: issues.length ? {
+      field: 'figures',
+      code: 'inline_image_reference_mismatch',
+      message: issues.map((entry) => `${entry.label}图片引用 ${entry.expected} 个，但切分题图 ${entry.available} 个`).join('；'),
+      snippet: issues.map((entry) => `${entry.label} ${entry.available}/${entry.expected}`).join('，'),
+    } : null,
+  }
 }

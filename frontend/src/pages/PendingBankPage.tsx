@@ -145,13 +145,13 @@ export default function PendingBankPage() {
     showNotice('题目已保存')
   }
 
-  async function runBulkAction(label: string, endpoint: string, ids: string[]) {
+  async function runBulkAction(label: string, endpoint: string, ids: string[], extraBody: Record<string, unknown> = {}) {
     setActionBusy(true)
     setActionNotice(`${label}中...`)
     try {
       const result = await api<BulkActionResult>(
         `/api/tools/pdf-slicer/runs/${encodeURIComponent(decodedRunId)}/pending-bank/${endpoint}`,
-        { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ questionIds: ids }) }
+        { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ questionIds: ids, ...extraBody }) }
       )
       setSelectedIds(new Set())
       await reload({ silent: true })
@@ -193,6 +193,17 @@ export default function PendingBankPage() {
 
   async function confirmSingle(id: string, force = false) {
     const item = data?.items.find((entry) => entry.id === id)
+    const needsImageConfirmation = item?.formatIssue?.code === 'inline_image_reference_mismatch'
+    if (needsImageConfirmation && !force) {
+      setConfirmDialog({
+        title: '确认题图缺口',
+        message: `${item?.formatIssue?.message || '图片引用与切分题图数量不一致。'}。未匹配的位置将不会自动使用其他题目的图片，是否确认按当前结果入库？`,
+        danger: false,
+        onConfirm: async () => { setConfirmDialog(null); await confirmSingle(id, true) },
+        onCancel: () => setConfirmDialog(null),
+      })
+      return
+    }
     if (!force && item?.similarQuestions?.length) {
       openSimilarityReview([item], '仍然入库', async () => {
         setSimilarityReview(null)
@@ -200,7 +211,7 @@ export default function PendingBankPage() {
       })
       return
     }
-    await runBulkAction('确认入库', 'bulk-confirm', [id])
+    await runBulkAction('确认入库', 'bulk-confirm', [id], needsImageConfirmation ? { confirmImageReview: true } : {})
   }
 
   async function skipSingle(id: string) {
@@ -738,6 +749,12 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
           }`}>
             <p className="font-semibold">{mergeStatusLabel(item.mergeStatus)}</p>
             {item.mergeNote ? <p className="mt-1">{item.mergeNote}</p> : null}
+          </div>
+        ) : null}
+        {item.needsFormatReview && item.formatIssue ? (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+            <p className="font-semibold">需要确认题图</p>
+            <p className="mt-1 leading-5">{item.formatIssue.message || '图片引用与本地切分题图不一致。'}</p>
           </div>
         ) : null}
         {previewMode === 'images' ? (

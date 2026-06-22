@@ -20,6 +20,9 @@ export function FigureCropDialog({ question, onClose, onDelete, onSave, onUpdate
   const [rect, setRect] = useState({ x: 0, y: 0, width: 0, height: 0 })
   const [hasChanges, setHasChanges] = useState(false)
   const [saving, setSaving] = useState(false)
+  // Provider images are OCR references, not user-drawn boxes on this slice.
+  // They must never appear as editable/positionable crop rectangles.
+  const localCropFigures = localFigures.filter((figure) => String(figure.origin || '') !== 'glm_ocr')
 
   function scrollToRect(r: { y: number; height: number }) {
     const container = scrollContainerRef.current
@@ -164,11 +167,11 @@ export function FigureCropDialog({ question, onClose, onDelete, onSave, onUpdate
     setHasChanges(true)
   }
   async function clearAllFigures() {
-    if (!localFigures.length) return
-    if (!window.confirm(`确定要清空当前题目的 ${localFigures.length} 个图框吗？`)) return
+    if (!localCropFigures.length) return
+    if (!window.confirm(`确定要清空当前题目的 ${localCropFigures.length} 个图框吗？`)) return
     try {
       await Promise.all(
-        localFigures.map(async (fig) => {
+        localCropFigures.map(async (fig) => {
           if (fig.id) await onDelete(fig.id)
         })
       )
@@ -217,7 +220,7 @@ export function FigureCropDialog({ question, onClose, onDelete, onSave, onUpdate
               <div className="relative block w-full cursor-crosshair select-none" onPointerDown={startDraw} onPointerMove={move} onPointerUp={end} onPointerLeave={end}>
                 <img ref={imageRef} alt="切片原图" className="w-full max-w-none rounded-lg border bg-white shadow-sm" draggable={false} onLoad={(event) => setNaturalSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} src={imageUrl} />
                 <div className="pointer-events-none absolute inset-0 bg-zinc-950/10" />
-                {localFigures.map((figure, index) => {
+                {localCropFigures.map((figure, index) => {
                   const style = figureOverlayStyle(figure, naturalSize)
                   if (!style) return null
                   const isSelected = selectedFigureId && figure.id === selectedFigureId
@@ -286,17 +289,17 @@ export function FigureCropDialog({ question, onClose, onDelete, onSave, onUpdate
           <Button
             className="w-full justify-start"
             variant="outline"
-            disabled={!localFigures.length}
+            disabled={!localCropFigures.length}
             icon={X}
             onClick={clearAllFigures}
           >
             清空所有图片
           </Button>
-          {localFigures.length ? (
+          {localCropFigures.length ? (
             <div className="rounded-xl border bg-white p-3">
               <p className="text-xs font-medium text-zinc-500">已框图片</p>
               <div className="mt-2 max-h-56 space-y-2 overflow-auto">
-                {localFigures.map((figure, index) => (
+                {localCropFigures.map((figure, index) => (
                   <div key={figure.id || index} className={`flex items-center justify-between gap-2 rounded-lg border p-1.5 pl-2.5 transition-all ${selectedFigureId && figure.id === selectedFigureId ? 'border-amber-400 bg-amber-50' : 'bg-zinc-50'}`}>
                     <button className="text-left text-xs font-semibold truncate flex-1 hover:text-zinc-600 dark:hover:text-zinc-400 cursor-pointer" onClick={() => selectExistingFigure(figure)} type="button">
                       {figureCaption(figure, index)}

@@ -17,6 +17,16 @@ class GlmOcrTests(unittest.TestCase):
         self.assertIn("第二题解析", grouped["2"]["analysis"])
         self.assertEqual(grouped["3"]["stem"], "第三题题干")
 
+    def test_split_exam_markdown_skips_numbered_cover_instructions(self) -> None:
+        grouped = split_exam_markdown([
+            "1. 本试卷分第I卷和第II卷。\n2. 回答第I卷时写在答题卡上。\n"
+            "## 一、单项选择题\n1. 第一题题干\n【答案】A\n【解析】第一题解析\n"
+            "2. 第二题题干\n【答案】B\n【解析】第二题解析",
+        ], ["1", "2"])
+        self.assertEqual(grouped["1"]["stem"], "第一题题干")
+        self.assertEqual(grouped["2"]["stem"], "第二题题干")
+        self.assertEqual(grouped["1"]["parse_confidence"], "high")
+
     def test_text_regions_take_priority_over_marker_split(self) -> None:
         payload = {
             "data_info": {"pages": [{"width": 1000, "height": 1000}]},

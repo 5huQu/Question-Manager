@@ -10,6 +10,11 @@ import { assetUrl, figureAlt, figureCaption, figuresByUsage, parseChoiceQuestion
 
 const DOC2X_FIGURE_MARKER = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/g
 
+function withoutInlineFigureMarkers(value: string) {
+  DOC2X_FIGURE_MARKER.lastIndex = 0
+  return String(value || '').replace(DOC2X_FIGURE_MARKER, '').trim()
+}
+
 function inlineFigureIds(content: string) {
   DOC2X_FIGURE_MARKER.lastIndex = 0
   return new Set(Array.from(String(content || '').matchAll(DOC2X_FIGURE_MARKER), (match) => match[1]))
@@ -147,7 +152,7 @@ export function ChoiceOptions({ options, figures = [] }: { options: ChoiceOption
         <div className="choice-option" key={option.label}>
           <span className="choice-label">{option.label}</span>
           <div className="min-w-0">
-            <MarkdownContent className="choice-markdown" content={option.content} />
+            <MarkdownContent className="choice-markdown" content={withoutInlineFigureMarkers(option.content)} />
             <FigureGallery figures={figures.filter((figure) => String(figure.optionLabel || '').toUpperCase() === option.label)} className="mt-2" compact />
           </div>
         </div>

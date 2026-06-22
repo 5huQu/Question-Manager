@@ -181,6 +181,12 @@ export function mountPendingBankRoutes(app: Express) {
     for (const id of questionIds) {
       const row = db.prepare('SELECT * FROM question_bank_items WHERE id = ? AND source_run_id = ?').get(id, runId) as QuestionRow | undefined
       if (!row) { failed += 1; continue }
+      const review = JSON.parse(row.format_review_reasons_json || '{}') as { issue?: { code?: string; message?: string } }
+      if (review.issue?.code === 'inline_image_reference_mismatch' && !req.body?.confirmImageReview) {
+        warnings.push(`第 ${row.question_no || id} 题题图引用数量不一致；请在待入库页确认后再入库。`)
+        failed += 1
+        continue
+      }
       if (row.bank_status === 'blocked') {
         warnings.push(`题目 ${id} 仍存在识别风险。`)
       }

@@ -18,8 +18,8 @@ import {
   paragraphBlock,
 } from '../utils/rich-content.js'
 import { normalizeQuestionType } from '../utils/question-type.js'
-import { stripAssetPrefix } from '../utils/paths.js'
-import { cleanSourceTitle, normalizeUploadName } from '../utils/ocr-helpers.js'
+import { assetPathFor, stripAssetPrefix } from '../utils/paths.js'
+import { cleanSourceTitle, normalizeUploadName, ocrSegmentImages } from '../utils/ocr-helpers.js'
 import { configuredGradeStages } from '../services/settings/app-settings.js'
 
 // ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ export function mapQuestion(row: QuestionRow) {
     analysisBlocks: paragraphBlock(analysisMarkdown),
     searchText: row.search_text || buildSearchText(stemMarkdown, answerText, analysisMarkdown),
     sliceImagePath: stripAssetPrefix(row.slice_image_path),
-    ocrSegmentImages: [],
+    ocrSegmentImages: ocrSegmentImages(row.id, { assetPathFor }),
     figures,
     sourceRunId: row.source_run_id,
     sourceOcrProvider: 'legacy',

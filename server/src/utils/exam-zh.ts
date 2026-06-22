@@ -325,10 +325,10 @@ export function buildRunExamZhLatex(
     lines.push(`${questionScore ? `\\textbf{（${scoreText(questionScore)}分）}\\quad ` : ''}${renderExamZhPromptWithInlineFigures(prompt, stemFigures, questionType, variant, item.answerText) || '（题干待补充）'}`)
     if (choices.length) {
       lines.push('\\begin{choices}')
-      for (const choice of choices) lines.push(`  \\item ${markdownToExamLatex(choice, true)}`)
+      for (const choice of choices) lines.push(`  \\item ${renderExamZhMarkdownWithInlineFigures(choice, stemFigures)}`)
       lines.push('\\end{choices}')
     }
-    lines.push(...examZhFigureLines(figuresWithoutInlineMarkers(prompt, stemFigures)))
+    lines.push(...examZhFigureLines(figuresWithoutInlineMarkers(item.stemMarkdown, stemFigures)))
     if (questionType === '解答题' && paperNo >= 15 && variant !== 'teacher') {
       lines.push(examZhAnswerBlank(paperNo))
     }

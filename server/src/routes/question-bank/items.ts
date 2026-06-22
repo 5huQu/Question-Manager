@@ -13,7 +13,7 @@ import { normalizeQuestionType, inferQuestionType } from '../../utils/question-t
 import { cleanQuestionNoLabel, normalizeUploadName, syncQuestionBankItemToOcrDraft } from '../../utils/ocr-helpers.js'
 import { blocksToMarkdown } from '../../utils/rich-content.js'
 import { nowIso, createId } from '../../utils/ids.js'
-import { imageExtension } from '../../utils/figure-helpers.js'
+import { bindInlineImageReferences, imageExtension } from '../../utils/figure-helpers.js'
 import { normalizeTags } from '../../services/tags/tag-libraries.js'
 import { pythonCommand } from '../../services/settings/python.js'
 import { normalizeOcrProvider, readOcrSettings } from '../../services/settings/ocr-settings.js'
@@ -295,6 +295,19 @@ export function mountQuestionBankItemsRoutes(app: Express) {
       path: outputRel,
     }
     const figures = [...item.figures, figure]
+    const binding = bindInlineImageReferences({ id, problem_text: item.stemMarkdown, answer: item.answerText, analysis: item.analysisMarkdown }, item.sourceRunId, { localFigures: figures })
+    if (binding) {
+      const formatReview = binding.issue
+        ? JSON.stringify({ issue: binding.issue, reasons: [binding.issue], renderErrors: [], updatedAt: nowIso() })
+        : '{}'
+      db.prepare('UPDATE question_bank_items SET stem_markdown = ?, answer_text = ?, analysis_markdown = ?, figures_json = ?, bank_status = ?, format_review_required = ?, format_review_reasons_json = ?, updated_at = ? WHERE id = ?')
+        // Keep manually saved crops while the set is incomplete.  They become
+        // inline bindings only after every referenced image has a match.
+        .run(binding.stem, binding.answer, binding.analysis, JSON.stringify(binding.issue ? figures : binding.figures), binding.issue ? 'blocked' : item.bankStatus === 'blocked' ? 'ready' : item.bankStatus, binding.issue ? 1 : 0, formatReview, nowIso(), id)
+      const saved = getQuestion(id)
+      res.status(201).json(saved?.figures.find((entry) => entry.id === figure.id) || figure)
+      return
+    }
     db.prepare('UPDATE question_bank_items SET figures_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(figures), nowIso(), id)
     res.status(201).json(figure)
   })

@@ -41,6 +41,16 @@ export function clamp01(value: number) {
 export function figureOverlayStyle(figure: QuestionFigure, naturalSize: { width: number; height: number }) {
   const bbox = parseBBox(figure.bbox)
   if (!bbox || naturalSize.width <= 0 || naturalSize.height <= 0) return null
+  const normalized = bbox.x >= 0 && bbox.y >= 0 && bbox.width > 0 && bbox.height > 0 &&
+    bbox.x <= 1 && bbox.y <= 1 && bbox.width <= 1 && bbox.height <= 1
+  if (normalized) {
+    return {
+      left: `${clamp01(bbox.x) * 100}%`,
+      top: `${clamp01(bbox.y) * 100}%`,
+      width: `${clamp01(bbox.width) * 100}%`,
+      height: `${clamp01(bbox.height) * 100}%`,
+    }
+  }
   return {
     left: `${clamp01(bbox.x / naturalSize.width) * 100}%`,
     top: `${clamp01(bbox.y / naturalSize.height) * 100}%`,
@@ -52,6 +62,16 @@ export function figureOverlayStyle(figure: QuestionFigure, naturalSize: { width:
 export function displayRectFromFigure(figure: QuestionFigure, naturalSize: { width: number; height: number }, displaySize: { width: number; height: number }) {
   const bbox = parseBBox(figure.bbox)
   if (!bbox || naturalSize.width <= 0 || naturalSize.height <= 0 || displaySize.width <= 0 || displaySize.height <= 0) return null
+  const normalized = bbox.x >= 0 && bbox.y >= 0 && bbox.width > 0 && bbox.height > 0 &&
+    bbox.x <= 1 && bbox.y <= 1 && bbox.width <= 1 && bbox.height <= 1
+  if (normalized) {
+    return normalizeDisplayRect({
+      x: bbox.x * displaySize.width,
+      y: bbox.y * displaySize.height,
+      width: bbox.width * displaySize.width,
+      height: bbox.height * displaySize.height,
+    }, displaySize)
+  }
   return normalizeDisplayRect({
     x: (bbox.x / naturalSize.width) * displaySize.width,
     y: (bbox.y / naturalSize.height) * displaySize.height,

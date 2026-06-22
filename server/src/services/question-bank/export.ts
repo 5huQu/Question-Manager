@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { db } from '../../db/connection.js'
-import { storageRoot } from '../../config.js'
+import { sourceRoot, storageRoot } from '../../config.js'
 import { safeName } from '../../utils/ids.js'
 import { normalizeQuestionType } from '../../utils/question-type.js'
 import {
@@ -14,7 +14,10 @@ import {
   analysisFigures,
   questionPlainText,
   figuresWithoutInlineMarkers,
+  doc2xInlineFigureIds,
 } from '../../utils/figure-export.js'
+import { bindInlineImageReferences } from '../../utils/figure-helpers.js'
+import { markdownToExamLatex as richMarkdownToExamLatex } from '../../utils/rich-content.js'
 import {
   worksheetFigureWidthLimits,
   worksheetFigureId,
@@ -55,15 +58,6 @@ export type ExportCollection = NonNullable<ReturnType<typeof getCollection>>
 // Local helpers still in index.ts (not yet extracted to utils)
 // ---------------------------------------------------------------------------
 
-let _sourceRoot = ''
-function sourceRoot(): string {
-  if (!_sourceRoot) {
-    // Lazy lookup from the module path -- same heuristic as config.ts.
-    _sourceRoot = path.resolve(new URL('.', import.meta.url).pathname, '../../..')
-  }
-  return _sourceRoot
-}
-
 // ---------------------------------------------------------------------------
 // Exam-zh helpers duplicated here until the legacy copies in index.ts are
 // removed; these delegate to the utils/exam-zh.ts module.
@@ -97,7 +91,7 @@ function buildRunWorksheetCollection(run: NonNullable<ReturnType<typeof getRun>>
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
     questions: rows.map((row, index) => {
-      const item = mapQuestion(row)
+      const item = questionForExport(mapQuestion(row), run.runId)
       const section = sectionNames.get(item.questionType) || ''
       const sectionName = section && section !== previousSection ? section : ''
       if (section) previousSection = section
@@ -109,6 +103,36 @@ function buildRunWorksheetCollection(run: NonNullable<ReturnType<typeof getRun>>
         item,
       }
     }),
+  }
+}
+
+/**
+ * Re-run the same local-figure binding used by OCR review before exporting.
+ * This is intentionally non-mutating: export either gets a fully consistent
+ * snapshot or stops with an actionable question number.
+ */
+function questionForExport(item: ReturnType<typeof mapQuestion>, runId: string) {
+  const binding = bindInlineImageReferences(
+    {
+      id: item.id,
+      problem_text: item.stemMarkdown,
+      answer: item.answerText,
+      analysis: item.analysisMarkdown,
+    },
+    runId,
+    { localFigures: item.figures },
+  )
+  if (!binding) return item
+  if (binding.issue) {
+    const label = item.questionNo ? `第 ${item.questionNo} 题` : `题目 #${item.id}`
+    throw new Error(`${label}图片尚未完成绑定：${binding.issue.message}。请先在“框选题图”中复核。`)
+  }
+  return {
+    ...item,
+    stemMarkdown: binding.stem,
+    answerText: binding.answer,
+    analysisMarkdown: binding.analysis,
+    figures: binding.figures,
   }
 }
 
@@ -302,37 +326,58 @@ function worksheetQuestionLatex(
   const lines = [`\\begin{examquestion}{${index + 1}}`]
   const { prompt, choices } = splitChoiceStemForExport(entry.item.stemMarkdown)
   const stemFigures = questionFigures(entry)
-  lines.push(
-    keepSubquestionsTogether(
-      renderExamZhPrompt(prompt || entry.item.stemMarkdown, entry.item.questionType) || '（题干待补充）',
-    ),
-  )
-  if (choices.length) {
-    lines.push(worksheetChoicesLatex(choices))
-  }
-
-  const appendFigures = (figures: Array<Record<string, any>>, usage: string) => {
-    figures.forEach((figure, figureIndex) => {
+  const registerFigure = (figure: Record<string, any>, figureIndex: number, usage: string) => {
       const sourcePath = figureAbsolutePath(figure)
-      if (!sourcePath || !fs.existsSync(sourcePath)) return
+      if (!sourcePath || !fs.existsSync(sourcePath)) return ''
       const extension = path.extname(sourcePath).toLowerCase() || '.png'
       const figureId = worksheetFigureId(collectionId, entry, figure, figureIndex, usage)
-      const outputName = `${safeName(figureId)}${extension}`
+      // The full collection-prefixed figure id is longer than safeName's
+      // 80-character limit.  Using it directly made different figures in the
+      // same question collapse to one filename (notably q18's histogram/pie).
+      const outputName = `${safeName(`q${entry.item.serialNo || index + 1}-${figure.id || figureIndex + 1}`)}${extension}`
       const outputPath = path.join(figuresDir, outputName)
       if (!fs.existsSync(outputPath)) fs.copyFileSync(sourcePath, outputPath)
       const limits = worksheetFigureWidthLimits(sourcePath)
       specs.set(figureId, { id: figureId, sourcePath, outputName, ...limits })
       const width = adjustments.get(figureId) ?? limits.defaultWidth
-      lines.push(`\\qbankfigure{${figureId}}{${width.toFixed(4)}}{figures/${outputName}}`)
+      return `\\qbankfigure{${figureId}}{${width.toFixed(4)}}{figures/${outputName}}`
+  }
+  const appendFigures = (figures: Array<Record<string, any>>, usage: string) => {
+    figures.forEach((figure, figureIndex) => {
+      const latex = registerFigure(figure, figureIndex, usage)
+      if (latex) lines.push(latex)
     })
   }
 
-  appendFigures(stemFigures, 'stem')
+  lines.push(
+    keepSubquestionsTogether(
+      worksheetPromptWithInlineFigures(
+        prompt || entry.item.stemMarkdown,
+        stemFigures,
+        entry.item.questionType,
+        (figure) => registerFigure(figure, Math.max(0, stemFigures.indexOf(figure)), 'stem'),
+      ) || '（题干待补充）',
+    ),
+  )
+  if (choices.length) {
+    lines.push(worksheetChoicesLatex(choices, stemFigures))
+  }
+
+  appendFigures(figuresWithoutInlineMarkers(entry.item.stemMarkdown, stemFigures), 'stem')
   if (variant === 'teacher') {
+    const solutionFigures = analysisFigures(entry)
     lines.push('\\begin{solutionbox}')
-    lines.push(`\\anslabel ${worksheetAnswerLatex(entry.item.answerText) || '暂无'}\\par`)
-    lines.push(`\\sollabel ${markdownToExamLatex(entry.item.analysisMarkdown || '暂无', true)}`)
-    appendFigures(analysisFigures(entry), 'analysis')
+    const renderSolutionFigure = (figure: Record<string, any>) =>
+      registerFigure(figure, Math.max(0, solutionFigures.indexOf(figure)), 'analysis')
+    lines.push(`\\anslabel ${worksheetMarkdownWithInlineFigures(entry.item.answerText, solutionFigures, true, true, renderSolutionFigure) || '暂无'}\\par`)
+    lines.push(`\\sollabel ${worksheetMarkdownWithInlineFigures(entry.item.analysisMarkdown || '暂无', solutionFigures, true, false, renderSolutionFigure)}`)
+    appendFigures(
+      figuresWithoutInlineMarkers(
+        `${entry.item.answerText || ''}\n${entry.item.analysisMarkdown || ''}`,
+        solutionFigures,
+      ),
+      'analysis',
+    )
     lines.push('\\end{solutionbox}')
   } else if (
     normalizeQuestionType(entry.item.questionType, entry.item.stemMarkdown, entry.item.answerText) === '解答题' &&
@@ -344,8 +389,69 @@ function worksheetQuestionLatex(
   return lines.join('\n')
 }
 
-function worksheetChoicesLatex(choices: string[]) {
-  const rendered = choices.map((choice) => markdownToExamLatex(choice, true).replace(/\n+/g, ' ').trim())
+function worksheetPromptWithInlineFigures(
+  content: string,
+  figures: Array<Record<string, any>>,
+  questionType: string,
+  renderFigure: (figure: Record<string, any>) => string,
+) {
+  return worksheetInlineFigureLatex(content, figures, (text) => renderExamZhPrompt(text, questionType), renderFigure)
+}
+
+function worksheetMarkdownWithInlineFigures(
+  content: string,
+  figures: Array<Record<string, any>>,
+  preserveParagraphs = true,
+  answer = false,
+  renderFigure?: (figure: Record<string, any>) => string,
+) {
+  return worksheetInlineFigureLatex(
+    content,
+    figures,
+    (text) => answer ? worksheetAnswerLatex(text) : markdownToExamLatex(text, preserveParagraphs),
+    renderFigure,
+  )
+}
+
+function worksheetInlineFigureLatex(
+  content: string,
+  figures: Array<Record<string, any>>,
+  renderText: (text: string) => string,
+  renderFigure?: (figure: Record<string, any>) => string,
+) {
+  const source = String(content || '')
+  const figureById = new Map(figures.map((figure) => [String(figure.blockId || figure.id || ''), figure]))
+  const lines: string[] = []
+  let cursor = 0
+  let match: RegExpExecArray | null
+  DOC2X_FIGURE_MARKER_RE.lastIndex = 0
+  while ((match = DOC2X_FIGURE_MARKER_RE.exec(source))) {
+    const text = source.slice(cursor, match.index).trim()
+    if (text) lines.push(renderText(text))
+    const figure = figureById.get(match[1])
+    if (figure) {
+      const latex = renderFigure?.(figure) || worksheetInlineFigureLines(figure).join('\n')
+      if (latex) lines.push(latex)
+    }
+    cursor = match.index + match[0].length
+  }
+  const tail = source.slice(cursor).trim()
+  if (tail) lines.push(renderText(tail))
+  return lines.join('\n')
+}
+
+function worksheetInlineFigureLines(figure: Record<string, any>) {
+  const sourcePath = figureAbsolutePath(figure)
+  if (!sourcePath || !fs.existsSync(sourcePath)) return []
+  return [
+    '\\begin{center}',
+    `\\includegraphics[width=0.82\\linewidth]{\\detokenize{${sourcePath}}}`,
+    '\\end{center}',
+  ]
+}
+
+function worksheetChoicesLatex(choices: string[], figures: Array<Record<string, any>> = []) {
+  const rendered = choices.map((choice) => worksheetChoiceLatex(choice, figures))
   if (rendered.length === 4) {
     const layout = qbankChoiceLayout(choices)
     if (layout === 'four')
@@ -356,6 +462,30 @@ function worksheetChoicesLatex(choices: string[]) {
   return ['\\begin{qbankchoicesone}', ...rendered.map((choice) => `\\item ${choice}`), '\\end{qbankchoicesone}'].join(
     '\n',
   )
+}
+
+/** Render an option marker inside its A/B/C/D cell instead of as a block below the question. */
+function worksheetChoiceLatex(choice: string, figures: Array<Record<string, any>>) {
+  const inlineIds = doc2xInlineFigureIds(choice)
+  if (!inlineIds.size) return markdownToExamLatex(choice, true).replace(/\n+/g, ' ').trim()
+  const figureById = new Map(figures.map((figure) => [String(figure.blockId || figure.id || ''), figure]))
+  let cursor = 0
+  let match: RegExpExecArray | null
+  const parts: string[] = []
+  DOC2X_FIGURE_MARKER_RE.lastIndex = 0
+  while ((match = DOC2X_FIGURE_MARKER_RE.exec(choice))) {
+    const text = choice.slice(cursor, match.index).trim()
+    if (text) parts.push(markdownToExamLatex(text, true).replace(/\n+/g, ' ').trim())
+    const figure = figureById.get(match[1])
+    const sourcePath = figure ? figureAbsolutePath(figure) : ''
+    if (sourcePath && fs.existsSync(sourcePath)) {
+      parts.push(`\\includegraphics[width=0.88\\linewidth,height=3.8cm,keepaspectratio]{\\detokenize{${sourcePath}}}`)
+    }
+    cursor = match.index + match[0].length
+  }
+  const tail = choice.slice(cursor).trim()
+  if (tail) parts.push(markdownToExamLatex(tail, true).replace(/\n+/g, ' ').trim())
+  return parts.join(' ')
 }
 
 function keepSubquestionsTogether(latex: string) {
@@ -372,62 +502,13 @@ function figureAbsolutePath(figure: Record<string, any>) {
 }
 
 function markdownToExamLatex(value: string, preserveBreaks = true) {
-  // This is a simplified version; the full markdown->LaTeX pipeline is in
-  // utils/exam-zh.ts / utils/latex.ts.  For now we delegate to the same
-  // helpers that index.ts uses.
   const text = String(value || '')
     .replace(/【解析】/g, '')
     .replace(/【分析】/g, '')
     .replace(/【详解】/g, '')
     .replace(/详解】/g, '')
     .trim()
-  const parts: string[] = []
-  const pattern = /(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g
-  let last = 0
-  for (const match of text.matchAll(pattern)) {
-    parts.push(escapeLatexTextSegment(text.slice(last, match.index)))
-    parts.push(normalizeLatexMathSegment(match[0]))
-    last = (match.index || 0) + match[0].length
-  }
-  parts.push(escapeLatexTextSegment(text.slice(last)))
-  const rendered = parts.join('')
-  if (!preserveBreaks) return rendered.replace(/\s*\n\s*/g, ' ')
-  return rendered
-    .split(/\n\s*\n+/)
-    .map((paragraph) =>
-      paragraph
-        .split(/\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .join('\n\\par\n'),
-    )
-    .filter(Boolean)
-    .join('\n\\par\n')
-}
-
-function escapeLatexTextSegment(value: string) {
-  return normalizeUnicodeRomanNumerals(String(value || ''))
-    .replace(/\\/g, '\\textbackslash{}')
-    .replace(/([#%&_{}])/g, '\\$1')
-    .replace(/~/g, '\\textasciitilde{}')
-    .replace(/\^/g, '\\textasciicircum{}')
-}
-
-function normalizeUnicodeRomanNumerals(value: string) {
-  const romanMap: Record<string, string> = {
-    'Ⅰ': 'I', 'Ⅱ': 'II', 'Ⅲ': 'III', 'Ⅳ': 'IV', 'Ⅴ': 'V',
-    'Ⅵ': 'VI', 'Ⅶ': 'VII', 'Ⅷ': 'VIII', 'Ⅸ': 'IX', 'Ⅹ': 'X',
-    'ⅰ': 'i', 'ⅱ': 'ii', 'ⅲ': 'iii', 'ⅳ': 'iv', 'ⅴ': 'v',
-    'ⅵ': 'vi', 'ⅶ': 'vii', 'ⅷ': 'viii', 'ⅸ': 'ix', 'ⅹ': 'x',
-  }
-  return value.replace(/[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅰⅱⅲⅳⅴⅵⅶⅷⅸⅹ]/g, (match) => romanMap[match] || match)
-}
-
-function normalizeLatexMathSegment(value: string) {
-  return String(value || '')
-    .replace(/\\mathbf\{R\}/g, '\\mathbb{R}')
-    .replace(/\\vec\{/g, '\\overrightarrow{')
-    .replace(/\s*\n\s*/g, ' ')
+  return richMarkdownToExamLatex(text, preserveBreaks)
 }
 
 export function exportCollectionWorksheetPdf(
@@ -441,7 +522,7 @@ export function exportCollectionWorksheetPdf(
   fs.mkdirSync(figuresDir, { recursive: true })
   for (const templateName of ['qbank-theme.sty', `${documentClass}.cls`]) {
     fs.copyFileSync(
-      path.join(sourceRoot(), 'templates', 'latex', templateName),
+      path.join(sourceRoot, 'templates', 'latex', templateName),
       path.join(exportRoot, templateName),
     )
   }
@@ -483,9 +564,6 @@ export function exportRunWorksheetPdf(runId: string, options: { title?: string; 
 
 export function exportRunExamPdf(runId: string, options: { title?: string; variant?: ExportVariant }) {
   const variant = options.variant || 'student'
-  if (readAppSettings().examExportTemplate === 'examch') {
-    return exportRunExamZh(runId, { ...options, format: 'pdf', variant })
-  }
   const run = getRun(runId)
   if (!run) throw new Error('批次不存在。')
   const rows = db.prepare(`
@@ -494,6 +572,12 @@ export function exportRunExamPdf(runId: string, options: { title?: string; varia
     ORDER BY serial_no ASC
   `).all(runId) as QuestionRow[]
   if (!rows.length) throw new Error('当前批次暂无已入库题目，无法导出。')
+  // The alternate template used to bypass all image review rules. Validate
+  // every exported question before choosing either renderer.
+  rows.forEach((row) => questionForExport(mapQuestion(row), runId))
+  if (readAppSettings().examExportTemplate === 'examch') {
+    return exportRunExamZh(runId, { ...options, format: 'pdf', variant })
+  }
   const collection = buildRunWorksheetCollection({ ...run, paperTitle: options.title || run.paperTitle }, rows)
   const pdfPath = exportCollectionWorksheetPdf(collection as any, variant, 'qbank-exam')
   return { path: pdfPath, format: 'pdf' as const }

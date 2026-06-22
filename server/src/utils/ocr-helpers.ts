@@ -118,26 +118,29 @@ export function ocrSegmentImages(
   options: { assetPathFor: (absPath: string) => string },
 ) {
   const { assetPathFor } = options
-  const baseDir = path.join(pythonDataRoot, 'ocr_drafts', questionId, 'region_ocr')
+  const draftDir = path.join(pythonDataRoot, 'ocr_drafts', questionId)
   const kinds = [
     ['problem', '题干'],
     ['answer', '答案'],
     ['analysis', '解析'],
   ] as const
 
-  return kinds.flatMap(([kind, label]) => {
-    const segmentDir = path.join(baseDir, kind, 'segments')
+  const seen = new Set<string>()
+  return ['region_ocr_seq3', 'region_ocr'].flatMap((root) => kinds.flatMap(([kind, label]) => {
+    const segmentDir = path.join(draftDir, root, kind, 'segments')
     if (!fs.existsSync(segmentDir)) return []
-
+    let count = 0
     return fs.readdirSync(segmentDir)
       .filter((name) => name.toLowerCase().endsWith('.png'))
       .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN', { numeric: true }))
-      .map((name, index) => ({
-        kind,
-        label: `${label}分块 ${index + 1}`,
-        path: assetPathFor(path.join(segmentDir, name)),
-      }))
-  })
+      .flatMap((name) => {
+        const assetPath = assetPathFor(path.join(segmentDir, name))
+        if (seen.has(assetPath)) return []
+        seen.add(assetPath)
+        count += 1
+        return [{ kind, label: `${label}分块 ${count}`, path: assetPath }]
+      })
+  }))
 }
 
 // ── normalizeOcrSegment ───────────────────────────────────────────

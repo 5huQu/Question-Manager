@@ -20,6 +20,10 @@ DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4/layout_parsing"
 DEFAULT_MODEL = "glm-ocr"
 QUESTION_START_RE = r"(?m)(?:^|\n)\s*(?:第\s*)?{number}\s*[.．、]\s*"
 IMAGE_RE = re.compile(r"<img\b[^>]*\bsrc=['\"]([^'\"]+)['\"][^>]*>", re.IGNORECASE)
+PAGE_MARKER_RE = re.compile(r"<!-- GLM_PAGE:(\d+) -->")
+ANSWER_OR_ANALYSIS_RE = re.compile(r"【(?:答案|分析|解析)】")
+EXAM_SECTION_RE = re.compile(r"(?mi)^\s*#{1,6}\s*.*?(?:选择题|填空题|解答题|第[ⅠⅡIVX]+卷)")
+EXAM_INSTRUCTION_RE = re.compile(r"(?:本试卷分|回答第[ⅠⅡIVX]卷|答卷前|考试结束后|考生务必)")
 
 
 class GlmOcrError(RuntimeError):
@@ -86,7 +90,35 @@ def _joined_pages(pages: list[str]) -> str:
     return "\n\n".join(f"<!-- GLM_PAGE:{index + 1} -->\n{content}" for index, content in enumerate(pages))
 
 
-def split_exam_markdown(pages: list[str], expected_numbers: list[str]) -> dict[str, dict[str, Any]]:
+def _page_ids_for_range(source: str, start: int, end: int) -> list[int]:
+    """Return the page containing ``start`` plus later pages crossed by a chunk."""
+    before = list(PAGE_MARKER_RE.finditer(source, 0, start))
+    within = list(PAGE_MARKER_RE.finditer(source, start, end))
+    values = ([int(before[-1].group(1))] if before else []) + [int(match.group(1)) for match in within]
+    return list(dict.fromkeys(values))
+
+
+def _exam_question_candidates(source: str, expected: set[str]) -> list[dict[str, Any]]:
+    """Find only expected numeric headings, retaining duplicate candidates for scoring.
+
+    Cover instructions frequently begin with ``1.``, ``2.``, etc.  We cannot
+    consume the first matching number: an actual exam question is normally
+    corroborated by an answer/analysis marker before the next question heading.
+    """
+    pattern = re.compile(r"(?m)^\s*(?:#{1,6}\s*)?(?:第\s*)?(\d{1,3})\s*[.．、]\s+")
+    candidates = []
+    for match in pattern.finditer(source):
+        number = normalize_question_no(match.group(1))
+        if number in expected:
+            candidates.append({"number": number, "start": match.start(), "content_start": match.end()})
+    for index, candidate in enumerate(candidates):
+        candidate["end"] = candidates[index + 1]["start"] if index + 1 < len(candidates) else len(source)
+        candidate["raw"] = source[candidate["content_start"] : candidate["end"]].strip()
+    return candidates
+
+
+def _split_numbered_markdown_legacy(pages: list[str], expected_numbers: list[str]) -> dict[str, dict[str, Any]]:
+    """Compatibility path for non-exam materials such as lectures."""
     source = _joined_pages(pages)
     starts: list[tuple[str, int, int]] = []
     cursor = 0
@@ -105,15 +137,75 @@ def split_exam_markdown(pages: list[str], expected_numbers: list[str]) -> dict[s
         end = starts[index + 1][1] if index + 1 < len(starts) else len(source)
         raw = source[content_start:end].strip()
         stem, answer, analysis, has_markers = _split_fields(raw)
-        page_values = [int(value) for value in re.findall(r"<!-- GLM_PAGE:(\d+) -->", source[start:end])]
         output[number] = {
             "question_no": number,
             "raw": raw,
-            "stem": normalize_math_delimiters(re.sub(r"<!-- GLM_PAGE:\d+ -->", "", stem)),
-            "answer": normalize_math_delimiters(re.sub(r"<!-- GLM_PAGE:\d+ -->", "", answer)),
-            "analysis": normalize_math_delimiters(re.sub(r"<!-- GLM_PAGE:\d+ -->", "", analysis)),
+            "stem": normalize_math_delimiters(PAGE_MARKER_RE.sub("", stem)),
+            "answer": normalize_math_delimiters(PAGE_MARKER_RE.sub("", answer)),
+            "analysis": normalize_math_delimiters(PAGE_MARKER_RE.sub("", analysis)),
             "has_markers": has_markers,
-            "page_indices": page_values,
+            "page_indices": _page_ids_for_range(source, start, end),
+            "parse_confidence": "legacy",
+            "parse_warnings": ["非试卷材料沿用旧版题号切分。"],
+        }
+    return output
+
+
+def split_exam_markdown(pages: list[str], expected_numbers: list[str]) -> dict[str, dict[str, Any]]:
+    """Split a solution-paper OCR response with question, answer and analysis signals.
+
+    This is deliberately an exam-specific parser.  It chooses a numeric heading
+    only when it is corroborated by answer/analysis structure (or, for a
+    questions-only paper, by an exam-section heading).  That avoids treating the
+    numbered cover instructions as questions 1--4.
+    """
+    source = _joined_pages(pages)
+    expected = [normalize_question_no(number) for number in expected_numbers]
+    expected = [number for number in expected if number]
+    candidates = _exam_question_candidates(source, set(expected))
+    section_starts = [match.start() for match in EXAM_SECTION_RE.finditer(source)]
+
+    selected: dict[str, dict[str, Any]] = {}
+    seen_supported_question = False
+    for candidate in candidates:
+        raw = str(candidate["raw"])
+        has_markers = bool(ANSWER_OR_ANALYSIS_RE.search(raw))
+        after_exam_section = any(start < int(candidate["start"]) for start in section_starts)
+        is_instruction = bool(EXAM_INSTRUCTION_RE.search(raw))
+        # Marker-supported candidates are authoritative.  Questions-only
+        # papers may lack markers, but cover instructions are never accepted.
+        # A trailing question may omit its answer/analysis in a partial OCR
+        # response.  Once a genuine marker-supported question has appeared,
+        # keep such a later expected heading instead of dropping it.
+        score = (10 if has_markers else 0) + (2 if after_exam_section else 0) + (1 if seen_supported_question else 0) - (20 if is_instruction else 0)
+        if score <= 0:
+            continue
+        number = str(candidate["number"])
+        existing = selected.get(number)
+        if existing is None or score > existing["score"]:
+            selected[number] = {**candidate, "score": score}
+        if has_markers and not is_instruction:
+            seen_supported_question = True
+
+    output: dict[str, dict[str, Any]] = {}
+    for number in expected:
+        candidate = selected.get(number)
+        if not candidate:
+            continue
+        start, end = int(candidate["start"]), int(candidate["end"])
+        raw = str(candidate["raw"])
+        stem, answer, analysis, has_markers = _split_fields(raw)
+        strip_markers = lambda value: PAGE_MARKER_RE.sub("", value)
+        output[number] = {
+            "question_no": number,
+            "raw": raw,
+            "stem": normalize_math_delimiters(strip_markers(stem)),
+            "answer": normalize_math_delimiters(strip_markers(answer)),
+            "analysis": normalize_math_delimiters(strip_markers(analysis)),
+            "has_markers": has_markers,
+            "page_indices": _page_ids_for_range(source, start, end),
+            "parse_confidence": "high" if has_markers else "medium",
+            "parse_warnings": [] if has_markers else ["答案/解析标记缺失，按试卷章节和题号切分。"],
         }
     return output
 
@@ -220,7 +312,10 @@ def _glm_figures(record: dict[str, Any], payload: dict[str, Any], artifact_dir: 
 def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any]], drafts_root: Path, artifact_dir: Path, storage_root: Path, single_question: bool = False) -> dict[str, Any]:
     pages = _page_texts(result_payload)
     expected = [normalize_question_no(record.get("question_no")) for record in manifest]
-    parsed = split_exam_markdown(pages, expected)
+    # New manifests explicitly carry the document kind.  Older manifests were
+    # produced only by the exam flow, so retain exam parsing for compatibility.
+    is_exam = all(str(record.get("material_type") or "exam") == "exam" for record in manifest)
+    parsed = split_exam_markdown(pages, expected) if is_exam else _split_numbered_markdown_legacy(pages, expected)
     successes = 0
     failures: list[dict[str, str]] = []
     for record in manifest:
@@ -237,12 +332,14 @@ def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any
             failures.append({"id": record_id, "question_no": question_no, "error": "GLM-OCR 未找到题号"})
             result = {**record, "id": record_id, "ocr_status": "failed", "problem_text": "", "answer": "", "analysis": "", "figures": record.get("figures") or [], "needs_human_review": True, "post_processing": {"provider": "glm", "error": "question_number_not_found"}}
         else:
-            region_fields = {} if single_question else _fields_from_regions(record, result_payload)
-            problem = region_fields.get("problem") or item["stem"]
-            answer = region_fields.get("answer") or item["answer"]
-            analysis = region_fields.get("analysis") or item["analysis"]
+            # Exam text is owned by the unified question/answer/analysis parser.
+            # Local cutter regions remain useful for review and image geometry,
+            # but must not overwrite the logical question boundary.
+            problem = item["stem"]
+            answer = item["answer"]
+            analysis = item["analysis"]
             figures = _glm_figures(record, result_payload, artifact_dir, storage_root) or (record.get("figures") or [])
-            result = {**record, "id": record_id, "question_no": record.get("question_no", question_no), "ocr_status": "draft", "problem_text": normalize_math_delimiters(problem), "answer": normalize_math_delimiters(answer), "analysis": normalize_math_delimiters(analysis), "figures": figures, "needs_human_review": not bool(problem) or (not bool(answer) and not bool(analysis)), "raw_model_output": item["raw"], "post_processing": {"provider": "glm", "page_indices": item.get("page_indices") or [], "used_text_regions": bool(region_fields.get("problem") or region_fields.get("answer") or region_fields.get("analysis")), "has_answer_analysis_markers": bool(item.get("has_markers"))}}
+            result = {**record, "id": record_id, "question_no": record.get("question_no", question_no), "ocr_status": "draft", "problem_text": normalize_math_delimiters(problem), "answer": normalize_math_delimiters(answer), "analysis": normalize_math_delimiters(analysis), "figures": figures, "needs_human_review": not bool(problem) or (not bool(answer) and not bool(analysis)), "raw_model_output": item["raw"], "post_processing": {"provider": "glm", "page_indices": item.get("page_indices") or [], "used_text_regions": False, "has_answer_analysis_markers": bool(item.get("has_markers")), "parse_confidence": item.get("parse_confidence", "high"), "parse_warnings": item.get("parse_warnings") or []}}
             successes += 1
         _atomic_json(draft_dir / "ocr_result.json", result)
         _atomic_text(draft_dir / "question.md", f"# 题目\n\n{result.get('problem_text') or ''}\n\n# 答案\n\n{result.get('answer') or ''}\n\n# 解析\n\n{result.get('analysis') or ''}\n")

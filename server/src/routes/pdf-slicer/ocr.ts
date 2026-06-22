@@ -80,14 +80,14 @@ export function mountOcrRoutes(app: Express) {
     res.json({ run, items: rows.map(mapQuestion) })
   })
 
-  app.post('/api/tools/pdf-slicer/runs/:runId/classify', (req, res) => {
+  app.post('/api/tools/pdf-slicer/runs/:runId/classify', async (req, res) => {
     const runId = req.params.runId
     if (!getRun(runId)) {
       res.status(404).json({ error: '批次不存在。' })
       return
     }
     try {
-      const report = runQuestionClassification(runId)
+      const report = await runQuestionClassification(runId)
       db.prepare('UPDATE pdf_slicer_runs SET updated_at = ? WHERE run_id = ?').run(nowIso(), runId)
       const rows = db.prepare('SELECT * FROM question_bank_items WHERE source_run_id = ? ORDER BY serial_no ASC').all(runId) as QuestionRow[]
       res.json({ run: getRun(runId), items: rows.map(mapQuestion), report })
