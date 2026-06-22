@@ -22,7 +22,7 @@ export function mountReviewRoutes(app: Express) {
     res.json({ summary: { totalItems: items.length, pendingCount: items.filter((item) => item.reviewStatus === 'pending_review').length }, items })
   })
 
-  app.post('/api/tools/pdf-slicer/runs/:runId/slice-review/items/merge', (req, res) => {
+  app.post('/api/tools/pdf-slicer/runs/:runId/slice-review/items/merge', async (req, res) => {
     const run = getRun(req.params.runId)
     if (!run) {
       res.status(404).json({ error: '批次不存在。' })
@@ -55,7 +55,7 @@ export function mountReviewRoutes(app: Express) {
     const mergedRel = path.join(mergeDirRel, `${base}_${suffix}_merged.png`)
     let imageInfo: { width: number; height: number; parts: Array<Record<string, any>> }
     try {
-      imageInfo = mergeReviewImages(sourceAbs, resolveStoragePath(mergedRel))
+      imageInfo = await mergeReviewImages(sourceAbs, resolveStoragePath(mergedRel))
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
       return
@@ -124,7 +124,7 @@ export function mountReviewRoutes(app: Express) {
     res.json({ item })
   })
 
-  app.post('/api/tools/pdf-slicer/runs/:runId/slice-review/items/:resultId/split', (req, res) => {
+  app.post('/api/tools/pdf-slicer/runs/:runId/slice-review/items/:resultId/split', async (req, res) => {
     const run = getRun(req.params.runId)
     if (!run) {
       res.status(404).json({ error: '批次不存在。' })
@@ -155,7 +155,7 @@ export function mountReviewRoutes(app: Express) {
     const bottomRel = path.join(splitDirRel, `${base}_${suffix}_bottom.png`)
     let imageInfo: { width: number; height: number; splitY: number; topHeight: number; bottomHeight: number }
     try {
-      imageInfo = splitReviewImage(sourceAbs, resolveStoragePath(topRel), resolveStoragePath(bottomRel), splitRatio)
+      imageInfo = await splitReviewImage(sourceAbs, resolveStoragePath(topRel), resolveStoragePath(bottomRel), splitRatio)
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
       return

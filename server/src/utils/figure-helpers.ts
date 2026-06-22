@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
+import { promisify } from 'node:util'
 import { parseJson } from './json.js'
 import { resolveStoragePath, stripAssetPrefix } from './paths.js'
 import { db } from '../db/connection.js'
@@ -11,6 +12,7 @@ const INLINE_IMAGE_REFERENCE_RE = /<img\b[^>]*\bsrc\s*=\s*['"][^'"]+['"][^>]*>/g
 const INLINE_IMAGE_PLACEHOLDER_RE = /<!--\s*OCR_IMAGE_REFERENCE:(stem|answer|analysis):\d+\s*-->/gi
 const INLINE_BOUND_FIGURE_RE = /<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->/gi
 const INLINE_IMAGE_WARNING_RE = /\n?>\s*⚠️\s*缺少可绑定的(?:题干|答案|解析)图（引用\s*\d+\/\d+）\s*\n?/g
+const execFileAsync = promisify(execFile)
 
 // ── Exported functions ───────────────────────────────────────────────────────
 
@@ -62,7 +64,7 @@ export function cropFigureImage(sourcePath: string, outputPath: string, bbox: Re
   execFileSync(pythonCommand(), ['-c', cropScript, sourcePath, outputPath, JSON.stringify(bbox)], { encoding: 'utf8' })
 }
 
-export function splitReviewImage(sourcePath: string, topOutputPath: string, bottomOutputPath: string, splitRatio: number) {
+export async function splitReviewImage(sourcePath: string, topOutputPath: string, bottomOutputPath: string, splitRatio: number) {
   fs.mkdirSync(path.dirname(topOutputPath), { recursive: true })
   fs.mkdirSync(path.dirname(bottomOutputPath), { recursive: true })
   const splitScript = [
@@ -77,10 +79,11 @@ export function splitReviewImage(sourcePath: string, topOutputPath: string, bott
     'im.crop((0, y, im.width, im.height)).save(bottom_dst)',
     'print(json.dumps({"width": im.width, "height": im.height, "splitY": y, "topHeight": y, "bottomHeight": im.height - y}))',
   ].join('; ')
-  return JSON.parse(execFileSync(pythonCommand(), ['-c', splitScript, sourcePath, topOutputPath, bottomOutputPath, JSON.stringify({ splitRatio })], { encoding: 'utf8' }))
+  const { stdout } = await execFileAsync(pythonCommand(), ['-c', splitScript, sourcePath, topOutputPath, bottomOutputPath, JSON.stringify({ splitRatio })], { encoding: 'utf8' })
+  return JSON.parse(stdout)
 }
 
-export function mergeReviewImages(sourcePaths: string[], outputPath: string) {
+export async function mergeReviewImages(sourcePaths: string[], outputPath: string) {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
   const mergeScript = [
     'from PIL import Image',
@@ -99,7 +102,8 @@ export function mergeReviewImages(sourcePaths: string[], outputPath: string) {
     'canvas.save(dst)',
     'print(json.dumps({"width": width, "height": height, "parts": parts}))',
   ].join('\n')
-  return JSON.parse(execFileSync(pythonCommand(), ['-c', mergeScript, JSON.stringify(sourcePaths), outputPath], { encoding: 'utf8' }))
+  const { stdout } = await execFileAsync(pythonCommand(), ['-c', mergeScript, JSON.stringify(sourcePaths), outputPath], { encoding: 'utf8' })
+  return JSON.parse(stdout)
 }
 
 export function normalizedFigureId(value: unknown, index: number) {
