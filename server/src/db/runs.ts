@@ -16,6 +16,7 @@ import {
 import { normalizeOcrProvider } from '../services/settings/ocr-settings.js'
 import fs from 'node:fs'
 import path from 'node:path'
+import { spawn } from 'node:child_process'
 import { activeOcrProcesses } from '../types/index.js'
 
 function doc2xArtifactDir(row: RunRow) {
@@ -57,6 +58,34 @@ function syncDoc2xState(row: RunRow) {
 
 function ocrJobLogPath(runId: string) {
   return path.join(pythonDataRoot, 'ocr_jobs', `${runId}.log`)
+}
+
+function removePathInChild(targetPath: string, options: { recursive?: boolean } = {}) {
+  if (!targetPath || !fs.existsSync(targetPath)) return
+  const recursive = Boolean(options.recursive)
+  let cleanupPath = targetPath
+  if (recursive) {
+    const parent = path.dirname(targetPath)
+    const basename = path.basename(targetPath)
+    const trashPath = path.join(parent, `${basename}.deleted-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`)
+    try {
+      fs.renameSync(targetPath, trashPath)
+      cleanupPath = trashPath
+    } catch {
+      cleanupPath = targetPath
+    }
+  }
+  const script = [
+    'const fs = require("node:fs");',
+    'const target = process.argv[1];',
+    `fs.rmSync(target, { recursive: ${recursive ? 'true' : 'false'}, force: true });`,
+  ].join('\n')
+  const child = spawn(process.execPath, ['-e', script, cleanupPath], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  })
+  child.unref()
 }
 
 export function mapBatch(row: BatchRow) {
@@ -178,6 +207,29 @@ export function findReusableSeparatedExamBatch(title: string, materialType: Mate
   return row?.id || ''
 }
 
+export function recoverInterruptedRuns() {
+  const now = nowIso()
+  db.prepare(`
+    UPDATE pdf_slicer_runs
+    SET slice_status = 'failed',
+        slice_error = CASE WHEN TRIM(slice_error) = '' THEN '服务重启后已中断，请重新执行切题。' ELSE slice_error END,
+        updated_at = ?
+    WHERE slice_status = 'running'
+  `).run(now)
+  db.prepare(`
+    UPDATE pdf_slicer_runs
+    SET ocr_status = 'failed',
+        ocr_error = CASE WHEN TRIM(ocr_error) = '' THEN '服务重启后已中断，请重新执行 OCR。' ELSE ocr_error END,
+        ocr_finished_at = CASE WHEN TRIM(ocr_finished_at) = '' THEN ? ELSE ocr_finished_at END,
+        updated_at = ?
+    WHERE ocr_status = 'running'
+  `).run(now, now)
+  db.prepare(`
+    DELETE FROM pdf_slicer_batches
+    WHERE id NOT IN (SELECT DISTINCT batch_id FROM pdf_slicer_runs)
+  `).run()
+}
+
 export function removeRunArtifacts(runId: string) {
   const row = db.prepare('SELECT * FROM pdf_slicer_runs WHERE run_id = ?').get(runId) as RunRow | undefined
   const questionIds = (db.prepare('SELECT id FROM question_bank_items WHERE source_run_id = ?').all(runId) as Array<{ id: string }>).map((item) => item.id)
@@ -186,17 +238,17 @@ export function removeRunArtifacts(runId: string) {
     child.kill('SIGTERM')
     activeOcrProcesses.delete(runId)
   }
-  if (row?.run_dir) fs.rmSync(resolveStoragePath(row.run_dir), { recursive: true, force: true })
+  if (row?.run_dir) removePathInChild(resolveStoragePath(row.run_dir), { recursive: true })
   for (const id of questionIds) {
-    fs.rmSync(path.join(dataDir, 'question_figures', id), { recursive: true, force: true })
+    removePathInChild(path.join(dataDir, 'question_figures', id), { recursive: true })
   }
   const draftsDir = path.join(pythonDataRoot, 'ocr_drafts')
   if (fs.existsSync(draftsDir)) {
     for (const entry of fs.readdirSync(draftsDir)) {
-      if (entry.startsWith(runId)) fs.rmSync(path.join(draftsDir, entry), { recursive: true, force: true })
+      if (entry.startsWith(runId)) removePathInChild(path.join(draftsDir, entry), { recursive: true })
     }
   }
-  fs.rmSync(ocrJobLogPath(runId), { force: true })
+  removePathInChild(ocrJobLogPath(runId))
   db.prepare('DELETE FROM pdf_slicer_solution_items WHERE source_run_id = ?').run(runId)
 }
 
@@ -205,16 +257,16 @@ export function removeRunOcrOutputs(runId: string) {
   const questionIds = (db.prepare('SELECT id FROM question_bank_items WHERE source_run_id = ?').all(runId) as Array<{ id: string }>).map((item) => item.id)
   db.prepare('DELETE FROM question_bank_items WHERE source_run_id = ?').run(runId)
   for (const id of questionIds) {
-    fs.rmSync(path.join(dataDir, 'question_figures', id), { recursive: true, force: true })
+    removePathInChild(path.join(dataDir, 'question_figures', id), { recursive: true })
   }
   const draftsDir = path.join(pythonDataRoot, 'ocr_drafts')
   if (fs.existsSync(draftsDir)) {
     for (const entry of fs.readdirSync(draftsDir)) {
-      if (entry.startsWith(runId)) fs.rmSync(path.join(draftsDir, entry), { recursive: true, force: true })
+      if (entry.startsWith(runId)) removePathInChild(path.join(draftsDir, entry), { recursive: true })
     }
   }
-  fs.rmSync(ocrJobLogPath(runId), { force: true })
-  if (row) fs.rmSync(doc2xArtifactDir(row), { recursive: true, force: true })
+  removePathInChild(ocrJobLogPath(runId))
+  if (row) removePathInChild(doc2xArtifactDir(row), { recursive: true })
   db.prepare(`
     UPDATE pdf_slicer_runs
     SET ocr_external_uid = '', ocr_provider_phase = '', ocr_provider_progress = 0, ocr_provider_result_path = ''

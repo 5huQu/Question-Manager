@@ -5,13 +5,38 @@ import { db } from '../../db/connection.js'
 import { sourceRoot, runsRoot, pythonRoot, storageRoot } from '../../config.js'
 import { nowIso, createId } from '../../utils/ids.js'
 import { parseJson } from '../../utils/json.js'
-import { pythonCommand } from '../settings/python.js'
+import { pythonCommand, pythonEnv } from '../settings/python.js'
 import { readPdfSlicerRules, computeJsonHash, takePdfSlicerRulesSnapshot, pdfSlicerRulesPath } from './rules.js'
 import { getReviewItems } from '../../db/review.js'
 import { getRun, updateBatchWorkflow } from '../../db/runs.js'
 import { mergeDiagnostics } from '../../utils/document-conversion.js'
 import { resolveStoragePath } from '../../utils/paths.js'
 import type { RunRow } from '../../types/index.js'
+
+function removeDirectoryOutsideApi(targetPath: string) {
+  if (!targetPath || !fs.existsSync(targetPath)) return
+  const parent = path.dirname(targetPath)
+  const basename = path.basename(targetPath)
+  const trashPath = path.join(parent, `${basename}.deleted-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`)
+  let cleanupPath = targetPath
+  try {
+    fs.renameSync(targetPath, trashPath)
+    cleanupPath = trashPath
+  } catch {
+    cleanupPath = targetPath
+  }
+  const script = [
+    'const fs = require("node:fs");',
+    'const target = process.argv[1];',
+    'if (target && fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });',
+  ].join('\n')
+  const child = spawn(process.execPath, ['-e', script, cleanupPath], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  })
+  child.unref()
+}
 
 async function importSliceResults(runId: string, row: RunRow, outputDir: string) {
   const resultPath = path.join(outputDir, 'cut_results.json')
@@ -54,7 +79,7 @@ function prepareSlicingRun(runId: string) {
   const runDir = resolveStoragePath(row.run_dir)
   const outputDir = path.join(runDir, 'output')
   const scriptPath = path.join(sourceRoot, 'server', 'python', 'scripts', 'run_cut_for_question.py')
-  fs.rmSync(outputDir, { recursive: true, force: true })
+  removeDirectoryOutsideApi(outputDir)
   fs.mkdirSync(outputDir, { recursive: true })
   db.prepare('DELETE FROM pdf_slicer_review_items WHERE run_id = ?').run(runId)
 
@@ -81,7 +106,7 @@ export function startSlicingRun(runId: string) {
   db.prepare("UPDATE pdf_slicer_runs SET slice_status = 'running', slice_error = '', updated_at = ? WHERE run_id = ?").run(nowIso(), run.runId)
   try {
     const prepared = prepareSlicingRun(run.runId)
-    const child = spawn(pythonCommand(), prepared.args, { cwd: pythonRoot, stdio: ['ignore', 'ignore', 'pipe'] })
+    const child = spawn(pythonCommand(), prepared.args, { cwd: pythonRoot, env: pythonEnv(), stdio: ['ignore', 'ignore', 'pipe'] })
     const stderr: Buffer[] = []
     child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk))
     let settled = false

@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 
 import { pythonRoot } from '../config.js'
 import { parseJson } from './json.js'
-import { pythonCommand } from '../services/settings/python.js'
+import { pythonCommand, pythonEnv } from '../services/settings/python.js'
 
 // ---------------------------------------------------------------------------
 // PDF text extraction
@@ -21,7 +21,7 @@ function extractPdfTextSample(pdfPath: string) {
       'limit=min(len(doc), 3)',
       'for i in range(limit): parts.append(doc[i].get_text("text")[:2500])',
       'print("\\n".join(parts)[:6000])',
-    ].join('\n'), pdfPath], { encoding: 'utf8', timeout: 8000, maxBuffer: 1024 * 1024 }).trim()
+    ].join('\n'), pdfPath], { env: pythonEnv(), encoding: 'utf8', timeout: 8000, maxBuffer: 1024 * 1024 }).trim()
   } catch {
     return ''
   }

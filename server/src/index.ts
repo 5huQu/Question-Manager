@@ -2,6 +2,7 @@
 
 import { ensureSchema } from './db/schema.js'
 import { closeDatabase } from './db/connection.js'
+import { recoverInterruptedRuns } from './db/runs.js'
 import { app, startServer } from './server.js'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -24,6 +25,7 @@ import { mountExportRecordsRoutes } from './routes/question-bank/export-records.
 
 // Initialize schema before any route handles requests
 ensureSchema()
+recoverInterruptedRuns()
 
 // Mount all route groups
 mountHealthRoutes(app)

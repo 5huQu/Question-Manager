@@ -3,7 +3,7 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { storageRoot, pythonRoot } from '../../config.js'
 import { parseJson } from '../../utils/json.js'
-import { pythonCommand } from './python.js'
+import { pythonCommand, pythonEnv } from './python.js'
 import { readAppSettings, writeAppSettings } from './app-settings.js'
 import { sofficePath } from './tools.js'
 
@@ -20,10 +20,9 @@ export function ocrEnvPath() {
 // inheriting process.env would otherwise make a saved API key invisible to the
 // child process.
 export function ocrRunnerEnv(): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
+  return pythonEnv({
     QUESTION_OCR_ENV_PATH: ocrEnvPath(),
-  }
+  })
 }
 
 export function ocrPromptSettingsPath() {
@@ -92,7 +91,7 @@ export function readEffectivePromptDefaults() {
     return parseJson<typeof fallback>(
       execFileSync(pythonCommand(), ['-c', code], {
         cwd: pythonRoot,
-        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+        env: pythonEnv(),
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
       }),
