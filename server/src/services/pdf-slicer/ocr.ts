@@ -31,6 +31,7 @@ import {
   reviewFigurePixelBBox,
   imageDimensions,
   figuresForImportedOcrResult,
+  figuresForImportedOcrResultAsync,
   bindInlineImageReferences,
   sliceImagePathForOcrResult,
 } from '../../utils/figure-helpers.js'
@@ -436,7 +437,8 @@ export async function importMigratedOcrResults(runId: string) {
       ? String(result.original_question_id || entry.split('__').slice(1).join('__') || result.id || '')
       : String(result.id || '')
     const questionNo = cleanQuestionNoLabel(String(result.question_no || ''))
-    const inlineImages = bindInlineImageReferences(result, runId)
+    const localFigures = await figuresForImportedOcrResultAsync(result, runId)
+    const inlineImages = bindInlineImageReferences(result, runId, { localFigures })
     const stem = stripOcrTemplateNoise(stripLeadingQuestionNo(String(inlineImages?.stem ?? result.problem_text ?? '').trim(), questionNo)).trim()
     const answer = stripOcrTemplateNoise(String(inlineImages?.answer ?? result.answer ?? '').trim()).trim()
     const analysis = stripOcrTemplateNoise(String(inlineImages?.analysis ?? result.analysis ?? '').trim()).trim()
@@ -446,7 +448,7 @@ export async function importMigratedOcrResults(runId: string) {
     const difficultyLabel = String(result.difficulty_label || difficultyLabel10(difficultyScore10))
     if (!stem && !answer && !analysis) continue
     const questionType = inferQuestionType(stem, answer)
-    const figures = inlineImages ? inlineImages.figures : figuresForImportedOcrResult(result, runId)
+    const figures = inlineImages ? inlineImages.figures : localFigures
     const sliceImagePath = sliceImagePathForOcrResult(result, runId)
     const needsFormatReview = Boolean(inlineImages?.issue)
     const formatReviewJson = needsFormatReview
@@ -631,7 +633,7 @@ export async function importMigratedOcrSolutionResults(runId: string) {
     const answer = stripOcrTemplateNoise(String(result.answer || '').trim()).trim()
     const analysis = stripOcrTemplateNoise(String(result.analysis || stem).trim()).trim()
     if (!answer && !analysis) continue
-    const figures = figuresForImportedOcrResult(result, runId).map((figure) => ({ ...figure, usage: 'analysis' }))
+    const figures = (await figuresForImportedOcrResultAsync(result, runId)).map((figure) => ({ ...figure, usage: 'analysis' }))
     insert.run(
       String(result.id || entry),
       runRow.batch_id,

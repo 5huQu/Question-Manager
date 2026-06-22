@@ -64,6 +64,18 @@ export function cropFigureImage(sourcePath: string, outputPath: string, bbox: Re
   execFileSync(pythonCommand(), ['-c', cropScript, sourcePath, outputPath, JSON.stringify(bbox)], { encoding: 'utf8' })
 }
 
+export async function cropFigureImageAsync(sourcePath: string, outputPath: string, bbox: Record<string, any>) {
+  await fs.promises.mkdir(path.dirname(outputPath), { recursive: true })
+  const cropScript = [
+    'from PIL import Image', 'import json, sys', 'src, dst, raw = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])',
+    'x = int(round(float(raw.get("x", raw.get("x0", 0)))))', 'y = int(round(float(raw.get("y", raw.get("y0", 0)))))',
+    'w = int(round(float(raw.get("width", raw.get("w", raw.get("x1", 0) - raw.get("x0", 0))))))', 'h = int(round(float(raw.get("height", raw.get("h", raw.get("y1", 0) - raw.get("y0", 0))))))',
+    'im = Image.open(src)', 'x = max(0, min(x, im.width - 1)); y = max(0, min(y, im.height - 1))',
+    'w = max(1, min(w, im.width - x)); h = max(1, min(h, im.height - y))', 'im.crop((x, y, x + w, y + h)).save(dst)',
+  ].join('; ')
+  await execFileAsync(pythonCommand(), ['-c', cropScript, sourcePath, outputPath, JSON.stringify(bbox)], { encoding: 'utf8' })
+}
+
 export async function splitReviewImage(sourcePath: string, topOutputPath: string, bottomOutputPath: string, splitRatio: number) {
   fs.mkdirSync(path.dirname(topOutputPath), { recursive: true })
   fs.mkdirSync(path.dirname(bottomOutputPath), { recursive: true })
@@ -333,6 +345,33 @@ export function figuresForImportedOcrResult(result: Record<string, any>, runId: 
       path: fs.existsSync(outputAbs) ? outputRel : String(figure.path || ''),
     }
   })
+}
+
+export async function figuresForImportedOcrResultAsync(result: Record<string, any>, runId: string) {
+  const reviewRow = db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ? AND result_id = ?').get(runId, String(result.id || '')) as ReviewRow | undefined
+  const reviewFigures = reviewRow ? parseJson<Array<Record<string, any>>>(reviewRow.figures_json || '[]', []) : []
+  const sourceFigures = (Array.isArray(result.figures) && result.figures.length ? result.figures : reviewFigures).filter((figure) => figureBelongsToReview(reviewRow, figure))
+  const sourceRel = stripAssetPrefix(String(result.image_path || reviewRow?.auto_image_path || ''))
+  const sourceAbs = sourceRel ? resolveStoragePath(sourceRel) : ''
+  const figures: Array<Record<string, any>> = []
+  for (const [index, figure] of sourceFigures.entries()) {
+    const figureId = normalizedFigureId(figure.id, index)
+    const providerAssetOrigin = String(figure.origin || '')
+    const providerAssetPath = providerAssetOrigin === 'doc2x_v3' || providerAssetOrigin === 'glm_ocr' ? stripAssetPrefix(String(figure.path || '')) : ''
+    if (providerAssetPath && fs.existsSync(resolveStoragePath(providerAssetPath))) {
+      const usage = String(figure.usage || figure.category || 'stem')
+      figures.push({ ...figure, id: figureId, origin: providerAssetOrigin, usage, category: String(figure.category || figure.usage || usage), pageNumber: Number(figure.pageNumber ?? figure.page_number ?? 1), path: providerAssetPath })
+      continue
+    }
+    const outputRel = path.join('data', 'question_figures', String(result.id), `${figureId}.png`)
+    const outputAbs = resolveStoragePath(outputRel)
+    const sourceBBox = figure.bbox || {}
+    const pixelBBox = sourceAbs && fs.existsSync(sourceAbs) ? reviewFigurePixelBBox(reviewRow, figure, sourceAbs) : sourceBBox
+    if (sourceAbs && fs.existsSync(sourceAbs)) await cropFigureImageAsync(sourceAbs, outputAbs, pixelBBox)
+    const usage = String(figure.usage || figure.category || reviewFigureDefaultUsage(reviewRow, figure))
+    figures.push({ ...figure, id: figureId, origin: figure.origin || 'review_crop', usage, category: String(figure.category || figure.usage || usage), pageNumber: Number(figure.pageNumber ?? figure.page_number ?? 1), reviewBBox: sourceBBox, bbox: pixelBBox, sourcePath: sourceRel, path: fs.existsSync(outputAbs) ? outputRel : String(figure.path || '') })
+  }
+  return figures
 }
 
 type InlineImageField = 'stem' | 'answer' | 'analysis'
