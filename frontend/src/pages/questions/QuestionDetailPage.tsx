@@ -6,7 +6,7 @@ import { questionBankApi } from '@/api/questionBank'
 import { FigureCropDialog } from '@/components/questions/FigureDialogs'
 import { EditDialog } from '@/components/questions/EditDialog'
 import { QuestionMarkdownContent, SolutionDisclosure } from '@/components/questions/QuestionContent'
-import { Badge, Button, Empty, PageTitle, Panel } from '@/components/ui'
+import { Badge, Button, Empty, Panel } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { OcrProgress, QuestionFigure, QuestionItem } from '@/types'
 import { addQuestionToActiveBasket } from '@/utils/questionBasket'
@@ -114,24 +114,32 @@ export function QuestionDetailPage() {
   if (loading) return <Empty text="读取中..." />
   if (error || !data) return <Empty text={error || '题目不存在'} />
   return (
-    <section className="space-y-4 xl:flex xl:h-[calc(100vh-4rem)] xl:min-h-0 xl:flex-col xl:overflow-hidden">
-      <PageTitle title="题目详情" desc="左侧信息，中间题目内容预览，右侧集中放快捷操作。" path={`/questions/${decodedId}`} />
+    <section className="mock-page-root space-y-4 bg-zinc-50/10 p-6 text-zinc-950 dark:bg-zinc-950/20 dark:text-zinc-50 xl:flex xl:h-[calc(100vh-6rem)] xl:min-h-0 xl:flex-col xl:overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">题目详情</h1>
+          <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">左侧信息，中间题目内容预览，右侧集中放快捷操作。</p>
+        </div>
+        <span className="inline-flex min-h-6 items-center rounded-full border border-zinc-200 bg-white px-2.5 py-0.5 font-mono text-[10px] font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
+          {`/questions/${decodedId}`}
+        </span>
+      </div>
       <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[260px_minmax(0,1fr)_280px] xl:overflow-hidden">
         <Panel title="题目信息" className="xl:self-start">
           <div className="space-y-4">
             {/* Primary Grid info */}
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border bg-muted/50 p-2.5 flex flex-col justify-between">
-                <span className="text-[10px] text-muted-foreground font-medium">学段</span>
-                <span className="text-xs font-semibold text-foreground mt-1">{data.stage || '未设学段'}</span>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-2.5 flex flex-col justify-between dark:border-zinc-800 dark:bg-zinc-900/60">
+                <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">学段</span>
+                <span className="text-xs font-semibold text-zinc-950 dark:text-zinc-50 mt-1">{data.stage || '未设学段'}</span>
               </div>
-              <div className="rounded-lg border bg-muted/50 p-2.5 flex flex-col justify-between">
-                <span className="text-[10px] text-muted-foreground font-medium">题型</span>
-                <span className="text-xs font-semibold text-foreground mt-1">{data.questionType || '未设题型'}</span>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-2.5 flex flex-col justify-between dark:border-zinc-800 dark:bg-zinc-900/60">
+                <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">题型</span>
+                <span className="text-xs font-semibold text-zinc-950 dark:text-zinc-50 mt-1">{data.questionType || '未设题型'}</span>
               </div>
-              <div className="rounded-lg border bg-muted/50 p-2.5 flex flex-col justify-between col-span-2">
-                <span className="text-[10px] text-muted-foreground font-medium">来源</span>
-                <span className="text-xs font-semibold text-foreground mt-1 truncate" title={data.sourceTitle}>{data.sourceTitle || '来源待补充'}</span>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-2.5 flex flex-col justify-between col-span-2 dark:border-zinc-800 dark:bg-zinc-900/60">
+                <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">来源</span>
+                <span className="text-xs font-semibold text-zinc-950 dark:text-zinc-50 mt-1 truncate" title={data.sourceTitle}>{data.sourceTitle || '来源待补充'}</span>
               </div>
               <div className="col-span-2 mt-1">
                 <Badge variant={difficultyBadgeVariant(data)}>
@@ -143,48 +151,48 @@ export function QuestionDetailPage() {
             {/* Knowledge points & Solution methods */}
             <div className="space-y-3 pt-2 border-t">
               <div className="space-y-1.5">
-                <span className="text-[10px] text-muted-foreground font-semibold block">知识点</span>
+                <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold block">知识点</span>
                 <div className="flex flex-wrap gap-1">
                   {((data.knowledgePoints?.length ? data.knowledgePoints : [data.chapter]).filter(Boolean).length > 0) ? (
                     (data.knowledgePoints?.length ? data.knowledgePoints : [data.chapter]).filter(Boolean).map((kp, i) => (
-                      <span key={i} className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground border">
+                      <span key={i} className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-zinc-50 text-zinc-600 border border-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:border-zinc-800">
                         {kp}
                       </span>
                     ))
                   ) : (
-                    <span className="text-xs text-muted-foreground italic">知识点未设置</span>
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400 italic">知识点未设置</span>
                   )}
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <span className="text-[10px] text-muted-foreground font-semibold block">解题方法</span>
+                <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold block">解题方法</span>
                 <div className="flex flex-wrap gap-1">
                   {data.solutionMethods?.length ? (
                     data.solutionMethods.map((sm, i) => (
-                      <span key={i} className="solution-method-tag text-[11px] font-medium px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100">
+                      <span key={i} className="solution-method-tag text-[11px] font-medium px-2 py-0.5 rounded-md bg-zinc-50 text-zinc-600 border border-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:border-zinc-800">
                         {sm}
                       </span>
                     ))
                   ) : (
-                    <span className="text-xs text-muted-foreground italic">方法未设置</span>
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400 italic">方法未设置</span>
                   )}
                 </div>
               </div>
             </div>
 
             {/* Database & Resource info */}
-            <div className="pt-2 border-t space-y-1.5 text-xs text-muted-foreground">
+            <div className="pt-2 border-t border-zinc-200 space-y-1.5 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
               <div className="flex justify-between items-center py-1">
                 <span>题图资源</span>
-                <span className="font-semibold text-foreground">{data.figures.length} 个</span>
+                <span className="font-semibold text-zinc-950 dark:text-zinc-50">{data.figures.length} 个</span>
               </div>
             </div>
           </div>
         </Panel>
 
         <Panel title="题目内容预览" className="xl:flex xl:min-h-0 xl:flex-col" bodyClassName="xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:overflow-x-hidden">
-          <article className="space-y-4 rounded-xl border bg-card p-5 text-card-foreground xl:min-h-full">
+          <article className="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 xl:min-h-full">
             <QuestionMarkdownContent
               className="text-sm leading-7"
               content={data.stemMarkdown || richBlocksPlainText(data.problemBlocks)}
@@ -204,7 +212,7 @@ export function QuestionDetailPage() {
           <div className="space-y-4">
             {/* Primary Action Buttons */}
             <div className="space-y-2">
-              <span className="text-[10px] text-muted-foreground font-semibold block">题目工具</span>
+              <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold block">题目工具</span>
               <div className="grid gap-2">
 	                <Button
 	                  className="w-full justify-start text-[13px] font-medium"
@@ -244,7 +252,7 @@ export function QuestionDetailPage() {
 
             {/* Editing actions */}
             <div className="space-y-2 pt-2 border-t">
-              <span className="text-[10px] text-muted-foreground font-semibold block">数据维护</span>
+              <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold block">数据维护</span>
               <div className="grid gap-2">
                 <Button
                   className="w-full justify-start text-[13px] font-medium"
@@ -268,7 +276,7 @@ export function QuestionDetailPage() {
 
             {/* Danger actions */}
             <div className="space-y-2 pt-2 border-t">
-              <span className="text-[10px] text-muted-foreground font-semibold block">危险操作</span>
+              <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold block">危险操作</span>
               <Button
                 className="w-full justify-start text-[13px] font-medium"
                 variant="danger"
@@ -292,7 +300,7 @@ export function QuestionDetailPage() {
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                   : isRunning
                     ? 'bg-amber-50 border-amber-200 text-amber-700'
-                    : 'bg-muted border-border text-foreground'
+                    : 'bg-zinc-50 border-zinc-200 text-zinc-700 dark:bg-zinc-900/60 dark:border-zinc-800 dark:text-zinc-200'
 
               const labelText = isFailed
                 ? 'OCR 识别失败'
@@ -304,7 +312,7 @@ export function QuestionDetailPage() {
 
               return (
                 <div className="space-y-2 pt-2 border-t">
-                  <span className="text-[10px] text-muted-foreground font-semibold block">识别状态</span>
+                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold block">识别状态</span>
                   <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${boxClass}`}>
                     {isSucceeded && <Check className="size-4 shrink-0" />}
                     {isFailed && <X className="size-4 shrink-0" />}

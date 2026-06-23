@@ -54,15 +54,15 @@ type Draft = {
   analysisText: string
 }
 
-const editorInputClass = 'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50'
-const textareaClass = 'w-full rounded-md border border-input bg-transparent p-3 text-sm leading-relaxed shadow-sm outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring'
+const editorInputClass = 'flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-sm outline-none placeholder:text-zinc-400 focus-visible:ring-1 focus-visible:ring-zinc-950 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:placeholder:text-zinc-600 dark:focus-visible:ring-zinc-300'
+const textareaClass = 'w-full rounded-md border border-zinc-200 bg-white p-3 text-sm leading-relaxed shadow-sm outline-none placeholder:text-zinc-400 focus-visible:ring-1 focus-visible:ring-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:placeholder:text-zinc-600 dark:focus-visible:ring-zinc-300'
 const smallLabelClass = 'text-xs font-medium'
-const sectionClass = 'rounded-xl border bg-card text-card-foreground shadow-sm'
-const sectionHeaderClass = 'flex items-center gap-2 border-b bg-muted/40 px-6 py-3'
-const inputTabClass = 'flex rounded-lg border bg-muted p-1 shadow-sm'
-const inputTabButtonClass = (active: boolean) => `flex-1 rounded-md py-1.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:bg-background/50 hover:text-foreground'}`
-const optionButtonClass = (active: boolean) => `flex flex-col rounded-lg border p-3 text-left transition-all ${active ? 'border-2 border-primary bg-accent text-foreground' : 'border border-input bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`
-const miniTabClass = (active: boolean) => `rounded px-2.5 py-1 text-[10px] font-medium transition-colors ${active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`
+const sectionClass = 'rounded-xl border border-zinc-200 bg-white text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50'
+const sectionHeaderClass = 'flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900/70'
+const inputTabClass = 'flex rounded-lg border border-zinc-200 bg-zinc-100 p-1 shadow-sm dark:border-zinc-800 dark:bg-zinc-900'
+const inputTabButtonClass = (active: boolean) => `flex-1 rounded-md py-1.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${active ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'}`
+const optionButtonClass = (active: boolean) => `flex flex-col rounded-lg border p-3 text-left transition-all ${active ? 'border-zinc-950 bg-zinc-950 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-950' : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100'}`
+const miniTabClass = (active: boolean) => `rounded px-2.5 py-1 text-[10px] font-medium transition-colors ${active ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'}`
 
 function questionFromUnknown(question: unknown, fallback: Draft): Draft {
   return {
@@ -401,7 +401,7 @@ export function QuestionCreatePage() {
     const tone = {
       success: 'border-emerald-200 bg-emerald-50/80 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-200',
       error: 'border-red-200 bg-red-50/80 text-red-800 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200',
-      info: 'border-border bg-muted/40 text-muted-foreground',
+      info: 'border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300',
     }[noticeType]
     const Icon = noticeType === 'success' ? CheckCircle : noticeType === 'error' ? AlertTriangle : InfoIcon
     return (
@@ -449,20 +449,20 @@ export function QuestionCreatePage() {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="mock-page-root min-h-[calc(100vh-6rem)] space-y-6 overflow-y-auto bg-zinc-50/10 p-6 text-zinc-950 dark:bg-zinc-950/20 dark:text-zinc-50">
       {promptModalOpen ? (
         <Modal title="整套 JSON 导入提示词" desc="复制后发送给大模型，再把返回的 JSON 粘贴到本页导入。这里只做忠实转写，不补写、不分类。" onClose={() => setPromptModalOpen(false)} wide>
           <div className="grid gap-4 lg:grid-cols-[3fr_1fr]">
-            <div className="overflow-hidden rounded-lg border bg-muted/40">
-              <div className="flex items-center justify-between border-b px-4 py-2.5">
-                <span className="font-mono text-[10px] font-semibold text-muted-foreground">paper_ocr_prompt.md</span>
+            <div className="overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
+              <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
+                <span className="font-mono text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">paper_ocr_prompt.md</span>
                 <Button type="button" variant="outline" size="sm" icon={copied ? Check : Copy} onClick={copyFullPaperPrompt}>{copied ? '已复制' : '复制提示词'}</Button>
               </div>
-              <pre className="max-h-[62vh] overflow-auto whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed text-foreground select-all">{fullPaperAiPrompt}</pre>
+              <pre className="max-h-[62vh] overflow-auto whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed text-zinc-950 select-all dark:text-zinc-50">{fullPaperAiPrompt}</pre>
             </div>
             <aside className="space-y-3">
-              <div className={`${sectionClass} p-4 text-xs text-muted-foreground`}>
-                <h4 className="flex items-center gap-2 border-b pb-2 font-bold text-foreground"><BookOpen className="size-4 text-primary" />AI 转写说明</h4>
+              <div className={`${sectionClass} p-4 text-xs text-zinc-500 dark:text-zinc-400`}>
+                <h4 className="flex items-center gap-2 border-b border-zinc-200 pb-2 font-bold text-zinc-950 dark:border-zinc-800 dark:text-zinc-50"><BookOpen className="size-4 text-zinc-500" />AI 转写说明</h4>
                 <ol className="mt-3 list-decimal space-y-2 pl-4 leading-5">
                   <li>复制左侧代码窗口右上角的预设提示词。</li>
                   <li>将提示词与题图或 PDF 一并发送给大模型。</li>
@@ -475,9 +475,9 @@ export function QuestionCreatePage() {
         </Modal>
       ) : null}
 
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">新建试题 / 试卷导入</h1>
-        <p className="mt-1 text-sm text-muted-foreground">通过表单和分屏渲染编辑单题，或使用 JSON 解析器进行结构化导入。</p>
+      <div className="border-b border-zinc-200 pb-4 dark:border-zinc-800">
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">新建试题 / 试卷导入</h1>
+        <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">通过表单和分屏渲染编辑单题，或使用 JSON 解析器进行结构化导入。</p>
       </div>
 
       <div className="grid items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
@@ -485,10 +485,10 @@ export function QuestionCreatePage() {
           <div className={`${sectionClass} space-y-5 p-5`}>
             <div>
               <h3 className="text-sm font-semibold">录入配置</h3>
-              <p className="mt-0.5 text-xs text-muted-foreground">快速设定录入工作模式</p>
+              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">快速设定录入工作模式</p>
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">创建对象</label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">创建对象</label>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { key: 'single' as const, title: '单道试题', desc: '精细/源码录入', Icon: FileText },
@@ -496,13 +496,13 @@ export function QuestionCreatePage() {
                 ].map(({ key, title, desc, Icon }) => (
                   <button key={key} type="button" onClick={() => setTarget(key)} className={optionButtonClass(target === key)}>
                     <span className="flex items-center justify-between gap-2 text-xs font-bold">{title}<Icon className="size-3.5 opacity-70" /></span>
-                    <span className="mt-1 text-[10px] leading-normal text-muted-foreground">{desc}</span>
+                    <span className={`mt-1 text-[10px] leading-normal ${target === key ? 'text-white/70 dark:text-zinc-950/70' : 'text-zinc-500 dark:text-zinc-400'}`}>{desc}</span>
                   </button>
                 ))}
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">录入方式</label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">录入方式</label>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { key: 'direct' as const, title: '直接录入', desc: target === 'single' ? '表单/源码导入' : '粘贴 JSON 导入', Icon: PencilLine },
@@ -510,7 +510,7 @@ export function QuestionCreatePage() {
                 ].map(({ key, title, desc, Icon }) => (
                   <button key={key} type="button" onClick={() => setMethod(key)} className={optionButtonClass(method === key)}>
                     <span className="flex items-center justify-between gap-2 text-xs font-bold">{title}<Icon className="size-3.5 opacity-70" /></span>
-                    <span className="mt-1 text-[10px] leading-normal text-muted-foreground">{desc}</span>
+                    <span className={`mt-1 text-[10px] leading-normal ${method === key ? 'text-white/70 dark:text-zinc-950/70' : 'text-zinc-500 dark:text-zinc-400'}`}>{desc}</span>
                   </button>
                 ))}
               </div>
@@ -519,12 +519,12 @@ export function QuestionCreatePage() {
 
           {method === 'ai' ? (
             <div className={`${sectionClass} space-y-4 p-5`}>
-              <h4 className="flex items-center gap-2 border-b pb-2.5 text-xs font-bold"><BookOpen className="size-4 text-primary" />AI 转写说明</h4>
-              <ol className="list-decimal space-y-3.5 pl-4 text-xs leading-relaxed text-muted-foreground">
+              <h4 className="flex items-center gap-2 border-b border-zinc-200 pb-2.5 text-xs font-bold dark:border-zinc-800"><BookOpen className="size-4 text-zinc-500" />AI 转写说明</h4>
+              <ol className="list-decimal space-y-3.5 pl-4 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                 <li>复制右侧面板中的专用 OCR 提示词。</li>
                 <li>打开大模型平台，将提示词与试卷图片/PDF 文件一并发送。</li>
                 <li>将模型生成的 JSON 复制回来。</li>
-                <li><button type="button" className="font-bold text-primary underline" onClick={() => setMethod('direct')}>切回直接录入</button>，粘贴 JSON 后导入。</li>
+                <li><button type="button" className="font-bold text-zinc-900 underline dark:text-zinc-50" onClick={() => setMethod('direct')}>切回直接录入</button>，粘贴 JSON 后导入。</li>
               </ol>
             </div>
           ) : null}
@@ -543,7 +543,7 @@ export function QuestionCreatePage() {
               {singleMethod === 'form' ? (
                 <form className="space-y-6" onSubmit={createSingle}>
                   <section className={sectionClass}>
-                    <div className={sectionHeaderClass}><Settings2 className="size-4 text-primary" /><h2 className="text-xs font-bold uppercase tracking-wider">1. 基本属性设定</h2></div>
+                    <div className={sectionHeaderClass}><Settings2 className="size-4 text-zinc-500" /><h2 className="text-xs font-bold uppercase tracking-wider">1. 基本属性设定</h2></div>
                     <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-4">
                       <label className="space-y-1.5"><span className={smallLabelClass}>学段</span><input className={editorInputClass} placeholder="例：高三" value={singleDraft.stage} onChange={(e) => updateDraft({ stage: e.target.value })} /></label>
                       <label className="space-y-1.5"><span className={smallLabelClass}>题型</span><select className={editorInputClass} value={singleDraft.questionType} onChange={(e) => updateDraft({ questionType: e.target.value })}><option value="单选题">单选题</option><option value="多选题">多选题</option><option value="填空题">填空题</option><option value="解答题">解答题</option></select></label>
@@ -553,9 +553,9 @@ export function QuestionCreatePage() {
                   </section>
 
                   <section className={sectionClass}>
-                    <div className="flex items-center justify-between border-b bg-muted/40 px-6 py-3">
-                      <div className="flex items-center gap-2"><PencilLine className="size-4 text-primary" /><h2 className="text-xs font-bold uppercase tracking-wider">2. 题干与选项设定</h2></div>
-                      <div className="flex rounded-lg border bg-muted p-0.5">
+                    <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50 px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900/70">
+                      <div className="flex items-center gap-2"><PencilLine className="size-4 text-zinc-500" /><h2 className="text-xs font-bold uppercase tracking-wider">2. 题干与选项设定</h2></div>
+                      <div className="flex rounded-lg border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-800 dark:bg-zinc-900">
                         <button type="button" onClick={() => setStemTab('edit')} className={miniTabClass(stemTab === 'edit')}>编辑</button>
                         <button type="button" onClick={() => setStemTab('preview')} className={miniTabClass(stemTab === 'preview')}>预览</button>
                       </div>
@@ -563,7 +563,7 @@ export function QuestionCreatePage() {
                     <div className="space-y-4 p-6">
                       <div className="flex flex-wrap gap-1 border-b pb-2">
                         {(['math', 'block', 'frac', 'sqrt', 'alpha', 'theta'] as const).map((type) => (
-                          <button key={type} type="button" onClick={() => insertLatex(type, 'problemText')} className="inline-flex items-center rounded border border-input bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground">
+                          <button key={type} type="button" onClick={() => insertLatex(type, 'problemText')} className="inline-flex items-center rounded border border-zinc-200 bg-white px-2 py-1 font-mono text-[10px] text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100">
                             {type === 'math' ? '$公式$' : type === 'block' ? '$$区块$$' : type === 'frac' ? '\\frac' : type === 'sqrt' ? '\\sqrt' : type === 'alpha' ? '\\alpha' : '\\theta'}
                           </button>
                         ))}
@@ -571,10 +571,10 @@ export function QuestionCreatePage() {
                       {stemTab === 'edit' ? (
                         <textarea ref={problemTextRef} className={`${textareaClass} h-32 font-mono`} placeholder="请输入题目题干 (支持 Markdown & LaTeX)..." value={singleDraft.problemText} onChange={(e) => updateDraft({ problemText: e.target.value })} />
                       ) : (
-                        <div className="min-h-32 rounded-md border border-input bg-transparent p-4 text-sm leading-relaxed">
+                        <div className="min-h-32 rounded-md border border-zinc-200 bg-white p-4 text-sm leading-relaxed dark:border-zinc-800 dark:bg-zinc-950">
                           {singleDraft.problemText.trim() ? (
                             <div className="flex gap-2"><span className="font-bold">{singleDraft.questionNo ? `${singleDraft.questionNo}.` : '1.'}</span><div className="min-w-0 flex-1"><QuestionContent blocks={previewBlocks} /></div></div>
-                          ) : <span className="text-xs italic text-muted-foreground">无内容预览。</span>}
+                          ) : <span className="text-xs italic text-zinc-500 dark:text-zinc-400">无内容预览。</span>}
                         </div>
                       )}
 
@@ -584,7 +584,7 @@ export function QuestionCreatePage() {
                           <div className="grid gap-3 sm:grid-cols-2">
                             {choiceEntries.map((labelText) => (
                               <div key={labelText} className="flex items-center gap-2 rounded-md border p-2">
-                                <button type="button" onClick={() => toggleAnswer(labelText)} aria-pressed={choiceAnswers[labelText]} className={`flex size-4 shrink-0 items-center justify-center rounded border border-input ${choiceAnswers[labelText] ? 'bg-primary text-primary-foreground' : 'bg-background text-transparent hover:bg-accent'}`}><Check className="size-3" /></button>
+                                <button type="button" onClick={() => toggleAnswer(labelText)} aria-pressed={choiceAnswers[labelText]} className={`flex size-4 shrink-0 items-center justify-center rounded border border-zinc-300 dark:border-zinc-700 ${choiceAnswers[labelText] ? 'bg-zinc-950 text-white dark:bg-zinc-50 dark:text-zinc-950' : 'bg-white text-transparent hover:bg-zinc-50 dark:bg-zinc-950 dark:hover:bg-zinc-900'}`}><Check className="size-3" /></button>
                                 <span className="text-xs font-bold">{labelText}</span>
                                 <input className="flex h-8 min-w-0 flex-1 border-0 bg-transparent px-2 text-sm outline-none" placeholder={`选项 ${labelText}`} value={choiceOptions[labelText]} onChange={(e) => setChoiceOptions({ ...choiceOptions, [labelText]: e.target.value })} />
                               </div>
@@ -596,9 +596,9 @@ export function QuestionCreatePage() {
                   </section>
 
                   <section className={sectionClass}>
-                    <div className="flex items-center justify-between border-b bg-muted/40 px-6 py-3">
-                      <div className="flex items-center gap-2"><CheckSquare className="size-4 text-primary" /><h2 className="text-xs font-bold uppercase tracking-wider">3. 答案与解析设定</h2></div>
-                      <div className="flex rounded-lg border bg-muted p-0.5">
+                    <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50 px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900/70">
+                      <div className="flex items-center gap-2"><CheckSquare className="size-4 text-zinc-500" /><h2 className="text-xs font-bold uppercase tracking-wider">3. 答案与解析设定</h2></div>
+                      <div className="flex rounded-lg border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-800 dark:bg-zinc-900">
                         <button type="button" onClick={() => setAnalysisTab('edit')} className={miniTabClass(analysisTab === 'edit')}>编辑</button>
                         <button type="button" onClick={() => setAnalysisTab('preview')} className={miniTabClass(analysisTab === 'preview')}>预览</button>
                       </div>
@@ -610,32 +610,32 @@ export function QuestionCreatePage() {
                           <div className="space-y-1.5">
                             <div className="flex items-center justify-between gap-3">
                               <span className={smallLabelClass}>详细解析 (Markdown & LaTeX)</span>
-                              <div className="flex gap-1.5">{(['math', 'block', 'frac'] as const).map((type) => <button key={type} type="button" onClick={() => insertLatex(type, 'analysisText')} className="rounded border border-input bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground hover:bg-accent hover:text-accent-foreground">{type === 'math' ? '$' : type === 'block' ? '$$' : '\\frac'}</button>)}</div>
+                              <div className="flex gap-1.5">{(['math', 'block', 'frac'] as const).map((type) => <button key={type} type="button" onClick={() => insertLatex(type, 'analysisText')} className="rounded border border-zinc-200 bg-white px-2 py-1 font-mono text-[10px] text-zinc-500 hover:bg-zinc-50 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100">{type === 'math' ? '$' : type === 'block' ? '$$' : '\\frac'}</button>)}</div>
                             </div>
                             <textarea ref={analysisTextRef} className={`${textareaClass} h-32 font-mono`} placeholder="请输入详解步骤..." value={singleDraft.analysisText} onChange={(e) => updateDraft({ analysisText: e.target.value })} />
                           </div>
                         </>
                       ) : (
                         <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2"><span className={smallLabelClass}>参考答案预览</span><div className="min-h-24 rounded-md border border-input bg-transparent p-4 text-sm leading-relaxed">{singleDraft.answerText.trim() ? <QuestionContent blocks={answerPreviewBlocks} /> : <span className="text-xs text-muted-foreground">暂无答案。</span>}</div></div>
-                          <div className="space-y-2"><span className={smallLabelClass}>详细解析预览</span><div className="min-h-24 rounded-md border border-input bg-transparent p-4 text-sm leading-relaxed">{singleDraft.analysisText.trim() ? <QuestionContent blocks={analysisPreviewBlocks} /> : <span className="text-xs text-muted-foreground">暂无解析。</span>}</div></div>
+                          <div className="space-y-2"><span className={smallLabelClass}>参考答案预览</span><div className="min-h-24 rounded-md border border-zinc-200 bg-white p-4 text-sm leading-relaxed dark:border-zinc-800 dark:bg-zinc-950">{singleDraft.answerText.trim() ? <QuestionContent blocks={answerPreviewBlocks} /> : <span className="text-xs text-zinc-500 dark:text-zinc-400">暂无答案。</span>}</div></div>
+                          <div className="space-y-2"><span className={smallLabelClass}>详细解析预览</span><div className="min-h-24 rounded-md border border-zinc-200 bg-white p-4 text-sm leading-relaxed dark:border-zinc-800 dark:bg-zinc-950">{singleDraft.analysisText.trim() ? <QuestionContent blocks={analysisPreviewBlocks} /> : <span className="text-xs text-zinc-500 dark:text-zinc-400">暂无解析。</span>}</div></div>
                         </div>
                       )}
-                      <button type="button" onClick={() => setShowAnswerPreview((v) => !v)} className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground">
+                      <button type="button" onClick={() => setShowAnswerPreview((v) => !v)} className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50">
                         {showAnswerPreview ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}{showAnswerPreview ? '隐藏完整渲染' : '显示完整渲染'}
                       </button>
-                      {showAnswerPreview ? <div className="grid gap-4 rounded-lg border bg-muted/30 p-4 md:grid-cols-2"><div className="space-y-2"><span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Answer Render</span><div className="min-h-24 rounded-md border bg-background p-4 text-sm leading-relaxed">{singleDraft.answerText.trim() ? <QuestionContent blocks={answerPreviewBlocks} /> : <span className="text-muted-foreground">暂无答案。</span>}</div></div><div className="space-y-2"><span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Analysis Render</span><div className="min-h-24 rounded-md border bg-background p-4 text-sm leading-relaxed">{singleDraft.analysisText.trim() ? <QuestionContent blocks={analysisPreviewBlocks} /> : <span className="text-muted-foreground">暂无解析。</span>}</div></div></div> : null}
+                      {showAnswerPreview ? <div className="grid gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60 md:grid-cols-2"><div className="space-y-2"><span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Answer Render</span><div className="min-h-24 rounded-md border border-zinc-200 bg-white p-4 text-sm leading-relaxed dark:border-zinc-800 dark:bg-zinc-950">{singleDraft.answerText.trim() ? <QuestionContent blocks={answerPreviewBlocks} /> : <span className="text-zinc-500 dark:text-zinc-400">暂无答案。</span>}</div></div><div className="space-y-2"><span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Analysis Render</span><div className="min-h-24 rounded-md border border-zinc-200 bg-white p-4 text-sm leading-relaxed dark:border-zinc-800 dark:bg-zinc-950">{singleDraft.analysisText.trim() ? <QuestionContent blocks={analysisPreviewBlocks} /> : <span className="text-zinc-500 dark:text-zinc-400">暂无解析。</span>}</div></div></div> : null}
                     </div>
                   </section>
                   <div className="flex justify-end gap-3"><Button type="button" variant="outline" onClick={() => { setSingleDraft({ questionNo: '', stage: '高三', questionType: '单选题', sourceTitle: '', problemText: '', answerText: '', analysisText: '' }); setChoiceOptions({ A: '', B: '', C: '', D: '' }); setChoiceAnswers({ A: false, B: false, C: false, D: false }) }}>重置表单</Button><Button type="submit" icon={Check}>保存并入库</Button></div>
                 </form>
               ) : (
                 <form className={`${sectionClass} space-y-4 p-5`} onSubmit={createSingleFromJson}>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="flex items-center gap-2 text-sm font-semibold"><Code className="size-4 text-primary" />JSON 单题录入</h2><p className="mt-1 text-xs text-muted-foreground">支持单个题目对象、含 1 道题的 questions 数组或代码块粘贴。</p></div>{'changes' in singleJsonStatus && (singleJsonStatus.changes?.length ?? 0) > 0 ? <Button type="button" variant="outline" size="sm" icon={Check} onClick={applySingleJsonCleanup}>应用修复</Button> : null}</div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="flex items-center gap-2 text-sm font-semibold"><Code className="size-4 text-zinc-500" />JSON 单题录入</h2><p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">支持单个题目对象、含 1 道题的 questions 数组或代码块粘贴。</p></div>{'changes' in singleJsonStatus && (singleJsonStatus.changes?.length ?? 0) > 0 ? <Button type="button" variant="outline" size="sm" icon={Check} onClick={applySingleJsonCleanup}>应用修复</Button> : null}</div>
                   <label className="space-y-1.5"><span className={smallLabelClass}>单题 JSON 代码</span><textarea className={`${textareaClass} h-80 font-mono`} placeholder='{"questionNo":"1","questionType":"单选题",...}' value={singleJsonText} onChange={(e) => setSingleJsonText(e.target.value)} spellCheck={false} /></label>
-                  {singleJsonStatus.status === 'valid' ? <div className="rounded-lg border bg-muted/30 px-4 py-2.5 text-sm text-muted-foreground"><CheckCircle className="mr-2 inline size-4 text-emerald-600" />检查通过，题号 {singleJsonStatus.preview.questionNo || '1'}，可以创建。</div> : null}
-                  {singleJsonStatus.status === 'empty' ? <div className="rounded-lg border bg-muted/30 px-4 py-2.5 text-sm text-muted-foreground">请输入 JSON 格式代码</div> : null}
-                  {singleJsonStatus.status === 'invalid_count' ? <div className="rounded-lg border bg-muted/30 px-4 py-2.5 text-sm text-muted-foreground">当前 JSON 解析到 {singleJsonStatus.count} 道题；单题录入只接受 1 道题。多题请切换到整套试卷。</div> : null}
+                  {singleJsonStatus.status === 'valid' ? <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300"><CheckCircle className="mr-2 inline size-4 text-emerald-600" />检查通过，题号 {singleJsonStatus.preview.questionNo || '1'}，可以创建。</div> : null}
+                  {singleJsonStatus.status === 'empty' ? <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">请输入 JSON 格式代码</div> : null}
+                  {singleJsonStatus.status === 'invalid_count' ? <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">当前 JSON 解析到 {singleJsonStatus.count} 道题；单题录入只接受 1 道题。多题请切换到整套试卷。</div> : null}
                   {singleJsonStatus.status === 'invalid' ? renderJsonError(singleJsonStatus) : null}
                   <div className="flex justify-end"><Button type="submit" icon={Plus} disabled={singleJsonStatus.status !== 'valid'}>解析并保存</Button></div>
                 </form>
@@ -653,23 +653,23 @@ export function QuestionCreatePage() {
 
               <section className="space-y-3">
                 <div className="flex gap-2">
-                  <button type="button" aria-pressed={paperImportSource === 'plain'} onClick={() => setPaperImportSource('plain')} className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${paperImportSource === 'plain' ? 'border-2 border-primary bg-accent text-foreground' : 'border border-input bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}>普通文本导入</button>
-                  <button type="button" aria-pressed={paperImportSource === 'slices'} onClick={() => setPaperImportSource('slices')} className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${paperImportSource === 'slices' ? 'border-2 border-primary bg-accent text-foreground' : 'border border-input bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}>绑定切片导入</button>
+                  <button type="button" aria-pressed={paperImportSource === 'plain'} onClick={() => setPaperImportSource('plain')} className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${paperImportSource === 'plain' ? 'border border-zinc-950 bg-zinc-950 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-950' : 'border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100'}`}>普通文本导入</button>
+                  <button type="button" aria-pressed={paperImportSource === 'slices'} onClick={() => setPaperImportSource('slices')} className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${paperImportSource === 'slices' ? 'border border-zinc-950 bg-zinc-950 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-950' : 'border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100'}`}>绑定切片导入</button>
                 </div>
                 {paperImportSource === 'slices' ? (
                   <div className="space-y-3">
                     <select className={editorInputClass} value={selectedSliceRunId} onChange={(e) => setSelectedSliceRunId(e.target.value)}><option value="">请选择切分批次</option>{selectableSliceRuns.map((run) => <option key={run.runId} value={run.runId}>{(run.paperTitle || run.pdfName || run.runId)} · {run.totalQuestions || run.approvedQuestions || 0} 题</option>)}</select>
-                    {sliceDashboard.loading ? <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">正在加载切分批次...</div> : selectableSliceRuns.length === 0 ? <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">还没有可关联的切分批次。</div> : null}
-                    {selectedSliceRun && slicePairStatus ? <div className="space-y-2"><div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3.5 py-3 text-xs text-muted-foreground">{slicePairStatus.blockingCount > 0 ? <InfoIcon className="size-4 text-amber-600" /> : <CheckCircle className="size-4 text-emerald-600" />}<span>切分题块 {slicePairStatus.itemCount} 个，JSON 题目 {slicePairStatus.jsonCount} 道{slicePairStatus.blockingCount > 0 ? `，${slicePairStatus.blockingCount} 处需要处理。` : '，可以按顺序绑定。'}{slicePairStatus.pendingReviewCount > 0 ? ` 另有 ${slicePairStatus.pendingReviewCount} 个题块尚未标记为复核通过。` : ''}</span></div><div className="overflow-hidden rounded-lg border"><div className="grid grid-cols-[52px_88px_88px_minmax(0,1fr)_80px] gap-2 border-b bg-muted/40 px-3 py-2 text-[10px] font-semibold text-muted-foreground"><span>顺序</span><span>题块题号</span><span>JSON 题号</span><span>题干预览</span><span>状态</span></div><div className="max-h-56 divide-y overflow-y-auto">{slicePairStatus.rows.map((row) => <div key={row.index} className="grid grid-cols-[52px_88px_88px_minmax(0,1fr)_80px] gap-2 px-3 py-2 text-xs"><span className="font-mono text-muted-foreground">{row.index + 1}</span><span className="truncate">{row.item ? row.sliceNo : '缺题块'}</span><span className="truncate">{row.preview ? row.jsonNo : '缺 JSON'}</span><span className="line-clamp-1 min-w-0">{row.preview?.problemText || '题干为空'}</span><span className={row.status === 'ok' ? 'text-emerald-600' : 'text-amber-600'}>{row.status === 'ok' ? '通过' : row.status === 'mismatch' ? '题号冲突' : row.status === 'missing_slice' ? '缺题块' : '缺 JSON'}</span></div>)}</div></div></div> : null}
+                    {sliceDashboard.loading ? <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">正在加载切分批次...</div> : selectableSliceRuns.length === 0 ? <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">还没有可关联的切分批次。</div> : null}
+                    {selectedSliceRun && slicePairStatus ? <div className="space-y-2"><div className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3.5 py-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">{slicePairStatus.blockingCount > 0 ? <InfoIcon className="size-4 text-amber-600" /> : <CheckCircle className="size-4 text-emerald-600" />}<span>切分题块 {slicePairStatus.itemCount} 个，JSON 题目 {slicePairStatus.jsonCount} 道{slicePairStatus.blockingCount > 0 ? `，${slicePairStatus.blockingCount} 处需要处理。` : '，可以按顺序绑定。'}{slicePairStatus.pendingReviewCount > 0 ? ` 另有 ${slicePairStatus.pendingReviewCount} 个题块尚未标记为复核通过。` : ''}</span></div><div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800"><div className="grid grid-cols-[52px_88px_88px_minmax(0,1fr)_80px] gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[10px] font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400"><span>顺序</span><span>题块题号</span><span>JSON 题号</span><span>题干预览</span><span>状态</span></div><div className="max-h-56 divide-y divide-zinc-200 overflow-y-auto dark:divide-zinc-800">{slicePairStatus.rows.map((row) => <div key={row.index} className="grid grid-cols-[52px_88px_88px_minmax(0,1fr)_80px] gap-2 px-3 py-2 text-xs"><span className="font-mono text-zinc-500 dark:text-zinc-400">{row.index + 1}</span><span className="truncate">{row.item ? row.sliceNo : '缺题块'}</span><span className="truncate">{row.preview ? row.jsonNo : '缺 JSON'}</span><span className="line-clamp-1 min-w-0">{row.preview?.problemText || '题干为空'}</span><span className={row.status === 'ok' ? 'text-emerald-600' : 'text-amber-600'}>{row.status === 'ok' ? '通过' : row.status === 'mismatch' ? '题号冲突' : row.status === 'missing_slice' ? '缺题块' : '缺 JSON'}</span></div>)}</div></div></div> : null}
                   </div>
                 ) : null}
               </section>
 
               <section className="space-y-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><h4 className="flex items-center gap-2 text-xs font-medium"><Code className="size-4 text-muted-foreground" />试卷 JSON 数组内容</h4><div className="flex gap-2"><Button type="button" variant="outline" size="sm" icon={RefreshCcw} onClick={cleanPaperJsonBackslashes}>清洗反斜杠</Button>{'changes' in paperJsonStatus && (paperJsonStatus.changes?.length ?? 0) > 0 ? <Button type="button" variant="outline" size="sm" icon={Check} onClick={applyPaperJsonCleanup}>应用修复</Button> : null}</div></div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><h4 className="flex items-center gap-2 text-xs font-medium"><Code className="size-4 text-zinc-500" />试卷 JSON 数组内容</h4><div className="flex gap-2"><Button type="button" variant="outline" size="sm" icon={RefreshCcw} onClick={cleanPaperJsonBackslashes}>清洗反斜杠</Button>{'changes' in paperJsonStatus && (paperJsonStatus.changes?.length ?? 0) > 0 ? <Button type="button" variant="outline" size="sm" icon={Check} onClick={applyPaperJsonCleanup}>应用修复</Button> : null}</div></div>
                 <textarea className={`${textareaClass} h-60 font-mono`} placeholder='{"questions": [...]}' value={paperDraft.jsonText} onChange={(e) => setPaperDraft({ ...paperDraft, jsonText: e.target.value })} spellCheck={false} />
-                {paperJsonStatus.status === 'empty' ? <div className="rounded-lg border bg-muted/30 px-4 py-2.5 text-sm text-muted-foreground">请输入符合 JSON 格式的 questions 数组</div> : null}
-                {paperJsonStatus.status === 'valid' ? <div className="space-y-3"><div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-4 py-2.5 text-sm text-muted-foreground"><CheckCircle className="size-4 text-emerald-600" />JSON 语法解析成功，共检测到 <strong>{paperJsonStatus.count}</strong> 道题目。{paperJsonStatus.issueCount > 0 ? `其中 ${paperJsonStatus.issueCount} 项需要注意。` : '字段完整，可以确认导入。'}</div><div className="overflow-hidden rounded-lg border"><div className="grid grid-cols-[56px_minmax(0,1.5fr)_72px_72px_96px] gap-2 border-b bg-muted/40 px-3 py-2 text-[10px] font-semibold text-muted-foreground"><span>题号</span><span>题干预览</span><span>答案</span><span>解析</span><span>状态</span></div><div className="max-h-72 divide-y overflow-y-auto">{paperJsonStatus.previews.map((item) => <div key={`${item.index}-${item.questionNo}`} className="grid grid-cols-[56px_minmax(0,1.5fr)_72px_72px_96px] gap-2 px-3 py-2 text-xs"><span className="font-mono text-muted-foreground">{item.questionNo}</span><span className="line-clamp-2 min-w-0">{item.problemText || '题干为空'}</span><span className={item.answerText.trim() ? 'text-muted-foreground' : 'text-amber-600'}>{item.answerText.trim() ? '有' : '缺失'}</span><span className={item.analysisText.trim() ? 'text-muted-foreground' : 'text-amber-600'}>{item.analysisText.trim() ? '有' : '缺失'}</span><span className={item.issues.length || item.needsHumanReview ? 'text-amber-600' : 'text-emerald-600'}>{item.needsHumanReview ? '需复核' : item.issues[0] || '可导入'}</span></div>)}</div></div></div> : null}
+                {paperJsonStatus.status === 'empty' ? <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">请输入符合 JSON 格式的 questions 数组</div> : null}
+                {paperJsonStatus.status === 'valid' ? <div className="space-y-3"><div className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300"><CheckCircle className="size-4 text-emerald-600" />JSON 语法解析成功，共检测到 <strong>{paperJsonStatus.count}</strong> 道题目。{paperJsonStatus.issueCount > 0 ? `其中 ${paperJsonStatus.issueCount} 项需要注意。` : '字段完整，可以确认导入。'}</div><div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800"><div className="grid grid-cols-[56px_minmax(0,1.5fr)_72px_72px_96px] gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[10px] font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400"><span>题号</span><span>题干预览</span><span>答案</span><span>解析</span><span>状态</span></div><div className="max-h-72 divide-y divide-zinc-200 overflow-y-auto dark:divide-zinc-800">{paperJsonStatus.previews.map((item) => <div key={`${item.index}-${item.questionNo}`} className="grid grid-cols-[56px_minmax(0,1.5fr)_72px_72px_96px] gap-2 px-3 py-2 text-xs"><span className="font-mono text-zinc-500 dark:text-zinc-400">{item.questionNo}</span><span className="line-clamp-2 min-w-0">{item.problemText || '题干为空'}</span><span className={item.answerText.trim() ? 'text-zinc-500 dark:text-zinc-400' : 'text-amber-600'}>{item.answerText.trim() ? '有' : '缺失'}</span><span className={item.analysisText.trim() ? 'text-zinc-500 dark:text-zinc-400' : 'text-amber-600'}>{item.analysisText.trim() ? '有' : '缺失'}</span><span className={item.issues.length || item.needsHumanReview ? 'text-amber-600' : 'text-emerald-600'}>{item.needsHumanReview ? '需复核' : item.issues[0] || '可导入'}</span></div>)}</div></div></div> : null}
                 {paperJsonStatus.status === 'invalid' ? renderJsonError(paperJsonStatus) : null}
                 {paperJsonStatus.status === 'empty_array' ? <div className="flex items-center gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3.5 py-3 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200"><InfoIcon className="size-4" />{paperJsonStatus.error}</div> : null}
               </section>
@@ -681,17 +681,17 @@ export function QuestionCreatePage() {
           {method === 'ai' ? (
             <div className={`${sectionClass} space-y-4 p-5`}>
               <div className="flex items-start justify-between gap-4">
-                <div><h3 className="text-sm font-semibold">AI 智能录入提示词 (OCR)</h3><p className="mt-1 text-xs text-muted-foreground">复制提示词，配合大模型把 OCR 文本转成标准 JSON；只做转写，不补写、不分类、不改题意。</p></div>
+                <div><h3 className="text-sm font-semibold">AI 智能录入提示词 (OCR)</h3><p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">复制提示词，配合大模型把 OCR 文本转成标准 JSON；只做转写，不补写、不分类、不改题意。</p></div>
                 <Button type="button" variant="outline" size="sm" icon={copied ? Check : Copy} onClick={copyPrompt}>{copied ? '已复制' : '复制提示词'}</Button>
               </div>
-              <div className="rounded-lg border bg-muted/40">
-                <div className="border-b px-4 py-2">
-                  <span className="font-mono text-[10px] font-semibold text-muted-foreground">ocr_prompt.md</span>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
+                <div className="border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+                  <span className="font-mono text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">ocr_prompt.md</span>
                 </div>
-                <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed text-foreground select-all">{activeAiPrompt}</pre>
+                <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed text-zinc-950 select-all dark:text-zinc-50">{activeAiPrompt}</pre>
               </div>
-              <div className="flex flex-wrap items-center gap-2 px-1 py-0.5"><span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">快速打开 AI 平台：</span>{[['Gemini', 'https://gemini.google.com'], ['ChatGPT', 'https://chatgpt.com'], ['Claude', 'https://claude.ai'], ['QwenStudio', 'https://chat.qwen.ai/'], ['豆包', 'https://www.doubao.com']].map(([label, href]) => <a key={label} href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center rounded-md border border-input bg-background px-3 py-1 text-xs font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground">{label}</a>)}</div>
-              <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground"><FileText className="mt-0.5 size-4 shrink-0" /><div><span className="font-bold">提示：</span>把此提示词与你的试卷图片或 PDF 文件一并发送给大模型，然后复制输出的 JSON，再切回本页面的 <button type="button" className="font-bold underline" onClick={() => setMethod('direct')}>直接录入</button> 即可。</div></div>
+              <div className="flex flex-wrap items-center gap-2 px-1 py-0.5"><span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">快速打开 AI 平台：</span>{[['Gemini', 'https://gemini.google.com'], ['ChatGPT', 'https://chatgpt.com'], ['Claude', 'https://claude.ai'], ['QwenStudio', 'https://chat.qwen.ai/'], ['豆包', 'https://www.doubao.com']].map(([label, href]) => <a key={label} href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center rounded-md border border-zinc-200 bg-white px-3 py-1 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50">{label}</a>)}</div>
+              <div className="flex items-start gap-2.5 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300"><FileText className="mt-0.5 size-4 shrink-0" /><div><span className="font-bold">提示：</span>把此提示词与你的试卷图片或 PDF 文件一并发送给大模型，然后复制输出的 JSON，再切回本页面的 <button type="button" className="font-bold underline" onClick={() => setMethod('direct')}>直接录入</button> 即可。</div></div>
             </div>
           ) : null}
         </div>
