@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { db } from '../../db/connection.js'
 import { nowIso, createId } from '../../utils/ids.js'
 import { parseJson } from '../../utils/json.js'
@@ -16,7 +17,26 @@ import { getQuestion, mapQuestion, createQuestion } from '../../db/questions.js'
 import { getRun, updateBatchWorkflow } from '../../db/runs.js'
 import { getReviewItems, syncReviewRunCounts } from '../../db/review.js'
 import { getCollection, refreshCollectionScore } from '../../db/collections.js'
-import { figuresForImportedOcrResult } from '../../utils/figure-helpers.js'
+import { figuresForImportedOcrResult, figuresForSolutionItem } from '../../utils/figure-helpers.js'
+import { resolveStoragePath } from '../../utils/paths.js'
+
+function mergeImportedFigures(...groups: Array<Array<Record<string, unknown>>>) {
+  const merged: Array<Record<string, unknown>> = []
+  const seen = new Set<string>()
+  for (const figure of groups.flat()) {
+    const figurePath = stripAssetPrefix(String(figure.path || ''))
+    if (!figurePath || !fs.existsSync(resolveStoragePath(figurePath))) continue
+    const key = [
+      String(figure.usage || figure.category || ''),
+      figurePath,
+      JSON.stringify(figure.bbox || {}),
+    ].join('|')
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push({ ...figure, path: figurePath })
+  }
+  return merged
+}
 
 /**
  * Import JSON-format questions from a slice run.  Validates that the number
@@ -83,6 +103,12 @@ export function importJsonQuestionsFromSliceRun(
   const now = nowIso()
   const collectionId = options.createCollection === false ? '' : createId('paper', sourceTitle)
   const created: Array<Record<string, unknown>> = []
+  const solutionRows = db.prepare('SELECT * FROM pdf_slicer_solution_items WHERE source_run_id = ? ORDER BY created_at ASC').all(runId) as Array<Record<string, unknown>>
+  const solutionsByNo = new Map<string, Record<string, unknown>>()
+  for (const solution of solutionRows) {
+    const key = comparableQuestionNo(solution.question_no)
+    if (key && !solutionsByNo.has(key)) solutionsByNo.set(key, solution)
+  }
 
   const insertCollectionItem = db.prepare(`
     INSERT OR IGNORE INTO question_bank_collection_items
@@ -107,6 +133,10 @@ export function importJsonQuestionsFromSliceRun(
       const stemMarkdown = String(question.problem_text || question.stemMarkdown || question.problemText || '')
       const answerText = String(question.answer || question.answerText || '')
       const analysisMarkdown = String(question.analysis || question.analysisMarkdown || question.analysisText || '')
+      const stemFigures = figuresForImportedOcrResult({ id: reviewItem.resultId, image_path: reviewItem.autoImagePath, figures: question.figures }, runId)
+      const solution = solutionsByNo.get(comparableQuestionNo(reviewItem.questionLabel || questionNo))
+      const solutionFigures = solution ? figuresForSolutionItem(solution, reviewItem.resultId) : []
+      const figures = mergeImportedFigures(stemFigures, solutionFigures)
       const knowledgePoints = normalizeTags(
         (question as Record<string, unknown>).knowledge_points ??
           (question as Record<string, unknown>).knowledgePoints,
@@ -138,7 +168,7 @@ export function importJsonQuestionsFromSliceRun(
         answerText,
         analysisMarkdown,
         sliceImagePath: stripAssetPrefix(reviewItem.autoImagePath || reviewItem.pageImagePath || ''),
-        figures: figuresForImportedOcrResult({ id: reviewItem.resultId, image_path: reviewItem.autoImagePath, figures: question.figures }, runId),
+        figures,
         sourceRunId: runId,
         needsFormatReview: review,
         formatIssue: review

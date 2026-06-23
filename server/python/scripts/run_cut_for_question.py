@@ -13,7 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.cutter.crop_questions import crop_question_images, detect_figures, infer_question_slices, render_page_images, summarize_graphic_candidates
-from src.cutter.detect_questions import detect_question_anchors
+from src.cutter.detect_questions import detect_question_anchors, detect_solution_anchors
 from src.cutter.render_pdf import extract_answer_summaries, load_document
 from src.cutter.rules import compute_rules_hash, load_rules, validate_rules_data
 
@@ -41,6 +41,7 @@ def main() -> None:
 
     failed_pdfs: list[dict] = []
     results: list[dict] = []
+    solution_results: list[dict] = []
     page_image_map: dict[str, list[Path]] = {}
     total_pages = 0
     diagnostics: dict = {}
@@ -80,15 +81,27 @@ def main() -> None:
             item.figures = detect_figures(document, item)
         slices = crop_question_images(slices, auto_cuts_dir, dpi=args.dpi)
         results = build_results(slices, page_image_map, asset_root)
+        solution_anchors = detect_solution_anchors(document, rules=slicer_rules)
+        solution_slices = infer_question_slices(document, solution_anchors, rules=slicer_rules)
+        for item in solution_slices:
+            item.answer_summary = answer_summaries.get(item.question_id)
+            item.figures = detect_figures(document, item)
+        solution_slices = crop_question_images(solution_slices, auto_cuts_dir / "solutions", dpi=args.dpi)
+        solution_results = build_results(solution_slices, page_image_map, asset_root, id_prefix="SOL")
+        for item in solution_results:
+            item["answer_text"] = answer_summaries.get(str(item.get("question_no") or ""), "")
+            item["analysis_markdown"] = item.get("note", "")
     except Exception as exc:
         failed_pdfs.append({"pdf_name": pdf_path.name, "reason": str(exc), "traceback": traceback.format_exc()})
 
     payload = {
         "results": results,
+        "solution_results": solution_results,
         "summary": {
             "processed_pdf_count": 1,
             "rendered_page_count": total_pages,
             "cut_question_count": len(results),
+            "solution_question_count": len(solution_results),
             "failed_pdfs": failed_pdfs,
             "output_paths": {
                 "pages": str(pages_dir),
@@ -104,10 +117,10 @@ def main() -> None:
         sys.exit(1)
 
 
-def build_results(slices: list, page_image_map: dict[str, list[Path]], asset_root: Path) -> list[dict]:
+def build_results(slices: list, page_image_map: dict[str, list[Path]], asset_root: Path, id_prefix: str = "CUT") -> list[dict]:
     results: list[dict] = []
     for index, item in enumerate(slices):
-        cut_id = f"CUT_{index + 1:04d}"
+        cut_id = f"{id_prefix}_{index + 1:04d}"
         page_paths = page_image_map.get(str(item.source_pdf), [])
         page = item.page_number
         segments = [

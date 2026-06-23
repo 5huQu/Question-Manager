@@ -142,22 +142,20 @@ type ReviewRow = {
   segments_json: string
   text_regions_json: string
   figures_json: string
+  glm_figure_bindings_json: string
   review_status: string
   note: string
   created_at: string
   updated_at: string
 }
 
-export function reviewFigurePixelBBox(reviewRow: ReviewRow | undefined, figure: Record<string, any>, imagePath: string) {
-  if (!reviewRow || !fs.existsSync(imagePath)) return figure.bbox || {}
-  const rawSegments = parseJson<Array<Record<string, any>>>(reviewRow.segments_json || '[]', [])
-  const fallbackBBox = parseJson<Record<string, any>>(reviewRow.bbox_json || '{}', {})
-  const sourceSegments = rawSegments.length ? rawSegments : [{ page_number: reviewRow.page_start, bbox: fallbackBBox }]
+export function figurePixelBBoxForSegments(sourceSegments: Array<Record<string, any>>, fallbackPage: number, figure: Record<string, any>, imagePath: string) {
+  if (!fs.existsSync(imagePath)) return figure.bbox || {}
   const segments = sourceSegments
     .map((segment) => {
       const bbox = segment.bbox && typeof segment.bbox === 'object' ? expandedReviewBBox(segment.bbox) : null
       return bbox && bbox.width > 0 && bbox.height > 0
-        ? { pageNumber: Number(segment.page_number ?? segment.pageNumber ?? reviewRow.page_start), bbox }
+        ? { pageNumber: Number(segment.page_number ?? segment.pageNumber ?? fallbackPage), bbox }
         : null
     })
     .filter(Boolean) as Array<{ pageNumber: number; bbox: { x: number; y: number; width: number; height: number } }>
@@ -172,7 +170,7 @@ export function reviewFigurePixelBBox(reviewRow: ReviewRow | undefined, figure: 
     return current
   })
   const figureBBox = figure.bbox
-  const pageNumber = Number(figure.page_number ?? figure.pageNumber ?? reviewRow.page_start)
+  const pageNumber = Number(figure.page_number ?? figure.pageNumber ?? fallbackPage)
   const segment = offsets.find((entry) => {
     const left = entry.bbox
     const right = figureBBox
@@ -188,6 +186,14 @@ export function reviewFigurePixelBBox(reviewRow: ReviewRow | undefined, figure: 
     width: (Number(figureBBox.width || 0) / maxWidth) * size.width,
     height: (Number(figureBBox.height || 0) / Math.max(totalHeight, 1)) * size.height,
   }
+}
+
+export function reviewFigurePixelBBox(reviewRow: ReviewRow | undefined, figure: Record<string, any>, imagePath: string) {
+  if (!reviewRow) return figure.bbox || {}
+  const rawSegments = parseJson<Array<Record<string, any>>>(reviewRow.segments_json || '[]', [])
+  const fallbackBBox = parseJson<Record<string, any>>(reviewRow.bbox_json || '{}', {})
+  const sourceSegments = rawSegments.length ? rawSegments : [{ page_number: reviewRow.page_start, bbox: fallbackBBox }]
+  return figurePixelBBoxForSegments(sourceSegments, reviewRow.page_start, figure, imagePath)
 }
 
 export function reviewFigureDefaultUsage(reviewRow: ReviewRow | undefined, figure: Record<string, any>) {
@@ -256,6 +262,16 @@ export function loadCutResultRecord(runId: string, resultId: string): Record<str
   return payload.results?.find((item) => String(item.id || '') === cutId || String(item.question_no || '') === cutId) || null
 }
 
+export function loadSolutionCutResultRecord(runId: string, resultId: string): Record<string, any> | null {
+  const run = getRun(runId)
+  if (!run) return null
+  const cutId = String(resultId || '').match(/SOL_\d+/)?.[0] || resultId.split('_').pop() || ''
+  const cutPath = path.join(resolveStoragePath(run.runDir), 'output', 'cut_results.json')
+  if (!fs.existsSync(cutPath)) return null
+  const payload = parseJson<{ solution_results?: Array<Record<string, any>> }>(fs.readFileSync(cutPath, 'utf8'), { solution_results: [] })
+  return payload.solution_results?.find((item) => String(item.id || '') === cutId || String(item.question_no || '') === cutId) || null
+}
+
 function normalizedRectangle(value: Record<string, any>, sourceIsPdfPoints = false) {
   const x = Number(value.x ?? value.x0 ?? 0)
   const y = Number(value.y ?? value.y0 ?? 0)
@@ -271,10 +287,51 @@ function rectanglesOverlap(left: ReturnType<typeof normalizedRectangle>, right: 
     left.y < right.y + right.height && right.y < left.y + left.height
 }
 
+function isFormulaSuspectFigure(figure: Record<string, any>) {
+  return Boolean(figure.formula_suspect ?? figure.formulaSuspect)
+}
+
+function isManualFigure(figure: Record<string, any>) {
+  return String(figure.origin || '') === 'manual'
+}
+
+function glmFigureMatchesConfirmedReviewFigure(reviewRow: ReviewRow, figure: Record<string, any>) {
+  const figureId = String(figure.id || '')
+  if (!figureId) return false
+  const binding = parseJson<Record<string, any>>(reviewRow.glm_figure_bindings_json || '{}', {})
+  const matchedReviewIds = new Set(
+    (Array.isArray(binding.bindings) ? binding.bindings : [])
+      .filter((entry) => String(entry?.glm_figure_id || '') === figureId && String(entry?.status || '') === 'matched')
+      .map((entry) => String(entry.review_figure_id || ''))
+      .filter(Boolean),
+  )
+  if (!matchedReviewIds.size) return false
+  const reviewFigures = parseJson<Array<Record<string, any>>>(reviewRow.figures_json || '[]', [])
+  return reviewFigures.some((reviewFigure) =>
+    matchedReviewIds.has(String(reviewFigure.id || '')) &&
+    (!isFormulaSuspectFigure(reviewFigure) || isManualFigure(reviewFigure)),
+  )
+}
+
+function glmFigureIsBoundToReviewFigure(reviewRow: ReviewRow, figure: Record<string, any>) {
+  const figureId = String(figure.id || '')
+  if (!figureId) return false
+  const binding = parseJson<Record<string, any>>(reviewRow.glm_figure_bindings_json || '{}', {})
+  return (Array.isArray(binding.bindings) ? binding.bindings : []).some((entry) =>
+    String(entry?.glm_figure_id || '') === figureId && String(entry?.status || '') === 'matched',
+  )
+}
+
 // GLM reports every image found on each parsed page.  A page can contain
 // several questions, so page membership alone must not become figure binding.
 function figureBelongsToReview(reviewRow: ReviewRow | undefined, figure: Record<string, any>) {
-  if (String(figure.origin || '') !== 'glm_ocr' || !reviewRow) return true
+  if (isFormulaSuspectFigure(figure) && !isManualFigure(figure)) return false
+  if (String(figure.origin || '') !== 'glm_ocr') return true
+  if (!reviewRow) return false
+  // A GLM block matched to a reviewer crop is evidence for that crop, not a
+  // second diagram. Keep the binding in diagnostics but render only the
+  // editable reviewer-owned image.
+  if (glmFigureIsBoundToReviewFigure(reviewRow, figure)) return false
   const figureBox = normalizedRectangle(figure.bbox || {})
   if (figureBox.width <= 0 || figureBox.height <= 0) return false
   const figurePage = Number(figure.pageNumber ?? figure.page_number ?? 0)
@@ -282,16 +339,45 @@ function figureBelongsToReview(reviewRow: ReviewRow | undefined, figure: Record<
   const candidates = segments.length
     ? segments
     : [{ page_number: reviewRow.page_start, bbox: parseJson<Record<string, any>>(reviewRow.bbox_json || '{}', {}) }]
-  return candidates.some((segment) =>
+  const overlapsReviewSegment = candidates.some((segment) =>
     Number(segment.page_number ?? segment.pageNumber ?? reviewRow.page_start) === figurePage &&
     rectanglesOverlap(figureBox, normalizedRectangle(segment.bbox || {}, true)),
   )
+  return overlapsReviewSegment && glmFigureMatchesConfirmedReviewFigure(reviewRow, figure)
 }
 
 export function sliceImagePathForOcrResult(result: Record<string, any>, runId: string) {
   const reviewRow = db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ? AND result_id = ?')
     .get(runId, String(result.id || '')) as ReviewRow | undefined
   return stripAssetPrefix(String(result.image_path || reviewRow?.auto_image_path || reviewRow?.page_image_path || ''))
+}
+
+function sourceImagePathForOcrResult(result: Record<string, any>, reviewRow?: ReviewRow) {
+  const isSolution = String(result.ocr_record_kind || '') === 'solution'
+  return stripAssetPrefix(String(
+    isSolution
+      ? (result.solution_image_path || result.image_path || result.reviewed_image_path || result.auto_image_path)
+      : (result.problem_image_path || result.image_path || result.reviewed_image_path || result.auto_image_path) ||
+    reviewRow?.auto_image_path ||
+    reviewRow?.page_image_path ||
+    '',
+  ))
+}
+
+function providerFigureWithExistingAsset(figure: Record<string, any>, figureId: string) {
+  const providerAssetOrigin = String(figure.origin || '')
+  const providerAssetPath = providerAssetOrigin === 'doc2x_v3' || providerAssetOrigin === 'glm_ocr' ? stripAssetPrefix(String(figure.path || '')) : ''
+  if (!providerAssetPath || !fs.existsSync(resolveStoragePath(providerAssetPath))) return null
+  const usage = String(figure.usage || figure.category || 'stem')
+  return {
+    ...figure,
+    id: figureId,
+    origin: providerAssetOrigin,
+    usage,
+    category: String(figure.category || figure.usage || usage),
+    pageNumber: Number(figure.pageNumber ?? figure.page_number ?? 1),
+    path: providerAssetPath,
+  }
 }
 
 /**
@@ -304,29 +390,20 @@ export function figuresForImportedOcrResult(result: Record<string, any>, runId: 
   const reviewFigures = reviewRow ? parseJson<Array<Record<string, any>>>(reviewRow.figures_json || '[]', []) : []
   const sourceFigures = (Array.isArray(result.figures) && result.figures.length ? result.figures : reviewFigures)
     .filter((figure) => figureBelongsToReview(reviewRow, figure))
-  const sourceRel = stripAssetPrefix(String(result.image_path || reviewRow?.auto_image_path || ''))
+  const sourceRel = sourceImagePathForOcrResult(result, reviewRow)
   const sourceAbs = sourceRel ? resolveStoragePath(sourceRel) : ''
   return sourceFigures.map((figure, index) => {
     const figureId = normalizedFigureId(figure.id, index)
-    const providerAssetOrigin = String(figure.origin || '')
-    const providerAssetPath = providerAssetOrigin === 'doc2x_v3' || providerAssetOrigin === 'glm_ocr' ? stripAssetPrefix(String(figure.path || '')) : ''
-    if (providerAssetPath && fs.existsSync(resolveStoragePath(providerAssetPath))) {
-      const usage = String(figure.usage || figure.category || 'stem')
-      return {
-        ...figure,
-        id: figureId,
-        origin: providerAssetOrigin,
-        usage,
-        category: String(figure.category || figure.usage || usage),
-        pageNumber: Number(figure.pageNumber ?? figure.page_number ?? 1),
-        path: providerAssetPath,
-      }
-    }
+    const providerFigure = providerFigureWithExistingAsset(figure, figureId)
+    if (providerFigure) return providerFigure
     const outputRel = path.join('data', 'question_figures', String(result.id), `${figureId}.png`)
     const outputAbs = resolveStoragePath(outputRel)
     const sourceBBox = figure.bbox || {}
+    const resultSegments = Array.isArray(result.segments) ? result.segments : (Array.isArray(result.reviewed_segments) ? result.reviewed_segments : [])
     const pixelBBox = sourceAbs && fs.existsSync(sourceAbs)
-      ? reviewFigurePixelBBox(reviewRow, figure, sourceAbs)
+      ? reviewRow
+        ? reviewFigurePixelBBox(reviewRow, figure, sourceAbs)
+        : figurePixelBBoxForSegments(resultSegments, Number(result.page || figure.page_number || figure.pageNumber || 1), figure, sourceAbs)
       : sourceBBox
     if (sourceAbs && fs.existsSync(sourceAbs)) {
       cropFigureImage(sourceAbs, outputAbs, pixelBBox)
@@ -351,27 +428,67 @@ export async function figuresForImportedOcrResultAsync(result: Record<string, an
   const reviewRow = db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ? AND result_id = ?').get(runId, String(result.id || '')) as ReviewRow | undefined
   const reviewFigures = reviewRow ? parseJson<Array<Record<string, any>>>(reviewRow.figures_json || '[]', []) : []
   const sourceFigures = (Array.isArray(result.figures) && result.figures.length ? result.figures : reviewFigures).filter((figure) => figureBelongsToReview(reviewRow, figure))
-  const sourceRel = stripAssetPrefix(String(result.image_path || reviewRow?.auto_image_path || ''))
+  const sourceRel = sourceImagePathForOcrResult(result, reviewRow)
   const sourceAbs = sourceRel ? resolveStoragePath(sourceRel) : ''
   const figures: Array<Record<string, any>> = []
   for (const [index, figure] of sourceFigures.entries()) {
     const figureId = normalizedFigureId(figure.id, index)
-    const providerAssetOrigin = String(figure.origin || '')
-    const providerAssetPath = providerAssetOrigin === 'doc2x_v3' || providerAssetOrigin === 'glm_ocr' ? stripAssetPrefix(String(figure.path || '')) : ''
-    if (providerAssetPath && fs.existsSync(resolveStoragePath(providerAssetPath))) {
-      const usage = String(figure.usage || figure.category || 'stem')
-      figures.push({ ...figure, id: figureId, origin: providerAssetOrigin, usage, category: String(figure.category || figure.usage || usage), pageNumber: Number(figure.pageNumber ?? figure.page_number ?? 1), path: providerAssetPath })
+    const providerFigure = providerFigureWithExistingAsset(figure, figureId)
+    if (providerFigure) {
+      figures.push(providerFigure)
       continue
     }
     const outputRel = path.join('data', 'question_figures', String(result.id), `${figureId}.png`)
     const outputAbs = resolveStoragePath(outputRel)
     const sourceBBox = figure.bbox || {}
-    const pixelBBox = sourceAbs && fs.existsSync(sourceAbs) ? reviewFigurePixelBBox(reviewRow, figure, sourceAbs) : sourceBBox
+    const resultSegments = Array.isArray(result.segments) ? result.segments : (Array.isArray(result.reviewed_segments) ? result.reviewed_segments : [])
+    const pixelBBox = sourceAbs && fs.existsSync(sourceAbs)
+      ? reviewRow
+        ? reviewFigurePixelBBox(reviewRow, figure, sourceAbs)
+        : figurePixelBBoxForSegments(resultSegments, Number(result.page || figure.page_number || figure.pageNumber || 1), figure, sourceAbs)
+      : sourceBBox
     if (sourceAbs && fs.existsSync(sourceAbs)) await cropFigureImageAsync(sourceAbs, outputAbs, pixelBBox)
     const usage = String(figure.usage || figure.category || reviewFigureDefaultUsage(reviewRow, figure))
     figures.push({ ...figure, id: figureId, origin: figure.origin || 'review_crop', usage, category: String(figure.category || figure.usage || usage), pageNumber: Number(figure.pageNumber ?? figure.page_number ?? 1), reviewBBox: sourceBBox, bbox: pixelBBox, sourcePath: sourceRel, path: fs.existsSync(outputAbs) ? outputRel : String(figure.path || '') })
   }
   return figures
+}
+
+export function figuresForSolutionItem(solution: Record<string, any>, targetQuestionId: string) {
+  const sourceRel = stripAssetPrefix(String(solution.source_image_path || solution.image_path || ''))
+  const sourceAbs = sourceRel ? resolveStoragePath(sourceRel) : ''
+  const sourceFigures = parseJson<Array<Record<string, any>>>(String(solution.figures_json || '[]'), [])
+    .filter((figure) => figureBelongsToReview(undefined, figure))
+  return sourceFigures.map((figure, index) => {
+    const figureId = normalizedFigureId(`${solution.id || 'solution'}_${figure.id || index + 1}`, index)
+    const providerFigure = providerFigureWithExistingAsset(figure, figureId)
+    if (providerFigure) return { ...providerFigure, usage: 'analysis', category: 'analysis' }
+    const existingPath = stripAssetPrefix(String(figure.path || ''))
+    if (existingPath && fs.existsSync(resolveStoragePath(existingPath))) {
+      return { ...figure, id: figureId, usage: 'analysis', category: 'analysis', path: existingPath }
+    }
+    const outputRel = path.join('data', 'question_figures', targetQuestionId, `${figureId}.png`)
+    const outputAbs = resolveStoragePath(outputRel)
+    const sourceBBox = figure.bbox || {}
+    const cutRecord = loadSolutionCutResultRecord(String(solution.source_run_id || ''), String(solution.id || ''))
+    const cutSegments = Array.isArray(cutRecord?.segments) ? cutRecord.segments : []
+    const pixelBBox = sourceAbs && fs.existsSync(sourceAbs)
+      ? figurePixelBBoxForSegments(cutSegments, Number(cutRecord?.page || figure.page_number || figure.pageNumber || 1), figure, sourceAbs)
+      : sourceBBox
+    if (sourceAbs && fs.existsSync(sourceAbs)) cropFigureImage(sourceAbs, outputAbs, pixelBBox)
+    return {
+      ...figure,
+      id: figureId,
+      origin: figure.origin || 'review_crop',
+      usage: 'analysis',
+      category: 'analysis',
+      pageNumber: Number(figure.pageNumber ?? figure.page_number ?? 1),
+      reviewBBox: sourceBBox,
+      bbox: pixelBBox,
+      sourcePath: sourceRel,
+      path: fs.existsSync(outputAbs) ? outputRel : existingPath,
+    }
+  })
 }
 
 type InlineImageField = 'stem' | 'answer' | 'analysis'
@@ -389,8 +506,18 @@ function inlineImageReferenceCount(value: string) {
   return Array.from(value.matchAll(INLINE_IMAGE_REFERENCE_RE)).length + Array.from(value.matchAll(INLINE_IMAGE_PLACEHOLDER_RE)).length + Array.from(value.matchAll(INLINE_BOUND_FIGURE_RE)).length
 }
 
-function cleanOcrPresentationHtml(value: string) {
+function cleanOcrPresentationHtml(value: string, field?: InlineImageField) {
+  let figureCaptionIndex = 0
+  const captionPlaceholder = () => {
+    figureCaptionIndex += 1
+    return field ? `\n\n<!-- OCR_IMAGE_REFERENCE:${field}:${figureCaptionIndex} -->\n\n` : '\n'
+  }
   return String(value || '')
+    // GLM sometimes represents a diagram only as a centered caption, such as
+    // `<div align="center">图1</div>`. Preserve it as an image reference so
+    // reviewed crops can be inserted at the intended reading position.
+    .replace(/<div\b[^>]*>\s*(?:图|figure)\s*\d+\s*<\/div>/gi, captionPlaceholder)
+    .replace(/^\s*(?:图|figure)\s*\d+\s*$/gim, captionPlaceholder)
     .replace(/<div\b[^>]*>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
@@ -414,8 +541,8 @@ export function bindInlineImageReferences(result: Record<string, any>, runId: st
   const reviewFigures = reviewRow ? parseJson<Array<Record<string, any>>>(reviewRow.figures_json || '[]', []) : []
   const references = inlineImageFields.map((entry) => ({
     ...entry,
-    value: cleanOcrPresentationHtml(String(result[entry.resultKey] || '')),
-    count: inlineImageReferenceCount(cleanOcrPresentationHtml(String(result[entry.resultKey] || ''))),
+    value: cleanOcrPresentationHtml(String(result[entry.resultKey] || ''), entry.field),
+    count: inlineImageReferenceCount(cleanOcrPresentationHtml(String(result[entry.resultKey] || ''), entry.field)),
   }))
   const totalReferences = references.reduce((sum, entry) => sum + entry.count, 0)
   if (!totalReferences) return null
@@ -471,9 +598,14 @@ export function bindInlineImageReferences(result: Record<string, any>, runId: st
         : `\n\n<!-- DOC2X_FIGURE:${figure.blockId} -->\n\n`
     })
   }
+  const selectedById = new Map(selected.map((figure) => [String(figure.id || ''), figure]))
+  const boundFigures = localFigures.map((figure) => selectedById.get(String(figure.id || '')) || figure)
   return {
     ...content,
-    figures: selected,
+    // Keep unrelated reviewed figures too (for example a stem diagram while
+    // analysis captions are being bound). Only the matched figures receive an
+    // inline block id.
+    figures: issues.length ? localFigures : boundFigures,
     issue: issues.length ? {
       field: 'figures',
       code: 'inline_image_reference_mismatch',

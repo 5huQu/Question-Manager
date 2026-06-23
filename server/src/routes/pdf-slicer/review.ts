@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { Express } from 'express'
 import { db } from '../../db/connection.js'
-import { getReviewItems, syncReviewRunCounts } from '../../db/review.js'
+import { getReviewItems, normalizedReviewQuestionNo, syncReviewRunCounts } from '../../db/review.js'
 import { getRun } from '../../db/runs.js'
 import { nowIso } from '../../utils/ids.js'
 import { mergeReviewImages, splitReviewImage } from '../../utils/figure-helpers.js'
@@ -224,6 +224,7 @@ export function mountReviewRoutes(app: Express) {
       const formulaSuspectReason = String(figure.formula_suspect_reason ?? figure.formulaSuspectReason ?? '')
       return {
         id: String(figure.id || `review_fig_${index + 1}`),
+        origin: String(figure.origin || 'manual'),
         page_number: Number(figure.page_number ?? figure.pageNumber ?? 1),
         usage: String(figure.usage || figure.category || 'stem'),
         category: String(figure.category || figure.usage || 'stem'),
@@ -243,6 +244,54 @@ export function mountReviewRoutes(app: Express) {
     }).filter((figure: Record<string, any>) => figure.page_number > 0 && figure.bbox.width > 0 && figure.bbox.height > 0) : []
     db.prepare('UPDATE pdf_slicer_review_items SET figures_json = ?, updated_at = ? WHERE run_id = ? AND result_id = ?')
       .run(JSON.stringify(figures), nowIso(), run.runId, resultId)
+    const item = getReviewItems(run.runId).find((entry) => entry.resultId === resultId)
+    res.json({ item })
+  })
+
+  app.patch('/api/tools/pdf-slicer/runs/:runId/slice-review/items/:resultId/solution-figures', (req, res) => {
+    const run = getRun(req.params.runId)
+    if (!run) {
+      res.status(404).json({ error: '批次不存在。' })
+      return
+    }
+    const resultId = decodeURIComponent(req.params.resultId)
+    const reviewRow = db.prepare('SELECT question_label FROM pdf_slicer_review_items WHERE run_id = ? AND result_id = ?').get(run.runId, resultId) as { question_label: string } | undefined
+    if (!reviewRow) {
+      res.status(404).json({ error: '题块不存在。' })
+      return
+    }
+    const key = normalizedReviewQuestionNo(reviewRow.question_label)
+    const solutions = db.prepare('SELECT id, question_no FROM pdf_slicer_solution_items WHERE source_run_id = ? ORDER BY created_at ASC').all(run.runId) as Array<{ id: string; question_no: string }>
+    const solution = solutions.find((row) => normalizedReviewQuestionNo(row.question_no) === key)
+    if (!solution) {
+      res.status(404).json({ error: '当前题块没有匹配的解析裁图。' })
+      return
+    }
+    const figures = Array.isArray(req.body?.figures) ? req.body.figures.map((figure: Record<string, any>, index: number) => {
+      const formulaSuspect = Boolean(figure.formula_suspect ?? figure.formulaSuspect)
+      const formulaSuspectReason = String(figure.formula_suspect_reason ?? figure.formulaSuspectReason ?? '')
+      return {
+        id: String(figure.id || `solution_fig_${index + 1}`),
+        origin: String(figure.origin || 'manual'),
+        page_number: Number(figure.page_number ?? figure.pageNumber ?? 1),
+        usage: String(figure.usage || figure.category || 'analysis'),
+        category: String(figure.category || figure.usage || 'analysis'),
+        optionLabel: figure.optionLabel ? String(figure.optionLabel).toUpperCase() : undefined,
+        bbox: {
+          x: Number(figure.bbox?.x || 0),
+          y: Number(figure.bbox?.y || 0),
+          width: Number(figure.bbox?.width || 0),
+          height: Number(figure.bbox?.height || 0),
+        },
+        kind: String(figure.kind || 'image'),
+        formula_suspect: formulaSuspect,
+        formulaSuspect,
+        formula_suspect_reason: formulaSuspectReason || undefined,
+        formulaSuspectReason: formulaSuspectReason || undefined,
+      }
+    }).filter((figure: Record<string, any>) => figure.page_number > 0 && figure.bbox.width > 0 && figure.bbox.height > 0) : []
+    db.prepare('UPDATE pdf_slicer_solution_items SET figures_json = ?, updated_at = ? WHERE id = ? AND source_run_id = ?')
+      .run(JSON.stringify(figures), nowIso(), solution.id, run.runId)
     const item = getReviewItems(run.runId).find((entry) => entry.resultId === resultId)
     res.json({ item })
   })

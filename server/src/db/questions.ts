@@ -45,6 +45,13 @@ function normalizeTags(value: unknown) {
 
 export function mapQuestion(row: QuestionRow) {
   const figures = parseJson<Array<Record<string, unknown>>>(row.figures_json, [])
+  const solutionImageRow = db.prepare(`
+    SELECT source_image_path
+    FROM pdf_slicer_solution_items
+    WHERE matched_question_id = ?
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `).get(row.id) as { source_image_path?: string } | undefined
   const knowledgePoints = parseJson<string[]>(row.knowledge_points_json || '[]', [])
   const solutionMethods = parseJson<string[]>(row.solution_methods_json || '[]', [])
   const stemMarkdown = row.stem_markdown || ''
@@ -73,6 +80,7 @@ export function mapQuestion(row: QuestionRow) {
     analysisBlocks: paragraphBlock(analysisMarkdown),
     searchText: row.search_text || buildSearchText(stemMarkdown, answerText, analysisMarkdown),
     sliceImagePath: stripAssetPrefix(row.slice_image_path),
+    solutionImagePath: stripAssetPrefix(solutionImageRow?.source_image_path || ''),
     ocrSegmentImages: ocrSegmentImages(row.id, { assetPathFor }),
     figures,
     sourceRunId: row.source_run_id,

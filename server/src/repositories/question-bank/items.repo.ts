@@ -16,15 +16,13 @@ export function listQuestionBankItems(filters: {
   page: number
   pageSize: number
 }) {
-  const whereSql = `
+  let whereSql = `
     WHERE (? = '' OR search_text LIKE ? OR source_title LIKE ? OR chapter LIKE ? OR knowledge_points_json LIKE ? OR solution_methods_json LIKE ?)
       AND (? = '' OR stage = ?)
       AND (? = '' OR question_type = ?)
-      AND (? = '' OR knowledge_points_json LIKE ?)
-      AND (? = '' OR solution_methods_json LIKE ?)
       AND (? = '' OR difficulty_label = ?)
   `
-  const filterParams = [
+  const filterParams: any[] = [
     filters.q,
     `%${filters.q}%`,
     `%${filters.q}%`,
@@ -35,13 +33,30 @@ export function listQuestionBankItems(filters: {
     filters.stage,
     filters.questionType,
     filters.questionType,
-    filters.knowledgePoint,
-    `%${filters.knowledgePoint}%`,
-    filters.solutionMethod,
-    `%${filters.solutionMethod}%`,
     filters.difficulty,
     filters.difficulty,
   ]
+
+  // Dynamic knowledgePoint handling (split by comma and match using OR)
+  const kpList = filters.knowledgePoint ? filters.knowledgePoint.split(',').map(s => s.trim()).filter(Boolean) : []
+  if (kpList.length > 0) {
+    const kpSql = kpList.map(() => `knowledge_points_json LIKE ?`).join(' OR ')
+    whereSql += ` AND (${kpSql})`
+    kpList.forEach(kp => {
+      filterParams.push(`%${kp}%`)
+    })
+  }
+
+  // Dynamic solutionMethod handling (split by comma and match using OR)
+  const smList = filters.solutionMethod ? filters.solutionMethod.split(',').map(s => s.trim()).filter(Boolean) : []
+  if (smList.length > 0) {
+    const smSql = smList.map(() => `solution_methods_json LIKE ?`).join(' OR ')
+    whereSql += ` AND (${smSql})`
+    smList.forEach(sm => {
+      filterParams.push(`%${sm}%`)
+    })
+  }
+
   const totalRow = db.prepare(`SELECT COUNT(*) AS count FROM question_bank_items ${whereSql}`).get(...filterParams) as { count: number }
   const totalItems = totalRow.count ?? 0
   const totalPages = Math.max(1, Math.ceil(totalItems / filters.pageSize))

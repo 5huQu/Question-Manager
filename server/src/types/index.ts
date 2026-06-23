@@ -132,6 +132,7 @@ export type ReviewRow = {
   segments_json: string
   text_regions_json: string
   figures_json: string
+  glm_figure_bindings_json: string
   review_status: string
   note: string
   created_at: string

@@ -40,8 +40,9 @@ function removeDirectoryOutsideApi(targetPath: string) {
 
 async function importSliceResults(runId: string, row: RunRow, outputDir: string) {
   const resultPath = path.join(outputDir, 'cut_results.json')
-  const payload = JSON.parse(await fs.promises.readFile(resultPath, 'utf8')) as { results?: Array<Record<string, any>>; summary?: Record<string, any> }
+  const payload = JSON.parse(await fs.promises.readFile(resultPath, 'utf8')) as { results?: Array<Record<string, any>>; solution_results?: Array<Record<string, any>>; summary?: Record<string, any> }
   const results = payload.results ?? []
+  const solutionResults = payload.solution_results ?? []
   const diagnostics = payload.summary?.diagnostics ?? ({} as Record<string, any>)
   const rulesMeta: Record<string, unknown> = {}
   if (diagnostics.rules_version !== undefined) {
@@ -54,10 +55,36 @@ async function importSliceResults(runId: string, row: RunRow, outputDir: string)
   db.prepare('UPDATE pdf_slicer_runs SET document_diagnostics_json = ?, rules_fallback_used = ?, rules_warnings_json = ?, updated_at = ? WHERE run_id = ?')
     .run(JSON.stringify(nextDiagnostics), rulesMeta.rulesFallbackUsed ? 1 : 0, JSON.stringify(rulesMeta.rulesWarnings || []), nowIso(), runId)
   const insert = db.prepare(`INSERT INTO pdf_slicer_review_items (result_id, run_id, question_label, page_start, page_end, page_image_path, auto_image_path, bbox_json, segments_json, text_regions_json, figures_json, review_status, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const insertSolution = db.prepare(`
+    INSERT INTO pdf_slicer_solution_items (
+      id, batch_id, source_run_id, question_no, answer_text, analysis_markdown, figures_json, source_image_path, match_status, matched_question_id, match_note, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', ?, ?, ?)
+  `)
   const now = nowIso()
+  const cutterFigures = (figures: unknown) => Array.isArray(figures)
+    ? figures.map((figure) => ({ ...figure, origin: String((figure as Record<string, unknown>).origin || 'cutter_auto') }))
+    : []
+  db.prepare('DELETE FROM pdf_slicer_solution_items WHERE source_run_id = ?').run(runId)
   for (const [index, item] of results.entries()) {
     const pageSpan = Array.isArray(item.page_span) ? item.page_span : [item.page ?? 1, item.page ?? 1]
-    insert.run(`${runId}_${item.id || createId('CUT')}`, runId, String(item.question_no || item.id || ''), Number(pageSpan[0] || item.page || 1), Number(pageSpan[1] || item.page || 1), String(item.page_image_path || ''), String(item.auto_image_path || ''), JSON.stringify(item.bbox || {}), JSON.stringify(item.segments || []), JSON.stringify(item.text_regions || []), JSON.stringify(item.figures || []), String(item.status || 'pending_review'), String(item.note || ''), now, now)
+    insert.run(`${runId}_${item.id || createId('CUT')}`, runId, String(item.question_no || item.id || ''), Number(pageSpan[0] || item.page || 1), Number(pageSpan[1] || item.page || 1), String(item.page_image_path || ''), String(item.auto_image_path || ''), JSON.stringify(item.bbox || {}), JSON.stringify(item.segments || []), JSON.stringify(item.text_regions || []), JSON.stringify(cutterFigures(item.figures)), String(item.status || 'pending_review'), String(item.note || ''), now, now)
+    if (index > 0 && index % 100 === 0) await new Promise<void>((resolve) => setImmediate(resolve))
+  }
+  for (const [index, item] of solutionResults.entries()) {
+    const pageSpan = Array.isArray(item.page_span) ? item.page_span : [item.page ?? 1, item.page ?? 1]
+    insertSolution.run(
+      `${runId}_${item.id || createId('SOL')}`,
+      row.batch_id,
+      runId,
+      String(item.question_no || ''),
+      String(item.answer_text || ''),
+      String(item.analysis_markdown || item.note || ''),
+      JSON.stringify(cutterFigures(item.figures)),
+      String(item.auto_image_path || item.page_image_path || ''),
+      '同卷参考答案/解析已按题号抽取，等待题干 OCR 后合并。',
+      now,
+      now,
+    )
     if (index > 0 && index % 100 === 0) await new Promise<void>((resolve) => setImmediate(resolve))
   }
   return getReviewItems(runId)
@@ -82,6 +109,7 @@ function prepareSlicingRun(runId: string) {
   removeDirectoryOutsideApi(outputDir)
   fs.mkdirSync(outputDir, { recursive: true })
   db.prepare('DELETE FROM pdf_slicer_review_items WHERE run_id = ?').run(runId)
+  db.prepare('DELETE FROM pdf_slicer_solution_items WHERE source_run_id = ?').run(runId)
 
   // Record rules config version before running
   const rulesFile = pdfSlicerRulesPath()

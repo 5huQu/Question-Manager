@@ -110,7 +110,7 @@ export function mapRun(row: RunRow) {
   const bankedQuestions = (db.prepare("SELECT COUNT(*) AS count FROM question_bank_items WHERE source_run_id = ? AND bank_status = 'banked'").get(row.run_id) as { count: number }).count
   const solutionItems = (db.prepare('SELECT COUNT(*) AS count FROM pdf_slicer_solution_items WHERE source_run_id = ?').get(row.run_id) as { count: number }).count
   const expectedQuestions = row.approved_questions || row.total_questions || 0
-  const completedByImport = expectedQuestions > 0 && Math.max(importedQuestions, solutionItems) >= expectedQuestions
+  const completedByImport = expectedQuestions > 0 && importedQuestions >= expectedQuestions
   const ocrStatus = row.ocr_status === 'succeeded' || completedByImport ? 'succeeded' : row.ocr_status
   const provider = normalizeOcrProvider(row.ocr_provider)
   const providerProgress = Math.max(0, Math.min(100, Number(row.ocr_provider_progress || 0))) / 100
@@ -174,16 +174,36 @@ export function updateBatchWorkflow(batchId: string) {
   const materialTypes = new Set(runs.map((run) => normalizeMaterialType(run.material_type)).filter((item) => item !== 'unknown'))
   const roles = new Set(runs.map((run) => normalizeFileRole(run.file_role)))
   const materialType: MaterialType = materialTypes.has('lecture') && !materialTypes.has('exam') ? 'lecture' : materialTypes.has('exam') ? 'exam' : 'unknown'
-  const workflowMode: WorkflowMode = roles.has('questions') && roles.has('solutions') ? 'separated_exam' : 'single'
+  const sameRunSolutionRows = db.prepare(`
+    SELECT DISTINCT source_run_id AS run_id
+    FROM pdf_slicer_solution_items
+    WHERE batch_id = ?
+      AND source_run_id IN (
+        SELECT run_id FROM pdf_slicer_runs
+        WHERE batch_id = ? AND file_role != 'solutions'
+      )
+  `).all(batchId, batchId) as Array<{ run_id: string }>
+  const sameRunSolutionRunIds = new Set(sameRunSolutionRows.map((row) => row.run_id))
+  const workflowMode: WorkflowMode = (roles.has('questions') && roles.has('solutions')) || sameRunSolutionRunIds.size > 0 ? 'separated_exam' : 'single'
   let workflowStatus: WorkflowStatus = runs.some((run) => normalizeMaterialType(run.material_type) === 'unknown' || normalizeFileRole(run.file_role) === 'unknown') ? 'needs_classification' : 'ready'
   if (workflowMode === 'separated_exam') {
-    const active = runs.some((run) => run.ocr_status === 'running' || run.ocr_status === 'queued' || run.slice_status === 'running')
-    const completed = runs.filter((run) => ['questions', 'solutions'].includes(normalizeFileRole(run.file_role))).every((run) => run.ocr_status === 'succeeded')
+    const relevantRuns = runs.filter((run) => ['questions', 'solutions'].includes(normalizeFileRole(run.file_role)) || sameRunSolutionRunIds.has(run.run_id))
+    const active = relevantRuns.some((run) => run.ocr_status === 'running' || run.ocr_status === 'queued' || run.slice_status === 'running')
+    const completed = relevantRuns.length > 0 && relevantRuns.every((run) => run.ocr_status === 'succeeded')
     const unresolved = (db.prepare(`
       SELECT COUNT(*) AS count FROM question_bank_items
-      WHERE source_run_id IN (SELECT run_id FROM pdf_slicer_runs WHERE batch_id = ? AND file_role = 'questions')
+      WHERE source_run_id IN (
+        SELECT run_id FROM pdf_slicer_runs
+        WHERE batch_id = ?
+          AND (
+            file_role = 'questions'
+            OR run_id IN (
+              SELECT source_run_id FROM pdf_slicer_solution_items WHERE batch_id = ?
+            )
+          )
+      )
         AND COALESCE(merge_status, '') NOT IN ('merged')
-    `).get(batchId) as { count: number }).count
+    `).get(batchId, batchId) as { count: number }).count
     if (active) workflowStatus = 'processing'
     else if (completed && unresolved > 0) workflowStatus = 'needs_review'
     else if (completed) workflowStatus = 'ready_for_bank'
@@ -272,5 +292,7 @@ export function removeRunOcrOutputs(runId: string) {
     SET ocr_external_uid = '', ocr_provider_phase = '', ocr_provider_progress = 0, ocr_provider_result_path = ''
     WHERE run_id = ?
   `).run(runId)
-  db.prepare('DELETE FROM pdf_slicer_solution_items WHERE source_run_id = ?').run(runId)
+  // Same-document solution rows also hold the reviewer-confirmed solution
+  // figures. OCR reruns replace their text, but must not discard that review
+  // work before the next manifest is built.
 }

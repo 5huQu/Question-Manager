@@ -199,7 +199,7 @@ export function createFigure(id: string, body: Record<string, any>) {
   if (!item) throw new RouteError(404, '题目不存在。')
   const bbox = body?.bbox || { x: 168, y: 142, width: 412, height: 176 }
   const figureId = createId('fig')
-  const sourcePath = String(item.sliceImagePath || '').replace(/^question_assets\//, '').replace(/^\/+/, '')
+  const sourcePath = String(body?.sourcePath || item.sliceImagePath || '').replace(/^question_assets\//, '').replace(/^\/+/, '')
   const outputRel = path.join('data', 'question_figures', id, `${figureId}.png`)
   cropFigure(sourcePath, outputRel, bbox)
   const figure = { id: figureId, origin: 'manual_crop', usage: body?.usage || 'stem', category: body?.category || 'question_figure', optionLabel: body?.optionLabel ? String(body.optionLabel).toUpperCase() : '', pageNumber: Number(body?.pageNumber || 1), bbox, sourcePath, path: outputRel }
@@ -215,6 +215,29 @@ export function createFigure(id: string, body: Record<string, any>) {
   return figure
 }
 
+function persistFiguresWithInlineBinding(id: string, item: NonNullable<ReturnType<typeof repo.getQuestion>>, figures: Array<Record<string, any>>) {
+  const binding = bindInlineImageReferences(
+    { id, problem_text: item.stemMarkdown, answer: item.answerText, analysis: item.analysisMarkdown },
+    item.sourceRunId,
+    { localFigures: figures },
+  )
+  if (!binding) {
+    repo.updateQuestionFigures(id, figures)
+    return
+  }
+  const formatReview = binding.issue ? JSON.stringify({ issue: binding.issue, reasons: [binding.issue], renderErrors: [], updatedAt: nowIso() }) : '{}'
+  repo.updateQuestionAfterFigureBinding(id, [
+    binding.stem,
+    binding.answer,
+    binding.analysis,
+    JSON.stringify(binding.issue ? figures : binding.figures),
+    binding.issue ? 'blocked' : item.bankStatus === 'blocked' ? 'ready' : item.bankStatus,
+    binding.issue ? 1 : 0,
+    formatReview,
+    nowIso(),
+  ])
+}
+
 export function updateFigure(id: string, figureId: string, body: Record<string, any>) {
   const item = repo.getQuestion(id)
   if (!item) throw new RouteError(404, '题目不存在。')
@@ -223,14 +246,14 @@ export function updateFigure(id: string, figureId: string, body: Record<string, 
   if (index < 0) throw new RouteError(404, '题图不存在。')
   const current = figures[index]
   const bbox = body?.bbox || current.bbox || {}
-  const sourcePath = String(current.sourcePath || item.sliceImagePath || '').replace(/^question_assets\//, '').replace(/^\/+/, '')
+  const sourcePath = String(body?.sourcePath || current.sourcePath || item.sliceImagePath || '').replace(/^question_assets\//, '').replace(/^\/+/, '')
   let outputRel = String(current.path || '').replace(/^question_assets\//, '').replace(/^\/+/, '')
   if (!outputRel) outputRel = path.join('data', 'question_figures', id, `${figureId}.png`)
   if (sourcePath && Object.keys(bbox).length) cropFigure(sourcePath, outputRel, bbox)
   const usage = body?.usage ? String(body.usage) : String(current.usage || 'stem')
   const nextFigure = { ...current, usage, category: body?.category || current.category || 'question_figure', optionLabel: usage === 'options' && body?.optionLabel ? String(body.optionLabel).toUpperCase() : '', pageNumber: Number(body?.pageNumber || current.pageNumber || 1), bbox, sourcePath, path: outputRel }
   const nextFigures = figures.map((figure, figureIndex) => figureIndex === index ? nextFigure : figure)
-  repo.updateQuestionFigures(id, nextFigures)
+  persistFiguresWithInlineBinding(id, item, nextFigures)
   return nextFigure
 }
 
@@ -249,7 +272,7 @@ export function uploadFigure(id: string, req: Request) {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
   fs.writeFileSync(outputPath, file.buffer)
   const figure = { id: figureId, origin: 'manual_upload', usage, category: 'question_figure', optionLabel: usage === 'options' && req.body?.optionLabel ? String(req.body.optionLabel).toUpperCase() : '', pageNumber: 1, bbox: {}, sourcePath: '', path: outputRel, originalName: file.originalname }
-  repo.updateQuestionFigures(id, [...item.figures, figure])
+  persistFiguresWithInlineBinding(id, item, [...item.figures, figure])
   return figure
 }
 
@@ -264,6 +287,6 @@ export function deleteFigure(id: string, figureId: string) {
     fs.rmSync(resolveStoragePath(targetPath), { force: true })
   }
   const nextFigures = figures.filter((figure) => String(figure.id || '') !== figureId)
-  repo.updateQuestionFigures(id, nextFigures)
+  persistFiguresWithInlineBinding(id, item, nextFigures)
   return { deleted: true, item: repo.getQuestion(id) }
 }

@@ -147,6 +147,7 @@ export function ensureSchema() {
       segments_json TEXT NOT NULL DEFAULT '[]',
       text_regions_json TEXT NOT NULL DEFAULT '[]',
       figures_json TEXT NOT NULL DEFAULT '[]',
+      glm_figure_bindings_json TEXT NOT NULL DEFAULT '{}',
       review_status TEXT NOT NULL DEFAULT 'pending_review',
       note TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
@@ -252,6 +253,7 @@ export function ensureSchema() {
   ensureColumn('pdf_slicer_review_items', 'segments_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('pdf_slicer_review_items', 'text_regions_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('pdf_slicer_review_items', 'figures_json', "TEXT NOT NULL DEFAULT '[]'")
+  ensureColumn('pdf_slicer_review_items', 'glm_figure_bindings_json', "TEXT NOT NULL DEFAULT '{}'")
 
   // -- Data migration: backfill titles --
   db.prepare("UPDATE pdf_slicer_runs SET paper_title = pdf_name WHERE TRIM(paper_title) = ''").run()

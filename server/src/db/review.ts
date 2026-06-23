@@ -1,13 +1,40 @@
 import { db } from './connection.js'
-import type { ReviewRow } from '../types/index.js'
+import type { ReviewRow, SolutionRow } from '../types/index.js'
 import { parseJson } from '../utils/json.js'
 import { nowIso } from '../utils/ids.js'
+import { resolveStoragePath } from '../utils/paths.js'
+import fs from 'node:fs'
+import path from 'node:path'
 
-export function mapReview(row: ReviewRow) {
+export function normalizedReviewQuestionNo(value: string) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  const compact = raw
+    .replace(/[第题\s]/g, '')
+    .replace(/[.．、:：）)]$/g, '')
+    .replace(/^[（(]/, '')
+  const numberMatch = compact.match(/\d{1,3}/)
+  return numberMatch ? String(Number(numberMatch[0])) : compact.toUpperCase()
+}
+
+function solutionCutRecords(runId: string) {
+  const run = db.prepare('SELECT run_dir FROM pdf_slicer_runs WHERE run_id = ?').get(runId) as { run_dir?: string } | undefined
+  if (!run?.run_dir) return []
+  const cutPath = path.join(resolveStoragePath(run.run_dir), 'output', 'cut_results.json')
+  if (!fs.existsSync(cutPath)) return []
+  const payload = parseJson<{ solution_results?: Array<Record<string, any>> }>(fs.readFileSync(cutPath, 'utf8'), { solution_results: [] })
+  return payload.solution_results || []
+}
+
+export function mapReview(row: ReviewRow, solutionByNo: Map<string, SolutionRow> = new Map(), solutionCutByNo: Map<string, Record<string, any>> = new Map()) {
   const bbox = parseJson<Record<string, number>>(row.bbox_json, {})
   const segments = parseJson<Array<Record<string, any>>>(row.segments_json, [])
   const textRegions = parseJson<Array<Record<string, any>>>(row.text_regions_json, [])
   const figures = parseJson<Array<Record<string, any>>>(row.figures_json, [])
+  const key = normalizedReviewQuestionNo(row.question_label)
+  const solution = solutionByNo.get(key)
+  const solutionCut = solutionCutByNo.get(key)
+  const solutionFigures = parseJson<Array<Record<string, any>>>(solution?.figures_json || '[]', [])
   return {
     resultId: row.result_id,
     runId: row.run_id,
@@ -17,6 +44,12 @@ export function mapReview(row: ReviewRow) {
     pageImagePath: row.page_image_path,
     autoImagePath: row.auto_image_path,
     imageUrl: row.auto_image_path ? `/assets/${row.auto_image_path}` : '',
+    solutionImagePath: solution?.source_image_path || '',
+    solutionImageUrl: solution?.source_image_path ? `/assets/${solution.source_image_path}` : '',
+    hasSolutionSlice: Boolean(solution?.source_image_path),
+    solutionBbox: solutionCut?.bbox || {},
+    solutionSegments: Array.isArray(solutionCut?.segments) ? solutionCut.segments : [],
+    solutionFigures,
     bbox,
     segments,
     textRegions,
@@ -28,7 +61,18 @@ export function mapReview(row: ReviewRow) {
 }
 
 export function getReviewItems(runId: string) {
-  return (db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ? ORDER BY result_id ASC').all(runId) as ReviewRow[]).map(mapReview)
+  const solutions = db.prepare('SELECT * FROM pdf_slicer_solution_items WHERE source_run_id = ? ORDER BY created_at ASC').all(runId) as SolutionRow[]
+  const solutionByNo = new Map<string, SolutionRow>()
+  for (const solution of solutions) {
+    const key = normalizedReviewQuestionNo(solution.question_no)
+    if (key && !solutionByNo.has(key)) solutionByNo.set(key, solution)
+  }
+  const solutionCutByNo = new Map<string, Record<string, any>>()
+  for (const item of solutionCutRecords(runId)) {
+    const key = normalizedReviewQuestionNo(String(item.question_no || ''))
+    if (key && !solutionCutByNo.has(key)) solutionCutByNo.set(key, item)
+  }
+  return (db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ? ORDER BY result_id ASC').all(runId) as ReviewRow[]).map((row) => mapReview(row, solutionByNo, solutionCutByNo))
 }
 
 export function syncReviewRunCounts(runId: string) {

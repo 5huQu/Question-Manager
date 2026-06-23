@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+import fitz
+
 from .doc2x import normalize_math_delimiters, normalize_question_no
 
 
@@ -300,24 +302,72 @@ def _bbox_fraction(block: dict[str, Any], page_info: dict[str, Any]) -> tuple[fl
     return x1 / width, y1 / height, x2 / width, y2 / height
 
 
-def _region_fraction(segment: dict[str, Any]) -> tuple[float, float, float, float] | None:
+def _region_fraction(segment: dict[str, Any], record: dict[str, Any] | None = None) -> tuple[float, float, float, float] | None:
     bbox = segment.get("bbox") or {}
+    page_number = int(segment.get("page_number") or segment.get("pageNumber") or 1)
+    page_sizes = (record or {}).get("_pdf_page_sizes") or {}
+    page_size = page_sizes.get(str(page_number)) or page_sizes.get(page_number) or (595.3, 841.9)
     try:
-        x = float(bbox.get("x", bbox.get("x0", 0))) / 595.3
-        y = float(bbox.get("y", bbox.get("y0", 0))) / 841.9
-        width = float(bbox.get("width", bbox.get("w", 0))) / 595.3
-        height = float(bbox.get("height", bbox.get("h", 0))) / 841.9
+        page_width, page_height = float(page_size[0]), float(page_size[1])
+        x = float(bbox.get("x", bbox.get("x0", 0))) / page_width
+        y = float(bbox.get("y", bbox.get("y0", 0))) / page_height
+        width = float(bbox.get("width", bbox.get("w", 0))) / page_width
+        height = float(bbox.get("height", bbox.get("h", 0))) / page_height
     except (TypeError, ValueError):
         return None
-    if width <= 0 or height <= 0:
+    if page_width <= 0 or page_height <= 0 or width <= 0 or height <= 0:
         return None
     return x, y, x + width, y + height
+
+
+def _with_pdf_page_sizes(manifest: list[dict[str, Any]], storage_root: Path) -> list[dict[str, Any]]:
+    """Attach source-PDF point sizes so cut boxes share GLM's normalized space."""
+    page_sizes_by_pdf: dict[str, dict[str, tuple[float, float]]] = {}
+    enriched: list[dict[str, Any]] = []
+    for record in manifest:
+        copied = dict(record)
+        source_pdf = str(copied.get("source_pdf") or "")
+        if not source_pdf:
+            enriched.append(copied)
+            continue
+        if source_pdf not in page_sizes_by_pdf:
+            pdf_path = Path(source_pdf)
+            if not pdf_path.is_absolute():
+                pdf_path = storage_root / pdf_path
+            sizes: dict[str, tuple[float, float]] = {}
+            try:
+                with fitz.open(pdf_path) as document:
+                    sizes = {str(index + 1): (float(page.rect.width), float(page.rect.height)) for index, page in enumerate(document)}
+            except (OSError, RuntimeError, fitz.FileDataError):
+                pass
+            page_sizes_by_pdf[source_pdf] = sizes
+        if page_sizes_by_pdf[source_pdf]:
+            copied["_pdf_page_sizes"] = page_sizes_by_pdf[source_pdf]
+        enriched.append(copied)
+    return enriched
 
 
 def _overlap(left: tuple[float, float, float, float], right: tuple[float, float, float, float]) -> float:
     x1, y1 = max(left[0], right[0]), max(left[1], right[1])
     x2, y2 = min(left[2], right[2]), min(left[3], right[3])
     return max(0.0, x2 - x1) * max(0.0, y2 - y1)
+
+
+def _block_belongs_to_region(region: tuple[float, float, float, float], block: tuple[float, float, float, float]) -> bool:
+    """Assign a layout block to one reviewed cut without boundary spillover.
+
+    Adjacent cutter regions can overlap by a few PDF points.  Treating any
+    non-zero intersection as membership duplicates a full block into the next
+    question.  A block belongs to a region when its center is inside it, or
+    when most of the block is covered by it.
+    """
+    overlap = _overlap(region, block)
+    block_area = _bbox_area(block)
+    if block_area > 0 and overlap / block_area >= 0.5:
+        return True
+    center_x = (block[0] + block[2]) / 2
+    center_y = (block[1] + block[3]) / 2
+    return region[0] <= center_x <= region[2] and region[1] <= center_y <= region[3]
 
 
 def _fields_from_regions(record: dict[str, Any], payload: dict[str, Any]) -> dict[str, str]:
@@ -334,7 +384,7 @@ def _fields_from_regions(record: dict[str, Any], payload: dict[str, Any]) -> dic
             page_index = page_number - 1
             if page_index < 0 or page_index >= len(details):
                 continue
-            target = _region_fraction(segment)
+            target = _region_fraction(segment, record)
             if not target:
                 continue
             page_info = infos[page_index] if page_index < len(infos) and isinstance(infos[page_index], dict) else {}
@@ -343,9 +393,38 @@ def _fields_from_regions(record: dict[str, Any], payload: dict[str, Any]) -> dic
                     continue
                 block_box = _bbox_fraction(block, page_info)
                 text = _block_text(block)
-                if block_box and text and _overlap(target, block_box) > 0.0001:
+                if block_box and text and _block_belongs_to_region(target, block_box):
                     values[kind].append(text)
     return {key: normalize_math_delimiters("\n\n".join(dict.fromkeys(value))) for key, value in values.items()}
+
+
+def _page_indices_from_record(record: dict[str, Any]) -> list[int]:
+    values: list[int] = []
+    for region in record.get("text_regions") or []:
+        for segment in region.get("segments") or []:
+            try:
+                page_number = int(segment.get("page_number") or segment.get("pageNumber") or 0)
+            except (TypeError, ValueError):
+                page_number = 0
+            if page_number > 0:
+                values.append(page_number)
+    if not values:
+        span = record.get("page_span") or []
+        if isinstance(span, list) and span:
+            try:
+                start = int(span[0])
+                end = int(span[-1])
+                values.extend(range(start, end + 1))
+            except (TypeError, ValueError):
+                pass
+    if not values:
+        try:
+            page = int(record.get("page") or 0)
+        except (TypeError, ValueError):
+            page = 0
+        if page > 0:
+            values.append(page)
+    return list(dict.fromkeys(values))
 
 
 def _download_asset(url: str, target: Path) -> str:
@@ -371,6 +450,44 @@ def _record_segments(record: dict[str, Any]) -> list[dict[str, Any]]:
     return [segment for segment in segments if isinstance(segment, dict)]
 
 
+def _bbox_area(bbox: tuple[float, float, float, float]) -> float:
+    return max(0.0, bbox[2] - bbox[0]) * max(0.0, bbox[3] - bbox[1])
+
+
+def _review_figure_fraction(figure: dict[str, Any], record: dict[str, Any]) -> tuple[float, float, float, float] | None:
+    return _region_fraction({
+        "page_number": figure.get("page_number") or figure.get("pageNumber"),
+        "bbox": figure.get("bbox") or {},
+    }, record)
+
+
+def _glm_figure_id(page_number: int, url: str) -> str:
+    digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:12]
+    return f"glm_{page_number}_{digest}"
+
+
+def _review_matches_for_glm_figure(record: dict[str, Any], page_number: int, glm_box: tuple[float, float, float, float] | None) -> list[dict[str, Any]]:
+    if not glm_box:
+        return []
+    matches: list[dict[str, Any]] = []
+    for index, figure in enumerate(record.get("figures") or []):
+        if not isinstance(figure, dict):
+            continue
+        figure_page = int(figure.get("page_number") or figure.get("pageNumber") or 0)
+        review_box = _review_figure_fraction(figure, record)
+        if figure_page != page_number or not review_box:
+            continue
+        overlap = _overlap(glm_box, review_box)
+        smaller_area = min(_bbox_area(glm_box), _bbox_area(review_box))
+        score = overlap / smaller_area if smaller_area > 0 else 0.0
+        if score >= 0.35:
+            matches.append({
+                "review_figure_id": str(figure.get("id") or f"review_fig_{index + 1}"),
+                "match_score": round(score, 4),
+            })
+    return sorted(matches, key=lambda item: float(item["match_score"]), reverse=True)
+
+
 def _glm_figure_diagnostics(record: dict[str, Any], manifest: list[dict[str, Any]], payload: dict[str, Any]) -> dict[str, Any]:
     """Describe the current page-span binding without changing it.
 
@@ -382,6 +499,9 @@ def _glm_figure_diagnostics(record: dict[str, Any], manifest: list[dict[str, Any
     infos = ((payload.get("data_info") or {}).get("pages") or [])
     ignored_images, ignored_reasons = _ignored_glm_image_blocks(payload)
     blocks: list[dict[str, Any]] = []
+    bindings: list[dict[str, Any]] = []
+    matched_review_ids: set[str] = set()
+    unmatched_glm_ids: list[str] = []
     warnings: set[str] = set()
     for page_index, page in enumerate(payload.get("layout_details") or []):
         page_number = page_index + 1
@@ -406,7 +526,7 @@ def _glm_figure_diagnostics(record: dict[str, Any], manifest: list[dict[str, Any
                     for segment in _record_segments(candidate):
                         if int(segment.get("page_number") or segment.get("pageNumber") or 0) != page_number:
                             continue
-                        target = _region_fraction(segment)
+                        target = _region_fraction(segment, candidate)
                         if target and _overlap(target, figure_box) > 0.0001:
                             segment_candidates.append(question_no)
                             break
@@ -425,21 +545,44 @@ def _glm_figure_diagnostics(record: dict[str, Any], manifest: list[dict[str, Any
             if segment_candidates and not current_matches_segment:
                 block_warnings.append("ocr_image_outside_review_segments")
             warnings.update(block_warnings)
+            url = str(block.get("content") or "")
+            glm_figure_id = _glm_figure_id(page_number, url) if url.startswith("http") else ""
+            review_matches = _review_matches_for_glm_figure(record, page_number, figure_box) if current_matches_segment else []
+            if current_matches_segment and glm_figure_id:
+                if review_matches:
+                    for review_match in review_matches:
+                        matched_review_ids.add(str(review_match["review_figure_id"]))
+                        bindings.append({
+                            "glm_figure_id": glm_figure_id,
+                            "review_figure_id": review_match["review_figure_id"],
+                            "page_number": page_number,
+                            "match_score": review_match["match_score"],
+                            "status": "matched",
+                        })
+                else:
+                    unmatched_glm_ids.append(glm_figure_id)
             blocks.append({
                 "block_id": str(block.get("index") or ""),
+                "glm_figure_id": glm_figure_id,
                 "page_number": page_number,
                 "bbox": {"x": figure_box[0], "y": figure_box[1], "width": figure_box[2] - figure_box[0], "height": figure_box[3] - figure_box[1]} if figure_box else None,
                 "current_binding": binding,
                 "page_span_candidates": page_candidates,
                 "segment_candidates": segment_candidates,
+                "review_matches": review_matches,
                 "warnings": block_warnings,
             })
+    review_figure_ids = [str(figure.get("id") or f"review_fig_{index + 1}") for index, figure in enumerate(record.get("figures") or []) if isinstance(figure, dict)]
     return {
         "source": "glm",
+        "version": 1,
         "matched": sum(1 for block in blocks if block["current_binding"] == "segment_overlap"),
         "page_span_only": sum(1 for block in blocks if block["current_binding"] == "page_span_only"),
         "warnings": sorted(warnings),
         "image_blocks": blocks,
+        "bindings": bindings,
+        "unmatched_glm_figure_ids": unmatched_glm_ids,
+        "unmatched_review_figure_ids": [figure_id for figure_id in review_figure_ids if figure_id not in matched_review_ids],
         "ignored_non_content_images": sum(ignored_reasons.values()),
         "ignored_non_content_image_reasons": ignored_reasons,
     }
@@ -483,7 +626,7 @@ def _glm_figures(record: dict[str, Any], manifest: list[dict[str, Any]], payload
                 current_question_no == normalize_question_no(candidate.get("question_no"))
                 and any(
                     int(segment.get("page_number") or segment.get("pageNumber") or 0) == page_number
-                    and (target := _region_fraction(segment)) is not None
+                    and (target := _region_fraction(segment, candidate)) is not None
                     and _overlap(target, fraction) > 0.0001
                     for segment in _record_segments(candidate)
                 )
@@ -500,7 +643,7 @@ def _glm_figures(record: dict[str, Any], manifest: list[dict[str, Any]], payload
             except (OSError, urllib.error.URLError, ValueError):
                 continue
             bbox = {"x": fraction[0] if fraction else 0, "y": fraction[1] if fraction else 0, "width": (fraction[2] - fraction[0]) if fraction else 0, "height": (fraction[3] - fraction[1]) if fraction else 0}
-            figures.append({"id": f"glm_{page_number}_{digest}", "origin": "glm_ocr", "usage": "stem", "category": "question", "pageNumber": page_number, "bbox": bbox, "path": relative, "blockId": str(block.get("index") or digest)})
+            figures.append({"id": _glm_figure_id(page_number, url), "origin": "glm_ocr", "usage": "stem", "category": "question", "pageNumber": page_number, "bbox": bbox, "path": relative, "blockId": str(block.get("index") or digest)})
     return figures
 
 
@@ -533,7 +676,7 @@ def _strip_images_outside_review_segments(value: str, record: dict[str, Any], pa
                 continue
             if any(
                 int(segment.get("page_number") or segment.get("pageNumber") or 0) == page_number
-                and (target := _region_fraction(segment)) is not None
+                and (target := _region_fraction(segment, record)) is not None
                 and _overlap(target, fraction) > 0.0001
                 for segment in segments
             ):
@@ -543,6 +686,7 @@ def _strip_images_outside_review_segments(value: str, record: dict[str, Any], pa
 
 
 def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any]], drafts_root: Path, artifact_dir: Path, storage_root: Path, single_question: bool = False) -> dict[str, Any]:
+    manifest = _with_pdf_page_sizes(manifest, storage_root)
     pages = _page_texts(result_payload)
     expected = [normalize_question_no(record.get("question_no")) for record in manifest]
     # New manifests explicitly carry the document kind.  Older manifests were
@@ -552,9 +696,44 @@ def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any
     successes = 0
     failures: list[dict[str, str]] = []
     for record in manifest:
+        persisted_record = {key: value for key, value in record.items() if not key.startswith("_")}
         record_id = str(record.get("id") or "")
         question_no = normalize_question_no(record.get("question_no"))
-        item = parsed.get(question_no)
+        record_kind = str(record.get("ocr_record_kind") or "question")
+        parse_mode = str(record.get("ocr_parse_mode") or "auto")
+        item = None
+        if parse_mode == "region":
+            fields = _fields_from_regions(record, result_payload)
+            raw = "\n\n".join(value for value in (fields.get("problem"), fields.get("answer"), fields.get("analysis")) if value).strip()
+            if record_kind == "solution":
+                solution_raw = (fields.get("analysis") or fields.get("answer") or fields.get("problem") or "").strip()
+                stem, answer, analysis, has_markers = _split_fields(solution_raw)
+                if not has_markers:
+                    answer = ""
+                    analysis = solution_raw
+                item = {
+                    "raw": raw or solution_raw,
+                    "stem": "",
+                    "answer": answer,
+                    "analysis": analysis,
+                    "has_markers": has_markers,
+                    "page_indices": _page_indices_from_record(record),
+                    "parse_confidence": "region",
+                    "parse_warnings": [] if solution_raw else ["解析裁切区域未识别到文本。"],
+                }
+            else:
+                item = {
+                    "raw": raw,
+                    "stem": fields.get("problem") or "",
+                    "answer": fields.get("answer") or "",
+                    "analysis": fields.get("analysis") or "",
+                    "has_markers": bool(fields.get("answer") or fields.get("analysis")),
+                    "page_indices": _page_indices_from_record(record),
+                    "parse_confidence": "region",
+                    "parse_warnings": [] if raw else ["题干裁切区域未识别到文本。"],
+                }
+        else:
+            item = parsed.get(question_no)
         if single_question and len(manifest) == 1 and not item:
             raw = _joined_pages(pages)
             stem, answer, analysis, has_markers = _split_fields(raw)
@@ -563,7 +742,7 @@ def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any
         draft_dir.mkdir(parents=True, exist_ok=True)
         if not item:
             failures.append({"id": record_id, "question_no": question_no, "error": "GLM-OCR 未找到题号"})
-            result = {**record, "id": record_id, "ocr_status": "failed", "problem_text": "", "answer": "", "analysis": "", "figures": record.get("figures") or [], "needs_human_review": True, "post_processing": {"provider": "glm", "error": "question_number_not_found"}}
+            result = {**persisted_record, "id": record_id, "ocr_status": "failed", "problem_text": "", "answer": "", "analysis": "", "figures": record.get("figures") or [], "needs_human_review": True, "post_processing": {"provider": "glm", "error": "question_number_not_found"}}
         else:
             # Exam text is owned by the unified question/answer/analysis parser.
             # Local cutter regions remain useful for review and image geometry,
@@ -575,7 +754,8 @@ def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any
             glm_figures = _glm_figures(record, manifest, result_payload, artifact_dir, storage_root)
             figures = list({str(figure.get("id") or index): figure for index, figure in enumerate([*reviewed_figures, *glm_figures])}.values())
             normalized_fields = {"problem_text": normalize_math_delimiters(problem), "answer": normalize_math_delimiters(answer), "analysis": normalize_math_delimiters(analysis)}
-            result = {**record, "id": record_id, "question_no": record.get("question_no", question_no), "ocr_status": "draft", **normalized_fields, "figures": figures, "needs_human_review": not bool(problem) or (not bool(answer) and not bool(analysis)), "raw_model_output": _strip_images_outside_review_segments(item["raw"], record, result_payload), "post_processing": {"provider": "glm", "page_indices": item.get("page_indices") or [], "used_text_regions": False, "has_answer_analysis_markers": bool(item.get("has_markers")), "parse_confidence": item.get("parse_confidence", "high"), "parse_warnings": item.get("parse_warnings") or [], "figure_binding": _glm_figure_diagnostics(record, manifest, result_payload), "render_diagnostics": _formula_diagnostics(normalized_fields)}}
+            needs_review = (not bool(problem) and record_kind != "solution") or (record_kind == "solution" and not bool(answer) and not bool(analysis)) or (record_kind != "solution" and not bool(answer) and not bool(analysis))
+            result = {**persisted_record, "id": record_id, "question_no": record.get("question_no", question_no), "ocr_status": "draft", **normalized_fields, "figures": figures, "needs_human_review": needs_review, "raw_model_output": _strip_images_outside_review_segments(item["raw"], record, result_payload), "post_processing": {"provider": "glm", "page_indices": item.get("page_indices") or [], "used_text_regions": parse_mode == "region", "has_answer_analysis_markers": bool(item.get("has_markers")), "parse_confidence": item.get("parse_confidence", "high"), "parse_warnings": item.get("parse_warnings") or [], "figure_binding": _glm_figure_diagnostics(record, manifest, result_payload), "render_diagnostics": _formula_diagnostics(normalized_fields)}}
             successes += 1
         _atomic_json(draft_dir / "ocr_result.json", result)
         _atomic_text(draft_dir / "question.md", f"# 题目\n\n{result.get('problem_text') or ''}\n\n# 答案\n\n{result.get('answer') or ''}\n\n# 解析\n\n{result.get('analysis') or ''}\n")
