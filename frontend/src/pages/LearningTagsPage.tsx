@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpenCheck, CheckCircle2, ChevronDown, Code2, Copy, Download, GripVertical, ListTree, Plus, Save, Sparkles, Trash2, X } from 'lucide-react'
 import { learningTagsApi } from '@/api/learningTags'
-import { Badge, Button, Empty, PageTitle } from '@/components/ui'
+import { Badge, Button, Empty } from '@/components/ui'
 import type { LearningLibraryType, LearningTagChapter, LearningTagLibrary } from '@/types'
 
 type EditorMode = 'visual' | 'json'
@@ -487,14 +487,17 @@ export default function LearningTagsPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <PageTitle title="学习标签库" desc="维护题目入库、薄弱点分析和方法题型识别使用的标签模板。" path="/learning-tags" />
+    <div className="mock-page-root flex min-h-[calc(100vh-6rem)] select-none flex-col gap-6 overflow-y-auto bg-zinc-50/10 p-6 text-zinc-950 dark:bg-zinc-950/20 dark:text-zinc-50">
+      <div className="flex flex-col gap-1 border-b border-zinc-200 pb-4 text-left dark:border-zinc-800">
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">学习标签库</h1>
+        <p className="text-[13px] text-zinc-500 dark:text-zinc-400">维护题目入库、薄弱点分析和方法题型识别使用的标签模板。</p>
+      </div>
 
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-950 dark:bg-red-950/40 dark:text-red-300">{error}</div> : null}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(340px,0.85fr)_minmax(520px,1.15fr)]">
         <div className="space-y-5">
-          <section className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm">
+          <section className="rounded-xl border border-zinc-200 bg-white p-4 text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="size-4 text-muted-foreground" />
@@ -510,7 +513,7 @@ export default function LearningTagsPage() {
                 const itemStats = stats(library)
                 const meta = typeMeta(library.libraryType)
                 return (
-                  <article key={library.id} className={`grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-xl border p-3 transition ${selected ? 'border-primary bg-accent' : 'bg-card hover:bg-accent/40'}`}>
+                  <article key={library.id} className={`grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-xl border p-3 transition ${selected ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900'}`}>
                     <button className="min-w-0 text-left" onClick={() => selectLibrary(library)} type="button">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="break-words text-sm font-semibold">{library.name}</span>
@@ -541,7 +544,7 @@ export default function LearningTagsPage() {
             </div>
           </section>
 
-          <section className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm">
+          <section className="rounded-xl border border-zinc-200 bg-white p-4 text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
             <div className="flex items-center gap-2">
               <BookOpenCheck className="size-4 text-muted-foreground" />
               <h2 className="font-semibold">当前模板</h2>
@@ -556,15 +559,15 @@ export default function LearningTagsPage() {
           </section>
         </div>
 
-        <section className="rounded-xl border bg-card p-5 text-card-foreground shadow-sm">
+        <section className="rounded-xl border border-zinc-200 bg-white p-5 text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <h2 className="text-lg font-semibold">{activeLibrary?.name ?? '标签库编辑器'}</h2>
               <p className="mt-1 text-sm text-muted-foreground">可切换 JSON 与直观视图编辑；内容有效时会自动实时保存。</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm ${mode === 'visual' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-accent'}`} onClick={() => setMode('visual')} type="button"><ListTree className="size-4" />直观视图</button>
-              <button className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm ${mode === 'json' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-accent'}`} onClick={() => { if (editor) setJsonText(stringifyLibrary(editor)); setMode('json') }} type="button"><Code2 className="size-4" />JSON</button>
+              <button className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm ${mode === 'visual' ? 'border-zinc-900 bg-zinc-950 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900'}`} onClick={() => setMode('visual')} type="button"><ListTree className="size-4" />直观视图</button>
+              <button className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm ${mode === 'json' ? 'border-zinc-900 bg-zinc-950 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900'}`} onClick={() => { if (editor) setJsonText(stringifyLibrary(editor)); setMode('json') }} type="button"><Code2 className="size-4" />JSON</button>
               <Button icon={Save} disabled={!activeLibrary || Boolean(validationError) || saveState === 'saving'} onClick={() => activeLibrary && void saveLibrary(activeLibrary, false)}>保存</Button>
             </div>
           </div>

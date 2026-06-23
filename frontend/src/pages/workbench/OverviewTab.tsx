@@ -1,278 +1,561 @@
-import { useState } from 'react'
+import { useMemo, useState, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, BadgeCheck, FileJson, LoaderCircle, ScanSearch } from 'lucide-react'
-import { pdfSlicerApi } from '@/api/pdfSlicer'
-import { Badge, Button, Panel } from '@/components/ui'
-import { Modal } from '@/components/dialogs/Modal'
-import { RichContent } from '@/components/RichContent'
-import { MetricBox } from '@/components/dashboard/MetricBox'
-import { OcrEngineStatus } from '@/components/dashboard/OcrEngineStatus'
-import { SliceReviewDialog } from '@/pages/pdf-slicer/SliceReviewDialog'
-import type { ApiRun, Dashboard, OcrSettings, QuestionBankResponse, SliceReviewItem } from '@/types'
-import { label, statusVariant } from '@/utils/questionDisplay'
+import {
+  Activity,
+  ArrowUpRight,
+  BookOpen,
+  Calendar,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Database,
+  Plus,
+  ScanSearch,
+  ShoppingBag,
+} from 'lucide-react'
+import type { ActivityHeatmapDay, ActivityHeatmapResponse } from '@/api/dashboard'
+import type { ExportRecordsResponse } from '@/api/exportRecords'
+import { MarkdownContent } from '@/components/MarkdownContent'
+import type { Dashboard, ExportRecord, OcrSettings, QuestionBankResponse, QuestionItem } from '@/types'
+import { addQuestionToActiveBasket } from '@/utils/questionBasket'
 
 export function OverviewTab({
   dashboard,
+  dashboardError,
   questionBank,
+  questionBankLoading,
   ocrSettings,
-  onReload,
-  setActiveTab
+  activityHeatmap,
+  activityHeatmapError,
+  activityHeatmapLoading,
+  exportRecords,
+  exportRecordsLoading,
 }: {
-  dashboard: Dashboard | null;
-  questionBank: QuestionBankResponse | null;
-  ocrSettings: OcrSettings | null;
-  onReload?: () => void;
-  setActiveTab: (tab: 'overview' | 'slicer' | 'ocr' | 'bank') => void
+  dashboard: Dashboard | null
+  dashboardError?: string
+  dashboardLoading?: boolean
+  questionBank: QuestionBankResponse | null
+  questionBankLoading?: boolean
+  ocrSettings: OcrSettings | null
+  activityHeatmap: ActivityHeatmapResponse | null
+  activityHeatmapError?: string
+  activityHeatmapLoading?: boolean
+  exportRecords: ExportRecordsResponse | null
+  exportRecordsLoading?: boolean
 }) {
   const navigate = useNavigate()
-  const [actionRun, setActionRun] = useState<ApiRun | null>(null)
-  const [reviewRun, setReviewRun] = useState<ApiRun | null>(null)
-  const [busyAction, setBusyAction] = useState<'' | 'ocr' | 'manual'>('')
-  const [actionError, setActionError] = useState('')
-  const runs = dashboard?.runs ?? []
-  const bankItems = questionBank?.items ?? []
-  const displayItems = bankItems
+  const questions = questionBank?.items.slice(0, 3) ?? []
+  const exports = exportRecords?.items.slice(0, 4) ?? []
+  const basketIds = new Set((questionBank?.basket?.questions ?? []).map((entry) => entry.item.id))
+  const heatmapDays = activityHeatmap?.days ?? []
+  const stats = useMemo(() => buildStats(heatmapDays, questionBank?.totalItems ?? 0, exports), [exports, heatmapDays, questionBank?.totalItems])
+  const weeks = useMemo(() => buildHeatmapWeeks(heatmapDays), [heatmapDays])
+  const months = useMemo(() => buildMonthLabels(weeks), [weeks])
+  const ocrReady = getOcrReady(ocrSettings)
 
-  const basketCount = questionBank?.basket?.questionCount ?? 0
-  const bankCount = questionBank?.totalItems ?? bankItems.length
-  const canViewResult = (run: ApiRun) => {
-    const pendingBankCount = run.importedQuestions ?? 0
-    const generatedCount = Math.max(pendingBankCount, run.solutionItems ?? 0)
-    const ocrCompleteByImport = generatedCount > 0 && generatedCount >= Math.max(run.approvedQuestions || run.totalQuestions || 0, 1)
-    return run.ocrStatus === 'succeeded' || ocrCompleteByImport || (pendingBankCount > 0 && (run.bankedQuestions ?? 0) >= pendingBankCount)
-  }
+  return (
+    <div className="mock-page-root flex flex-col gap-6 select-none bg-background text-foreground">
+      <div className="flex flex-col gap-1.5 border-b border-zinc-200 pb-4 text-left dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="title-page text-zinc-900 dark:text-zinc-50">工作台概览</h1>
+          <p className="mt-0.5 text-[13px] text-zinc-500 dark:text-zinc-400">
+            本地数学题库活动状态及近期校对导出看板。
+          </p>
+        </div>
+        <div className="mt-2 flex items-center gap-2 sm:mt-0">
+          <button
+            onClick={() => navigate('/questions')}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-50 shadow-sm transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+          >
+            <Database className="size-3.5" />
+            检索题库
+          </button>
+        </div>
+      </div>
 
-  async function getApprovedResultIds(run: ApiRun) {
-    const payload = await pdfSlicerApi.getSliceReviewItems(run.runId)
-    return (payload.items ?? [])
-      .filter((item) => item.reviewStatus !== 'rejected')
-      .map((item) => item.resultId)
-  }
+      {(dashboardError || activityHeatmapError) ? (
+        <div className="rounded-xl border border-zinc-200 bg-card p-4 text-left text-xs text-zinc-500 shadow-sm dark:border-zinc-800">
+          {dashboardError || activityHeatmapError}
+        </div>
+      ) : null}
 
-  async function startImport(run: ApiRun, mode: 'ocr' | 'manual') {
-    setBusyAction(mode)
-    setActionError('')
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="题库总量" value={questionBankLoading ? '--' : stats.totalQuestions} unit="道" desc="累计入库试题记录" />
+        <StatCard label="本月新增" value={stats.currentMonthNew} unit="道" desc={`本月录入较上月 ${stats.monthDeltaLabel}`} />
+        <StatCard label="今日复核" value={stats.todayReviewed} unit="道" desc="今日完成 OCR 识别校对" />
+        <StatCard label="最近导出" value={exportRecordsLoading ? '--' : stats.weeklyExports} unit="份" desc="本周生成 Word/PDF 试卷" />
+      </div>
+
+      <div className="rounded-xl border border-zinc-200 bg-card p-6 text-left text-card-foreground shadow-sm dark:border-zinc-800">
+        <div className="mb-5 flex flex-col gap-1 border-b border-zinc-100 pb-4 dark:border-zinc-800">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+            <Activity className="size-4 text-zinc-500" />
+            题库活动热力图
+          </h3>
+          <p className="text-xs text-zinc-500 dark:text-zinc-450">
+            最近 6 个月的题目录入、复核和导出记录。灰度深浅代表每日处理的题量。
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 items-center gap-6 lg:grid-cols-4">
+          <div className="flex w-full select-none items-start gap-3 overflow-x-auto pb-2 lg:col-span-3">
+            <div className="flex h-[84px] shrink-0 flex-col justify-between pt-5 text-[10px] font-medium text-zinc-400 dark:text-zinc-550">
+              <span>周一</span>
+              <span>周三</span>
+              <span>周五</span>
+            </div>
+
+            <div className="flex min-w-[500px] flex-1 flex-col gap-1.5">
+              <div className="flex justify-between px-1 text-[10px] font-medium text-zinc-450 dark:text-zinc-500">
+                {months.map((month) => (
+                  <span key={month}>{month}</span>
+                ))}
+              </div>
+
+              <div className="flex gap-[3.5px]">
+                {activityHeatmapLoading ? (
+                  Array.from({ length: 26 }).map((_, weekIndex) => (
+                    <div key={weekIndex} className="flex flex-col gap-[3.5px]">
+                      {Array.from({ length: 7 }).map((__, dayIndex) => (
+                        <div key={dayIndex} className="size-2.5 animate-pulse rounded-[1px] bg-zinc-100 dark:bg-zinc-900" />
+                      ))}
+                    </div>
+                  ))
+                ) : (
+                  weeks.map((week, weekIndex) => (
+                    <div key={weekIndex} className="flex flex-col gap-[3.5px]">
+                      {week.map((day, dayIndex) => (
+                        <HeatmapCell key={`${day.date}-${dayIndex}`} day={day} />
+                      ))}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="mt-2 flex items-center justify-end gap-1.5 pr-1 text-[10px] font-medium text-zinc-450 dark:text-zinc-500">
+                <span>无数据</span>
+                <div className="size-2.5 rounded-[1px] border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900" />
+                <div className="size-2.5 rounded-[1px] bg-zinc-200 dark:bg-zinc-800" />
+                <div className="size-2.5 rounded-[1px] bg-zinc-400 dark:bg-zinc-600" />
+                <div className="size-2.5 rounded-[1px] bg-zinc-700 dark:bg-zinc-450" />
+                <div className="size-2.5 rounded-[1px] bg-zinc-950 dark:bg-zinc-100" />
+                <span>高频</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-center gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-800 lg:col-span-1 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+            <div className="space-y-0.5">
+              <span className="block text-[12px] font-medium text-zinc-400 dark:text-zinc-500">数字化活动汇总</span>
+              <span className="block text-xs font-semibold text-zinc-850 dark:text-zinc-200">
+                最近 6 个月累计处理 {activityHeatmap?.summary.totalCount ?? 0} 道
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-zinc-200/60 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/10">
+                <span className="block text-[10px] font-medium uppercase tracking-wider text-zinc-450">处理天数</span>
+                <span className="mt-0.5 block font-mono text-[15px] font-semibold text-zinc-800 dark:text-zinc-200">
+                  {activityHeatmap?.summary.activeDays ?? 0} 天
+                </span>
+              </div>
+              <div className="rounded-lg border border-zinc-200/60 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/10">
+                <span className="block text-[10px] font-medium uppercase tracking-wider text-zinc-450">活跃比率</span>
+                <span className="mt-0.5 block font-mono text-[15px] font-semibold text-zinc-800 dark:text-zinc-200">
+                  {stats.activeRatio}% 天数
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="space-y-3 lg:col-span-2">
+          <div className="flex items-center justify-between px-1 text-left">
+            <h3 className="text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">最近处理题目</h3>
+            <button
+              onClick={() => navigate('/questions')}
+              className="inline-flex items-center gap-0.5 text-xs font-semibold text-zinc-900 transition-colors hover:text-zinc-700 dark:text-zinc-100 dark:hover:text-zinc-300"
+            >
+              全部检索
+              <ChevronRight className="size-3.5" />
+            </button>
+          </div>
+
+          <div className="space-y-3.5">
+            {questions.map((question) => (
+              <WorkbenchQuestionPreview
+                key={question.id}
+                question={question}
+                isInBasket={basketIds.has(question.id)}
+                onOpen={() => navigate(`/questions/${encodeURIComponent(question.id)}`)}
+              />
+            ))}
+            {!questions.length ? (
+              <div className="rounded-lg border border-zinc-200 bg-white p-5 text-center text-xs text-zinc-500 dark:border-zinc-800 dark:bg-card">
+                暂无最近处理题目
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="space-y-3">
+            <h3 className="px-1 text-left text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">最近导出记录</h3>
+            <div className="space-y-3 rounded-xl border border-zinc-200 bg-card p-4 text-card-foreground shadow-sm dark:border-zinc-800">
+              {exports.map((record) => (
+                <ExportRow key={record.id} record={record} />
+              ))}
+              {!exports.length ? (
+                <div className="py-3 text-left text-xs font-medium text-zinc-450 dark:text-zinc-500">暂无导出记录</div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="px-1 text-left text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">快捷工具入口</h3>
+            <div className="space-y-1 rounded-xl border border-zinc-200 bg-card p-3 text-card-foreground shadow-sm dark:border-zinc-800">
+              <ShortcutButton icon={ScanSearch} label="OCR 识别复核工作区" onClick={() => navigate('/tools/pdf-slicer/ocr-jobs')} />
+              <ShortcutButton icon={Database} label="题库检索与试卷大纲" onClick={() => navigate('/questions')} />
+              <ShortcutButton icon={Plus} label="手动录入数学题" onClick={() => navigate('/questions/new')} />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="px-1 text-left text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">服务运行状态</h3>
+            <div className="space-y-3 rounded-xl border border-zinc-200 bg-card p-4 text-left text-xs text-card-foreground shadow-sm dark:border-zinc-800">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-zinc-450 dark:text-zinc-500">SQLite 本地主库:</span>
+                <StatusText ready={!dashboardError && Boolean(dashboard || questionBank)} label={dashboardError ? '连接异常' : '连接正常'} />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-zinc-450 dark:text-zinc-500">KaTeX 排版公式引擎:</span>
+                <StatusText ready label="渲染正常" />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-zinc-450 dark:text-zinc-500">环境内核:</span>
+                <span className="font-mono text-[10px] font-semibold text-zinc-650 dark:text-zinc-400">
+                  {ocrReady.providerLabel}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StatCard({ label, value, unit, desc }: { label: string; value: string | number; unit: string; desc: string }) {
+  return (
+    <div className="flex h-[110px] flex-col justify-between rounded-xl border border-zinc-200 bg-card p-5 text-left text-card-foreground shadow-sm dark:border-zinc-800">
+      <div className="flex items-center justify-between">
+        <span className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400">{label}</span>
+      </div>
+      <div className="mt-1 flex items-baseline gap-1">
+        <span className="font-mono text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{formatNumber(value)}</span>
+        <span className="text-xs font-medium text-zinc-400">{unit}</span>
+      </div>
+      <div className="mt-1 text-[12px] text-zinc-400 dark:text-zinc-500">{desc}</div>
+    </div>
+  )
+}
+
+function HeatmapCell({ day }: { day: ActivityHeatmapDay }) {
+  const colorClass = getHeatmapColor(day.count)
+  return (
+    <div className={`group relative size-2.5 cursor-pointer rounded-[1px] ${colorClass} transition-all duration-100 hover:ring-1 hover:ring-zinc-950 dark:hover:ring-zinc-100`}>
+      <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 scale-0 whitespace-nowrap rounded bg-zinc-950 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-white shadow transition-all group-hover:scale-100 dark:bg-zinc-50 dark:text-zinc-900">
+        {day.date}: 处理 {day.count} 题
+      </div>
+    </div>
+  )
+}
+
+function WorkbenchQuestionPreview({
+  question,
+  isInBasket,
+  onOpen,
+}: {
+  question: QuestionItem
+  isInBasket: boolean
+  onOpen: () => void
+}) {
+  const [showAnalysis, setShowAnalysis] = useState(false)
+  const [adding, setAdding] = useState(false)
+
+  async function addToBasket(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation()
+    if (isInBasket || adding) return
+    setAdding(true)
     try {
-      const approvedResultIds = await getApprovedResultIds(run)
-      if (!approvedResultIds.length) {
-        setActionError('该批次暂无可导入的题块，请先完成切题复核。')
-        return
-      }
-      await pdfSlicerApi.quickReview({ runId: run.runId, approvedResultIds, autoStartOcr: mode === 'ocr' })
-      setActionRun(null)
-      onReload?.()
-      if (mode === 'manual') {
-        navigate(`/questions/new?target=paper&method=direct&source=slices&runId=${encodeURIComponent(run.runId)}&prompt=paper`)
-      }
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : '操作失败，请稍后重试。')
+      await addQuestionToActiveBasket(question.id)
     } finally {
-      setBusyAction('')
+      setAdding(false)
     }
-  }
-
-  function openRun(run: ApiRun) {
-    if (canViewResult(run)) {
-      navigate(`/tools/pdf-slicer/runs/${encodeURIComponent(run.runId)}/questions`)
-      return
-    }
-    setActionError('')
-    setActionRun(run)
   }
 
   return (
-    <div className="space-y-5">
-      {/* Visual Metrics */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricBox
-          title="系统总批次"
-          value={dashboard?.queueSummary.totalRuns ?? runs.length}
-          subtitle="包含运行、完成与异常"
-          color="zinc"
-        />
-        <MetricBox
-          title="待切题批次"
-          value={dashboard?.queueSummary.sliceQueued ?? runs.filter(r => r.sliceStatus === 'slicing').length}
-          subtitle="已上传暂无切片"
-          color="amber"
-        />
-        <MetricBox
-          title="OCR 队列运行"
-          value={(dashboard?.queueSummary.ocrQueued ?? 0) + (dashboard?.queueSummary.ocrRunning ?? 0)}
-          subtitle="正在识别的任务"
-          color="indigo"
-        />
-        <MetricBox
-          title="题库已导入"
-          value={bankCount}
-          subtitle={`试题篮中已有 ${basketCount} 题`}
-          color="emerald"
-        />
+    <div
+      onClick={onOpen}
+      className="group relative flex cursor-pointer select-none flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-5 text-left transition-all duration-150 hover:border-zinc-300 dark:border-zinc-800 dark:bg-card dark:hover:border-zinc-700"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <Tag>{question.questionType || '题型待补充'}</Tag>
+            <Tag>{question.stage || '学段待补充'}</Tag>
+            <Tag>{question.chapter || '章节待补充'}</Tag>
+            <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold ${question.difficultyLabel === '难' ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900' : 'bg-zinc-100 text-zinc-650 dark:bg-zinc-800 dark:text-zinc-400'}`}>
+              难度: {question.difficultyLabel || '待定'}
+            </span>
+          </div>
+        </div>
+        <span className="shrink-0 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">#{question.id}</span>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        {/* Left Side: Recent Batches */}
-        <div className="lg:col-span-2 space-y-3">
-          <Panel
-            title="活跃切片与识别批次"
-            actions={
-              <button
-                className="text-xs font-bold text-zinc-400 dark:text-zinc-500 hover:text-foreground dark:hover:text-foreground hover:underline transition-colors cursor-pointer flex items-center gap-1 focus:outline-none"
-                onClick={() => setActiveTab('slicer')}
-              >
-                <span>查看全部</span>
-                <ArrowRight className="size-3" />
-              </button>
-            }
-          >
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-zinc-150 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/10 text-zinc-500 dark:text-zinc-400 font-semibold">
-                    <th className="p-3 w-[45%]">批次名称 / 文件名</th>
-                    <th className="p-3 w-[15%]">状态</th>
-                    <th className="p-3 w-[22%]">题块</th>
-                    <th className="p-3 w-[18%]">更新时间</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-                  {runs.slice(0, 5).map((run) => (
-                    <tr
-                      key={run.runId}
-                      className="hover:bg-zinc-50/60 dark:hover:bg-zinc-850/20 transition-colors group"
-                    >
-                      <td className="min-w-0 p-3">
-                        <button
-                          className="block max-w-full truncate text-left font-semibold text-zinc-900 transition-colors hover:text-foreground hover:underline focus:outline-none dark:text-zinc-100 dark:hover:text-foreground"
-                          title={run.paperTitle || run.pdfName}
-                          onClick={() => openRun(run)}
-                        >
-                          {run.paperTitle || run.pdfName}
-                        </button>
-                        <div className="mt-1 truncate text-[0.78rem] font-medium leading-5 text-zinc-450 dark:text-zinc-500">{run.pdfName}</div>
-                      </td>
-                      <td className="p-3">
-                        <Badge variant={statusVariant(run.sliceStatus)}>{label(run.sliceStatus)}</Badge>
-                      </td>
-                      <td className="p-3 font-semibold text-zinc-700 dark:text-zinc-300">
-                        {run.totalQuestions}
-                      </td>
-                      <td className="p-3 text-zinc-450 dark:text-zinc-500 font-medium">
-                        {new Date(run.updatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                    </tr>
-                  ))}
-                  {!runs.length && (
-                    <tr>
-                      <td colSpan={4} className="p-8 text-center text-zinc-400 dark:text-zinc-500">暂无活跃运行批次</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
-        </div>
-
-        {/* Right Side: Quick Setup & Status */}
-        <div className="space-y-4">
-          <Panel title="OCR 引擎配置">
-            <OcrEngineStatus ocrSettings={ocrSettings} />
-          </Panel>
-
-          <Panel
-            title="最近录入记录"
-            actions={
-              <button
-                className="text-xs font-bold text-zinc-400 dark:text-zinc-500 hover:text-foreground dark:hover:text-foreground hover:underline transition-colors cursor-pointer flex items-center gap-1 focus:outline-none"
-                onClick={() => setActiveTab('bank')}
-              >
-                <span>前往题库</span>
-                <ArrowRight className="size-3" />
-              </button>
-            }
-          >
-            <div className="space-y-3 max-h-[220px] overflow-auto pr-0.5">
-              {displayItems.slice(0, 4).map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-start gap-2.5 border-b border-zinc-100 dark:border-zinc-800/60 pb-3 last:border-b-0 last:pb-0 group/item p-1 hover:bg-zinc-50/40 dark:hover:bg-zinc-950/20 rounded-xl transition-all"
-                >
-                  <div className="mt-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/50 dark:border-zinc-700/30 px-1.5 py-0.5 text-[9px] font-mono font-bold text-zinc-550 dark:text-zinc-400 shrink-0 select-none">
-                    #{item.questionNo}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs text-zinc-850 dark:text-zinc-250 line-clamp-2 max-h-12 overflow-hidden leading-relaxed font-medium group-hover/item:text-foreground dark:group-hover/item:text-foreground group-hover/item:underline transition-colors">
-                      <RichContent blocks={item.problemBlocks ?? []} className="text-xs text-zinc-800 dark:text-zinc-200" />
-                    </div>
-                    <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1.5 truncate font-medium">{item.sourceTitle || '未知来源'}</p>
-                  </div>
-                </div>
-              ))}
-              {!displayItems.length && (
-                <p className="text-center text-zinc-400 dark:text-zinc-500 py-6 text-xs">当前题库无记录</p>
-              )}
-            </div>
-          </Panel>
-        </div>
+      <div className="select-text font-sans text-xs leading-relaxed text-zinc-900 dark:text-zinc-150">
+        <MarkdownContent content={question.stemMarkdown || question.searchText || ''} />
       </div>
-      {actionRun ? (
-        <Modal
-          title="批次尚未完成"
-          desc={`请选择下一步处理：${actionRun.paperTitle || actionRun.pdfName}`}
-          onClose={() => setActionRun(null)}
-        >
-          <div className="space-y-4">
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-400">
-              <div className="flex flex-wrap items-center gap-3">
-                <span>题块：<strong className="text-zinc-900 dark:text-zinc-100">{actionRun.totalQuestions}</strong></span>
-                <span>待复核：<strong className="text-zinc-900 dark:text-zinc-100">{actionRun.unreviewedQuestions ?? 0}</strong></span>
-                <span>已通过：<strong className="text-zinc-900 dark:text-zinc-100">{actionRun.approvedQuestions ?? 0}</strong></span>
+
+      <div className={`grid transition-all duration-300 ease-in-out ${showAnalysis ? 'mt-2 grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none'}`}>
+        <div className="overflow-hidden">
+          <div className="space-y-3 rounded border-t border-zinc-150 bg-zinc-50/50 p-3 pt-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+            <div>
+              <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【答案】</span>
+              <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                <MarkdownContent content={question.answerText || '暂无答案'} />
               </div>
             </div>
-            {actionError ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{actionError}</p> : null}
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Button
-                className="sm:col-span-2"
-                icon={BadgeCheck}
-                variant={(actionRun.unreviewedQuestions ?? 0) > 0 ? 'default' : 'outline'}
-                onClick={() => {
-                  setReviewRun(actionRun)
-                  setActionRun(null)
-                }}
-              >
-                {(actionRun.unreviewedQuestions ?? 0) > 0 ? '前往复核题块（未完成复核）' : '查看题块'}
-              </Button>
-              <Button
-                icon={busyAction === 'ocr' ? LoaderCircle : ScanSearch}
-                variant="outline"
-                disabled={Boolean(busyAction)}
-                onClick={() => startImport(actionRun, 'ocr')}
-              >
-                开始OCR导入
-              </Button>
-              <Button
-                icon={busyAction === 'manual' ? LoaderCircle : FileJson}
-                variant="outline"
-                disabled={Boolean(busyAction)}
-                onClick={() => startImport(actionRun, 'manual')}
-              >
-                开始手动导入
-              </Button>
+            <div>
+              <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【解析】</span>
+              <div className="text-xs leading-relaxed text-zinc-650 dark:text-zinc-300">
+                <MarkdownContent content={question.analysisMarkdown || '暂无解析'} />
+              </div>
             </div>
           </div>
-        </Modal>
-      ) : null}
-      {reviewRun ? (
-        <SliceReviewDialog
-          run={reviewRun}
-          readonly={(reviewRun.unreviewedQuestions ?? 0) <= 0}
-          onClose={() => setReviewRun(null)}
-          onSubmitted={() => {
-            setReviewRun(null)
-            onReload?.()
-          }}
-        />
-      ) : null}
+        </div>
+      </div>
+
+      <div className="mt-1 flex items-center justify-between border-t border-zinc-150 pt-3 dark:border-zinc-800">
+        <div className="flex items-center gap-3 text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
+          <span className="flex items-center gap-1">
+            <Calendar className="size-3 text-zinc-450" />
+            {formatDate(question.updatedAt)}
+          </span>
+          <span className="flex items-center gap-1">
+            <BookOpen className="size-3 text-zinc-450" />
+            {question.sourceTitle || '高中数学专项试卷'}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={(event) => {
+              event.stopPropagation()
+              setShowAnalysis(!showAnalysis)
+            }}
+            className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            type="button"
+          >
+            {showAnalysis ? (
+              <>
+                <ChevronUp className="size-3" />
+                收起解析
+              </>
+            ) : (
+              <>
+                <ChevronDown className="size-3" />
+                查看解析
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={addToBasket}
+            className={`inline-flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-bold transition-colors ${isInBasket ? 'border border-zinc-200 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100' : 'bg-zinc-900 text-zinc-50 hover:bg-zinc-850 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200'}`}
+            type="button"
+          >
+            {isInBasket ? (
+              <>
+                <Check className="size-3" />
+                已在试题篮
+              </>
+            ) : (
+              <>
+                <ShoppingBag className="size-3" />
+                {adding ? '加入中' : '加入试题篮'}
+              </>
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   )
+}
+
+function ExportRow({ record }: { record: ExportRecord }) {
+  return (
+    <div className="flex items-start justify-between rounded px-1 pb-3 text-left text-xs transition-colors last:border-0 last:pb-0 hover:bg-zinc-50/20 dark:hover:bg-zinc-900/20 border-b border-zinc-100 dark:border-zinc-800/80">
+      <div className="min-w-0 space-y-1">
+        <p className="truncate pr-2 font-semibold text-zinc-800 dark:text-zinc-100">{record.title || record.filename}</p>
+        <p className="text-[11px] font-medium text-zinc-450 dark:text-zinc-500">
+          包含 {record.questionCount} 道题 · {formatDate(record.createdAt)}
+        </p>
+      </div>
+      <span className="shrink-0 rounded border border-zinc-200 bg-zinc-50/50 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+        {String(record.format || '').toUpperCase() || 'FILE'}
+      </span>
+    </div>
+  )
+}
+
+function ShortcutButton({ icon: Icon, label, onClick }: { icon: typeof ScanSearch; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center justify-between rounded-lg p-2 text-left text-xs font-semibold text-zinc-700 transition-colors hover:bg-zinc-50/50 dark:text-zinc-300 dark:hover:bg-zinc-900/30"
+    >
+      <span className="flex items-center gap-2">
+        <Icon className="size-4 text-zinc-400" />
+        {label}
+      </span>
+      <ArrowUpRight className="size-3.5 text-zinc-400" />
+    </button>
+  )
+}
+
+function StatusText({ ready, label }: { ready: boolean; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-700 dark:text-zinc-300">
+      <span className={`size-1.5 rounded-full ${ready ? 'bg-zinc-900 dark:bg-zinc-100' : 'bg-zinc-400'}`} />
+      {label}
+    </span>
+  )
+}
+
+function Tag({ children }: { children: string }) {
+  return (
+    <span className="inline-flex items-center rounded bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-650 dark:bg-zinc-800 dark:text-zinc-400">
+      {children}
+    </span>
+  )
+}
+
+function buildHeatmapWeeks(days: ActivityHeatmapDay[]) {
+  const recent = days.slice(-182)
+  const padded = recent.length ? recent : Array.from({ length: 182 }, (_, index) => ({
+    date: '',
+    count: 0,
+    level: 0 as const,
+    breakdown: {
+      questionsCreated: 0,
+      questionsUpdated: 0,
+      questionsBanked: 0,
+      exportsCreated: 0,
+      ocrCompleted: 0,
+    },
+  }))
+  const weeks: ActivityHeatmapDay[][] = []
+  for (let i = 0; i < padded.length; i += 7) {
+    weeks.push(padded.slice(i, i + 7))
+  }
+  return weeks
+}
+
+function buildMonthLabels(weeks: ActivityHeatmapDay[][]) {
+  const labeled = weeks
+    .map((week) => week.find((day) => day.date)?.date)
+    .filter(Boolean) as string[]
+  if (!labeled.length) return ['1月', '2月', '3月', '4月', '5月', '6月']
+  const labels: string[] = []
+  for (let i = 0; i < 6; i += 1) {
+    const date = labeled[Math.min(labeled.length - 1, Math.floor((i * labeled.length) / 6))]
+    labels.push(`${new Date(`${date}T00:00:00`).getMonth() + 1}月`)
+  }
+  return labels
+}
+
+function buildStats(days: ActivityHeatmapDay[], totalQuestions: number, exports: ExportRecord[]) {
+  const now = new Date()
+  const currentMonth = now.getMonth()
+  const currentYear = now.getFullYear()
+  const previousMonthDate = new Date(currentYear, currentMonth - 1, 1)
+  const today = formatDateKey(now)
+  const currentMonthNew = days.reduce((sum, day) => {
+    const date = parseDay(day.date)
+    if (!date || date.getFullYear() !== currentYear || date.getMonth() !== currentMonth) return sum
+    return sum + day.breakdown.questionsCreated + day.breakdown.questionsBanked
+  }, 0)
+  const previousMonthNew = days.reduce((sum, day) => {
+    const date = parseDay(day.date)
+    if (!date || date.getFullYear() !== previousMonthDate.getFullYear() || date.getMonth() !== previousMonthDate.getMonth()) return sum
+    return sum + day.breakdown.questionsCreated + day.breakdown.questionsBanked
+  }, 0)
+  const todayReviewed = days.find((day) => day.date === today)?.breakdown.ocrCompleted ?? 0
+  const weekStart = new Date(now)
+  weekStart.setDate(now.getDate() - 7)
+  const weeklyExports = exports.filter((record) => {
+    const date = parseDay(record.createdAt)
+    return date ? date >= weekStart : false
+  }).length
+  const activeDays = days.filter((day) => day.count > 0).length
+  const activeRatio = days.length ? Math.round((activeDays / days.length) * 100) : 0
+  return {
+    totalQuestions,
+    currentMonthNew,
+    monthDeltaLabel: formatDelta(currentMonthNew, previousMonthNew),
+    todayReviewed,
+    weeklyExports,
+    activeRatio,
+  }
+}
+
+function formatDelta(current: number, previous: number) {
+  if (!previous && !current) return '+0%'
+  if (!previous) return '+100%'
+  const value = Math.round(((current - previous) / previous) * 1000) / 10
+  return `${value >= 0 ? '+' : ''}${value}%`
+}
+
+function getHeatmapColor(count: number) {
+  if (count > 0 && count <= 2) return 'bg-zinc-200 dark:bg-zinc-800'
+  if (count > 2 && count <= 4) return 'bg-zinc-400 dark:bg-zinc-600'
+  if (count > 4 && count <= 6) return 'bg-zinc-700 dark:bg-zinc-450'
+  if (count > 6) return 'bg-zinc-950 dark:bg-zinc-100'
+  return 'bg-zinc-100 dark:bg-zinc-900'
+}
+
+function getOcrReady(ocrSettings: OcrSettings | null) {
+  const provider = ocrSettings?.ocrProvider ?? 'doc2x'
+  const model = provider === 'doc2x' ? ocrSettings?.doc2xModel : provider === 'glm' ? ocrSettings?.glmOcrModel : ocrSettings?.model
+  return {
+    providerLabel: `${provider === 'doc2x' ? 'Doc2X' : provider === 'glm' ? 'GLM-OCR' : 'Legacy'} · ${model || '未设置'}`,
+  }
+}
+
+function formatNumber(value: string | number) {
+  if (typeof value === 'string') return value
+  return new Intl.NumberFormat('zh-CN').format(value)
+}
+
+function formatDate(value: string) {
+  const date = parseDay(value)
+  if (!date) return '日期待补充'
+  return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+}
+
+function formatDateKey(value: Date) {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function parseDay(value: string) {
+  if (!value) return null
+  const date = new Date(value.includes('T') ? value : `${value}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? null : date
 }

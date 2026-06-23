@@ -4,6 +4,7 @@ import type { Basket, CollectionExport, CollectionSummary } from '@/types'
 export type CollectionExportPayload = {
   format?: string
   variant?: string
+  template?: 'worksheet' | 'exam'
   includeAnswers?: boolean
   includeAnalysis?: boolean
 }
