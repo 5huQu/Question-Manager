@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import 'katex/dist/katex.min.css'
-import { FilterX, Plus } from 'lucide-react'
+import { FilterX, Plus, ShoppingBag } from 'lucide-react'
 import { settingsApi } from '@/api/settings'
+import { collectionsApi } from '@/api/collections'
 import { QuestionBasket } from '@/components/QuestionBasket'
 import { UpdateCard } from '@/components/UpdateCard'
 import { AppPageHeader } from '@/components/layout/AppPageHeader'
@@ -23,14 +24,6 @@ import ExportRecordsPage from '@/pages/ExportRecordsPage'
 import { SetupPage } from '@/pages/SetupPage'
 import type { OcrSettings } from '@/types'
 import type { UpdateCheckResult } from '@/api/client'
-
-import MockWorkbenchPage from '@/pages/mock/MockWorkbenchPage'
-import MockQuestionBankPage from '@/pages/mock/MockQuestionBankPage'
-import MockOcrReviewPage from '@/pages/mock/MockOcrReviewPage'
-import MockBasketPage from '@/pages/mock/MockBasketPage'
-import MockExportRecordsPage from '@/pages/mock/MockExportRecordsPage'
-import MockSettingsPage from '@/pages/mock/MockSettingsPage'
-import MockDialogsPage from '@/pages/mock/MockDialogsPage'
 
 function NavigateToWorkbench() {
   const navigate = useNavigate()
@@ -107,7 +100,11 @@ export default function App() {
       />
 
       <SidebarInset className="h-screen min-w-0 overflow-hidden transition-colors duration-150">
-        <AppPageHeader actions={location.pathname === '/questions' ? <QuestionBankHeaderActions /> : undefined} />
+        <AppPageHeader actions={
+          location.pathname === '/questions'
+            ? <QuestionBankHeaderActions />
+            : undefined
+        } />
         <div className="flex-1 overflow-auto">
           <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 md:p-6">
             <Routes>
@@ -125,15 +122,7 @@ export default function App() {
               <Route path="/exports" element={<ExportRecordsPage />} />
               <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<RunQuestionsPage />} />
               <Route path="/tools/pdf-slicer/runs/:runId/pending-bank" element={<PendingBankPage />} />
-              
-              {/* Mock Pages Main Content Mocks */}
-              <Route path="/mock/workbench" element={<MockWorkbenchPage />} />
-              <Route path="/mock/question-bank" element={<MockQuestionBankPage />} />
-              <Route path="/mock/ocr-review" element={<MockOcrReviewPage />} />
-              <Route path="/mock/basket" element={<MockBasketPage />} />
-              <Route path="/mock/export-records" element={<MockExportRecordsPage />} />
-              <Route path="/mock/settings" element={<MockSettingsPage />} />
-              <Route path="/mock/dialogs" element={<MockDialogsPage />} />
+
             </Routes>
           </div>
         </div>
@@ -193,20 +182,36 @@ export function dispatchResetFilters() {
 
 export function QuestionBankHeaderActions() {
   const navigate = useNavigate()
+  const [basketCount, setBasketCount] = useState(0)
+
+  useEffect(() => {
+    async function loadCount() {
+      try {
+        const id = localStorage.getItem('question-manager.activeCollectionId') || 'basket'
+        const data = await collectionsApi.getCollection(id)
+        setBasketCount(data.questionCount ?? data.questions?.length ?? 0)
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    loadCount()
+    window.addEventListener('question-basket-updated', loadCount)
+    return () => window.removeEventListener('question-basket-updated', loadCount)
+  }, [])
 
   return (
     <>
       <button
         type="button"
-        onClick={dispatchResetFilters}
-        className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+        onClick={() => navigate('/questions/basket')}
+        className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
       >
-        <FilterX className="size-3.5" /> 重置筛选
+        <ShoppingBag className="size-3.5 text-zinc-500 dark:text-zinc-400" /> 试题篮 ({basketCount})
       </button>
       <button
         type="button"
         onClick={() => navigate('/questions/new')}
-        className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors"
+        className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-50 shadow hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200 transition-colors cursor-pointer"
       >
         <Plus className="size-3.5" /> 新增题目
       </button>

@@ -12,7 +12,6 @@ import {
   Settings2,
   ShoppingBag,
   Sun,
-  Layers,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -74,15 +73,6 @@ export function AppSidebar({
     { active: (pathname) => pathname === '/exports', icon: DownloadCloud, label: '导出记录', to: '/exports' },
     { active: (pathname) => pathname === '/settings', icon: Settings2, label: '系统设置', to: '/settings' },
   ]
-  const mockItems: NavItem[] = [
-    { active: (pathname) => pathname.startsWith('/mock/workbench'), icon: LayoutDashboard, label: 'Mock 工作台', to: '/mock/workbench' },
-    { active: (pathname) => pathname.startsWith('/mock/question-bank'), icon: Database, label: 'Mock 题库', to: '/mock/question-bank' },
-    { active: (pathname) => pathname.startsWith('/mock/ocr-review'), icon: ScanSearch, label: 'Mock OCR复核', to: '/mock/ocr-review' },
-    { active: (pathname) => pathname.startsWith('/mock/basket'), icon: ShoppingBag, label: 'Mock 组卷工作台', to: '/mock/basket' },
-    { active: (pathname) => pathname.startsWith('/mock/export-records'), icon: DownloadCloud, label: 'Mock 导出记录', to: '/mock/export-records' },
-    { active: (pathname) => pathname.startsWith('/mock/settings'), icon: Settings2, label: 'Mock 系统设置', to: '/mock/settings' },
-    { active: (pathname) => pathname.startsWith('/mock/dialogs'), icon: Layers, label: 'Mock 弹窗组件', to: '/mock/dialogs' },
-  ]
 
   return (
     <Sidebar collapsible="icon">
@@ -107,7 +97,6 @@ export function AppSidebar({
         <NavGroup label="平台" items={platformItems} pathname={location.pathname} />
         <NavGroup label="工具" items={toolItems} pathname={location.pathname} />
         <NavGroup label="题库" items={questionItems} pathname={location.pathname} />
-        <NavGroup label="新版 UI MOCK" items={mockItems} pathname={location.pathname} labelClassName="text-emerald-600 dark:text-emerald-500 font-bold" />
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-3">
