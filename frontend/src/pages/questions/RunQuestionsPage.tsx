@@ -101,14 +101,14 @@ export function RunQuestionsPage() {
   const allQuestionsBanked = items.length > 0 && items.every((item) => item.bankStatus === 'banked')
 
   return (
-    <section className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <section className="mock-page-root min-h-[calc(100vh-6rem)] space-y-6 overflow-y-auto bg-zinc-50/10 p-6 text-zinc-950 dark:bg-zinc-950/20 dark:text-zinc-50">
+      <div className="flex flex-col gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">OCR 队列 / 批次详情</p>
-          <h1 className="mt-0.5 text-2xl font-bold tracking-tight">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">OCR 队列 / 批次详情</p>
+          <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             {run.paperTitle || run.pdfName}
           </h1>
-          <p className="mt-1 text-xs text-muted-foreground">批次 ID: {run.runId}</p>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">批次 ID: {run.runId}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -128,22 +128,22 @@ export function RunQuestionsPage() {
       </div>
       {exportOpen ? <RunExportDialog run={run} onClose={() => setExportOpen(false)} /> : null}
 
-      <div className="grid gap-2 rounded-xl border bg-card p-4 text-card-foreground shadow-sm sm:grid-cols-2 lg:grid-cols-6">
-        <input className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring" placeholder="搜索本批次题目..." value={query} onChange={(event) => setQuery(event.target.value)} />
+      <div className="grid gap-2 rounded-xl border border-zinc-200 bg-white p-4 text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 sm:grid-cols-2 lg:grid-cols-6">
+        <input className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-sm shadow-sm outline-none placeholder:text-zinc-400 focus:ring-1 focus:ring-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:focus:ring-zinc-300" placeholder="搜索本批次题目..." value={query} onChange={(event) => setQuery(event.target.value)} />
         <SelectFilter label="全部学段" value={stage} options={tagLibraries.data?.stages ?? ['高一', '高二', '高三']} onChange={setStage} />
         <SelectFilter label="全部题型" value={questionType} options={tagLibraries.data?.questionTypes ?? ['单选题', '多选题', '填空题', '解答题']} onChange={setQuestionType} />
         <SelectFilter label="全部难度" value={difficulty} options={tagLibraries.data?.difficultyLabels ?? ['基础', '中等', '较难', '压轴']} onChange={setDifficulty} />
         <SelectFilter label="全部知识点" value={knowledgePoint} options={tagLibraries.data?.knowledgePoints ?? []} onChange={setKnowledgePoint} />
         <SelectFilter label="全部解题方法" value={solutionMethod} options={tagLibraries.data?.solutionMethods ?? []} onChange={setSolutionMethod} />
         {hasActiveFilters ? (
-          <div className="lg:col-span-6 flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400 lg:col-span-6">
             <span>已筛选出 {filteredItems.length} / {items.length} 题</span>
-            <button className="font-semibold text-foreground hover:underline" type="button" onClick={() => { setQuery(''); setStage(''); setQuestionType(''); setDifficulty(''); setKnowledgePoint(''); setSolutionMethod('') }}>重置筛选</button>
+            <button className="font-semibold text-zinc-950 hover:underline dark:text-zinc-50" type="button" onClick={() => { setQuery(''); setStage(''); setQuestionType(''); setDifficulty(''); setKnowledgePoint(''); setSolutionMethod('') }}>重置筛选</button>
           </div>
         ) : null}
       </div>
 
-      <div className="space-y-4 pr-1 pb-4">
+      <div className="space-y-4 pb-4 pr-1">
         {filteredItems.map((item) => (
           <WorkbenchQuestionCard
             key={item.id}

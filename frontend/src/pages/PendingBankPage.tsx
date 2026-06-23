@@ -365,16 +365,16 @@ export default function PendingBankPage() {
       : `共 ${items.length} 题`
 
   return (
-    <section className="flex h-[calc(100vh-7rem)] min-h-[640px] flex-col overflow-hidden">
+    <section className="mock-page-root flex h-[calc(100vh-6rem)] min-h-[640px] flex-col overflow-hidden bg-zinc-50/10 p-6 text-zinc-950 dark:bg-zinc-950/20 dark:text-zinc-50">
       {/* Header */}
-      <div className="shrink-0 space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="shrink-0 space-y-4">
+        <div className="flex flex-col gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">OCR 队列 / 待入库确认</p>
-            <h1 className="mt-0.5 text-2xl font-bold tracking-tight">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">OCR 队列 / 待入库确认</p>
+            <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
               待入库确认
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">复核 OCR 结果，确认后进入题库核心主库。</p>
+            <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">复核 OCR 结果，确认后进入题库核心主库。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" icon={BadgeCheck} disabled={actionBusy || confirmAllCount === 0} onClick={() => confirmAll()}>全部入库</Button>
@@ -394,7 +394,7 @@ export default function PendingBankPage() {
 
       {/* Action notice */}
       {actionNotice ? (
-        <div className="shrink-0 flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm text-card-foreground shadow-sm mt-2">
+        <div className="mt-2 flex shrink-0 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
           {actionBusy ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4 text-emerald-500" />}
           <span>{actionNotice}</span>
         </div>
@@ -412,13 +412,13 @@ export default function PendingBankPage() {
       ) : null}
 
       {/* Main content: left list + right preview */}
-      <div className="flex flex-1 min-h-0 mt-2 gap-3">
+      <div className="mt-3 flex min-h-0 flex-1 gap-3">
         {/* Left: Question list */}
-        <div className="w-[38%] min-w-[280px] shrink-0 flex flex-col border rounded-xl bg-card text-card-foreground overflow-hidden shadow-sm">
-          <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/20 text-xs text-muted-foreground">
-            <button onClick={selectAll} className="flex items-center gap-1.5 hover:text-foreground cursor-pointer transition-colors">
+        <div className="flex w-[38%] min-w-[280px] shrink-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
+          <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400">
+            <button onClick={selectAll} className="flex cursor-pointer items-center gap-1.5 transition-colors hover:text-zinc-950 dark:hover:text-zinc-50">
               {allSelectableSelected
-                ? <CheckSquare className="size-3.5 text-foreground" />
+                ? <CheckSquare className="size-3.5 text-zinc-950 dark:text-zinc-50" />
                 : <Square className="size-3.5" />
               }
               <span>{selectLabel}</span>
@@ -426,7 +426,7 @@ export default function PendingBankPage() {
           </div>
           <div className="flex-1 overflow-y-auto">
             {items.length === 0 ? (
-              <div className="p-6 text-center text-sm text-muted-foreground">当前筛选条件下没有题目</div>
+              <div className="p-6 text-center text-sm text-zinc-500 dark:text-zinc-400">当前筛选条件下没有题目</div>
             ) : (
               items.map((item) => (
                 <QuestionCard
@@ -444,7 +444,7 @@ export default function PendingBankPage() {
         </div>
 
         {/* Right: Preview panel */}
-        <div className="flex-1 min-w-0 border rounded-xl bg-card text-card-foreground overflow-hidden shadow-sm">
+        <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
           {activeItem ? (
             <PreviewPanel
               item={activeItem}
@@ -458,7 +458,7 @@ export default function PendingBankPage() {
               onDelete={() => deleteSingle(activeItem.id)}
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+            <div className="flex h-full items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
               <div className="text-center space-y-2">
                 <Eye className="size-8 mx-auto opacity-40" />
                 <p>点击左侧题目查看详情</p>
@@ -508,11 +508,11 @@ function BatchOverview({ run, summary }: { run: ApiRun; summary: PendingBankSumm
   }, [summary])
 
   return (
-    <div className="rounded-xl border bg-card text-card-foreground p-4 shadow-sm">
+    <div className="rounded-xl border border-zinc-200 bg-white p-4 text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="min-w-0">
-          <p className="font-semibold text-sm text-foreground truncate">{run.paperTitle || run.pdfName}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">{statusMessage}</p>
+          <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">{run.paperTitle || run.pdfName}</p>
+          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{statusMessage}</p>
         </div>
         <Badge variant={run.sourceFileKind === '讲义型' ? 'warning' : 'default'}>
           {run.sourceFileKind || '未确认'}
@@ -536,10 +536,10 @@ function MetricChip({ label, value, color }: { label: string; value: number; col
     neutral: 'text-foreground',
     muted: 'text-muted-foreground',
   }
-  const valueColor = color ? colorMap[color] || '' : 'text-foreground'
+  const valueColor = color ? colorMap[color] || '' : 'text-zinc-950 dark:text-zinc-50'
   return (
-    <div className="rounded-lg border bg-muted/30 px-2.5 py-2 text-center">
-      <p className="text-[10px] text-muted-foreground font-medium">{label}</p>
+    <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-center dark:border-zinc-800 dark:bg-zinc-900/60">
+      <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">{label}</p>
       <p className={`mt-0.5 text-lg font-bold leading-none ${valueColor}`}>{value}</p>
     </div>
   )
@@ -559,22 +559,22 @@ function FilterBar({ filter, summary, onFilterChange }: { filter: PendingBankFil
   ]
 
   return (
-    <div className="inline-flex h-9 items-center justify-start rounded-lg bg-muted p-1 text-muted-foreground gap-1 overflow-x-auto max-w-full shrink-0">
+    <div className="inline-flex h-9 max-w-full shrink-0 items-center justify-start gap-1 overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-100 p-1 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
       {tabs.map((tab) => (
         <button
           key={tab.key}
           onClick={() => onFilterChange(tab.key)}
           className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 h-7 text-xs font-medium transition-all cursor-pointer select-none
             ${filter === tab.key
-              ? 'bg-background text-foreground shadow-sm'
-              : 'hover:bg-background/40 hover:text-foreground'
+              ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-50'
+              : 'hover:text-zinc-950 dark:hover:text-zinc-200'
             }`}
         >
           {tab.label}
           <span className={`ml-1.5 rounded-sm px-1.5 py-0.5 text-[9px] font-bold transition-all
             ${filter === tab.key
-              ? 'bg-muted text-muted-foreground'
-              : 'bg-background/50 text-muted-foreground'
+              ? 'bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400'
+              : 'bg-white/60 text-zinc-500 dark:bg-zinc-950/60 dark:text-zinc-400'
             }`}>
             {tab.count}
           </span>
@@ -626,10 +626,10 @@ function QuestionCard({ item, active, selected, selectable, onSelect, onClick }:
 
   return (
     <div
-      className={`flex items-start gap-2 py-2.5 pr-3 cursor-pointer border-b transition-colors border-border/60
+      className={`flex cursor-pointer items-start gap-2 border-b border-zinc-200 py-2.5 pr-3 transition-colors dark:border-zinc-800
         ${active
-          ? 'bg-accent/80 text-accent-foreground border-l-2 border-l-primary pl-2.5'
-          : 'border-l-2 border-l-transparent pl-2.5 hover:bg-muted/50'
+          ? 'border-l-2 border-l-zinc-950 bg-zinc-50 pl-2.5 dark:border-l-zinc-50 dark:bg-zinc-900/60'
+          : 'border-l-2 border-l-transparent pl-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-900/40'
         }`}
     >
       <button
@@ -638,13 +638,13 @@ function QuestionCard({ item, active, selected, selectable, onSelect, onClick }:
         className={`mt-0.5 shrink-0 ${selectable ? 'cursor-pointer' : 'cursor-not-allowed opacity-30'}`}
       >
         {selected
-          ? <CheckSquare className="size-4 text-foreground" />
-          : <Square className="size-4 text-muted-foreground" />
+          ? <CheckSquare className="size-4 text-zinc-950 dark:text-zinc-50" />
+          : <Square className="size-4 text-zinc-500 dark:text-zinc-400" />
         }
       </button>
       <div className="min-w-0 flex-1" onClick={onClick}>
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-semibold text-foreground">
+          <span className="text-xs font-semibold text-zinc-950 dark:text-zinc-50">
             {item.questionNo ? `第 ${item.questionNo} 题` : `#${item.serialNo ?? item.id.slice(0, 6)}`}
           </span>
           {item.formatIssue?.code === 'inline_image_reference_mismatch' ? (
@@ -657,7 +657,7 @@ function QuestionCard({ item, active, selected, selectable, onSelect, onClick }:
             {bankStatusLabel(item.bankStatus, item)}
           </Badge>
           {item.questionType && item.questionType !== 'OCR题' ? (
-            <Badge variant="default" className="text-[9px] px-1.5 py-0 font-medium border-transparent bg-muted text-muted-foreground">{item.questionType}</Badge>
+            <Badge variant="default" className="border-transparent bg-zinc-100 px-1.5 py-0 text-[9px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">{item.questionType}</Badge>
           ) : null}
           {item.pendingBankReadOnly ? (
             <Badge variant="danger" className="text-[9px] px-1.5 py-0 font-medium">无候选</Badge>
@@ -668,12 +668,12 @@ function QuestionCard({ item, active, selected, selectable, onSelect, onClick }:
         </div>
         {item.hasFigures || item.similarQuestions?.length ? (
           <div className="flex items-center gap-2 mt-1">
-            {item.hasFigures ? <ImageIcon className="size-3 text-muted-foreground" /> : null}
+            {item.hasFigures ? <ImageIcon className="size-3 text-zinc-500 dark:text-zinc-400" /> : null}
             {item.similarQuestions?.length ? <AlertTriangle className="size-3 text-amber-500 animate-pulse" /> : null}
           </div>
         ) : null}
         {preview ? (
-          <p className="mt-1 text-xs text-muted-foreground leading-relaxed line-clamp-2">{preview}</p>
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{preview}</p>
         ) : null}
       </div>
     </div>
@@ -691,14 +691,14 @@ function BulkActionBar({ count, busy, onConfirm, onSkip, onDelete }: {
 }) {
   const [moreOpen, setMoreOpen] = useState(false)
   return (
-    <div className="shrink-0 flex items-center gap-2 mt-2 mx-1 px-3 py-2 rounded-xl border border-border bg-muted/30 shadow-sm">
-      <span className="text-xs font-semibold text-muted-foreground mr-1">已选 {count} 题</span>
+    <div className="mx-1 mt-2 flex shrink-0 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <span className="mr-1 text-xs font-semibold text-zinc-500 dark:text-zinc-400">已选 {count} 题</span>
       <Button size="sm" icon={BadgeCheck} disabled={busy} onClick={onConfirm}>确认入库 {count} 题</Button>
       <Button size="sm" variant="outline" icon={SkipForward} disabled={busy} onClick={onSkip}>跳过</Button>
       <div className="relative">
         <Button size="sm" variant="outline" icon={ChevronDown} disabled={busy} onClick={() => setMoreOpen(!moreOpen)}>更多</Button>
         {moreOpen ? (
-          <div className="absolute top-full left-0 mt-1.5 z-10 w-36 rounded-md border bg-popover text-popover-foreground shadow-md py-1 animate-in fade-in-50 duration-100">
+          <div className="absolute left-0 top-full z-10 mt-1.5 w-36 rounded-md border border-zinc-200 bg-white py-1 text-zinc-950 shadow-md animate-in fade-in-50 duration-100 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
             <button
               className="w-full text-left px-3 py-2 text-xs hover:bg-destructive/10 text-destructive flex items-center gap-2 cursor-pointer transition-colors"
               onClick={() => { setMoreOpen(false); onDelete() }}
@@ -740,11 +740,11 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
   }, [item.id])
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       {/* Action bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b bg-muted/40 shrink-0">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/70">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="font-semibold text-sm text-foreground">
+          <span className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
             {item.questionNo ? `第 ${item.questionNo} 题` : `#${item.serialNo ?? item.id.slice(0, 6)}`}
           </span>
           <Badge variant={bankStatusVariant(item.bankStatus, item)}>
@@ -752,15 +752,15 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
           </Badge>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="inline-flex h-8 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground select-none">
+          <div className="inline-flex h-8 select-none items-center justify-center rounded-md border border-zinc-200 bg-zinc-100 p-1 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
             <button
-              className={`rounded-sm px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${previewMode === 'content' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`cursor-pointer rounded-sm px-2.5 py-1 text-xs font-medium transition-all ${previewMode === 'content' ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
               onClick={() => setPreviewMode('content')}
             >
               识别结果
             </button>
             <button
-              className={`rounded-sm px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${previewMode === 'images' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`cursor-pointer rounded-sm px-2.5 py-1 text-xs font-medium transition-all ${previewMode === 'images' ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
               onClick={() => setPreviewMode('images')}
             >
               原图 / OCR 图块
@@ -906,20 +906,20 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
 
 function ContentSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
-      <div className="px-4 py-2 border-b bg-muted/40">
-        <p className="text-xs font-semibold text-foreground tracking-tight">{title}</p>
+    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
+      <div className="border-b border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900/70">
+        <p className="text-xs font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">{title}</p>
       </div>
-      <div className="p-4 text-sm leading-relaxed text-foreground">{children}</div>
+      <div className="p-4 text-sm leading-relaxed text-zinc-950 dark:text-zinc-50">{children}</div>
     </div>
   )
 }
 
 function MetaField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border bg-muted/20 px-3.5 py-2.5">
-      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
-      <p className="mt-1 text-xs font-bold text-foreground truncate" title={value}>{value}</p>
+    <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/60">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{label}</p>
+      <p className="mt-1 truncate text-xs font-bold text-zinc-950 dark:text-zinc-50" title={value}>{value}</p>
     </div>
   )
 }
@@ -935,7 +935,7 @@ function MoreActionsDropdown({ busy, onReOcr, onSkip, onDelete }: {
     <div className="relative">
       <Button size="sm" variant="outline" icon={ChevronDown} disabled={busy} onClick={() => setOpen(!open)}>更多</Button>
       {open ? (
-        <div className="absolute top-full right-0 mt-1.5 z-10 w-36 rounded-md border bg-popover text-popover-foreground shadow-md py-1 animate-in fade-in-50 duration-100">
+        <div className="absolute right-0 top-full z-10 mt-1.5 w-36 rounded-md border border-zinc-200 bg-white py-1 text-zinc-950 shadow-md animate-in fade-in-50 duration-100 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
           {onReOcr ? <DropdownItem icon={ScanSearch} label="重新 OCR" onClick={() => { setOpen(false); onReOcr() }} /> : null}
           <DropdownItem icon={SkipForward} label="跳过此题" onClick={() => { setOpen(false); onSkip() }} />
           <DropdownItem icon={Trash2} label="删除此题" danger onClick={() => { setOpen(false); onDelete() }} />
@@ -951,7 +951,7 @@ function DropdownItem({ icon: Icon, label, danger, onClick }: { icon: typeof Ref
       className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 cursor-pointer transition-colors
         ${danger
           ? 'hover:bg-destructive/10 text-destructive'
-          : 'hover:bg-accent hover:text-accent-foreground text-foreground'
+          : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900'
         }`}
       onClick={onClick}
     >
@@ -1014,8 +1014,8 @@ function SimilarityReviewDialog({ items, confirmText, onProceed, onCancel }: Sim
                     key={item.id}
                     className={`shrink-0 rounded-md border px-3 py-2 text-left text-xs transition-all cursor-pointer ${
                       index === activeIndex
-                        ? 'border-primary bg-primary text-primary-foreground shadow-sm font-semibold'
-                        : 'border-input bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                        ? 'border-zinc-950 bg-zinc-950 text-white shadow-sm font-semibold dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-950'
+                        : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100'
                     }`}
                     onClick={() => setActiveIndex(index)}
                   >
@@ -1117,8 +1117,8 @@ function SimilarityQuestionPane({
                 key={candidate.id}
                 className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${
                   index === candidateIndex
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    ? 'bg-zinc-950 text-white shadow-sm dark:bg-zinc-50 dark:text-zinc-950'
+                    : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-950 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'
                 }`}
                 onClick={() => onCandidateChange(index)}
               >
