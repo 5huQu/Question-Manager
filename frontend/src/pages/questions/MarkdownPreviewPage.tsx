@@ -24,7 +24,7 @@ export function MarkdownPreviewPage() {
   }
 
   return (
-    <section className="flex w-full flex-col gap-4">
+    <section className="mock-page-root flex min-h-[calc(100vh-6rem)] w-full select-none flex-col gap-6 overflow-y-auto bg-zinc-50/10 p-6 text-zinc-950 dark:bg-zinc-950/20 dark:text-zinc-50">
       <style>{`
         @media print {
           body {
@@ -64,19 +64,19 @@ export function MarkdownPreviewPage() {
           }
         }
       `}</style>
-      <header className="flex flex-col gap-3 rounded-xl border bg-card p-4 text-card-foreground shadow-sm sm:flex-row sm:items-center sm:justify-between no-print">
+      <header className="no-print flex flex-col gap-3 border-b border-zinc-200 pb-4 text-left dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button icon={ArrowLeft} variant="outline" onClick={() => navigate(-1)}>返回</Button>
           <div>
-            <h1 className="text-lg font-semibold">Markdown 预览</h1>
-            <p className="mt-0.5 text-xs text-muted-foreground">仅实时显示预览，不生成或下载 Markdown 文件。</p>
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Markdown 预览</h1>
+            <p className="mt-0.5 text-[13px] text-zinc-500 dark:text-zinc-400">仅实时显示预览，不生成或下载 Markdown 文件。</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex rounded-lg border bg-muted p-1">
+          <div className="flex rounded-lg border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900">
             {(['student', 'teacher'] as const).map((item) => (
               <button
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${variant === item ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${variant === item ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`}
                 key={item}
                 onClick={() => switchVariant(item)}
                 type="button"
@@ -100,11 +100,11 @@ export function MarkdownPreviewPage() {
       {preview.error ? <Empty text={preview.error} /> : null}
       {preview.data ? (
         showSource ? (
-          <pre className="min-h-[60vh] overflow-auto whitespace-pre-wrap rounded-2xl border bg-zinc-950 p-5 text-xs leading-6 text-zinc-100 shadow-sm">
+          <pre className="min-h-[60vh] overflow-auto whitespace-pre-wrap rounded-xl border border-zinc-200 bg-zinc-950 p-5 text-xs leading-6 text-zinc-100 shadow-sm dark:border-zinc-800">
             {preview.data.content || ''}
           </pre>
         ) : (
-          <article className="min-h-[60vh] rounded-xl border bg-card px-6 py-8 text-card-foreground shadow-sm sm:px-10 lg:px-14">
+          <article className="min-h-[60vh] rounded-xl border border-zinc-200 bg-white px-6 py-8 text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 sm:px-10 lg:px-14">
             <QuestionDocumentMarkdownContent className="text-[15px] leading-7" content={preview.data.content || ''} />
           </article>
         )
