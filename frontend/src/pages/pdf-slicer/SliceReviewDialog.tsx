@@ -241,8 +241,8 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
       locked
     >
       <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[320px_minmax(0,1fr)_300px]">
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border bg-zinc-50">
-          <div className="flex flex-none items-center justify-between border-b px-3 py-2">
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="flex flex-none items-center justify-between border-b border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/70">
             <p className="font-semibold">切片列表</p>
             <Button size="sm" variant="outline" icon={RefreshCcw} onClick={reload}>刷新</Button>
           </div>
@@ -251,13 +251,13 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
               const isActive = active?.resultId === item.resultId
               const isSelected = selected.has(item.resultId)
               return (
-              <button key={item.resultId} className={`w-full rounded-xl border p-3 text-left transition ${isActive ? 'border-blue-600 bg-blue-50 shadow-sm ring-2 ring-blue-200' : isSelected ? 'border-sky-300 bg-sky-50/60' : 'bg-white hover:bg-zinc-50'}`} onClick={() => setActiveId(item.resultId)} type="button">
+              <button key={item.resultId} className={`w-full rounded-lg border p-3 text-left transition ${isActive ? 'border-zinc-950 bg-white shadow-sm ring-2 ring-zinc-200 dark:border-zinc-50 dark:bg-zinc-900 dark:ring-zinc-700' : isSelected ? 'border-zinc-400 bg-white dark:border-zinc-600 dark:bg-zinc-900/70' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900'}`} onClick={() => setActiveId(item.resultId)} type="button">
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span className="truncate font-semibold">第 {item.questionLabel || '?'} 题</span>
                     {readonly ? null : (
                       <span
-                        className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border bg-white text-zinc-500 hover:border-blue-300 hover:text-blue-700"
+                        className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-500 hover:border-zinc-500 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:text-zinc-50"
                         onClick={(event) => {
                           event.stopPropagation()
                           renameItem(item)
@@ -274,7 +274,7 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <p className="min-w-0 text-xs text-zinc-500">P{item.pageStart}{item.pageEnd !== item.pageStart ? `-P${item.pageEnd}` : ''} · {label(item.reviewStatus)}</p>
                   {item.figures?.length ? (
-                    <span className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
+                    <span className="shrink-0 rounded-full border border-zinc-200 bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
                       题图{item.figures.length}张
                     </span>
                   ) : null}
@@ -283,8 +283,8 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
             )}) : <Empty text="暂无切题结果，上传后系统会自动切题。" />}
           </div>
         </aside>
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border bg-zinc-100">
-          <div className="flex min-h-11 flex-none items-center justify-between border-b bg-white px-4">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex min-h-11 flex-none items-center justify-between border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950">
             <p className="font-semibold">{active ? `第 ${active.questionLabel || '?'} 题预览` : '切片预览'}</p>
             <Badge>{active ? `P${active.pageStart}` : '未选择'}</Badge>
           </div>
@@ -306,29 +306,29 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
           <section className="space-y-3">
             <h3 className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">复核信息</h3>
             <div className="space-y-3">
-              <div className="rounded-xl border bg-zinc-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/60">
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/60">
                 <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">当前题块</p>
                 <div className="mt-1.5 flex items-center justify-between gap-3">
                   <p className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-100">{active ? `第 ${active.questionLabel || '?'} 题` : '未选择'}</p>
                   <Badge>{active ? label(active.reviewStatus) : '-'}</Badge>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-lg border bg-white px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
+                  <div className="rounded-lg border border-zinc-200 bg-white px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
                     <p className="text-zinc-400 dark:text-zinc-500">页码</p>
                     <p className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">{active ? `P${active.pageStart}-${active.pageEnd}` : '-'}</p>
                   </div>
-                  <div className="rounded-lg border bg-white px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
+                  <div className="rounded-lg border border-zinc-200 bg-white px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
                     <p className="text-zinc-400 dark:text-zinc-500">图框</p>
                     <p className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">{active?.figures?.length ? `${active.figures.length} 个` : '无'}</p>
                   </div>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-xl border bg-white px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/60">
+                <div className="rounded-xl border border-zinc-200 bg-white px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/60">
                   <p className="text-[11px] text-zinc-500">总切片</p>
                   <p className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{totalItems}</p>
                 </div>
-                <div className="rounded-xl border bg-white px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/60">
+                <div className="rounded-xl border border-zinc-200 bg-white px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/60">
                   <p className="text-[11px] text-zinc-500">{readonly ? '通过数' : '已选择'}</p>
                   <p className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{readonly ? (run.approvedQuestions ?? 0) : selected.size}</p>
                 </div>
@@ -350,7 +350,7 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
                 <Button className="w-full justify-start" variant="outline" icon={FileJson} disabled={!selected.size} onClick={submitForJsonImport}>提交复核并手动导入（{selected.size}/{totalItems}）</Button>
                 <Button className="w-full justify-start" icon={BadgeCheck} disabled={!selected.size} onClick={submit}>提交复核并开始 OCR（{selected.size}/{totalItems}）</Button>
               </div>
-              {reviewNotice ? <p className="rounded-lg border bg-zinc-50 px-2.5 py-2 text-xs text-zinc-500">{reviewNotice}</p> : null}
+              {reviewNotice ? <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-400">{reviewNotice}</p> : null}
             </div>
           </Panel>}
         </aside>
