@@ -202,6 +202,12 @@ export function mountQuestionBankItemsRoutes(app: Express) {
     const chapter = body.chapter ?? before.chapter
     const formatIssues = validateQuestionMarkdown({ problem_text: stemMarkdown, answer: answerText, analysis: analysisMarkdown })
     const requiresFormatReview = Boolean(formatIssues.length)
+    const nextBankStatus = body.bankStatus ?? (
+      !requiresFormatReview && before.bankStatus === 'blocked' && before.needsFormatReview
+        ? 'ready'
+        : null
+    )
+    const formatReviewJson = requiresFormatReview ? JSON.stringify(formatReviewPayload(formatIssues, nowIso())) : '{}'
     db.prepare(`
       UPDATE question_bank_items SET
         question_no = COALESCE(?, question_no),
@@ -218,8 +224,8 @@ export function mountQuestionBankItemsRoutes(app: Express) {
         answer_text = ?,
         analysis_markdown = ?,
         search_text = ?,
-        format_review_required = CASE WHEN ? THEN 1 ELSE format_review_required END,
-        format_review_reasons_json = CASE WHEN ? THEN ? ELSE format_review_reasons_json END,
+        format_review_required = ?,
+        format_review_reasons_json = ?,
         bank_status = CASE WHEN ? AND bank_status = 'ready' THEN 'blocked' ELSE COALESCE(?, bank_status) END,
         updated_at = ?
       WHERE id = ?
@@ -239,10 +245,9 @@ export function mountQuestionBankItemsRoutes(app: Express) {
       analysisMarkdown,
       buildSearchText(stemMarkdown, answerText, analysisMarkdown, [String(sourceTitle), String(chapter), knowledgePoints.join(' '), solutionMethods.join(' ')]),
       requiresFormatReview ? 1 : 0,
+      formatReviewJson,
       requiresFormatReview ? 1 : 0,
-      requiresFormatReview ? JSON.stringify(formatReviewPayload(formatIssues, nowIso())) : null,
-      requiresFormatReview ? 1 : 0,
-      body.bankStatus ?? null,
+      nextBankStatus,
       nowIso(),
       id
     )

@@ -162,6 +162,7 @@ type SimilarQuestionCandidate = {
   id: string
   questionNo: string
   sourceTitle: string
+  sourceRunId: string
   bankStatus: BankStatus
   similarity: number
   stemPreview: string
@@ -178,20 +179,21 @@ export function similarQuestionCandidates(row: QuestionRow, options: { threshold
   const threshold = options.threshold ?? duplicateSimilarityThreshold
   const limit = options.limit ?? 3
   const candidates = db.prepare(`
-    SELECT id, question_no, source_title, bank_status, stem_markdown, answer_text, analysis_markdown, question_type, search_text
+    SELECT id, question_no, source_title, source_run_id, bank_status, stem_markdown, answer_text, analysis_markdown, question_type, search_text
     FROM question_bank_items
     WHERE id != ?
       AND bank_status IN ('ready', 'banked')
       AND TRIM(COALESCE(stem_markdown, '')) != ''
     ORDER BY updated_at DESC
     LIMIT 800
-  `).all(row.id) as Array<Pick<QuestionRow, 'id' | 'question_no' | 'source_title' | 'bank_status' | 'stem_markdown' | 'answer_text' | 'analysis_markdown' | 'question_type' | 'search_text'>>
+  `).all(row.id) as Array<Pick<QuestionRow, 'id' | 'question_no' | 'source_title' | 'source_run_id' | 'bank_status' | 'stem_markdown' | 'answer_text' | 'analysis_markdown' | 'question_type' | 'search_text'>>
 
   return candidates
     .map((candidate) => ({
       id: candidate.id,
       questionNo: candidate.question_no,
       sourceTitle: cleanSourceTitle(candidate.source_title),
+      sourceRunId: candidate.source_run_id || '',
       bankStatus: candidate.bank_status,
       similarity: Number(jaccardSimilarity(sourceBigrams, textBigrams(candidate.stem_markdown || candidate.search_text || '')).toFixed(3)),
       stemPreview: stemPreview(candidate.stem_markdown || candidate.search_text || ''),

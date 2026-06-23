@@ -111,6 +111,7 @@ export type SimilarQuestion = {
   id: string
   questionNo: string
   sourceTitle: string
+  sourceRunId: string
   bankStatus: string
   similarity: number
   stemPreview: string
@@ -219,6 +220,7 @@ export type OcrProgress = {
   draftCount: number
   successfulDraftCount: number
   failedDraftCount: number
+  pendingDraftCount: number
   totalQuestions: number
   progressPercent: number
   logTail: string

@@ -20,8 +20,6 @@ function questionPlainText(value: string) {
 
 export function normalizeSimilarityText(value: string) {
   return questionPlainText(value)
-    .replace(/\$\$[\s\S]*?\$\$/g, '公式')
-    .replace(/\$[\s\S]*?\$/g, '公式')
     .replace(/!\[[^\]]*]\([^)]+\)/g, '')
     .replace(/[`*_~>#|\[\](){}，。！？；：、,.!?;:\s]+/g, '')
     .replace(/[A-D][.．、]/g, '')

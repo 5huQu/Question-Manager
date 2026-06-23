@@ -24,6 +24,9 @@ PAGE_MARKER_RE = re.compile(r"<!-- GLM_PAGE:(\d+) -->")
 ANSWER_OR_ANALYSIS_RE = re.compile(r"【(?:答案|分析|解析)】")
 EXAM_SECTION_RE = re.compile(r"(?mi)^\s*#{1,6}\s*.*?(?:选择题|填空题|解答题|第[ⅠⅡIVX]+卷)")
 EXAM_INSTRUCTION_RE = re.compile(r"(?:本试卷分|回答第[ⅠⅡIVX]卷|答卷前|考试结束后|考生务必)")
+NON_CONTENT_IMAGE_NATIVE_LABELS = {
+    "header_image", "footer_image", "watermark", "background_image", "page_number",
+}
 
 
 class GlmOcrError(RuntimeError):
@@ -68,20 +71,90 @@ def _split_fields(value: str) -> tuple[str, str, str, bool]:
     return value.strip(), "", "", False
 
 
-def _block_text(block: dict[str, Any]) -> str:
+def _image_block_key(page_index: int, block_index: int) -> tuple[int, int]:
+    return page_index, block_index
+
+
+def _image_bbox_fraction(block: dict[str, Any], page: dict[str, Any]) -> tuple[float, float, float, float] | None:
+    raw = block.get("bbox_2d") or block.get("bbox")
+    if not isinstance(raw, (list, tuple)) or len(raw) < 4:
+        return None
+    try:
+        x0, y0, x1, y1 = (float(raw[index]) for index in range(4))
+        width = float(page.get("width") or block.get("width") or 0)
+        height = float(page.get("height") or block.get("height") or 0)
+    except (TypeError, ValueError):
+        return None
+    if width <= 0 or height <= 0 or x1 <= x0 or y1 <= y0:
+        return None
+    return x0 / width, y0 / height, x1 / width, y1 / height
+
+
+def _ignored_glm_image_blocks(payload: dict[str, Any]) -> tuple[set[tuple[int, int]], dict[str, int]]:
+    """Return non-content image blocks that must not become OCR image references.
+
+    GLM exposes page headers/watermarks as ``label=image``.  Its native label is
+    the primary signal.  A conservative repeated-header fallback covers API
+    responses without that label, while leaving one-off diagrams untouched.
+    """
+    ignored: set[tuple[int, int]] = set()
+    reasons: dict[str, int] = {}
+    pages = payload.get("layout_details") or []
+    infos = ((payload.get("data_info") or {}).get("pages") or [])
+    repeated: dict[tuple[int, int, int, int], list[tuple[int, int]]] = {}
+    for page_index, page in enumerate(pages):
+        if not isinstance(page, list):
+            continue
+        page_info = infos[page_index] if page_index < len(infos) and isinstance(infos[page_index], dict) else {}
+        for block_index, block in enumerate(page):
+            if not isinstance(block, dict) or str(block.get("label") or "").lower() != "image":
+                continue
+            key = _image_block_key(page_index, block_index)
+            native_label = str(block.get("native_label") or "").strip().lower()
+            if native_label in NON_CONTENT_IMAGE_NATIVE_LABELS:
+                ignored.add(key)
+                reasons["native_label"] = reasons.get("native_label", 0) + 1
+                continue
+            fraction = _image_bbox_fraction(block, page_info)
+            if not fraction:
+                continue
+            x0, y0, x1, y1 = fraction
+            # Only consider small, top/bottom decorative marks.  A real chart
+            # can repeat in a document, but is rarely a thin header/footer on
+            # four or more pages at the same location.
+            if (y1 - y0) <= 0.10 and (y0 <= 0.16 or y1 >= 0.84):
+                signature = tuple(round(value * 40) for value in fraction)
+                repeated.setdefault(signature, []).append(key)
+    for keys in repeated.values():
+        if len({page_index for page_index, _ in keys}) < 4:
+            continue
+        for key in keys:
+            if key not in ignored:
+                ignored.add(key)
+                reasons["repeated_header_footer"] = reasons.get("repeated_header_footer", 0) + 1
+    return ignored, reasons
+
+
+def _block_text(block: dict[str, Any], *, ignored_image: bool = False) -> str:
     label = str(block.get("label") or "")
     content = str(block.get("content") or "").strip()
     if not content:
         return ""
     if label == "image":
+        # Non-content images (headers, footers and watermarks) must disappear
+        # entirely.  Falling through here used to leak the provider URL into
+        # the parsed answer/analysis text.
+        if ignored_image:
+            return ""
         return f"\n\n<img src=\"{content}\">\n\n"
     return content
 
 
 def _page_texts(payload: dict[str, Any]) -> list[str]:
     pages: list[str] = []
-    for page in payload.get("layout_details") or []:
-        parts = [_block_text(block) for block in page if isinstance(block, dict)]
+    ignored, _ = _ignored_glm_image_blocks(payload)
+    for page_index, page in enumerate(payload.get("layout_details") or []):
+        parts = [_block_text(block, ignored_image=_image_block_key(page_index, block_index) in ignored) for block_index, block in enumerate(page) if isinstance(block, dict)]
         pages.append("\n\n".join(part for part in parts if part).strip())
     return pages
 
@@ -307,6 +380,7 @@ def _glm_figure_diagnostics(record: dict[str, Any], manifest: list[dict[str, Any
     """
     record_pages = _page_span(record)
     infos = ((payload.get("data_info") or {}).get("pages") or [])
+    ignored_images, ignored_reasons = _ignored_glm_image_blocks(payload)
     blocks: list[dict[str, Any]] = []
     warnings: set[str] = set()
     for page_index, page in enumerate(payload.get("layout_details") or []):
@@ -314,8 +388,10 @@ def _glm_figure_diagnostics(record: dict[str, Any], manifest: list[dict[str, Any
         if page_number not in record_pages:
             continue
         page_info = infos[page_index] if page_index < len(infos) and isinstance(infos[page_index], dict) else {}
-        for block in page:
+        for block_index, block in enumerate(page):
             if not isinstance(block, dict) or str(block.get("label") or "") != "image":
+                continue
+            if _image_block_key(page_index, block_index) in ignored_images:
                 continue
             figure_box = _bbox_fraction(block, page_info)
             segment_candidates: list[str] = []
@@ -364,6 +440,8 @@ def _glm_figure_diagnostics(record: dict[str, Any], manifest: list[dict[str, Any
         "page_span_only": sum(1 for block in blocks if block["current_binding"] == "page_span_only"),
         "warnings": sorted(warnings),
         "image_blocks": blocks,
+        "ignored_non_content_images": sum(ignored_reasons.values()),
+        "ignored_non_content_image_reasons": ignored_reasons,
     }
 
 
@@ -386,13 +464,16 @@ def _glm_figures(record: dict[str, Any], manifest: list[dict[str, Any]], payload
     figures: list[dict[str, Any]] = []
     page_span = _page_span(record)
     infos = ((payload.get("data_info") or {}).get("pages") or [])
+    ignored_images, _ = _ignored_glm_image_blocks(payload)
     for page_index, page in enumerate(payload.get("layout_details") or []):
         page_number = page_index + 1
         if page_number not in page_span:
             continue
         page_info = infos[page_index] if page_index < len(infos) and isinstance(infos[page_index], dict) else {}
-        for block in page:
+        for block_index, block in enumerate(page):
             if str(block.get("label") or "") != "image" or not str(block.get("content") or "").startswith("http"):
+                continue
+            if _image_block_key(page_index, block_index) in ignored_images:
                 continue
             fraction = _bbox_fraction(block, page_info)
             if not fraction:
@@ -423,6 +504,44 @@ def _glm_figures(record: dict[str, Any], manifest: list[dict[str, Any]], payload
     return figures
 
 
+def _strip_images_outside_review_segments(value: str, record: dict[str, Any], payload: dict[str, Any]) -> str:
+    """Drop provider image tags that fall outside this reviewed question cut.
+
+    Some GLM responses classify a large page watermark as an ordinary image.
+    The native label is then not enough to filter it, but the reviewed cut
+    remains authoritative: an image not intersecting any of its segments
+    cannot be an inline image of this question.
+    """
+    segments = _record_segments(record)
+    if not segments:
+        return value
+
+    allowed_urls: set[str] = set()
+    ignored_images, _ = _ignored_glm_image_blocks(payload)
+    infos = ((payload.get("data_info") or {}).get("pages") or [])
+    for page_index, page in enumerate(payload.get("layout_details") or []):
+        page_number = page_index + 1
+        page_info = infos[page_index] if page_index < len(infos) and isinstance(infos[page_index], dict) else {}
+        for block_index, block in enumerate(page):
+            if not isinstance(block, dict) or str(block.get("label") or "") != "image":
+                continue
+            if _image_block_key(page_index, block_index) in ignored_images:
+                continue
+            url = str(block.get("content") or "")
+            fraction = _bbox_fraction(block, page_info)
+            if not url or not fraction:
+                continue
+            if any(
+                int(segment.get("page_number") or segment.get("pageNumber") or 0) == page_number
+                and (target := _region_fraction(segment)) is not None
+                and _overlap(target, fraction) > 0.0001
+                for segment in segments
+            ):
+                allowed_urls.add(url)
+
+    return IMAGE_RE.sub(lambda match: match.group(0) if match.group(1) in allowed_urls else "", value)
+
+
 def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any]], drafts_root: Path, artifact_dir: Path, storage_root: Path, single_question: bool = False) -> dict[str, Any]:
     pages = _page_texts(result_payload)
     expected = [normalize_question_no(record.get("question_no")) for record in manifest]
@@ -449,14 +568,14 @@ def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any
             # Exam text is owned by the unified question/answer/analysis parser.
             # Local cutter regions remain useful for review and image geometry,
             # but must not overwrite the logical question boundary.
-            problem = item["stem"]
-            answer = item["answer"]
-            analysis = item["analysis"]
+            problem = _strip_images_outside_review_segments(item["stem"], record, result_payload)
+            answer = _strip_images_outside_review_segments(item["answer"], record, result_payload)
+            analysis = _strip_images_outside_review_segments(item["analysis"], record, result_payload)
             reviewed_figures = list(record.get("figures") or [])
             glm_figures = _glm_figures(record, manifest, result_payload, artifact_dir, storage_root)
             figures = list({str(figure.get("id") or index): figure for index, figure in enumerate([*reviewed_figures, *glm_figures])}.values())
             normalized_fields = {"problem_text": normalize_math_delimiters(problem), "answer": normalize_math_delimiters(answer), "analysis": normalize_math_delimiters(analysis)}
-            result = {**record, "id": record_id, "question_no": record.get("question_no", question_no), "ocr_status": "draft", **normalized_fields, "figures": figures, "needs_human_review": not bool(problem) or (not bool(answer) and not bool(analysis)), "raw_model_output": item["raw"], "post_processing": {"provider": "glm", "page_indices": item.get("page_indices") or [], "used_text_regions": False, "has_answer_analysis_markers": bool(item.get("has_markers")), "parse_confidence": item.get("parse_confidence", "high"), "parse_warnings": item.get("parse_warnings") or [], "figure_binding": _glm_figure_diagnostics(record, manifest, result_payload), "render_diagnostics": _formula_diagnostics(normalized_fields)}}
+            result = {**record, "id": record_id, "question_no": record.get("question_no", question_no), "ocr_status": "draft", **normalized_fields, "figures": figures, "needs_human_review": not bool(problem) or (not bool(answer) and not bool(analysis)), "raw_model_output": _strip_images_outside_review_segments(item["raw"], record, result_payload), "post_processing": {"provider": "glm", "page_indices": item.get("page_indices") or [], "used_text_regions": False, "has_answer_analysis_markers": bool(item.get("has_markers")), "parse_confidence": item.get("parse_confidence", "high"), "parse_warnings": item.get("parse_warnings") or [], "figure_binding": _glm_figure_diagnostics(record, manifest, result_payload), "render_diagnostics": _formula_diagnostics(normalized_fields)}}
             successes += 1
         _atomic_json(draft_dir / "ocr_result.json", result)
         _atomic_text(draft_dir / "question.md", f"# 题目\n\n{result.get('problem_text') or ''}\n\n# 答案\n\n{result.get('answer') or ''}\n\n# 解析\n\n{result.get('analysis') or ''}\n")

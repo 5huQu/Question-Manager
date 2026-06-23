@@ -187,4 +187,7 @@ export type ExportRecordItemSnapshot = {
 }
 
 export const activeOcrProcesses = new Map<string, ChildProcessWithoutNullStreams>()
-export const duplicateSimilarityThreshold = 0.62
+// Similar-question review is a guard against accidental re-import, not a
+// semantic recommendation engine.  Require near-identical stems so common
+// exam wording and option scaffolding do not interrupt normal ingestion.
+export const duplicateSimilarityThreshold = 0.98

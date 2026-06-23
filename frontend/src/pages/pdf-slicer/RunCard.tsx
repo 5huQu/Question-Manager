@@ -22,6 +22,9 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
   const allQuestionsBanked = pendingBankCount > 0 && (run.bankedQuestions ?? 0) >= pendingBankCount
   const canOpenPendingBank = fileRole !== 'solutions' && pendingBankCount > 0 && !allQuestionsBanked
   const showIntermediateStatus = run.ocrStatus !== 'succeeded' && !allQuestionsBanked
+  const showSliceProgress = !allQuestionsBanked && run.ocrStatus !== 'succeeded' && (run.sliceStatus === 'running' || run.sliceStatus === 'succeeded')
+  const sliceProgressWidth = run.sliceStatus === 'running' ? 50 : 100
+  const sliceProgressLabel = run.sliceStatus === 'running' ? '切分中...' : '切分完成'
   const hasImageFormula = Boolean(run.diagnosticMessage)
   const recognitionFileKind = ['word_native', 'docx_native', 'native_docx'].includes(String(run.uploadMode || '')) ? 'Word' : 'PDF'
   const recognitionFileName = recognitionFileKind === 'Word' ? (run.sourceFileName || run.pdfName) : run.pdfName
@@ -104,14 +107,18 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
         </div>
       </div>
 
-      {showIntermediateStatus && run.ocrStatus !== 'queued' && run.ocrStatus !== 'failed' && run.ocrStatus !== 'succeeded' && (
+      {showSliceProgress && (
         <div className="mt-4 pt-4 border-t">
            <div className="flex justify-between text-xs mb-1.5">
-             <span className="text-muted-foreground">处理中...</span>
+             <span className="text-muted-foreground">{sliceProgressLabel}</span>
+             <span className="text-muted-foreground">{sliceProgressWidth}%</span>
            </div>
            <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-             <div className="bg-emerald-500 h-1.5 rounded-full w-full relative overflow-hidden">
-               <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+             <div
+               className={`h-1.5 rounded-full relative overflow-hidden ${run.sliceStatus === 'running' ? 'bg-amber-500' : 'bg-emerald-500'}`}
+               style={{ width: `${sliceProgressWidth}%` }}
+             >
+               {run.sliceStatus === 'running' ? <div className="absolute inset-0 bg-white/20 animate-pulse" /> : null}
              </div>
            </div>
         </div>

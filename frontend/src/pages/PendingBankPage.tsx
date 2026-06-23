@@ -53,6 +53,14 @@ function similarItems(items: QuestionItem[]) {
   return items.filter((item) => (item.similarQuestions?.length ?? 0) > 0)
 }
 
+function isSameRunSimilarQuestion(item: Pick<QuestionItem, 'sourceRunId'>, candidate: Pick<NonNullable<QuestionItem['similarQuestions']>[number], 'sourceRunId'>) {
+  return Boolean(item.sourceRunId) && Boolean(candidate.sourceRunId) && item.sourceRunId === candidate.sourceRunId
+}
+
+function similarQuestionOriginLabel(item: Pick<QuestionItem, 'sourceRunId'>, candidate: Pick<NonNullable<QuestionItem['similarQuestions']>[number], 'sourceRunId'>) {
+  return isSameRunSimilarQuestion(item, candidate) ? '本批次内重复' : '题库历史重复'
+}
+
 type SimilarityReviewDialogProps = {
   items: QuestionItem[]
   confirmText: string
@@ -517,11 +525,11 @@ function BatchOverview({ run, summary }: { run: ApiRun; summary: PendingBankSumm
   }, [summary])
 
   return (
-    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
-      <div className="flex items-center justify-between gap-3 mb-2">
+    <div className="rounded-xl border bg-card text-card-foreground p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3 mb-3">
         <div className="min-w-0">
-          <p className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 truncate">{run.paperTitle || run.pdfName}</p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{statusMessage}</p>
+          <p className="font-semibold text-sm text-foreground truncate">{run.paperTitle || run.pdfName}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{statusMessage}</p>
         </div>
         <Badge variant={run.sourceFileKind === '讲义型' ? 'warning' : 'default'}>
           {run.sourceFileKind || '未确认'}
@@ -531,8 +539,8 @@ function BatchOverview({ run, summary }: { run: ApiRun; summary: PendingBankSumm
         <MetricChip label="总题数" value={summary.total} />
         <MetricChip label="可入库" value={summary.ready} color="emerald" />
         <MetricChip label="需处理" value={summary.blocked} color="amber" />
-        <MetricChip label="已入库" value={summary.banked} color="blue" />
-        <MetricChip label="已跳过" value={summary.skipped} color="zinc" />
+        <MetricChip label="已入库" value={summary.banked} color="neutral" />
+        <MetricChip label="已跳过" value={summary.skipped} color="muted" />
       </div>
     </div>
   )
@@ -542,14 +550,14 @@ function MetricChip({ label, value, color }: { label: string; value: number; col
   const colorMap: Record<string, string> = {
     emerald: 'text-emerald-600 dark:text-emerald-400',
     amber: 'text-amber-600 dark:text-amber-400',
-    blue: 'text-blue-600 dark:text-blue-400',
-    zinc: 'text-zinc-500 dark:text-zinc-400',
+    neutral: 'text-foreground',
+    muted: 'text-muted-foreground',
   }
-  const valueColor = color ? colorMap[color] || '' : 'text-zinc-900 dark:text-zinc-100'
+  const valueColor = color ? colorMap[color] || '' : 'text-foreground'
   return (
-    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 px-2.5 py-2 text-center">
-      <p className="text-[10px] text-zinc-500 dark:text-zinc-400">{label}</p>
-      <p className={`mt-0.5 text-lg font-bold ${valueColor}`}>{value}</p>
+    <div className="rounded-lg border bg-muted/30 px-2.5 py-2 text-center">
+      <p className="text-[10px] text-muted-foreground font-medium">{label}</p>
+      <p className={`mt-0.5 text-lg font-bold leading-none ${valueColor}`}>{value}</p>
     </div>
   )
 }
@@ -568,22 +576,22 @@ function FilterBar({ filter, summary, onFilterChange }: { filter: PendingBankFil
   ]
 
   return (
-    <div className="flex gap-1.5 flex-wrap">
+    <div className="inline-flex h-9 items-center justify-start rounded-lg bg-muted p-1 text-muted-foreground gap-1 overflow-x-auto max-w-full shrink-0">
       {tabs.map((tab) => (
         <button
           key={tab.key}
           onClick={() => onFilterChange(tab.key)}
-          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer
+          className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 h-7 text-xs font-medium transition-all cursor-pointer select-none
             ${filter === tab.key
-              ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 shadow-sm'
-              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'hover:bg-background/40 hover:text-foreground'
             }`}
         >
           {tab.label}
-          <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold
+          <span className={`ml-1.5 rounded-sm px-1.5 py-0.5 text-[9px] font-bold transition-all
             ${filter === tab.key
-              ? 'bg-white/20 dark:bg-zinc-900/20'
-              : 'bg-zinc-200 dark:bg-zinc-700'
+              ? 'bg-muted text-muted-foreground'
+              : 'bg-background/50 text-muted-foreground'
             }`}>
             {tab.count}
           </span>
@@ -635,8 +643,11 @@ function QuestionCard({ item, active, selected, selectable, onSelect, onClick }:
 
   return (
     <div
-      className={`flex items-start gap-2 px-3 py-2.5 cursor-pointer border-b border-zinc-100 dark:border-zinc-800 transition-colors
-        ${active ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'}`}
+      className={`flex items-start gap-2 py-2.5 pr-3 cursor-pointer border-b transition-colors border-border/60
+        ${active
+          ? 'bg-accent/80 text-accent-foreground border-l-2 border-l-primary pl-2.5'
+          : 'border-l-2 border-l-transparent pl-2.5 hover:bg-muted/50'
+        }`}
     >
       <button
         onClick={(e) => { e.stopPropagation(); onSelect() }}
@@ -644,40 +655,42 @@ function QuestionCard({ item, active, selected, selectable, onSelect, onClick }:
         className={`mt-0.5 shrink-0 ${selectable ? 'cursor-pointer' : 'cursor-not-allowed opacity-30'}`}
       >
         {selected
-          ? <CheckSquare className="size-4 text-zinc-900 dark:text-white" />
-          : <Square className="size-4 text-zinc-400" />
+          ? <CheckSquare className="size-4 text-foreground" />
+          : <Square className="size-4 text-muted-foreground" />
         }
       </button>
       <div className="min-w-0 flex-1" onClick={onClick}>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-semibold text-foreground">
             {item.questionNo ? `第 ${item.questionNo} 题` : `#${item.serialNo ?? item.id.slice(0, 6)}`}
           </span>
           {item.formatIssue?.code === 'inline_image_reference_mismatch' ? (
-            <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">题图风险</span>
+            <Badge variant="danger" className="text-[9px] px-1.5 py-0 font-medium">题图风险</Badge>
           ) : null}
           {hasFormulaRenderRisk(item) ? (
-            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">公式未规范化</span>
+            <Badge variant="warning" className="text-[9px] px-1.5 py-0 font-medium">公式未规范</Badge>
           ) : null}
           <Badge variant={bankStatusVariant(item.bankStatus, item)}>
             {bankStatusLabel(item.bankStatus, item)}
           </Badge>
           {item.questionType && item.questionType !== 'OCR题' ? (
-            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">{item.questionType}</span>
+            <Badge variant="default" className="text-[9px] px-1.5 py-0 font-medium border-transparent bg-muted text-muted-foreground">{item.questionType}</Badge>
           ) : null}
           {item.pendingBankReadOnly ? (
-            <span className="text-[10px] text-red-500 dark:text-red-400">未生成候选</span>
+            <Badge variant="danger" className="text-[9px] px-1.5 py-0 font-medium">无候选</Badge>
           ) : null}
           {item.similarQuestions?.length ? (
-            <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400">疑似重复</span>
+            <Badge variant="warning" className="text-[9px] px-1.5 py-0 font-medium">疑似重复</Badge>
           ) : null}
         </div>
-        <div className="flex items-center gap-2 mt-1">
-          {item.hasFigures ? <ImageIcon className="size-3 text-zinc-400" /> : null}
-          {item.similarQuestions?.length ? <AlertTriangle className="size-3 text-amber-500" /> : null}
-        </div>
+        {item.hasFigures || item.similarQuestions?.length ? (
+          <div className="flex items-center gap-2 mt-1">
+            {item.hasFigures ? <ImageIcon className="size-3 text-muted-foreground" /> : null}
+            {item.similarQuestions?.length ? <AlertTriangle className="size-3 text-amber-500 animate-pulse" /> : null}
+          </div>
+        ) : null}
         {preview ? (
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed line-clamp-2">{preview}</p>
+          <p className="mt-1 text-xs text-muted-foreground leading-relaxed line-clamp-2">{preview}</p>
         ) : null}
       </div>
     </div>
@@ -695,16 +708,16 @@ function BulkActionBar({ count, busy, onConfirm, onSkip, onDelete }: {
 }) {
   const [moreOpen, setMoreOpen] = useState(false)
   return (
-    <div className="shrink-0 flex items-center gap-2 mt-2 mx-1 px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 shadow-sm">
-      <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mr-1">已选 {count} 题</span>
+    <div className="shrink-0 flex items-center gap-2 mt-2 mx-1 px-3 py-2 rounded-xl border border-border bg-muted/30 shadow-sm">
+      <span className="text-xs font-semibold text-muted-foreground mr-1">已选 {count} 题</span>
       <Button size="sm" icon={BadgeCheck} disabled={busy} onClick={onConfirm}>确认入库 {count} 题</Button>
       <Button size="sm" variant="outline" icon={SkipForward} disabled={busy} onClick={onSkip}>跳过</Button>
       <div className="relative">
         <Button size="sm" variant="outline" icon={ChevronDown} disabled={busy} onClick={() => setMoreOpen(!moreOpen)}>更多</Button>
         {moreOpen ? (
-          <div className="absolute top-full left-0 mt-1 z-10 w-36 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg py-1">
+          <div className="absolute top-full left-0 mt-1.5 z-10 w-36 rounded-md border bg-popover text-popover-foreground shadow-md py-1 animate-in fade-in-50 duration-100">
             <button
-              className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 flex items-center gap-2 cursor-pointer"
+              className="w-full text-left px-3 py-2 text-xs hover:bg-destructive/10 text-destructive flex items-center gap-2 cursor-pointer transition-colors"
               onClick={() => { setMoreOpen(false); onDelete() }}
             >
               <Trash2 className="size-3.5" />批量删除
@@ -746,9 +759,9 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
   return (
     <div className="flex flex-col h-full">
       {/* Action bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b bg-muted/40 shrink-0">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">
+          <span className="font-semibold text-sm text-foreground">
             {item.questionNo ? `第 ${item.questionNo} 题` : `#${item.serialNo ?? item.id.slice(0, 6)}`}
           </span>
           <Badge variant={bankStatusVariant(item.bankStatus, item)}>
@@ -756,15 +769,15 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
           </Badge>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-0.5">
+          <div className="inline-flex h-8 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground select-none">
             <button
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${previewMode === 'content' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'}`}
+              className={`rounded-sm px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${previewMode === 'content' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               onClick={() => setPreviewMode('content')}
             >
               识别结果
             </button>
             <button
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${previewMode === 'images' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'}`}
+              className={`rounded-sm px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${previewMode === 'images' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               onClick={() => setPreviewMode('images')}
             >
               原图 / OCR 图块
@@ -890,6 +903,9 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
                         </span>
                         <span>{Math.round(candidate.similarity * 100)}%</span>
                       </div>
+                      <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                        {similarQuestionOriginLabel(item, candidate)}
+                      </p>
                       <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">{candidate.sourceTitle || '题库主库'}</p>
                       {candidate.stemPreview ? <p className="mt-1 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300 line-clamp-2">{candidate.stemPreview}</p> : null}
                     </div>
@@ -907,20 +923,20 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
 
 function ContentSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/30 overflow-hidden">
-      <div className="px-3 py-1.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800/60">
-        <p className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">{title}</p>
+    <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
+      <div className="px-4 py-2 border-b bg-muted/40">
+        <p className="text-xs font-semibold text-foreground tracking-tight">{title}</p>
       </div>
-      <div className="px-3 py-2.5 text-sm leading-relaxed text-zinc-800 dark:text-zinc-200">{children}</div>
+      <div className="p-4 text-sm leading-relaxed text-foreground">{children}</div>
     </div>
   )
 }
 
 function MetaField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/30 px-3 py-2">
-      <p className="text-[10px] text-zinc-500 dark:text-zinc-400">{label}</p>
-      <p className="mt-0.5 text-xs font-medium text-zinc-800 dark:text-zinc-200 truncate">{value}</p>
+    <div className="rounded-lg border bg-muted/20 px-3.5 py-2.5">
+      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
+      <p className="mt-1 text-xs font-bold text-foreground truncate" title={value}>{value}</p>
     </div>
   )
 }
@@ -936,7 +952,7 @@ function MoreActionsDropdown({ busy, onReOcr, onSkip, onDelete }: {
     <div className="relative">
       <Button size="sm" variant="outline" icon={ChevronDown} disabled={busy} onClick={() => setOpen(!open)}>更多</Button>
       {open ? (
-        <div className="absolute top-full right-0 mt-1 z-10 w-36 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg py-1">
+        <div className="absolute top-full right-0 mt-1.5 z-10 w-36 rounded-md border bg-popover text-popover-foreground shadow-md py-1 animate-in fade-in-50 duration-100">
           {onReOcr ? <DropdownItem icon={ScanSearch} label="重新 OCR" onClick={() => { setOpen(false); onReOcr() }} /> : null}
           <DropdownItem icon={SkipForward} label="跳过此题" onClick={() => { setOpen(false); onSkip() }} />
           <DropdownItem icon={Trash2} label="删除此题" danger onClick={() => { setOpen(false); onDelete() }} />
@@ -951,8 +967,8 @@ function DropdownItem({ icon: Icon, label, danger, onClick }: { icon: typeof Ref
     <button
       className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 cursor-pointer transition-colors
         ${danger
-          ? 'hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400'
-          : 'hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300'
+          ? 'hover:bg-destructive/10 text-destructive'
+          : 'hover:bg-accent hover:text-accent-foreground text-foreground'
         }`}
       onClick={onClick}
     >
@@ -974,6 +990,7 @@ function SimilarityReviewDialog({ items, confirmText, onProceed, onCancel }: Sim
   const candidates = activeItem?.similarQuestions ?? []
   const candidateIndex = Math.min(candidateIndexByItem[activeItem?.id || ''] ?? 0, Math.max(candidates.length - 1, 0))
   const candidate = candidates[candidateIndex]
+  const sameRun = activeItem && candidate ? isSameRunSimilarQuestion(activeItem, candidate) : false
 
   useEffect(() => {
     if (activeIndex >= items.length) setActiveIndex(0)
@@ -986,18 +1003,18 @@ function SimilarityReviewDialog({ items, confirmText, onProceed, onCancel }: Sim
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4">
-      <div className="flex h-[86vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-950">
-        <div className="shrink-0 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-zinc-950/45 backdrop-blur-sm p-4">
+      <div className="flex h-[86vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl">
+        <div className="shrink-0 border-b border-border px-5 py-4 bg-card">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-lg font-semibold text-zinc-950 dark:text-zinc-50">存在疑似重复题</h3>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                检测到 {items.length} 组相似内容。请核对两侧题目，确认不是重复后再入库。
+              <h3 className="text-lg font-semibold text-foreground">存在疑似重复题</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                检测到 {items.length} 组相似内容。请核对两侧题目，确认不是重复后再入库。当前右侧显示的是{sameRun ? '本批次内重复' : '题库历史重复'}。
               </p>
             </div>
             <button
-              className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
               onClick={onCancel}
               aria-label="关闭"
             >
@@ -1012,10 +1029,10 @@ function SimilarityReviewDialog({ items, confirmText, onProceed, onCancel }: Sim
                 return (
                   <button
                     key={item.id}
-                    className={`shrink-0 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                    className={`shrink-0 rounded-md border px-3 py-2 text-left text-xs transition-all cursor-pointer ${
                       index === activeIndex
-                        ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950'
-                        : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                        ? 'border-primary bg-primary text-primary-foreground shadow-sm font-semibold'
+                        : 'border-input bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                     }`}
                     onClick={() => setActiveIndex(index)}
                   >
@@ -1040,9 +1057,10 @@ function SimilarityReviewDialog({ items, confirmText, onProceed, onCancel }: Sim
               analysisMarkdown={activeItem.analysisMarkdown}
             />
             <SimilarityQuestionPane
-              label="题库相似题"
+              label={sameRun ? '本批次相似题' : '题库相似题'}
               title={candidate.questionNo ? `第 ${candidate.questionNo} 题` : candidate.id.slice(0, 8)}
               sourceTitle={candidate.sourceTitle}
+              originLabel={similarQuestionOriginLabel(activeItem, candidate)}
               questionType={candidate.questionType}
               similarity={candidate.similarity}
               stemMarkdown={candidate.stemMarkdown || candidate.stemPreview}
@@ -1055,7 +1073,7 @@ function SimilarityReviewDialog({ items, confirmText, onProceed, onCancel }: Sim
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-zinc-200 bg-zinc-50 px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="shrink-0 border-t border-border bg-muted/40 px-5 py-4">
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="outline" onClick={onCancel}>返回核对</Button>
             <Button size="sm" onClick={onProceed}>{confirmText}</Button>
@@ -1070,6 +1088,7 @@ function SimilarityQuestionPane({
   label,
   title,
   sourceTitle,
+  originLabel,
   questionType,
   similarity,
   stemMarkdown,
@@ -1082,6 +1101,7 @@ function SimilarityQuestionPane({
   label: string
   title: string
   sourceTitle?: string
+  originLabel?: string
   questionType?: string
   similarity?: number
   stemMarkdown: string
@@ -1092,13 +1112,14 @@ function SimilarityQuestionPane({
   onCandidateChange?: (index: number) => void
 }) {
   return (
-    <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="shrink-0 border-b border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground">
+      <div className="shrink-0 border-b border-border bg-muted/40 px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">{label}</p>
-            <h4 className="mt-1 truncate text-base font-semibold text-zinc-950 dark:text-zinc-50">{title}</h4>
-            <p className="mt-1 truncate text-xs text-zinc-500 dark:text-zinc-400">{sourceTitle || '未标注来源'}{questionType ? ` · ${questionType}` : ''}</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
+            <h4 className="mt-1 truncate text-base font-semibold text-foreground">{title}</h4>
+            <p className="mt-1 truncate text-xs text-muted-foreground">{sourceTitle || '未标注来源'}{questionType ? ` · ${questionType}` : ''}</p>
+            {originLabel ? <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">{originLabel}</p> : null}
           </div>
           {typeof similarity === 'number' ? (
             <div className="shrink-0 rounded-lg bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
@@ -1107,14 +1128,14 @@ function SimilarityQuestionPane({
           ) : null}
         </div>
         {candidates && candidates.length > 1 && onCandidateChange ? (
-          <div className="mt-3 flex gap-1.5 overflow-x-auto">
+          <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">
             {candidates.map((candidate, index) => (
               <button
                 key={candidate.id}
-                className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${
                   index === candidateIndex
-                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
-                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                 }`}
                 onClick={() => onCandidateChange(index)}
               >
@@ -1157,11 +1178,11 @@ type ConfirmDialogProps = {
 
 function ConfirmDialog({ title, message, danger, confirmText = '确认', cancelText = '取消', onConfirm, onCancel }: ConfirmDialogProps) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/35 p-4">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-5 space-y-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/45 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-xl border border-border bg-card text-card-foreground shadow-2xl p-5 space-y-4">
         <div>
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{title}</h3>
-          <p className="mt-1.5 whitespace-pre-line text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">{message}</p>
+          <h3 className="text-base font-semibold text-foreground">{title}</h3>
+          <p className="mt-1.5 whitespace-pre-line text-sm text-muted-foreground leading-relaxed">{message}</p>
         </div>
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="outline" onClick={onCancel}>{cancelText}</Button>

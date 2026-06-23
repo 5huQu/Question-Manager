@@ -16,7 +16,8 @@ export function OcrJobCard({ run, onReload }: { run: ApiRun; onReload: () => voi
   const generatedLabel = fileRole === 'solutions' ? '已生成解析' : fileRole === 'questions' ? '已生成题干' : '已生成题目'
   const busy = Boolean(action)
   const generatedCount = Math.max(progress?.importedQuestions ?? 0, progress?.successfulDraftCount ?? 0, visibleRun.solutionItems || 0)
-  const failedCount = Math.max(progress?.failedDraftCount ?? 0, progress ? progress.totalQuestions - generatedCount : 0, 0)
+  const failedCount = Math.max(progress?.failedDraftCount ?? 0, 0)
+  const pendingCount = Math.max(progress?.pendingDraftCount ?? Math.max((progress?.draftCount ?? 0) - generatedCount - failedCount, 0), 0)
   const pendingBankCount = progress?.importedQuestions ?? visibleRun.importedQuestions ?? 0
   const allQuestionsBanked = pendingBankCount > 0 && (visibleRun.bankedQuestions ?? 0) >= pendingBankCount
   const canOpenPendingBank = fileRole !== 'solutions' && !allQuestionsBanked && (visibleRun.ocrStatus === 'succeeded' || pendingBankCount > 0)
@@ -99,7 +100,7 @@ export function OcrJobCard({ run, onReload }: { run: ApiRun; onReload: () => voi
         <div className="flex justify-between text-sm font-medium text-muted-foreground"><span>{providerPhase ? `${providerLabel} · ${providerPhaseLabel[providerPhase] || providerPhase}` : `${visibleRun.processedQuestions ?? progress?.draftCount ?? 0}/${visibleRun.totalOcrQuestions ?? visibleRun.approvedQuestions}`}</span><span>{Math.round((visibleRun.progressPercent ?? 0) * 100)}%</span></div>
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round((visibleRun.progressPercent ?? 0) * 100)}%` }} /></div>
       </div> : null}
-      {progress ? <div className="mt-4 grid gap-2 sm:grid-cols-3"><MiniMetric label="总题数" value={progress.totalQuestions} /><MiniMetric label={generatedLabel} value={generatedCount} /><MiniMetric label="失败题数" value={failedCount} /></div> : null}
+      {progress ? <div className="mt-4 grid gap-2 sm:grid-cols-3"><MiniMetric label="总题数" value={progress.totalQuestions} /><MiniMetric label={generatedLabel} value={generatedCount} /><MiniMetric label={progress.active ? '待处理题数' : '失败题数'} value={progress.active ? pendingCount : failedCount} /></div> : null}
       {notice ? <div className="mt-3 flex items-center gap-2 rounded-xl border bg-muted/40 px-3 py-2 text-sm text-foreground">{action ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}<span>{notice}</span></div> : null}
       {canOpenPendingBank ? (
         <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">

@@ -28,7 +28,7 @@ import { Modal } from '@/components/dialogs/Modal'
 import { QuestionContent } from '@/components/questions/QuestionContent'
 import { Button } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
-import type { Dashboard, QuestionItem, RichBlock, SliceReviewItem, TagLibraries } from '@/types'
+import type { Dashboard, QuestionItem, RichBlock, SliceReviewItem } from '@/types'
 import { buildFullPaperOcrPrompt, singleQuestionOcrPrompt } from '@/constants/ocrPrompts'
 import {
   buildJsonParseHint,
@@ -212,8 +212,7 @@ export function QuestionCreatePage() {
     && Boolean(selectedSliceRun && slicePairStatus?.itemCount)
     && (selectedSliceRun?.importedQuestions ?? 0) >= (slicePairStatus?.itemCount ?? 0)
   const canImportPaper = paperJsonStatus.status === 'valid' && (paperImportSource !== 'slices' || Boolean(selectedSliceRunId && slicePairStatus && slicePairStatus.blockingCount === 0))
-  const createTagLibraries = useAsync<TagLibraries>(() => api('/api/question-bank/tag-libraries'), [])
-  const fullPaperAiPrompt = useMemo(() => buildFullPaperOcrPrompt(createTagLibraries.data), [createTagLibraries.data])
+  const fullPaperAiPrompt = useMemo(() => buildFullPaperOcrPrompt(), [])
   const activeAiPrompt = target === 'single' ? singleQuestionOcrPrompt : fullPaperAiPrompt
 
   useEffect(() => {
@@ -456,7 +455,7 @@ export function QuestionCreatePage() {
   return (
     <section className="space-y-6">
       {promptModalOpen ? (
-        <Modal title="整套 JSON 导入提示词" desc="复制后发送给大模型，再把返回的 JSON 粘贴到本页导入。" onClose={() => setPromptModalOpen(false)} wide>
+        <Modal title="整套 JSON 导入提示词" desc="复制后发送给大模型，再把返回的 JSON 粘贴到本页导入。这里只做忠实转写，不补写、不分类。" onClose={() => setPromptModalOpen(false)} wide>
           <div className="grid gap-4 lg:grid-cols-[3fr_1fr]">
             <div className="overflow-hidden rounded-lg border bg-muted/40">
               <div className="flex items-center justify-between border-b px-4 py-2.5">
@@ -467,7 +466,7 @@ export function QuestionCreatePage() {
             </div>
             <aside className="space-y-3">
               <div className={`${sectionClass} p-4 text-xs text-muted-foreground`}>
-                <h4 className="flex items-center gap-2 border-b pb-2 font-bold text-foreground"><BookOpen className="size-4 text-primary" />AI 识别说明</h4>
+                <h4 className="flex items-center gap-2 border-b pb-2 font-bold text-foreground"><BookOpen className="size-4 text-primary" />AI 转写说明</h4>
                 <ol className="mt-3 list-decimal space-y-2 pl-4 leading-5">
                   <li>复制左侧代码窗口右上角的预设提示词。</li>
                   <li>将提示词与题图或 PDF 一并发送给大模型。</li>
@@ -511,7 +510,7 @@ export function QuestionCreatePage() {
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { key: 'direct' as const, title: '直接录入', desc: target === 'single' ? '表单/源码导入' : '粘贴 JSON 导入', Icon: PencilLine },
-                  { key: 'ai' as const, title: 'AI 辅助', desc: 'OCR 提示词', Icon: Sparkles },
+                  { key: 'ai' as const, title: 'AI 辅助', desc: 'OCR 转写提示词', Icon: Sparkles },
                 ].map(({ key, title, desc, Icon }) => (
                   <button key={key} type="button" onClick={() => setMethod(key)} className={optionButtonClass(method === key)}>
                     <span className="flex items-center justify-between gap-2 text-xs font-bold">{title}<Icon className="size-3.5 opacity-70" /></span>
@@ -524,7 +523,7 @@ export function QuestionCreatePage() {
 
           {method === 'ai' ? (
             <div className={`${sectionClass} space-y-4 p-5`}>
-              <h4 className="flex items-center gap-2 border-b pb-2.5 text-xs font-bold"><BookOpen className="size-4 text-primary" />AI 识别说明</h4>
+              <h4 className="flex items-center gap-2 border-b pb-2.5 text-xs font-bold"><BookOpen className="size-4 text-primary" />AI 转写说明</h4>
               <ol className="list-decimal space-y-3.5 pl-4 text-xs leading-relaxed text-muted-foreground">
                 <li>复制右侧面板中的专用 OCR 提示词。</li>
                 <li>打开大模型平台，将提示词与试卷图片/PDF 文件一并发送。</li>
@@ -686,7 +685,7 @@ export function QuestionCreatePage() {
           {method === 'ai' ? (
             <div className={`${sectionClass} space-y-4 p-5`}>
               <div className="flex items-start justify-between gap-4">
-                <div><h3 className="text-sm font-semibold">AI 智能录入提示词 (OCR)</h3><p className="mt-1 text-xs text-muted-foreground">复制提示词，配合大模型将 OCR 文本转换为标准格式。</p></div>
+                <div><h3 className="text-sm font-semibold">AI 智能录入提示词 (OCR)</h3><p className="mt-1 text-xs text-muted-foreground">复制提示词，配合大模型把 OCR 文本转成标准 JSON；只做转写，不补写、不分类、不改题意。</p></div>
                 <Button type="button" variant="outline" size="sm" icon={copied ? Check : Copy} onClick={copyPrompt}>{copied ? '已复制' : '复制提示词'}</Button>
               </div>
               <div className="rounded-lg border bg-muted/40">
@@ -696,7 +695,7 @@ export function QuestionCreatePage() {
                 <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed text-foreground select-all">{activeAiPrompt}</pre>
               </div>
               <div className="flex flex-wrap items-center gap-2 px-1 py-0.5"><span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">快速打开 AI 平台：</span>{[['Gemini', 'https://gemini.google.com'], ['ChatGPT', 'https://chatgpt.com'], ['Claude', 'https://claude.ai'], ['QwenStudio', 'https://chat.qwen.ai/'], ['豆包', 'https://www.doubao.com']].map(([label, href]) => <a key={label} href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center rounded-md border border-input bg-background px-3 py-1 text-xs font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground">{label}</a>)}</div>
-              <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground"><FileText className="mt-0.5 size-4 shrink-0" /><div><span className="font-bold">提示：</span>把此提示词与你的试卷图片或 PDF 文件一并发送给大模型，然后复制输出的 JSON 并切换回本页面的 <button type="button" className="font-bold underline" onClick={() => setMethod('direct')}>直接录入</button> 即可。</div></div>
+              <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground"><FileText className="mt-0.5 size-4 shrink-0" /><div><span className="font-bold">提示：</span>把此提示词与你的试卷图片或 PDF 文件一并发送给大模型，然后复制输出的 JSON，再切回本页面的 <button type="button" className="font-bold underline" onClick={() => setMethod('direct')}>直接录入</button> 即可。</div></div>
             </div>
           ) : null}
         </div>

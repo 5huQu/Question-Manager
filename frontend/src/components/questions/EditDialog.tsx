@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { BookOpen, Check, Copy, Crop, FileText, Info as InfoIcon, LoaderCircle, RefreshCcw, X } from 'lucide-react'
 import { api } from '@/api/client'
-import { MarkdownContent, normalizeMarkdownForRender } from '@/components/MarkdownContent'
+import { MarkdownContent } from '@/components/MarkdownContent'
 import { normalizeRichBlocks, richBlocksPlainText } from '@/components/RichContent'
 import { Modal } from '@/components/dialogs/Modal'
 import { Badge, Button } from '@/components/ui'
@@ -175,32 +175,14 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
   }
 
   function normalizeAiJsonText(value: string) {
-    const latexCommands = [
-      'frac', 'dfrac', 'tfrac', 'sqrt', 'perp', 'parallel', 'angle', 'triangle', 'Delta',
-      'sin', 'cos', 'tan', 'ln', 'log', 'text', 'mathrm', 'mathbb', 'mathcal', 'vec',
-      'overrightarrow', 'overline', 'left', 'right', 'begin', 'end', 'cdot', 'times',
-      'le', 'leq', 'ge', 'geq', 'neq', 'infty', 'alpha', 'beta', 'theta', 'pi', 'circ', 'pm',
-      'sim', 'approx', 'to', 'in', 'notin', 'subset', 'supset', 'emptyset',
-      'cup', 'cap', 'subset', 'mid', 'because', 'therefore',
-    ]
-    const commandPattern = new RegExp(`(^|[^\\\\])\\\\(${latexCommands.join('|')})(?=\\b|\\{|\\s)`, 'g')
     return normalizeJsonSyntaxQuotes(normalizedJsonText(value))
       .replace(/[‘’]/g, "'")
       .replace(/，(?=\s*["}\]])/g, ',')
       .replace(/：(?=\s*["{\[])/g, ':')
-      .replace(commandPattern, '$1\\\\$2')
       .replace(/,\s*([}\]])/g, '$1')
   }
 
   function escapeJsonStringControlChars(value: string) {
-    const latexCommandNames = new Set([
-      'frac', 'dfrac', 'tfrac', 'sqrt', 'text', 'mathrm', 'mathbb', 'mathcal',
-      'sin', 'cos', 'tan', 'ln', 'log', 'sim', 'approx', 'left', 'right',
-      'le', 'leq', 'ge', 'geq', 'neq', 'times', 'cdot', 'theta', 'alpha', 'beta',
-      'pi', 'infty', 'perp', 'parallel', 'angle', 'vec', 'overrightarrow', 'overline',
-      'begin', 'end', 'to', 'in', 'notin', 'cup', 'cap', 'subset', 'supset',
-      'because', 'therefore',
-    ])
     let result = ''
     let inString = false
     let escaped = false
@@ -218,11 +200,6 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
         continue
       }
       if (char === '\\') {
-        const commandMatch = value.slice(index + 1).match(/^[A-Za-z]+/)
-        if (commandMatch && latexCommandNames.has(commandMatch[0])) {
-          result += '\\\\'
-          continue
-        }
         if (next && !'"\\/bfnrtu'.includes(next)) {
           result += '\\\\'
         } else {
@@ -266,85 +243,6 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
     if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean)
     if (typeof value === 'string') return splitTags(value)
     return undefined
-  }
-
-  function cleanupImportedMarkdown(value: string) {
-    const latexCommandPattern = /\\\\([a-zA-Z]+)/g
-    const brokenTextCommandPattern = /(^|[^\\A-Za-z])(?:ext|text)\{([^{}\n]{1,32})\}/g
-    const stripModelNotePattern = /\n?\s*\*?\(?注[:：][\s\S]*?(?:原答案|原文|图片原文|按图片).*?\)?\*?\s*$/u
-    const cleaned = String(value || '')
-      .replace(/\r\n?/g, '\n')
-      .replace(/\t+ext\{/g, '\\text{')
-      .replace(latexCommandPattern, (_, command: string) => `\\${command}`)
-      .replace(brokenTextCommandPattern, (_, prefix: string, body: string) => `${prefix}\\text{${body}}`)
-      .replace(stripModelNotePattern, '')
-    return normalizeMarkdownForRender(wrapLooseLatexMath(cleanMarkdownTableMath(cleaned))).trim()
-  }
-
-  function cleanMarkdownTableMath(value: string) {
-    return value.split('\n').map((line) => {
-      if (!/^\s*\|.*\|\s*$/.test(line) || /^\s*\|?\s*:?-{3,}/.test(line)) return line
-      const hasEdge = line.trim().startsWith('|') && line.trim().endsWith('|')
-      const rawCells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|')
-      const cells = rawCells.map((cell) => {
-        const text = cell.trim()
-        if (!text || /^\$[\s\S]*\$$/.test(text)) return text
-        if (!/\\[a-zA-Z]+|[_^]\{?[\w\\]+/.test(text)) return text
-        return `$${text}$`
-      })
-      const row = cells.join(' | ')
-      return hasEdge ? `| ${row} |` : row
-    }).join('\n')
-  }
-
-  function cleanQuestionDraftPatch(next: Partial<QuestionItem>) {
-    const cleaned = { ...next }
-    if (typeof cleaned.stemMarkdown === 'string') {
-      cleaned.stemMarkdown = cleanupImportedMarkdown(cleaned.stemMarkdown)
-      cleaned.problemBlocks = paragraphBlocksFromText(cleaned.stemMarkdown)
-    }
-    if (typeof cleaned.answerText === 'string') {
-      cleaned.answerText = cleanupImportedMarkdown(cleaned.answerText)
-      cleaned.answerBlocks = paragraphBlocksFromText(cleaned.answerText)
-    }
-    if (typeof cleaned.analysisMarkdown === 'string') {
-      cleaned.analysisMarkdown = cleanupImportedMarkdown(cleaned.analysisMarkdown)
-      cleaned.analysisBlocks = paragraphBlocksFromText(cleaned.analysisMarkdown)
-    }
-    return cleaned
-  }
-
-  function wrapLooseLatexMath(value: string) {
-    return splitDraftMathSegments(value).map((part) => {
-      if (part.math) return part.text
-      return part.text.split('\n').map(wrapLooseLatexLine).join('\n')
-    }).join('')
-  }
-
-  function splitDraftMathSegments(value: string) {
-    const pattern = /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$)/g
-    const parts: Array<{ text: string; math: boolean }> = []
-    let cursor = 0
-    for (const match of value.matchAll(pattern)) {
-      if (match.index === undefined) continue
-      if (match.index > cursor) parts.push({ text: value.slice(cursor, match.index), math: false })
-      parts.push({ text: match[0], math: true })
-      cursor = match.index + match[0].length
-    }
-    if (cursor < value.length) parts.push({ text: value.slice(cursor), math: false })
-    return parts
-  }
-
-  function wrapLooseLatexLine(line: string) {
-    if (!/\\[a-zA-Z]+|[_^]\{?[\w\\]+/.test(line) || /^\s*\|.*\|\s*$/.test(line)) return line
-    return line.replace(
-      /(^|[^A-Za-z0-9\\$])([A-Za-z0-9_{}^\\().,+\-*/=<> ]*\\[A-Za-z]+(?:\{[^{}\n]*\})*(?:[A-Za-z0-9_{}^\\().,+\-*/=<> ]|\\[A-Za-z]+(?:\{[^{}\n]*\})*)*)/g,
-      (match, prefix: string, body: string) => {
-        const text = body.replace(/\s+/g, ' ').trim()
-        if (!text || text.length < 2 || !/\\[A-Za-z]+|[_^]/.test(text)) return match
-        return `${prefix}$${text}$`
-      },
-    )
   }
 
   function draftPatchFromJsonText(value: string, options: { clean?: boolean } = {}) {
@@ -396,8 +294,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
     if (!Object.keys(next).length) {
       return { next, status: 'JSON 有效，但没有识别到可替换字段。' }
     }
-    const result = options.clean ? cleanQuestionDraftPatch(next) : next
-    return { next: result, status: `${options.clean ? '已清洗并替换' : '已识别并替换'} ${Object.keys(result).length} 个字段。` }
+    return { next, status: `${options.clean ? '已合并并替换' : '已识别并替换'} ${Object.keys(next).length} 个字段。` }
   }
 
   function applyJsonText(value: string) {
@@ -432,9 +329,8 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
       }
       const updated = { ...draft, ...next }
       setDraft(updated)
-      setJsonInput(editableJsonFromDraft(updated))
       setJsonCleanState(true, updated)
-      setJsonStatus(`JSON 清洗完成：${status.replace(/[。.]$/, '')}。已自动合并字段、规范化 Markdown/LaTeX，并重构完整 JSON。`)
+      setJsonStatus(`JSON 清洗完成：${status.replace(/[。.]$/, '')}。已自动合并字段，并同步右侧预览。`)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setJsonStatus(`解析失败，请检查 JSON 格式：${message}`)
@@ -458,7 +354,6 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
           }
           nextDraft = { ...draft, ...next }
           setDraft(nextDraft)
-          setJsonInput(editableJsonFromDraft(nextDraft))
           setJsonCleanState(false)
           setJsonStatus(status)
         }
@@ -579,10 +474,10 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
     difficulty_label: draft.difficultyLabel || '',
   }, null, 2)
 
-	  const aiPrompt = String.raw`请识别图片中的完整高中数学题，并只输出一个 json 代码块，代码块内部必须是合法 JSON。
+	  const aiPrompt = String.raw`请把图片中的一道数学题忠实转写成轻量 Markdown JSON。只输出一个 json 代码块，代码块内部必须是合法 JSON。
 
 你的任务：
-只把图片中真实出现的题干、答案、解析转写成轻量 Markdown 文本。不要解题，不要补写图片中没有出现的答案或解析，不要根据题意改写或补全内容。
+只保留图片里真实出现的题干、答案、解析，不要解题，不要补写，不要改写题意。
 如果一次收到多张分块图片，它们属于同一道题，请按用户发送顺序合并识别，不要当成多道题。
 
 JSON 格式如下：
@@ -610,16 +505,15 @@ Markdown/LaTeX 要求：
 2. 题干、答案、解析之间要严格分字段，不要把【答案】、【解析】混在 problem_text 中。
 3. 选择题选项写入 problem_text。
 4. 小问如（1）（2）按原顺序保留，建议分段换行。
-5. 页眉、页脚、页码、下一题内容不要放入本题字段。
+5. 页眉、页脚、页码、水印、版权信息、广告、下一题内容不要放入本题字段。
 6. 不要把“典例”“例题”“变式”“即学即练”“限时训练”“课后训练”等讲义分组标签放入 problem_text；如果开头是“【典例1】”“变式 2”“即学即练3”，请删除该标签，只保留后面的真实题干正文。
 
-不要返回 knowledge_points、solution_methods、difficulty_score_10、difficulty_label 等分类字段；这些字段由系统内标签库人工维护。
 只输出一个 json 代码块，代码块内部是合法 JSON，不要解释。`
 
   return (
     <Modal
       title="编辑题目"
-      desc="修改题干、答案、解析、分类和难度。支持左右分栏实时预览，保存前不会写入数据库。"
+      desc="修改题干、答案、解析和元数据。支持左右分栏实时预览，保存前不会写入数据库。"
       onClose={onClose}
       wide
       locked
@@ -715,7 +609,7 @@ Markdown/LaTeX 要求：
                   <div className="space-y-2.5">
 	                    <LabeledTextarea
 	                      label="粘贴整题 JSON"
-	                      help="支持只粘贴部分字段。点击右侧“JSON 清洗”可合并字段、规范化 Markdown/LaTeX，并同步右侧预览。"
+	                      help="支持只粘贴部分字段。点击右侧“JSON 清洗”可合并字段，并同步右侧预览。"
 	                      minHeight="min-h-[480px]"
 	                      value={jsonInput}
 	                      onChange={applyJsonText}

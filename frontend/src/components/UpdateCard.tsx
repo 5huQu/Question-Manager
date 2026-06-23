@@ -111,11 +111,11 @@ export function UpdateCard({ autoCheck = false, compact = false, initialResult =
   }, [initialResult])
 
   return (
-    <div className={compact ? 'space-y-3' : 'rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-800/20'}>
+    <div className={compact ? 'space-y-3' : 'rounded-xl border border-border bg-muted/30 p-4'}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">应用更新</p>
-          <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+          <p className="text-sm font-semibold text-foreground">应用更新</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             更新不会删除您的题库、课程资料和设置。
           </p>
         </div>
@@ -128,26 +128,26 @@ export function UpdateCard({ autoCheck = false, compact = false, initialResult =
       </div>
 
       <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2">
-        <div className="rounded-lg border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950">
-          <span className="text-zinc-400">当前版本</span>
-          <span className="ml-2 font-semibold text-zinc-700 dark:text-zinc-200">{checkResult?.currentVersion || '未知'}</span>
+        <div className="rounded-lg border border-border bg-card px-3 py-2">
+          <span className="text-muted-foreground">当前版本</span>
+          <span className="ml-2 font-semibold text-foreground">{checkResult?.currentVersion || '未知'}</span>
         </div>
-        <div className="rounded-lg border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950">
-          <span className="text-zinc-400">最新版本</span>
-          <span className="ml-2 font-semibold text-zinc-700 dark:text-zinc-200">{checkResult?.latestVersion || '未检查'}</span>
+        <div className="rounded-lg border border-border bg-card px-3 py-2">
+          <span className="text-muted-foreground">最新版本</span>
+          <span className="ml-2 font-semibold text-foreground">{checkResult?.latestVersion || '未检查'}</span>
         </div>
       </div>
 
       {checkResult?.notes ? (
-        <div className="mt-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs leading-5 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
+        <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2 text-xs leading-5 text-muted-foreground">
           {checkResult.notes}
         </div>
       ) : null}
 
       <div className={`mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
         status?.phase === 'error'
-          ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300'
-          : 'border-zinc-200 bg-white text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400'
+          ? 'border-destructive/30 bg-destructive/10 text-destructive'
+          : 'border-border bg-card text-muted-foreground'
       }`}>
         {status?.phase === 'error' ? <AlertCircle className="mt-0.5 size-3.5 shrink-0" /> : null}
         <span>{message}</span>

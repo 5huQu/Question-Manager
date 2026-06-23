@@ -439,7 +439,11 @@ export async function importMigratedOcrResults(runId: string) {
       : String(result.id || '')
     const questionNo = cleanQuestionNoLabel(String(result.question_no || ''))
     const localFigures = await figuresForImportedOcrResultAsync(result, runId)
-    const inlineImages = bindInlineImageReferences(result, runId, { localFigures })
+    // Inline <img> references describe locations in the OCR text.  They must
+    // bind exclusively to reviewed cut figures: GLM page-level images are
+    // useful supplemental assets, but including them here makes an otherwise
+    // unambiguous 1:1 cut look like a many-image mismatch.
+    const inlineImages = bindInlineImageReferences(result, runId)
     const stem = stripOcrTemplateNoise(stripLeadingQuestionNo(String(inlineImages?.stem ?? result.problem_text ?? '').trim(), questionNo)).trim()
     const answer = stripOcrTemplateNoise(String(inlineImages?.answer ?? result.answer ?? '').trim()).trim()
     const analysis = stripOcrTemplateNoise(String(inlineImages?.analysis ?? result.analysis ?? '').trim()).trim()
@@ -820,6 +824,7 @@ export function getOcrProgress(runId: string) {
     draftCount: draftStats.total,
     successfulDraftCount: draftStats.successful,
     failedDraftCount: draftStats.failed,
+    pendingDraftCount: draftStats.pending,
     totalQuestions: total,
     progressPercent,
     logTail: tailText(ocrJobLogPath(runId)),
@@ -828,7 +833,7 @@ export function getOcrProgress(runId: string) {
 
 export function getOcrDraftStats(runId: string) {
   const draftsDir = path.join(pythonDataRoot, 'ocr_drafts')
-  const stats = { total: 0, successful: 0, failed: 0 }
+  const stats = { total: 0, successful: 0, failed: 0, pending: 0 }
   if (!fs.existsSync(draftsDir)) return stats
   for (const entry of fs.readdirSync(draftsDir)) {
     if (!entry.startsWith(runId)) continue
@@ -841,10 +846,14 @@ export function getOcrDraftStats(runId: string) {
       String(result.answer || '').trim() ||
       String(result.analysis || '').trim()
     )
-    if (result.ocr_status === 'parse_failed' || result.ocr_status === 'failed' || !hasContent) {
+    if (result.ocr_status === 'parse_failed' || result.ocr_status === 'failed') {
       stats.failed += 1
-    } else {
+    } else if (result.ocr_status === 'draft' && !hasContent) {
+      stats.pending += 1
+    } else if (hasContent) {
       stats.successful += 1
+    } else {
+      stats.pending += 1
     }
   }
   return stats

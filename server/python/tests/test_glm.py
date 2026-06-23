@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from src.ocr.glm import _fields_from_regions, build_drafts, split_exam_markdown
+from src.ocr.glm import _fields_from_regions, _ignored_glm_image_blocks, build_drafts, split_exam_markdown
 
 
 class GlmOcrTests(unittest.TestCase):
@@ -85,6 +85,51 @@ class GlmOcrTests(unittest.TestCase):
             self.assertEqual([figure["id"] for figure in next_result["figures"]], ["review-18"])
             diagnostics = result["post_processing"]["render_diagnostics"]
             self.assertEqual([item["code"] for item in diagnostics], ["latex_left_right_unbalanced", "latex_left_right_unbalanced"])
+
+    def test_build_drafts_ignores_glm_header_images(self) -> None:
+        payload = {
+            "data_info": {"pages": [{"width": 1000, "height": 1000}]},
+            "layout_details": [[
+                {"label": "image", "native_label": "header_image", "content": "https://example.test/watermark.png", "bbox_2d": [100, 20, 900, 80]},
+                {"label": "text", "content": "2. 题干\n【答案】A\n【解析】解析内容", "bbox_2d": [0, 100, 1000, 900]},
+            ]],
+        }
+        manifest = [{"id": "CUT_0002", "question_no": "2", "page": 1, "page_span": [1, 1], "segments": [{"page_number": 1, "bbox": {"x": 0, "y": 0, "width": 595.3, "height": 841.9}}]}]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            build_drafts(result_payload=payload, manifest=manifest, drafts_root=root / "drafts", artifact_dir=root / "artifact", storage_root=root)
+            result = json.loads((root / "drafts" / "CUT_0002" / "ocr_result.json").read_text(encoding="utf-8"))
+        self.assertNotIn("<img", result["analysis"])
+        self.assertNotIn("watermark.png", result["analysis"])
+        self.assertEqual(result["figures"], [])
+        self.assertEqual(result["post_processing"]["figure_binding"]["ignored_non_content_images"], 1)
+
+    def test_build_drafts_drops_unmatched_plain_image_from_question_text(self) -> None:
+        payload = {
+            "data_info": {"pages": [{"width": 1000, "height": 1000}]},
+            "layout_details": [[
+                {"label": "text", "content": "10. 题干\n【答案】A\n【解析】解析", "bbox_2d": [0, 0, 1000, 400]},
+                {"label": "image", "native_label": "image", "content": "https://example.test/page-watermark.png", "bbox_2d": [100, 600, 900, 950]},
+            ]],
+        }
+        manifest = [{"id": "CUT_0010", "question_no": "10", "page": 1, "page_span": [1, 1], "segments": [{"page_number": 1, "bbox": {"x": 0, "y": 0, "width": 595.3, "height": 336.76}}]}]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            build_drafts(result_payload=payload, manifest=manifest, drafts_root=root / "drafts", artifact_dir=root / "artifact", storage_root=root)
+            result = json.loads((root / "drafts" / "CUT_0010" / "ocr_result.json").read_text(encoding="utf-8"))
+        self.assertNotIn("page-watermark.png", result["analysis"])
+        self.assertNotIn("<img", result["raw_model_output"])
+
+    def test_repeated_thin_header_images_are_ignored_without_native_label(self) -> None:
+        payload = {
+            "data_info": {"pages": [{"width": 1000, "height": 1000}] * 4},
+            "layout_details": [[
+                {"label": "image", "content": f"https://example.test/watermark-{index}.png", "bbox_2d": [100, 20, 900, 80]},
+            ] for index in range(4)],
+        }
+        ignored, reasons = _ignored_glm_image_blocks(payload)
+        self.assertEqual(len(ignored), 4)
+        self.assertEqual(reasons["repeated_header_footer"], 4)
 
 
 if __name__ == "__main__":
