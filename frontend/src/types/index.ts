@@ -131,8 +131,11 @@ export type RichBlock =
   | { type: 'choices'; options: Array<{ label: string; blocks: RichBlock[] }> }
   | { type: 'table'; rows: Array<{ header?: boolean; cells: RichInline[][] }> }
 
+export type ParagraphRichBlock = Extract<RichBlock, { type: 'paragraph' }>
+
 export type QuestionFigure = {
   id?: string
+  blockId?: string
   origin?: string
   usage?: string
   category?: string
@@ -141,6 +144,18 @@ export type QuestionFigure = {
   bbox?: Record<string, number>
   sourcePath?: string
   path?: string
+}
+
+export type ReviewFigure = {
+  id?: string
+  page_number?: number
+  pageNumber?: number
+  bbox?: BBox | Record<string, number>
+  kind?: string
+  usage?: string
+  category?: string
+  optionLabel?: string
+  [key: string]: unknown
 }
 
 export type BasketQuestion = {
@@ -357,7 +372,7 @@ export type SliceReviewItem = {
   note: string
   bbox: Record<string, number>
   segments?: Array<Record<string, unknown>>
-  figures: Array<Record<string, unknown>>
+  figures: ReviewFigure[]
 }
 
 export type BBox = {

@@ -1,4 +1,4 @@
-import type { BBox, SliceReviewItem } from '@/types'
+import type { BBox, ReviewFigure, SliceReviewItem } from '@/types'
 import { clamp01, clampNumber, expandedCropBBox, normalizeDisplayRect, parseBBox, rectsOverlap } from './crop'
 export { formulaSuspectTitle, isFormulaSuspectFigure, reviewFigureUsage, reviewFigureUsageInfo } from './questionDisplay'
 
@@ -55,7 +55,7 @@ export function displayRectFromReviewFigure(item: SliceReviewItem, figure: Recor
   }, displaySize)
 }
 
-export function reviewFigureFromDisplayRect(item: SliceReviewItem, rect: BBox, displaySize: { width: number; height: number }, existing?: Record<string, unknown>) {
+export function reviewFigureFromDisplayRect(item: SliceReviewItem, rect: BBox, displaySize: { width: number; height: number }, existing?: Record<string, unknown>): ReviewFigure | null {
   if (displaySize.width <= 0 || displaySize.height <= 0 || rect.width <= 0 || rect.height <= 0) return null
   const layout = reviewCropLayout(item)
   if (!layout) return null

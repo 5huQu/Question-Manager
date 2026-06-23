@@ -1,4 +1,4 @@
-import type { ComponentPropsWithoutRef, ReactNode } from 'react'
+import type { ComponentPropsWithoutRef, MouseEventHandler, ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { Check, LoaderCircle, type LucideIcon } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -7,12 +7,20 @@ export function cn(...inputs: Array<string | false | null | undefined>) {
   return clsx(inputs)
 }
 
+type ButtonClickHandler = MouseEventHandler<HTMLButtonElement> | ((arg?: never) => void | Promise<unknown>)
+
+function displayValue(value: unknown): ReactNode {
+  if (value == null) return 0
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return JSON.stringify(value)
+}
+
 export function Tab({ to, icon: Icon, title, desc }: { to: string; icon: LucideIcon; title: string; desc: string }) {
   return <NavLink to={to} className={({ isActive }) => `flex min-h-16 items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${isActive ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'border-transparent bg-card text-card-foreground hover:bg-accent hover:text-accent-foreground'}`}><span className="flex size-8 items-center justify-center rounded-md bg-muted text-foreground"><Icon className="size-4" /></span><span className="min-w-0"><span className="block truncate text-sm font-semibold">{title}</span><span className="block truncate text-xs opacity-70">{desc}</span></span></NavLink>
 }
 
 export function WorkspaceCard({ to, icon: Icon, title, desc, metrics }: { to: string; icon: LucideIcon; title: string; desc: string; metrics: Array<[string, string]> }) {
-  return <Link className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm transition-colors hover:bg-accent/40" to={to}><div className="flex justify-between gap-3"><div><h2 className="font-semibold">{title}</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">{desc}</p></div><span className="flex size-8 items-center justify-center rounded-lg bg-muted"><Icon className="size-4" /></span></div><div className="mt-4 grid grid-cols-3 gap-2">{metrics.map(([label, value]) => <div key={label} className="rounded-lg border bg-background px-2.5 py-2"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-0.5 text-sm font-semibold">{value}</p></div>)}</div></Link>
+  return <Link className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm transition-colors hover:bg-accent/40" to={to}><div className="flex justify-between gap-3"><div><h2 className="font-semibold">{title}</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">{desc}</p></div><span className="flex size-8 items-center justify-center rounded-lg bg-muted"><Icon className="size-4" /></span></div><div className="mt-4 grid grid-cols-3 gap-2">{metrics.map(([label, value]) => <div key={label} className="rounded-lg border bg-background px-2.5 py-2"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-0.5 text-sm font-semibold">{displayValue(value)}</p></div>)}</div></Link>
 }
 
 export function PageTitle({ title, desc, path }: { title: string; desc: string; path: string }) {
@@ -24,10 +32,10 @@ export function Panel({ title, children, actions, className = '', bodyClassName 
 }
 
 export function SummaryGrid({ items }: { items: Array<[string, unknown]> }) {
-  return <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">{items.map(([labelText, value]) => <div key={labelText} className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm"><p className="text-xs font-medium text-muted-foreground">{labelText}</p><p className="mt-1 text-2xl font-bold">{value ?? 0}</p></div>)}</div>
+  return <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">{items.map(([labelText, value]) => <div key={labelText} className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm"><p className="text-xs font-medium text-muted-foreground">{labelText}</p><p className="mt-1 text-2xl font-bold">{displayValue(value)}</p></div>)}</div>
 }
 
-export function Button({ children, icon: Icon, variant = 'default', size = 'default', className = '', asLink, to = '', disabled, onClick, type = 'button', title }: { children: ReactNode; icon?: LucideIcon; variant?: 'default' | 'outline' | 'danger'; size?: 'default' | 'sm'; className?: string; asLink?: boolean; to?: string; disabled?: boolean; onClick?: any; type?: 'button' | 'submit' | 'reset'; title?: string }) {
+export function Button({ children, icon: Icon, variant = 'default', size = 'default', className = '', asLink, to = '', disabled, onClick, type = 'button', title }: { children: ReactNode; icon?: LucideIcon; variant?: 'default' | 'outline' | 'danger'; size?: 'default' | 'sm'; className?: string; asLink?: boolean; to?: string; disabled?: boolean; onClick?: ButtonClickHandler; type?: 'button' | 'submit' | 'reset'; title?: string }) {
   const variantClass = variant === 'danger'
     ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground border border-transparent'
     : variant === 'default'
@@ -35,17 +43,27 @@ export function Button({ children, icon: Icon, variant = 'default', size = 'defa
       : 'border border-input bg-background hover:bg-accent hover:text-accent-foreground text-foreground shadow-sm'
   const classes = `inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap ${size === 'sm' ? 'h-8 px-3 text-xs' : 'h-9 px-3.5 text-sm'} ${variantClass} ${className}`
   const content = <>{Icon ? <Icon className={`size-4 ${Icon === LoaderCircle ? 'animate-spin' : ''}`} /> : null}{children}</>
-  return asLink ? <Link className={classes} title={title} to={to}>{content}</Link> : <button className={classes} disabled={disabled} onClick={onClick} title={title} type={type}>{content}</button>
+  const handleClick: MouseEventHandler<HTMLButtonElement> | undefined = onClick
+    ? (event) => {
+        if (onClick.length === 0) {
+          void (onClick as () => void | Promise<unknown>)()
+        } else {
+          void (onClick as MouseEventHandler<HTMLButtonElement>)(event)
+        }
+      }
+    : undefined
+  return asLink ? <Link className={classes} title={title} to={to}>{content}</Link> : <button className={classes} disabled={disabled} onClick={handleClick} title={title} type={type}>{content}</button>
 }
 
-export function Badge({ children, variant = 'default', className = '' }: { children: ReactNode; variant?: 'default' | 'success' | 'warning' | 'danger'; className?: string }) {
+export function Badge({ children, variant = 'default', className = '', title }: { children: ReactNode; variant?: 'default' | 'success' | 'warning' | 'danger' | 'outline'; className?: string; title?: string }) {
   const variantClasses = {
     default: 'border-transparent bg-secondary text-secondary-foreground',
     success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
     warning: 'border-amber-200 bg-amber-50 text-amber-800',
     danger: 'border-transparent bg-destructive/10 text-destructive',
+    outline: 'border-input bg-background text-foreground',
   }
-  return <span className={`inline-flex min-h-5 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${variantClasses[variant]} ${className}`}>{children}</span>
+  return <span className={`inline-flex min-h-5 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${variantClasses[variant]} ${className}`} title={title}>{children}</span>
 }
 
 export function Empty({ text }: { text: string }) {
@@ -53,7 +71,7 @@ export function Empty({ text }: { text: string }) {
 }
 
 export function MiniMetric({ label, value }: { label: string; value: unknown }) {
-  return <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-semibold">{value}</p></div>
+  return <div className="rounded-lg border bg-muted/40 px-3 py-2"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-semibold">{displayValue(value)}</p></div>
 }
 
 export function SelectFilter({ label: labelText, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {

@@ -102,6 +102,13 @@ export function difficultyLabel10(item: Pick<QuestionItem, 'difficultyScore' | '
   return difficultyLabel(item.difficultyScore)
 }
 
+export function difficultyBadgeVariant(item: Pick<QuestionItem, 'difficultyScore' | 'difficultyScore10'>): 'default' | 'success' | 'warning' | 'danger' {
+  const legacyScore: string = typeof item.difficultyScore === 'string' ? item.difficultyScore : ''
+  if ((item.difficultyScore10 ?? 0) >= 8 || legacyScore === 'hard' || legacyScore === 'expert') return 'danger'
+  if ((item.difficultyScore10 ?? 0) >= 5 || legacyScore === 'medium') return 'warning'
+  return (item.difficultyScore10 ?? 0) >= 3 ? 'default' : 'success'
+}
+
 export function displaySource(value: string) {
   const clean = value.replace(/^question_assets\//, '').split('/').pop()?.replace(/\.[^.]+$/, '')
   return clean || value || '来源待补充'

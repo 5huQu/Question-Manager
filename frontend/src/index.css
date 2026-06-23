@@ -411,3 +411,55 @@ input::-webkit-inner-spin-button {
 input[type=number] {
   -moz-appearance: textfield;
 }
+
+/* Mock Page global typography overrides */
+.mock-page-root {
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+.mock-page-root .title-page {
+  font-size: 24px !important;
+  font-weight: 600 !important;
+  line-height: 32px !important;
+  letter-spacing: -0.025em !important;
+}
+.mock-page-root .title-section {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  line-height: 24px !important;
+  letter-spacing: -0.015em !important;
+}
+.mock-page-root .label-muted {
+  font-size: 13px !important;
+  font-weight: 550 !important;
+  color: #71717a !important; /* zinc-500 */
+}
+.dark .mock-page-root .label-muted {
+  color: #a1a1aa !important; /* zinc-400 */
+}
+.mock-page-root .text-muted-desc {
+  font-size: 13px !important;
+  color: #71717a !important;
+}
+.dark .mock-page-root .text-muted-desc {
+  color: #a1a1aa !important;
+}
+.mock-page-root input,
+.mock-page-root select,
+.mock-page-root textarea {
+  font-size: 14px !important;
+}
+
+@utility animate-command-bar {
+  animation: command-bar-fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes command-bar-fade-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}

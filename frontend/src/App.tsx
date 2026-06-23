@@ -7,6 +7,7 @@ import { QuestionBasket } from '@/components/QuestionBasket'
 import { UpdateCard } from '@/components/UpdateCard'
 import { AppPageHeader } from '@/components/layout/AppPageHeader'
 import { AppSidebar } from '@/components/layout/AppSidebar'
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import TraditionalWorkbenchPage from '@/pages/workbench/TraditionalWorkbenchPage'
 import PdfSlicerPage from '@/pages/pdf-slicer/PdfSlicerPage'
 import OcrQueuePage from '@/pages/ocr/OcrQueuePage'
@@ -23,6 +24,14 @@ import { SetupPage } from '@/pages/SetupPage'
 import type { OcrSettings } from '@/types'
 import type { UpdateCheckResult } from '@/api/client'
 
+import MockWorkbenchPage from '@/pages/mock/MockWorkbenchPage'
+import MockQuestionBankPage from '@/pages/mock/MockQuestionBankPage'
+import MockOcrReviewPage from '@/pages/mock/MockOcrReviewPage'
+import MockBasketPage from '@/pages/mock/MockBasketPage'
+import MockExportRecordsPage from '@/pages/mock/MockExportRecordsPage'
+import MockSettingsPage from '@/pages/mock/MockSettingsPage'
+import MockDialogsPage from '@/pages/mock/MockDialogsPage'
+
 function NavigateToWorkbench() {
   const navigate = useNavigate()
   useEffect(() => {
@@ -34,7 +43,6 @@ function NavigateToWorkbench() {
 export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('theme') === 'dark')
   const [settingsReady, setSettingsReady] = useState(false)
   const [availableUpdate, setAvailableUpdate] = useState<UpdateCheckResult | null>(null)
@@ -91,38 +99,45 @@ export default function App() {
   }
 
   return (
-    <div className={`flex h-screen overflow-hidden bg-background text-[var(--app-body-text)] text-foreground transition-colors duration-150 ${darkMode ? 'dark' : ''}`}>
+    <SidebarProvider className={`h-screen overflow-hidden bg-background text-[var(--app-body-text)] text-foreground transition-colors duration-150 ${darkMode ? 'dark' : ''}`}>
       <AppSidebar
-        collapsed={sidebarCollapsed}
         darkMode={darkMode}
         systemName={appSettings.systemName}
         onThemeToggle={() => setDarkMode(!darkMode)}
-        onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
 
-      <main className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden bg-background transition-colors duration-150">
+      <SidebarInset className="h-screen min-w-0 overflow-hidden transition-colors duration-150">
         <AppPageHeader actions={location.pathname === '/questions' ? <QuestionBankHeaderActions /> : undefined} />
         <div className="flex-1 overflow-auto">
           <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 md:p-6">
-          <Routes>
-            <Route path="/" element={<NavigateToWorkbench />} />
-            <Route path="/workbench" element={<TraditionalWorkbenchPage />} />
-            <Route path="/tools/pdf-slicer" element={<PdfSlicerPage />} />
-            <Route path="/tools/pdf-slicer/ocr-jobs" element={<OcrQueuePage />} />
-            <Route path="/questions" element={<QuestionBankPage />} />
-            <Route path="/questions/new" element={<QuestionCreatePage />} />
-            <Route path="/questions/basket" element={<QuestionBasket mode="page" />} />
-            <Route path="/questions/:id" element={<QuestionDetailPage />} />
-            <Route path="/questions/collections/:id/markdown-preview" element={<MarkdownPreviewPage />} />
-            <Route path="/learning-tags" element={<LearningTagsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/exports" element={<ExportRecordsPage />} />
-            <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<RunQuestionsPage />} />
-            <Route path="/tools/pdf-slicer/runs/:runId/pending-bank" element={<PendingBankPage />} />
-          </Routes>
+            <Routes>
+              <Route path="/" element={<NavigateToWorkbench />} />
+              <Route path="/workbench" element={<TraditionalWorkbenchPage />} />
+              <Route path="/tools/pdf-slicer" element={<PdfSlicerPage />} />
+              <Route path="/tools/pdf-slicer/ocr-jobs" element={<OcrQueuePage />} />
+              <Route path="/questions" element={<QuestionBankPage />} />
+              <Route path="/questions/new" element={<QuestionCreatePage />} />
+              <Route path="/questions/basket" element={<QuestionBasket mode="page" />} />
+              <Route path="/questions/:id" element={<QuestionDetailPage />} />
+              <Route path="/questions/collections/:id/markdown-preview" element={<MarkdownPreviewPage />} />
+              <Route path="/learning-tags" element={<LearningTagsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/exports" element={<ExportRecordsPage />} />
+              <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<RunQuestionsPage />} />
+              <Route path="/tools/pdf-slicer/runs/:runId/pending-bank" element={<PendingBankPage />} />
+              
+              {/* Mock Pages Main Content Mocks */}
+              <Route path="/mock/workbench" element={<MockWorkbenchPage />} />
+              <Route path="/mock/question-bank" element={<MockQuestionBankPage />} />
+              <Route path="/mock/ocr-review" element={<MockOcrReviewPage />} />
+              <Route path="/mock/basket" element={<MockBasketPage />} />
+              <Route path="/mock/export-records" element={<MockExportRecordsPage />} />
+              <Route path="/mock/settings" element={<MockSettingsPage />} />
+              <Route path="/mock/dialogs" element={<MockDialogsPage />} />
+            </Routes>
           </div>
         </div>
-      </main>
+      </SidebarInset>
       <QuestionBasket mode="drawer" />
       {availableUpdate && location.pathname !== '/settings' ? (
         <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-2xl border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
@@ -146,7 +161,7 @@ export default function App() {
         </div>
       ) : null}
       <UpdateAutoCheck enabled={!availableUpdate} onUpdateAvailable={setAvailableUpdate} />
-    </div>
+    </SidebarProvider>
   )
 }
 

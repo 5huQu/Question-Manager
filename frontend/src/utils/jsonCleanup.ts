@@ -1,4 +1,4 @@
-import type { QuestionItem, RichBlock } from '@/types'
+import type { ParagraphRichBlock, QuestionItem, RichBlock, RichInline } from '@/types'
 import { richBlocksPlainText } from '@/components/RichContent'
 
 export function paragraphBlocksFromText(value: string): RichBlock[] {
@@ -7,8 +7,8 @@ export function paragraphBlocksFromText(value: string): RichBlock[] {
     : []
 }
 
-export function inlineBlocksFromText(text: string): RichBlock['content'] {
-  const content: RichBlock['content'] = []
+export function inlineBlocksFromText(text: string): ParagraphRichBlock['content'] {
+  const content: RichInline[] = []
   let cursor = 0
   while (cursor < text.length) {
     const start = text.indexOf('$', cursor)
