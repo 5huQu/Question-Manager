@@ -59,12 +59,12 @@ export function OcrHistoryRow({ run, onReload }: { run: ApiRun; onReload: () => 
   const shortRunId = parts.length > 2 ? parts.slice(0, 3).join('_') : run.runId
 
   return (
-    <tr className="border-b transition-colors hover:bg-muted/50">
+    <tr className="border-b border-zinc-100 transition-colors hover:bg-zinc-50 dark:border-zinc-900 dark:hover:bg-zinc-900/50">
       <td className="p-4 align-middle max-w-[220px]">
-        <div className="font-semibold text-foreground truncate" title={run.paperTitle || run.pdfName}>
+        <div className="truncate font-semibold text-zinc-950 dark:text-zinc-50" title={run.paperTitle || run.pdfName}>
           {run.paperTitle || run.pdfName}
         </div>
-        <div className="text-xs text-muted-foreground mt-0.5 truncate" title={run.runId}>
+        <div className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400" title={run.runId}>
           {shortRunId}
         </div>
         {actionError && (
@@ -98,17 +98,17 @@ export function OcrHistoryRow({ run, onReload }: { run: ApiRun; onReload: () => 
           )}
         </div>
       </td>
-      <td className="p-4 align-middle whitespace-nowrap text-xs text-muted-foreground">
+      <td className="p-4 align-middle whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">
         {fileRole === 'solutions' ? (
-          <div>解析: <span className="font-medium text-foreground">{generatedCount}</span> / {total} 题</div>
+          <div>解析: <span className="font-medium text-zinc-950 dark:text-zinc-50">{generatedCount}</span> / {total} 题</div>
         ) : (
           <div className="space-y-0.5">
-            <div>生成: <span className="font-medium text-foreground">{generatedCount}</span> / {total} 题</div>
-            <div>入库: <span className="font-medium text-foreground">{banked}</span> 题</div>
+            <div>生成: <span className="font-medium text-zinc-950 dark:text-zinc-50">{generatedCount}</span> / {total} 题</div>
+            <div>入库: <span className="font-medium text-zinc-950 dark:text-zinc-50">{banked}</span> 题</div>
           </div>
         )}
       </td>
-      <td className="p-4 align-middle whitespace-nowrap text-xs text-muted-foreground">
+      <td className="p-4 align-middle whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400">
         {new Date(run.createdAt).toLocaleDateString()} {new Date(run.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       </td>
       <td className="p-4 align-middle text-center">
