@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Crop, PencilLine, Search, Trash2 } from 'lucide-react'
-import { api, jsonHeaders } from '@/api/client'
+import { questionBankApi } from '@/api/questionBank'
+import { learningTagsApi } from '@/api/learningTags'
 import { FigureCropDialog } from '@/components/questions/FigureDialogs'
 import { EditDialog } from '@/components/questions/EditDialog'
 import { QuestionMarkdownContent, SolutionDisclosure } from '@/components/questions/QuestionContent'
@@ -19,32 +20,20 @@ export function WorkbenchQuestionCard({ item, onAddToBasket, onDelete, onReload,
     setDraft(item)
   }, [item])
   async function addFigure(payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
-    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(item.id)}/figures`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox }),
-    })
+    return questionBankApi.createFigure(item.id, { usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox })
   }
   async function deleteFigure(figureId: string) {
-    await api(`/api/question-bank/items/${encodeURIComponent(item.id)}/figures/${encodeURIComponent(figureId)}`, { method: 'DELETE' })
+    await questionBankApi.deleteFigure(item.id, figureId)
   }
   async function updateFigure(figureId: string, payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
-    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(item.id)}/figures/${encodeURIComponent(figureId)}`, {
-      method: 'PATCH',
-      headers: jsonHeaders,
-      body: JSON.stringify({ usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox }),
-    })
+    return questionBankApi.updateFigure(item.id, figureId, { usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox })
   }
   function closeCropDialog(changed?: boolean) {
     setCropOpen(false)
     if (changed) onReload()
   }
   async function saveEditedQuestion(nextDraft = draft) {
-    const saved = await api<QuestionItem>(`/api/question-bank/items/${encodeURIComponent(item.id)}`, {
-      method: 'PATCH',
-      headers: jsonHeaders,
-      body: JSON.stringify({ item: nextDraft }),
-    })
+    const saved = await questionBankApi.updateItem(item.id, nextDraft)
     setDraft(saved)
     setEditing(false)
     if (onQuestionSaved) onQuestionSaved(saved)
@@ -131,7 +120,7 @@ export function BankTab({
   setPage: (value: number | ((value: number) => number)) => void
   onQuestionSaved?: (item: QuestionItem) => void
 }) {
-  const tagLibraries = useAsync<TagLibraries>(() => api('/api/question-bank/tag-libraries'), [])
+  const tagLibraries = useAsync<TagLibraries>(() => learningTagsApi.getQuestionBankTagLibraries(), [])
 
   const rawItems = questionBank?.items ?? []
   const items = rawItems
@@ -174,7 +163,7 @@ export function BankTab({
       alert('模拟数据已删除 (静态操作)')
       return
     }
-    await api(`/api/question-bank/items/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    await questionBankApi.deleteItem(id)
     reload()
   }
 

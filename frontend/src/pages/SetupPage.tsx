@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Check, FileStack, LoaderCircle, Sparkles, AlertCircle, ExternalLink } from 'lucide-react'
-import { api, jsonHeaders } from '@/api/client'
+import { settingsApi, type HealthResponse } from '@/api/settings'
 import { Button, Badge } from '@/components/ui'
 import type { OcrSettings } from '@/types'
 import { teachingStageOptions } from '@/utils/stages'
@@ -30,13 +30,6 @@ const fallbackDraft: SetupDraft = {
   teachingStages: ['高中'],
 }
 
-type HealthResponse = {
-  tools?: {
-    soffice?: boolean
-    sofficePath?: string
-  }
-}
-
 export function SetupPage({
   initialSettings,
   onComplete,
@@ -51,7 +44,7 @@ export function SetupPage({
   const [health, setHealth] = useState<HealthResponse | null>(null)
 
   useEffect(() => {
-    api<HealthResponse>('/api/health')
+    settingsApi.getHealth()
       .then(setHealth)
       .catch(() => setHealth(null))
   }, [])
@@ -68,11 +61,7 @@ export function SetupPage({
     setBusy(true)
     setError('')
     try {
-      const saved = await api<OcrSettings>('/api/settings', {
-        method: 'PATCH',
-        headers: jsonHeaders,
-        body: JSON.stringify({ ...draft, setupCompleted: true }),
-      })
+      const saved = await settingsApi.updateSettings({ ...draft, setupCompleted: true })
       window.dispatchEvent(new CustomEvent('app-settings-updated', { detail: saved }))
       onComplete(saved)
       navigate('/workbench', { replace: true })

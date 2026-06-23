@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, Download, FilePlus2, GripVertical, Trash2, ChevronUp, ShoppingBag, Award, Clock, Hash, Maximize2, ArrowUp, ArrowDown, ListChecks } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { api, jsonHeaders } from '../api/client'
+import { collectionsApi } from '../api/collections'
 import { useAsync } from '../hooks/useAsync'
 import type { Basket, CollectionExport, CollectionSummary } from '../types'
 import { Button, Empty, Badge } from './ui'
@@ -56,8 +56,8 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
   const [localSubtitle, setLocalSubtitle] = useState('')
   const [localTimeLimit, setLocalTimeLimit] = useState<string | number>('')
 
-  const collections = useAsync<{ items: CollectionSummary[] }>(() => api('/api/question-bank/collections'), [])
-  const active = useAsync<Basket>(() => api(`/api/question-bank/collections/${encodeURIComponent(activeId)}`), [activeId])
+  const collections = useAsync<{ items: CollectionSummary[] }>(() => collectionsApi.listCollections(), [])
+  const active = useAsync<Basket>(() => collectionsApi.getCollection(activeId), [activeId])
 
   useEffect(() => {
     if (active.data) {
@@ -89,43 +89,31 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
 
   async function createPaper() {
     const title = newTitle.trim() || `试卷 ${new Date().toLocaleDateString()}`
-    const created = await api<Basket>('/api/question-bank/collections', {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ title, kind: 'paper' }),
-    })
+    const created = await collectionsApi.createCollection({ title, kind: 'paper' })
     setNewTitle('')
     setActiveId(created.id)
     collections.reload()
   }
 
   async function patchCollection(patch: Record<string, unknown>) {
-    await api(`/api/question-bank/collections/${encodeURIComponent(activeId)}`, {
-      method: 'PATCH',
-      headers: jsonHeaders,
-      body: JSON.stringify(patch),
-    })
+    await collectionsApi.updateCollection(activeId, patch)
     collections.reload()
     active.reload()
   }
 
   async function patchItem(relationId: string, patch: Record<string, unknown>) {
-    await api(`/api/question-bank/collections/${encodeURIComponent(activeId)}/items/${encodeURIComponent(relationId)}`, {
-      method: 'PATCH',
-      headers: jsonHeaders,
-      body: JSON.stringify(patch),
-    })
+    await collectionsApi.updateItem(activeId, relationId, patch)
     notifyBasketUpdated()
   }
 
   async function removeItem(relationId: string) {
-    await api(`/api/question-bank/collections/${encodeURIComponent(activeId)}/items/${encodeURIComponent(relationId)}`, { method: 'DELETE' })
+    await collectionsApi.removeItem(activeId, relationId)
     notifyBasketUpdated()
   }
 
   async function clearCollection() {
     if (!window.confirm('确定要清空当前试卷/试题篮中的所有题目吗？')) return
-    await api(`/api/question-bank/collections/${encodeURIComponent(activeId)}/items`, { method: 'DELETE' })
+    await collectionsApi.clearItems(activeId)
     notifyBasketUpdated()
   }
 
@@ -137,11 +125,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
     const next = [...questions]
     const [item] = next.splice(index, 1)
     next.splice(target, 0, item)
-    await api(`/api/question-bank/collections/${encodeURIComponent(activeId)}/reorder`, {
-      method: 'PATCH',
-      headers: jsonHeaders,
-      body: JSON.stringify({ items: next.map((entry, order) => ({ relationId: entry.relationId, sortOrder: order })) }),
-    })
+    await collectionsApi.reorder(activeId, next.map((entry, order) => ({ relationId: entry.relationId, sortOrder: order })))
     notifyBasketUpdated()
   }
 
@@ -154,11 +138,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
     if (exporting) return
     setExporting(true)
     try {
-      const payload = await api<CollectionExport>(`/api/question-bank/collections/${encodeURIComponent(activeId)}/export`, {
-        method: 'POST',
-        headers: jsonHeaders,
-        body: JSON.stringify({ format, variant, template }),
-      })
+      const payload = await collectionsApi.exportCollection(activeId, { format, variant, template })
       if (payload.format === 'pdf' && payload.url) {
         window.open(payload.url, '_blank', 'noopener,noreferrer')
         return
@@ -329,11 +309,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                         const [item] = next.splice(draggedIndex, 1)
                         next.splice(index, 0, item)
 
-                        await api(`/api/question-bank/collections/${encodeURIComponent(activeId)}/reorder`, {
-                          method: 'PATCH',
-                          headers: jsonHeaders,
-                          body: JSON.stringify({ items: next.map((entry, order) => ({ relationId: entry.relationId, sortOrder: order })) }),
-                        })
+                        await collectionsApi.reorder(activeId, next.map((entry, order) => ({ relationId: entry.relationId, sortOrder: order })))
                         notifyBasketUpdated()
                         setDraggedIndex(null)
                       }}
@@ -663,11 +639,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                       const [item] = next.splice(draggedIndex, 1)
                       next.splice(index, 0, item)
 
-                      await api(`/api/question-bank/collections/${encodeURIComponent(activeId)}/reorder`, {
-                        method: 'PATCH',
-                        headers: jsonHeaders,
-                        body: JSON.stringify({ items: next.map((entry, order) => ({ relationId: entry.relationId, sortOrder: order })) }),
-                      })
+                      await collectionsApi.reorder(activeId, next.map((entry, order) => ({ relationId: entry.relationId, sortOrder: order })))
                       notifyBasketUpdated()
                       setDraggedIndex(null)
                     }}

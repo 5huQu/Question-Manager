@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { api } from '@/api/client'
+import { questionBankApi } from '@/api/questionBank'
 import { BankTab } from '@/components/questions/WorkbenchQuestionCard'
 import { useAsync } from '@/hooks/useAsync'
 import type { QuestionBankResponse, QuestionItem } from '@/types'
@@ -13,19 +13,17 @@ export function QuestionBankPage() {
   const [solutionMethod, setSolutionMethod] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 20
-  const questionBankUrl = useMemo(() => {
-    const params = new URLSearchParams()
-    params.set('page', String(page))
-    params.set('pageSize', String(pageSize))
-    if (query.trim()) params.set('q', query.trim())
-    if (stage) params.set('stage', stage)
-    if (questionType) params.set('questionType', questionType)
-    if (difficulty) params.set('difficulty', difficulty)
-    if (knowledgePoint) params.set('knowledgePoint', knowledgePoint)
-    if (solutionMethod) params.set('solutionMethod', solutionMethod)
-    return `/api/question-bank/items?${params.toString()}`
-  }, [difficulty, knowledgePoint, page, query, questionType, solutionMethod, stage])
-  const questionBank = useAsync<QuestionBankResponse>(() => api(questionBankUrl), [questionBankUrl])
+  const questionBankParams = useMemo(() => ({
+    page,
+    pageSize,
+    q: query.trim() || undefined,
+    stage: stage || undefined,
+    questionType: questionType || undefined,
+    difficulty: difficulty || undefined,
+    knowledgePoint: knowledgePoint || undefined,
+    solutionMethod: solutionMethod || undefined,
+  }), [difficulty, knowledgePoint, page, query, questionType, solutionMethod, stage])
+  const questionBank = useAsync<QuestionBankResponse>(() => questionBankApi.listItems(questionBankParams), [questionBankParams])
   function replaceQuestionInBank(item: QuestionItem) {
     questionBank.setData((current) => current ? {
       ...current,

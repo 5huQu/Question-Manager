@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpenCheck, CheckCircle2, ChevronDown, Code2, Copy, Download, GripVertical, ListTree, Plus, Save, Sparkles, Trash2, X } from 'lucide-react'
-import { api } from '@/api/client'
+import { learningTagsApi } from '@/api/learningTags'
 import { Badge, Button, Empty, PageTitle } from '@/components/ui'
 import type { LearningLibraryType, LearningTagChapter, LearningTagLibrary } from '@/types'
 
@@ -291,7 +291,7 @@ export default function LearningTagsPage() {
     setLoading(true)
     setError('')
     try {
-      const data = await api<{ libraries: LearningTagLibrary[] }>('/api/learning-tags/libraries')
+      const data = await learningTagsApi.listLibraries()
       const nextLibraries = (data.libraries ?? []).map(normalizeLibrary)
       setLibraries(nextLibraries)
       const selected = nextLibraries.find((library) => library.id === selectedId) ?? nextLibraries[0] ?? null
@@ -327,11 +327,7 @@ export default function LearningTagsPage() {
     setSaveState('saving')
     setError('')
     try {
-      const result = await api<{ library: LearningTagLibrary }>('/api/learning-tags/libraries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: stringifyLibrary(library),
-      })
+      const result = await learningTagsApi.createLibrary(JSON.parse(stringifyLibrary(library)) as Record<string, unknown>)
       const saved = normalizeLibrary(result.library)
       setLibraries((current) => {
         const rest = current.filter((item) => item.code !== saved.code && item.id !== saved.id)
@@ -447,11 +443,7 @@ export default function LearningTagsPage() {
     try {
       const imported: LearningTagLibrary[] = []
       for (const payload of payloads) {
-        const result = await api<{ library: LearningTagLibrary }>('/api/learning-tags/libraries', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
+        const result = await learningTagsApi.createLibrary(payload as Record<string, unknown>)
         imported.push(normalizeLibrary(result.library))
       }
       await loadLibraries()
@@ -468,7 +460,7 @@ export default function LearningTagsPage() {
   const deleteLibrary = async (library: LearningTagLibrary) => {
     if (!window.confirm(`确定删除「${library.name}」吗？`)) return
     try {
-      await api<{ ok: boolean }>(`/api/learning-tags/libraries/${encodeURIComponent(library.id)}`, { method: 'DELETE' })
+      await learningTagsApi.deleteLibrary(library.id)
       const nextLibraries = libraries.filter((item) => item.id !== library.id)
       setLibraries(nextLibraries)
       const next = nextLibraries[0] ?? null

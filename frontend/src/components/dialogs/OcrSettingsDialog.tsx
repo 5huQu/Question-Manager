@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react'
 import { Check, Settings2, Tags } from 'lucide-react'
-import { api, jsonHeaders } from '@/api/client'
+import { settingsApi } from '@/api/settings'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button, Empty, SelectFilter } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { OcrSettings } from '@/types'
 
 export function OcrSettingsDialog({ onClose }: { onClose: () => void }) {
-  const { data, error, loading, reload } = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
+  const { data, error, loading, reload } = useAsync<OcrSettings>(() => settingsApi.getOcrSettings(), [])
   const [draft, setDraft] = useState<Partial<OcrSettings & { apiKey: string; doc2xApiKey: string; glmOcrApiKey: string; cleanupApiKey: string }>>({})
   const [activeTab, setActiveTab] = useState<'ocr' | 'classification' | 'prompts'>('ocr')
   useEffect(() => {
     if (data) setDraft(data)
   }, [data])
   async function save() {
-    await api('/api/tools/pdf-slicer/ocr-settings', { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify(draft) })
+    await settingsApi.updateOcrSettings(draft)
     reload()
   }
   return (

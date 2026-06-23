@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, BadgeCheck, FileJson, LoaderCircle, ScanSearch } from 'lucide-react'
-import { api, jsonHeaders } from '@/api/client'
+import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { Badge, Button, Panel } from '@/components/ui'
 import { Modal } from '@/components/dialogs/Modal'
 import { RichContent } from '@/components/RichContent'
@@ -43,7 +43,7 @@ export function OverviewTab({
   }
 
   async function getApprovedResultIds(run: ApiRun) {
-    const payload = await api<{ items: SliceReviewItem[] }>(`/api/tools/pdf-slicer/runs/${encodeURIComponent(run.runId)}/slice-review/items`)
+    const payload = await pdfSlicerApi.getSliceReviewItems(run.runId)
     return (payload.items ?? [])
       .filter((item) => item.reviewStatus !== 'rejected')
       .map((item) => item.resultId)
@@ -58,11 +58,7 @@ export function OverviewTab({
         setActionError('该批次暂无可导入的题块，请先完成切题复核。')
         return
       }
-      await api('/api/tools/pdf-slicer/runs/quick-review', {
-        method: 'POST',
-        headers: jsonHeaders,
-        body: JSON.stringify({ runId: run.runId, approvedResultIds, autoStartOcr: mode === 'ocr' }),
-      })
+      await pdfSlicerApi.quickReview({ runId: run.runId, approvedResultIds, autoStartOcr: mode === 'ocr' })
       setActionRun(null)
       onReload?.()
       if (mode === 'manual') {
@@ -206,7 +202,7 @@ export function OverviewTab({
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-xs text-zinc-850 dark:text-zinc-250 line-clamp-2 max-h-12 overflow-hidden leading-relaxed font-medium group-hover/item:text-foreground dark:group-hover/item:text-foreground group-hover/item:underline transition-colors">
-                      <RichContent blocks={item.problemBlocks} className="text-xs text-zinc-800 dark:text-zinc-200" />
+                      <RichContent blocks={item.problemBlocks ?? []} className="text-xs text-zinc-800 dark:text-zinc-200" />
                     </div>
                     <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1.5 truncate font-medium">{item.sourceTitle || '未知来源'}</p>
                   </div>

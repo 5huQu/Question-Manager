@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { BookOpen, Check, Copy, Crop, FileText, Info as InfoIcon, LoaderCircle, RefreshCcw, X } from 'lucide-react'
-import { api } from '@/api/client'
+import { learningTagsApi } from '@/api/learningTags'
+import { settingsApi } from '@/api/settings'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { normalizeRichBlocks, richBlocksPlainText } from '@/components/RichContent'
 import { Modal } from '@/components/dialogs/Modal'
@@ -8,7 +9,7 @@ import { Badge, Button } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { OcrSettings, QuestionItem, TagLibraries } from '@/types'
 import { FigureGallery, QuestionContent, QuestionMarkdownContent } from '@/components/questions/QuestionContent'
-import { assetUrl, difficultyLabel10, difficultyLabelFromScore10, figuresByUsage, splitTags } from '@/utils/questionDisplay'
+import { assetUrl, difficultyBadgeVariant, difficultyLabel10, difficultyLabelFromScore10, figuresByUsage, splitTags } from '@/utils/questionDisplay'
 import { draftAnalysisText, draftAnswerText, draftProblemText, paragraphBlocksFromText } from '@/utils/jsonCleanup'
 import { gradeOptionsForTeachingStages } from '@/utils/stages'
 
@@ -68,8 +69,8 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
     }
   }, [draft, mode])
 
-  const tagLibraries = useAsync<TagLibraries>(() => api('/api/question-bank/tag-libraries'), [])
-  const ocrSettings = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
+  const tagLibraries = useAsync<TagLibraries>(() => learningTagsApi.getQuestionBankTagLibraries(), [])
+  const ocrSettings = useAsync<OcrSettings>(() => settingsApi.getOcrSettings(), [])
   const configuredStageOptions = gradeOptionsForTeachingStages(ocrSettings.data?.teachingStages)
   const metadataStageOptions = draft.stage && !configuredStageOptions.includes(draft.stage)
     ? [...configuredStageOptions, draft.stage]
@@ -674,11 +675,7 @@ Markdown/LaTeX 要求：
                   {draft.questionType && (
                     <Badge variant="default">{draft.questionType}</Badge>
                   )}
-                  <Badge variant={
-                    ((draft.difficultyScore10 ?? 0) >= 8 || draft.difficultyScore === 'hard' || draft.difficultyScore === 'expert') ? 'danger' :
-                    ((draft.difficultyScore10 ?? 0) >= 5 || draft.difficultyScore === 'medium') ? 'warning' :
-                    ((draft.difficultyScore10 ?? 0) >= 3) ? 'default' : 'success'
-                  }>
+                  <Badge variant={difficultyBadgeVariant(draft as QuestionItem)}>
                     {difficultyLabel10(draft as QuestionItem)}
                   </Badge>
                   {draft.sourceTitle && (

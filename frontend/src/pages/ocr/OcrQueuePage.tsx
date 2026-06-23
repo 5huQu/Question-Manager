@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { RefreshCcw } from 'lucide-react'
-import { api } from '@/api/client'
+import { ocrApi } from '@/api/ocr'
 import { Button, Empty, PageTitle, Panel, SummaryGrid } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { OcrJobs } from '@/types'
@@ -8,7 +8,7 @@ import { OcrJobCard } from './OcrJobCard'
 import { OcrHistoryRow } from './OcrHistoryRow'
 
 export function OcrQueuePage() {
-  const { data, error, loading, reload } = useAsync<OcrJobs>(() => api('/api/tools/pdf-slicer/ocr-jobs'), [])
+  const { data, error, loading, reload } = useAsync<OcrJobs>(() => ocrApi.getJobs(), [])
   useEffect(() => {
     const timer = window.setInterval(() => {
       reload({ silent: true })

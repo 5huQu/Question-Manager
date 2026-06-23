@@ -23,7 +23,8 @@ import {
   Sparkles,
   X,
 } from 'lucide-react'
-import { api, jsonHeaders } from '@/api/client'
+import { pdfSlicerApi } from '@/api/pdfSlicer'
+import { questionBankApi } from '@/api/questionBank'
 import { Modal } from '@/components/dialogs/Modal'
 import { QuestionContent } from '@/components/questions/QuestionContent'
 import { Button } from '@/components/ui'
@@ -169,7 +170,7 @@ export function QuestionCreatePage() {
     }
   }, [singleJsonText])
 
-  const sliceDashboard = useAsync<Dashboard>(() => api('/api/tools/pdf-slicer/dashboard'), [])
+  const sliceDashboard = useAsync<Dashboard>(() => pdfSlicerApi.getDashboard(), [])
   const selectableSliceRuns = useMemo(() => {
     return (sliceDashboard.data?.runs ?? [])
       .filter((run) => run.totalQuestions > 0 || run.approvedQuestions > 0)
@@ -178,7 +179,7 @@ export function QuestionCreatePage() {
   const selectedSliceRun = selectableSliceRuns.find((run) => run.runId === selectedSliceRunId) ?? null
   const sliceReview = useAsync<{ summary: Record<string, number>; items: SliceReviewItem[] }>(() => {
     if (!selectedSliceRunId) return Promise.resolve({ summary: {}, items: [] })
-    return api(`/api/tools/pdf-slicer/runs/${encodeURIComponent(selectedSliceRunId)}/slice-review/items`)
+    return pdfSlicerApi.getSliceReviewItems(selectedSliceRunId)
   }, [selectedSliceRunId])
   const slicePairStatus = useMemo(() => {
     if (paperImportSource !== 'slices') return null
@@ -281,18 +282,14 @@ export function QuestionCreatePage() {
         })).filter((option) => option.blocks.length),
       }]
       : []
-    const item = await api<QuestionItem>('/api/question-bank/items', {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({
-        ...draft,
-        sourceTitle: draft.sourceTitle.trim() || '手动创建',
-        stemMarkdown: draft.problemText,
-        analysisMarkdown: draft.analysisText,
-        problemBlocks: [...paragraphBlocksFromText(draft.problemText), ...choiceBlock],
-        answerBlocks: paragraphBlocksFromText(draft.answerText),
-        analysisBlocks: paragraphBlocksFromText(draft.analysisText),
-      }),
+    const item = await questionBankApi.createItem({
+      ...draft,
+      sourceTitle: draft.sourceTitle.trim() || '手动创建',
+      stemMarkdown: draft.problemText,
+      analysisMarkdown: draft.analysisText,
+      problemBlocks: [...paragraphBlocksFromText(draft.problemText), ...choiceBlock],
+      answerBlocks: paragraphBlocksFromText(draft.answerText),
+      analysisBlocks: paragraphBlocksFromText(draft.analysisText),
     })
     navigate(`/questions/${encodeURIComponent(item.id)}`)
   }
@@ -334,17 +331,15 @@ export function QuestionCreatePage() {
     }
     setImportingPaper(true)
     try {
-      const endpoint = paperImportSource === 'slices' ? '/api/question-bank/import-json-from-slices' : '/api/question-bank/import-json'
-      const result = await api<{ items: QuestionItem[]; count: number; pendingBankUrl?: string }>(endpoint, {
-        method: 'POST',
-        headers: jsonHeaders,
-        body: JSON.stringify({
-          questions: paperJsonStatus.questions,
-          runId: selectedSliceRunId,
-          sourceTitle: paperDraft.sourceTitle || selectedSliceRun?.paperTitle || 'AI 识别导入',
-          stage: paperDraft.stage,
-        }),
-      })
+      const payload = {
+        questions: paperJsonStatus.questions,
+        runId: selectedSliceRunId,
+        sourceTitle: paperDraft.sourceTitle || selectedSliceRun?.paperTitle || 'AI 识别导入',
+        stage: paperDraft.stage,
+      }
+      const result = paperImportSource === 'slices'
+        ? await questionBankApi.importJsonItemsFromSlices(payload)
+        : await questionBankApi.importJsonItems(payload)
       if (result.pendingBankUrl) {
         setPendingBankUrl(result.pendingBankUrl)
         setNotice(`已导入 ${result.count} 道题，题号校验通过。请进入待入库确认完成最终入库。`, 'success')
@@ -393,7 +388,7 @@ export function QuestionCreatePage() {
 
   async function openSelectedPdfFolder() {
     if (!selectedSliceRunId) return
-    await api(`/api/tools/pdf-slicer/runs/${encodeURIComponent(selectedSliceRunId)}/open-folder`, { method: 'POST' })
+    await pdfSlicerApi.openRunFolder(selectedSliceRunId)
   }
 
   const choiceEntries = ['A', 'B', 'C', 'D'] as const
@@ -426,22 +421,23 @@ export function QuestionCreatePage() {
   }
 
   function renderJsonError(status: Extract<typeof paperJsonStatus | typeof singleJsonStatus, { status: 'invalid' }>) {
+    const snippet = status.snippet
     return (
       <div className="space-y-3 rounded-xl border border-red-200/60 bg-red-50/60 p-3 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
         <div className="flex items-start gap-2">
           <X className="mt-0.5 size-3.5 shrink-0" />
           <span>JSON 语法错误: <code className="rounded bg-red-100/60 px-1 py-0.5 font-mono text-[10px] break-all dark:bg-red-900/40">{status.error}</code></span>
         </div>
-        {status.snippet ? (
+        {snippet ? (
           <div className="overflow-hidden rounded-lg border border-red-200/50 bg-white/80 font-mono text-[10px] leading-5 text-zinc-700 dark:border-red-900/40 dark:bg-zinc-950/60 dark:text-zinc-200">
-            {status.snippet.rows.map((row) => (
+            {snippet.rows.map((row) => (
               <div key={row.line} className={row.active ? 'bg-red-100/70 dark:bg-red-950/40' : ''}>
                 <span className="inline-block w-10 select-none border-r border-red-100 px-2 text-right text-muted-foreground dark:border-red-900/40">{row.line}</span>
                 <span className="whitespace-pre-wrap px-2">{row.content || ' '}</span>
                 {row.active ? (
                   <div>
                     <span className="inline-block w-10 border-r border-red-100 px-2 dark:border-red-900/40" />
-                    <span className="px-2 text-red-600">{`${' '.repeat(Math.max(0, status.snippet.column - 1))}^ 第 ${status.snippet.column} 列`}</span>
+                    <span className="px-2 text-red-600">{`${' '.repeat(Math.max(0, snippet.column - 1))}^ 第 ${snippet.column} 列`}</span>
                   </div>
                 ) : null}
               </div>
@@ -635,7 +631,7 @@ export function QuestionCreatePage() {
                 </form>
               ) : (
                 <form className={`${sectionClass} space-y-4 p-5`} onSubmit={createSingleFromJson}>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="flex items-center gap-2 text-sm font-semibold"><Code className="size-4 text-primary" />JSON 单题录入</h2><p className="mt-1 text-xs text-muted-foreground">支持单个题目对象、含 1 道题的 questions 数组或代码块粘贴。</p></div>{'changes' in singleJsonStatus && singleJsonStatus.changes.length ? <Button type="button" variant="outline" size="sm" icon={Check} onClick={applySingleJsonCleanup}>应用修复</Button> : null}</div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="flex items-center gap-2 text-sm font-semibold"><Code className="size-4 text-primary" />JSON 单题录入</h2><p className="mt-1 text-xs text-muted-foreground">支持单个题目对象、含 1 道题的 questions 数组或代码块粘贴。</p></div>{'changes' in singleJsonStatus && (singleJsonStatus.changes?.length ?? 0) > 0 ? <Button type="button" variant="outline" size="sm" icon={Check} onClick={applySingleJsonCleanup}>应用修复</Button> : null}</div>
                   <label className="space-y-1.5"><span className={smallLabelClass}>单题 JSON 代码</span><textarea className={`${textareaClass} h-80 font-mono`} placeholder='{"questionNo":"1","questionType":"单选题",...}' value={singleJsonText} onChange={(e) => setSingleJsonText(e.target.value)} spellCheck={false} /></label>
                   {singleJsonStatus.status === 'valid' ? <div className="rounded-lg border bg-muted/30 px-4 py-2.5 text-sm text-muted-foreground"><CheckCircle className="mr-2 inline size-4 text-emerald-600" />检查通过，题号 {singleJsonStatus.preview.questionNo || '1'}，可以创建。</div> : null}
                   {singleJsonStatus.status === 'empty' ? <div className="rounded-lg border bg-muted/30 px-4 py-2.5 text-sm text-muted-foreground">请输入 JSON 格式代码</div> : null}
@@ -670,7 +666,7 @@ export function QuestionCreatePage() {
               </section>
 
               <section className="space-y-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><h4 className="flex items-center gap-2 text-xs font-medium"><Code className="size-4 text-muted-foreground" />试卷 JSON 数组内容</h4><div className="flex gap-2"><Button type="button" variant="outline" size="sm" icon={RefreshCcw} onClick={cleanPaperJsonBackslashes}>清洗反斜杠</Button>{'changes' in paperJsonStatus && paperJsonStatus.changes.length > 0 ? <Button type="button" variant="outline" size="sm" icon={Check} onClick={applyPaperJsonCleanup}>应用修复</Button> : null}</div></div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><h4 className="flex items-center gap-2 text-xs font-medium"><Code className="size-4 text-muted-foreground" />试卷 JSON 数组内容</h4><div className="flex gap-2"><Button type="button" variant="outline" size="sm" icon={RefreshCcw} onClick={cleanPaperJsonBackslashes}>清洗反斜杠</Button>{'changes' in paperJsonStatus && (paperJsonStatus.changes?.length ?? 0) > 0 ? <Button type="button" variant="outline" size="sm" icon={Check} onClick={applyPaperJsonCleanup}>应用修复</Button> : null}</div></div>
                 <textarea className={`${textareaClass} h-60 font-mono`} placeholder='{"questions": [...]}' value={paperDraft.jsonText} onChange={(e) => setPaperDraft({ ...paperDraft, jsonText: e.target.value })} spellCheck={false} />
                 {paperJsonStatus.status === 'empty' ? <div className="rounded-lg border bg-muted/30 px-4 py-2.5 text-sm text-muted-foreground">请输入符合 JSON 格式的 questions 数组</div> : null}
                 {paperJsonStatus.status === 'valid' ? <div className="space-y-3"><div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-4 py-2.5 text-sm text-muted-foreground"><CheckCircle className="size-4 text-emerald-600" />JSON 语法解析成功，共检测到 <strong>{paperJsonStatus.count}</strong> 道题目。{paperJsonStatus.issueCount > 0 ? `其中 ${paperJsonStatus.issueCount} 项需要注意。` : '字段完整，可以确认导入。'}</div><div className="overflow-hidden rounded-lg border"><div className="grid grid-cols-[56px_minmax(0,1.5fr)_72px_72px_96px] gap-2 border-b bg-muted/40 px-3 py-2 text-[10px] font-semibold text-muted-foreground"><span>题号</span><span>题干预览</span><span>答案</span><span>解析</span><span>状态</span></div><div className="max-h-72 divide-y overflow-y-auto">{paperJsonStatus.previews.map((item) => <div key={`${item.index}-${item.questionNo}`} className="grid grid-cols-[56px_minmax(0,1.5fr)_72px_72px_96px] gap-2 px-3 py-2 text-xs"><span className="font-mono text-muted-foreground">{item.questionNo}</span><span className="line-clamp-2 min-w-0">{item.problemText || '题干为空'}</span><span className={item.answerText.trim() ? 'text-muted-foreground' : 'text-amber-600'}>{item.answerText.trim() ? '有' : '缺失'}</span><span className={item.analysisText.trim() ? 'text-muted-foreground' : 'text-amber-600'}>{item.analysisText.trim() ? '有' : '缺失'}</span><span className={item.issues.length || item.needsHumanReview ? 'text-amber-600' : 'text-emerald-600'}>{item.needsHumanReview ? '需复核' : item.issues[0] || '可导入'}</span></div>)}</div></div></div> : null}

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ArrowLeft, Code2, Eye, Printer } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, jsonHeaders } from '@/api/client'
+import { collectionsApi } from '@/api/collections'
 import { QuestionDocumentMarkdownContent } from '@/components/questions/QuestionContent'
 import { Button, Empty } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
@@ -17,11 +17,7 @@ export function MarkdownPreviewPage() {
   const collectionId = decodeURIComponent(id)
   const variant: PreviewVariant = searchParams.get('variant') === 'teacher' ? 'teacher' : 'student'
   const requestKey = useMemo(() => `${collectionId}:${variant}`, [collectionId, variant])
-  const preview = useAsync<CollectionExport>(() => api(`/api/question-bank/collections/${encodeURIComponent(collectionId)}/export`, {
-    method: 'POST',
-    headers: jsonHeaders,
-    body: JSON.stringify({ format: 'markdown', variant }),
-  }), [requestKey])
+  const preview = useAsync<CollectionExport>(() => collectionsApi.exportCollection(collectionId, { format: 'markdown', variant }), [requestKey])
 
   function switchVariant(next: PreviewVariant) {
     setSearchParams({ variant: next })

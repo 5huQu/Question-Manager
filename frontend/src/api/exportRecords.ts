@@ -1,0 +1,52 @@
+import { api, jsonHeaders } from './client'
+import type { ExportRecord } from '@/types'
+
+export type ExportRecordsResponse = {
+  items: ExportRecord[]
+}
+
+export type ExportRecordsParams = {
+  q?: string
+  sourceType?: 'collection' | 'run' | ''
+  limit?: number
+}
+
+export type RunExportResult = {
+  filename: string
+  format: string
+  url: string
+}
+
+export const exportRecordsApi = {
+  listExportRecords(params: ExportRecordsParams = {}) {
+    const query = new URLSearchParams()
+    if (params.q?.trim()) query.set('q', params.q.trim())
+    if (params.sourceType) query.set('sourceType', params.sourceType)
+    if (params.limit !== undefined) query.set('limit', String(params.limit))
+    const queryString = query.toString()
+    return api<ExportRecordsResponse>(`/api/question-bank/export-records${queryString ? `?${queryString}` : ''}`)
+  },
+  deleteExportRecord(id: string) {
+    return api(`/api/question-bank/export-records/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  },
+  restoreToBasket(id: string, payload: { collectionId?: string; syncTitle?: boolean } = {}) {
+    return api(`/api/question-bank/export-records/${encodeURIComponent(id)}/restore-to-basket`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    })
+  },
+  listCollectionExportRecords(collectionId: string) {
+    return api<ExportRecordsResponse>(`/api/question-bank/collections/${encodeURIComponent(collectionId)}/export-records`)
+  },
+  listRunExportRecords(runId: string) {
+    return api<ExportRecordsResponse>(`/api/tools/pdf-slicer/runs/${encodeURIComponent(runId)}/export-records`)
+  },
+  exportRunBatch(runId: string, payload: Record<string, unknown>) {
+    return api<RunExportResult>(`/api/tools/pdf-slicer/runs/${encodeURIComponent(runId)}/export-batch`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    })
+  },
+}

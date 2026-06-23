@@ -1,12 +1,12 @@
 import { RefreshCcw } from 'lucide-react'
 import { Button, Empty, Panel } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
-import { api } from '@/api/client'
+import { ocrApi } from '@/api/ocr'
 import type { Dashboard, OcrJobs } from '@/types'
 import { OcrJobCard } from '@/pages/ocr/OcrJobCard'
 
 export function OcrTab({ dashboard, mockLogs }: { dashboard: Dashboard | null; mockLogs: string[] }) {
-  const ocrJobs = useAsync<OcrJobs>(() => api('/api/tools/pdf-slicer/ocr-jobs'), [])
+  const ocrJobs = useAsync<OcrJobs>(() => ocrApi.getJobs(), [])
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] h-[calc(100vh-9rem)] min-h-[580px] overflow-hidden">

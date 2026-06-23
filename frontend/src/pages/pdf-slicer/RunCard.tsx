@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BadgeCheck, BookOpen, Check, FileJson, FileText, FolderOpen, LoaderCircle, RefreshCcw, ScanSearch, Trash2, X } from 'lucide-react'
-import { api, jsonHeaders } from '@/api/client'
+import { ocrApi } from '@/api/ocr'
+import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { Badge, Button } from '@/components/ui'
 import type { ApiRun, SliceReviewItem } from '@/types'
 import { fileRoleLabel, label, materialTypeLabel, statusVariant, workflowStatusVariant } from '@/utils/questionDisplay'
@@ -29,20 +30,20 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
   const recognitionFileKind = ['word_native', 'docx_native', 'native_docx'].includes(String(run.uploadMode || '')) ? 'Word' : 'PDF'
   const recognitionFileName = recognitionFileKind === 'Word' ? (run.sourceFileName || run.pdfName) : run.pdfName
   async function queueOcr() {
-    await api('/api/tools/pdf-slicer/runs/bulk-ocr', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ runIds: [run.runId] }) })
+    await ocrApi.bulkOcr([run.runId])
     onReload()
   }
   async function deleteRun() {
-    await api(`/api/tools/pdf-slicer/runs/${run.runId}`, { method: 'DELETE' })
+    await pdfSlicerApi.deleteRun(run.runId)
     onReload()
   }
   async function openPdfFolder() {
-    await api(`/api/tools/pdf-slicer/runs/${run.runId}/open-folder`, { method: 'POST' })
+    await pdfSlicerApi.openRunFolder(run.runId)
   }
   async function goManualImport() {
     setManualImportBusy(true)
     try {
-      const payload = await api<{ items: SliceReviewItem[] }>(`/api/tools/pdf-slicer/runs/${encodeURIComponent(run.runId)}/slice-review/items`)
+      const payload = await pdfSlicerApi.getSliceReviewItems(run.runId)
       const approvedResultIds = (payload.items ?? [])
         .filter((item) => item.reviewStatus !== 'rejected')
         .map((item) => item.resultId)
@@ -50,11 +51,7 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
         window.alert('该批次暂无可手动导入的题块。')
         return
       }
-      await api('/api/tools/pdf-slicer/runs/quick-review', {
-        method: 'POST',
-        headers: jsonHeaders,
-        body: JSON.stringify({ runId: run.runId, approvedResultIds, autoStartOcr: false }),
-      })
+      await pdfSlicerApi.quickReview({ runId: run.runId, approvedResultIds, autoStartOcr: false })
       navigate(`/questions/new?target=paper&method=direct&source=slices&runId=${encodeURIComponent(run.runId)}&prompt=paper`)
     } finally {
       setManualImportBusy(false)
@@ -64,13 +61,9 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
   async function updateClassification(next: { materialType?: string; fileRole?: string }) {
     setClassificationBusy(true)
     try {
-      const result = await api<{ warning?: string }>(`/api/tools/pdf-slicer/runs/${run.runId}/classification`, {
-        method: 'PATCH',
-        headers: jsonHeaders,
-        body: JSON.stringify({
-          materialType: next.materialType || materialType,
-          fileRole: next.fileRole || fileRole,
-        }),
+      const result = await pdfSlicerApi.updateRunClassification(run.runId, {
+        materialType: next.materialType || materialType,
+        fileRole: next.fileRole || fileRole,
       })
       if (result.warning) window.alert(result.warning)
       onReload()

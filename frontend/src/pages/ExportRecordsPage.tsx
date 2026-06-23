@@ -13,7 +13,8 @@ import {
   Scissors,
   Undo2
 } from 'lucide-react'
-import { api, jsonHeaders } from '@/api/client'
+import { collectionsApi } from '@/api/collections'
+import { exportRecordsApi } from '@/api/exportRecords'
 import { getActiveCollectionId, notifyBasketUpdated } from '@/components/QuestionBasket'
 import { Button, Empty, PageTitle, Badge } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
@@ -79,18 +80,12 @@ export function ExportRecordsPage() {
   const [isRestoring, setIsRestoring] = useState<string | null>(null)
 
   // Construct URL with query parameters
-  const requestUrl = useMemo(() => {
-    const params = new URLSearchParams()
-    if (query.trim()) params.set('q', query.trim())
-    if (sourceType) params.set('sourceType', sourceType)
-    params.set('limit', String(limit))
-    return `/api/question-bank/export-records?${params.toString()}`
-  }, [query, sourceType, limit])
+  const requestParams = useMemo(() => ({ q: query.trim() || undefined, sourceType, limit }), [query, sourceType, limit])
 
   // Fetch export records data using the async hook
   const { data, error, loading, reload, setData } = useAsync<{ items: ExportRecord[] }>(
-    () => api(requestUrl),
-    [requestUrl]
+    () => exportRecordsApi.listExportRecords(requestParams),
+    [requestParams]
   )
 
   const items = data?.items || []
@@ -130,9 +125,7 @@ export function ExportRecordsPage() {
 
     setIsDeleting(recordId)
     try {
-      await api(`/api/question-bank/export-records/${encodeURIComponent(recordId)}`, {
-        method: 'DELETE',
-      })
+      await exportRecordsApi.deleteExportRecord(recordId)
 
       // Update state locally
       setData((current) => {
@@ -163,7 +156,7 @@ export function ExportRecordsPage() {
     const collectionId = getActiveCollectionId()
     setIsRestoring(item.id)
     try {
-      const current = await api<Basket>(`/api/question-bank/collections/${encodeURIComponent(collectionId)}`)
+      const current = await collectionsApi.getCollection(collectionId)
       if ((current.questionCount || 0) > 0) {
         const confirmed = window.confirm(
           `当前试题篮「${current.title || collectionId}」已有 ${current.questionCount} 道题。\n\n继续会清空当前试题篮，并用「${item.title || item.filename}」这条导出记录中的 ${item.items.length} 道题覆盖。是否继续？`
@@ -173,11 +166,7 @@ export function ExportRecordsPage() {
       const syncTitle = window.confirm(
         `是否同时将当前试题篮名称改为「${item.title || item.filename}」？\n\n选择“确定”会同步名称；选择“取消”仅恢复题目。`
       )
-      await api(`/api/question-bank/export-records/${encodeURIComponent(item.id)}/restore-to-basket`, {
-        method: 'POST',
-        headers: jsonHeaders,
-        body: JSON.stringify({ collectionId, syncTitle }),
-      })
+      await exportRecordsApi.restoreToBasket(item.id, { collectionId, syncTitle })
       notifyBasketUpdated()
       alert(`已回填 ${item.items.length} 道题到试题篮。`)
     } catch (err: any) {

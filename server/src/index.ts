@@ -22,6 +22,7 @@ import { mountPendingBankRoutes } from './routes/pdf-slicer/pending-bank.js'
 import { mountQuestionBankItemsRoutes } from './routes/question-bank/items.js'
 import { mountQuestionBankCollectionsRoutes } from './routes/question-bank/collections.js'
 import { mountExportRecordsRoutes } from './routes/question-bank/export-records.js'
+import { mountActivityDashboardRoutes } from './routes/dashboard/activity.js'
 
 // Initialize schema before any route handles requests
 ensureSchema()
@@ -42,6 +43,7 @@ mountPendingBankRoutes(app)
 mountQuestionBankItemsRoutes(app)
 mountQuestionBankCollectionsRoutes(app)
 mountExportRecordsRoutes(app)
+mountActivityDashboardRoutes(app)
 
 // Re-export for Electron and smoke tests
 export { app, startServer, closeDatabase }

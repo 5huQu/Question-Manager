@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BadgeCheck, BookOpen, LoaderCircle, RefreshCcw, Trash2 } from 'lucide-react'
-import { api } from '@/api/client'
+import { ocrApi } from '@/api/ocr'
+import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { Badge, Button } from '@/components/ui'
 import type { ApiRun } from '@/types'
 import { fileRoleLabel, label, materialTypeLabel, statusVariant } from '@/utils/questionDisplay'
@@ -39,14 +40,14 @@ export function OcrHistoryRow({ run, onReload }: { run: ApiRun; onReload: () => 
   async function rerun() {
     if (!window.confirm('确定要完全重跑此任务吗？')) return
     await runAction('完全重跑', async () => {
-      await api(`/api/tools/pdf-slicer/runs/${run.runId}/force-rerun-ocr`, { method: 'POST' })
+      await ocrApi.forceRerunOcr(run.runId)
     })
   }
 
   async function deleteTask() {
     if (!window.confirm('确定要删除此任务吗？此操作不可逆。')) return
     await runAction('删除任务', async () => {
-      await api(`/api/tools/pdf-slicer/runs/${run.runId}`, { method: 'DELETE' })
+      await pdfSlicerApi.deleteRun(run.runId)
     })
   }
 

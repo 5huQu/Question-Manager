@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BadgeCheck, BookOpen, Check, LoaderCircle, RefreshCcw, ScanSearch, Trash2, X } from 'lucide-react'
-import { api } from '@/api/client'
+import { ocrApi } from '@/api/ocr'
+import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { Badge, Button, MiniMetric } from '@/components/ui'
 import type { ApiRun, OcrProgress } from '@/types'
 import { fileRoleLabel, label, materialTypeLabel, statusVariant } from '@/utils/questionDisplay'
@@ -32,7 +33,7 @@ export function OcrJobCard({ run, onReload }: { run: ApiRun; onReload: () => voi
     starting: '准备任务', preupload: '申请上传', uploading: '上传 PDF', parsing: '云端解析', normalizing: '拆分题目', downloading_assets: '下载题图', importing: '导入题库', interrupted: '已中断', succeeded: '已完成', failed: '失败',
   }
   async function loadProgress() {
-    const next = await api<OcrProgress>(`/api/tools/pdf-slicer/runs/${run.runId}/ocr-progress`)
+    const next = await ocrApi.getOcrProgress(run.runId)
     setProgress(next)
   }
   useEffect(() => {
@@ -59,27 +60,27 @@ export function OcrJobCard({ run, onReload }: { run: ApiRun; onReload: () => voi
   }
   async function start() {
     await runAction('启动 OCR', async () => {
-      await api(`/api/tools/pdf-slicer/runs/${run.runId}/start-ocr`, { method: 'POST' })
+      await ocrApi.startOcr(run.runId)
     })
   }
   async function rerun() {
     await runAction('完全重跑', async () => {
-      await api(`/api/tools/pdf-slicer/runs/${run.runId}/force-rerun-ocr`, { method: 'POST' })
+      await ocrApi.forceRerunOcr(run.runId)
     })
   }
   async function resume() {
     await runAction('断点续跑', async () => {
-      await api(`/api/tools/pdf-slicer/runs/${run.runId}/resume-ocr`, { method: 'POST' })
+      await ocrApi.resumeOcr(run.runId)
     })
   }
   async function interrupt() {
     await runAction('强制中断', async () => {
-      await api(`/api/tools/pdf-slicer/runs/${run.runId}/force-interrupt-ocr`, { method: 'POST' })
+      await ocrApi.forceInterruptOcr(run.runId)
     })
   }
   async function deleteTask() {
     await runAction('删除任务', async () => {
-      await api(`/api/tools/pdf-slicer/runs/${run.runId}`, { method: 'DELETE' })
+      await pdfSlicerApi.deleteRun(run.runId)
     })
   }
   return (
@@ -104,9 +105,7 @@ export function OcrJobCard({ run, onReload }: { run: ApiRun; onReload: () => voi
       {notice ? <div className="mt-3 flex items-center gap-2 rounded-xl border bg-muted/40 px-3 py-2 text-sm text-foreground">{action ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}<span>{notice}</span></div> : null}
       {canOpenPendingBank ? (
         <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {fileRole === 'solutions'
-            ? '解析文件 OCR 已完成。系统会在同组原卷完成后按题号自动合并。'
-            : fileRole === 'questions'
+          {fileRole === 'questions'
               ? '原卷题干已生成。若同组解析文件也已完成，系统会自动合并后进入待入库确认。'
                 : pendingBankCount > 0 && displayOcrStatus !== 'succeeded'
                 ? `OCR 已生成 ${pendingBankCount} 道待入库题目，可先进入待入库确认页处理已生成内容。`

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type DragEvent, type FormEvent } from 'react'
 import { BookOpen, FileStack, FileText, FileUp, RefreshCcw, ScanSearch } from 'lucide-react'
-import { api } from '@/api/client'
+import { pdfSlicerApi } from '@/api/pdfSlicer'
+import { settingsApi } from '@/api/settings'
 import { SeparatedFileInput } from '@/components/pdf-slicer/SeparatedFileInput'
 import { UploadModeButton } from '@/components/pdf-slicer/UploadModeButton'
 import { Empty } from '@/components/ui'
@@ -12,8 +13,8 @@ import { fileListHasWord, libreOfficeDownloadUrl } from '@/utils/wordFiles'
 import { RunCard } from './RunCard'
 
 export function PdfSlicerPage() {
-  const { data, error, loading, reload } = useAsync<Dashboard>(() => api('/api/tools/pdf-slicer/dashboard'), [])
-  const ocrSettings = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
+  const { data, error, loading, reload } = useAsync<Dashboard>(() => pdfSlicerApi.getDashboard(), [])
+  const ocrSettings = useAsync<OcrSettings>(() => settingsApi.getOcrSettings(), [])
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null)
@@ -124,7 +125,7 @@ export function PdfSlicerPage() {
     form.append('fileRolesJson', JSON.stringify(fileRoles))
     setUploading(true)
     try {
-      await api('/api/tools/pdf-slicer/uploads', { method: 'POST', body: form })
+      await pdfSlicerApi.upload(form)
       setSelectedFiles(null)
       setQuestionFiles(null)
       setSolutionFiles(null)
@@ -262,7 +263,7 @@ export function PdfSlicerPage() {
         <div className="bg-card rounded-xl shadow-sm border flex flex-col text-card-foreground">
           <div className="px-5 py-4 border-b flex items-center justify-between rounded-t-xl">
             <h2 className="text-sm font-semibold">任务进度与批次</h2>
-            <button onClick={reload} className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-accent">
+            <button onClick={() => reload()} className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-accent">
               <RefreshCcw className="size-3.5" /> 刷新
             </button>
           </div>

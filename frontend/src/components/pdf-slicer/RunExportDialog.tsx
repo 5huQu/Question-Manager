@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react'
 import { ClipboardList, FileText, LoaderCircle } from 'lucide-react'
-import { api, jsonHeaders } from '@/api/client'
+import { exportRecordsApi } from '@/api/exportRecords'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button } from '@/components/ui'
 import type { ApiRun } from '@/types'
@@ -20,11 +20,7 @@ export function RunExportDialog({ run, onClose }: { run: ApiRun; onClose: () => 
     setBusy(true)
     setError('')
     try {
-      const result = await api<{ filename: string; format: string; url: string }>(`/api/tools/pdf-slicer/runs/${encodeURIComponent(run.runId)}/export-batch`, {
-        method: 'POST',
-        headers: jsonHeaders,
-        body: JSON.stringify({ title, template, variant }),
-      })
+      const result = await exportRecordsApi.exportRunBatch(run.runId, { title, template, variant })
       window.open(result.url, '_blank')
       onClose()
     } catch (err) {

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { FileUp, LoaderCircle } from 'lucide-react'
-import { api } from '@/api/client'
+import { pdfSlicerApi } from '@/api/pdfSlicer'
+import { settingsApi } from '@/api/settings'
 import { Button, Panel } from '@/components/ui'
 import { Modal } from '@/components/dialogs/Modal'
 import { RunCard } from '@/pages/pdf-slicer/RunCard'
@@ -8,13 +9,12 @@ import type { Dashboard, OcrSettings } from '@/types'
 import { useAsync } from '@/hooks/useAsync'
 import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
 import { fileListHasWord, libreOfficeDownloadUrl } from '@/utils/wordFiles'
-import { mockRuns } from './OverviewTab'
 
 export function SlicerTab({ dashboard, reload }: { dashboard: Dashboard | null; reload: () => void }) {
   const [uploading, setUploading] = useState(false)
   const [stage, setStage] = useState('高三')
   const [showWordUploadWarning, setShowWordUploadWarning] = useState(false)
-  const ocrSettings = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
+  const ocrSettings = useAsync<OcrSettings>(() => settingsApi.getOcrSettings(), [])
   const stageOptions = gradeOptionsForTeachingStages(ocrSettings.data?.teachingStages)
   const selectedStage = ensureStageValue(stage, stageOptions)
   const missingLibreOffice = ocrSettings.data?.sofficeAvailable === false
@@ -34,7 +34,7 @@ export function SlicerTab({ dashboard, reload }: { dashboard: Dashboard | null; 
     form.append('stage', selectedStage)
     setUploading(true)
     try {
-      await api('/api/tools/pdf-slicer/uploads', { method: 'POST', body: form })
+      await pdfSlicerApi.upload(form)
       input.value = ''
       paperTitleInput.value = ''
       reload()
@@ -43,8 +43,7 @@ export function SlicerTab({ dashboard, reload }: { dashboard: Dashboard | null; 
     }
   }
 
-  const apiRuns = dashboard?.runs ?? []
-  const runs = apiRuns.length ? apiRuns : mockRuns
+  const runs = dashboard?.runs ?? []
 
   return (
     <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] h-[calc(100vh-9rem)] min-h-[580px] overflow-hidden">

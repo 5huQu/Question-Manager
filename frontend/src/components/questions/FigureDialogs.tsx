@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { FileUp, ImagePlus, LoaderCircle, Trash2, X } from 'lucide-react'
-import { api } from '@/api/client'
+import { questionBankApi } from '@/api/questionBank'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button, Empty } from '@/components/ui'
 import type { CropCorner, CropInteraction, QuestionFigure, QuestionItem } from '@/types'
@@ -403,10 +403,7 @@ export function FigureUploadDialog({ question, optionLabels, usageOptions, onClo
       form.append('file', file)
       form.append('usage', usage)
       if (usage === 'options') form.append('optionLabel', optionLabel)
-      const figure = await api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(question.id)}/figures/upload`, {
-        method: 'POST',
-        body: form,
-      })
+      const figure = await questionBankApi.uploadFigure(question.id, form)
       onUploaded(figure)
       onClose()
     } catch (err) {

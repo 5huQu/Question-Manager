@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BadgeCheck, Check, Combine, FileJson, Pencil, RefreshCcw, Scissors, Trash2, X } from 'lucide-react'
-import { api, jsonHeaders } from '@/api/client'
+import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { ImagePreviewDialog, Modal } from '@/components/dialogs/Modal'
 import { Badge, Button, Empty, Panel } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
@@ -11,7 +11,7 @@ import { ReviewFigureEditor } from './ReviewFigureEditor'
 
 export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted }: { run: ApiRun; readonly?: boolean; onClose: () => void; onSubmitted: () => void }) {
   const navigate = useNavigate()
-  const { data, loading, error, reload } = useAsync<{ summary: Record<string, number>; items: SliceReviewItem[] }>(() => api(`/api/tools/pdf-slicer/runs/${run.runId}/slice-review/items`), [run.runId])
+  const { data, loading, error, reload } = useAsync<{ summary: Record<string, number>; items: SliceReviewItem[] }>(() => pdfSlicerApi.getSliceReviewItems(run.runId), [run.runId])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [activeId, setActiveId] = useState('')
   const [reviewNotice, setReviewNotice] = useState('')
@@ -54,27 +54,19 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
   async function submit() {
     if (readonly) return
     setReviewNotice('已提交复核，正在启动 OCR...')
-    await api('/api/tools/pdf-slicer/runs/quick-review', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ runId: run.runId, approvedResultIds: Array.from(selected) }) })
+    await pdfSlicerApi.quickReview({ runId: run.runId, approvedResultIds: Array.from(selected) })
     onSubmitted()
   }
   async function submitReviewOnly() {
     if (readonly) return
     setReviewNotice('已提交复核。')
-    await api('/api/tools/pdf-slicer/runs/quick-review', {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ runId: run.runId, approvedResultIds: Array.from(selected), autoStartOcr: false }),
-    })
+    await pdfSlicerApi.quickReview({ runId: run.runId, approvedResultIds: Array.from(selected), autoStartOcr: false })
     onSubmitted()
   }
   async function submitForJsonImport() {
     if (readonly) return
     setReviewNotice('已提交复核，正在跳转到 JSON 导入...')
-    await api('/api/tools/pdf-slicer/runs/quick-review', {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ runId: run.runId, approvedResultIds: Array.from(selected), autoStartOcr: false }),
-    })
+    await pdfSlicerApi.quickReview({ runId: run.runId, approvedResultIds: Array.from(selected), autoStartOcr: false })
     onClose()
     navigate(`/questions/new?target=paper&method=direct&source=slices&runId=${encodeURIComponent(run.runId)}&prompt=paper`)
   }
@@ -103,7 +95,7 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
     setActiveId(nextActive?.resultId ?? '')
     setReviewNotice('')
     try {
-      await Promise.all(deleteIds.map((id) => api(`/api/tools/pdf-slicer/runs/${run.runId}/slice-review/items/${encodeURIComponent(id)}`, { method: 'DELETE' })))
+      await Promise.all(deleteIds.map((id) => pdfSlicerApi.deleteSliceReviewItem(run.runId, id)))
       reload()
     } catch (error) {
       setDeletedIds((current) => {
@@ -123,11 +115,7 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
     if (!window.confirm(`将按左侧列表顺序合并 ${mergeIds.length} 个题块，并保留第一个题块作为合并结果。是否继续？`)) return
     setMergeSaving(true)
     try {
-      const payload = await api<{ mergedId?: string; removedIds?: string[] }>(`/api/tools/pdf-slicer/runs/${run.runId}/slice-review/items/merge`, {
-        method: 'POST',
-        headers: jsonHeaders,
-        body: JSON.stringify({ resultIds: mergeIds }),
-      })
+      const payload = await pdfSlicerApi.mergeSliceReviewItems(run.runId, mergeIds)
       const mergedId = payload.mergedId || mergeIds[0]
       const removedIds = new Set(payload.removedIds ?? mergeIds.slice(1))
       setDeletedIds((current) => {
@@ -167,11 +155,7 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
     setBatchFigureSaving(true)
     try {
       const savedEntries = await Promise.all(affectedItems.map(async ({ item, nextFigures }) => {
-        const payload = await api<{ item?: SliceReviewItem }>(`/api/tools/pdf-slicer/runs/${run.runId}/slice-review/items/${encodeURIComponent(item.resultId)}/figures`, {
-          method: 'PATCH',
-          headers: jsonHeaders,
-          body: JSON.stringify({ figures: nextFigures }),
-        })
+        const payload = await pdfSlicerApi.updateSliceReviewItemFigures(run.runId, item.resultId, nextFigures)
         return { resultId: item.resultId, figures: payload.item?.figures ?? nextFigures }
       }))
       setFigureOverrides((current) => {
@@ -197,11 +181,7 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
     setReviewNotice('')
   }
   async function saveReviewFigures(item: SliceReviewItem, figures: Array<Record<string, unknown>>) {
-    const payload = await api<{ item?: SliceReviewItem }>(`/api/tools/pdf-slicer/runs/${run.runId}/slice-review/items/${encodeURIComponent(item.resultId)}/figures`, {
-      method: 'PATCH',
-      headers: jsonHeaders,
-      body: JSON.stringify({ figures }),
-    })
+    const payload = await pdfSlicerApi.updateSliceReviewItemFigures(run.runId, item.resultId, figures)
     const nextFigures = payload.item?.figures ?? figures
     setFigureOverrides((current) => ({ ...current, [item.resultId]: nextFigures }))
     setReviewNotice(`已保存第 ${item.questionLabel || '?'} 题的 ${nextFigures.length} 个图框`)
@@ -212,11 +192,7 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
     if (nextLabel === null) return
     const cleaned = nextLabel.trim()
     if (!cleaned) return
-    const payload = await api<{ item?: SliceReviewItem }>(`/api/tools/pdf-slicer/runs/${run.runId}/slice-review/items/${encodeURIComponent(item.resultId)}`, {
-      method: 'PATCH',
-      headers: jsonHeaders,
-      body: JSON.stringify({ questionLabel: cleaned }),
-    })
+    const payload = await pdfSlicerApi.updateSliceReviewItem(run.runId, item.resultId, { questionLabel: cleaned })
     setLabelOverrides((current) => ({ ...current, [item.resultId]: payload.item?.questionLabel ?? cleaned }))
     setReviewNotice(`已更新题块名称：${payload.item?.questionLabel ?? cleaned}`)
     reload({ silent: true })
@@ -225,11 +201,7 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
     if (!active || readonly) return
     setSplitSaving(true)
     try {
-      const payload = await api<{ bottomId?: string }>(`/api/tools/pdf-slicer/runs/${run.runId}/slice-review/items/${encodeURIComponent(active.resultId)}/split`, {
-        method: 'POST',
-        headers: jsonHeaders,
-        body: JSON.stringify({ splitRatio }),
-      })
+      const payload = await pdfSlicerApi.splitSliceReviewItem(run.runId, active.resultId, splitRatio)
       setSplitMode(false)
       setReviewNotice(`已将第 ${active.questionLabel || '?'} 题细分为两个题块`)
       const next = await reload({ silent: true })

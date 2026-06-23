@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Settings2, Tags, AlertCircle, LoaderCircle, SlidersHorizontal, Wrench, ExternalLink, Scissors, Plus, Trash2, ToggleLeft, ToggleRight, RotateCcw } from 'lucide-react'
-import { api, jsonHeaders } from '@/api/client'
+import { pdfSlicerApi } from '@/api/pdfSlicer'
+import { settingsApi } from '@/api/settings'
 import { Button, Empty, PageTitle } from '@/components/ui'
 import { UpdateCard } from '@/components/UpdateCard'
 import { Modal } from '@/components/dialogs/Modal'
@@ -10,7 +11,7 @@ import { teachingStageOptions } from '@/utils/stages'
 import { libreOfficeDownloadUrl } from '@/utils/wordFiles'
 
 export function SettingsPage() {
-  const { data, error, loading, reload } = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
+  const { data, error, loading, reload } = useAsync<OcrSettings>(() => settingsApi.getOcrSettings(), [])
   const [draft, setDraft] = useState<Partial<OcrSettings & { apiKey: string; doc2xApiKey: string; glmOcrApiKey: string; cleanupApiKey: string }>>({})
   const [activeTab, setActiveTab] = useState<'basic' | 'tools' | 'ocr' | 'classification' | 'prompts' | 'updates' | 'rules'>(() => {
     return new URLSearchParams(window.location.search).get('tab') === 'updates' ? 'updates' : 'basic'
@@ -20,7 +21,7 @@ export function SettingsPage() {
   const [showLibreOfficeAlert, setShowLibreOfficeAlert] = useState(false)
 
   // Rules state
-  const rulesApi = useAsync<SlicerRulesResponse>(() => api('/api/tools/pdf-slicer/rules'), [])
+  const rulesApi = useAsync<SlicerRulesResponse>(() => pdfSlicerApi.getRules(), [])
   const [rulesDraft, setRulesDraft] = useState<SlicerRulesData | null>(null)
   const [rulesBaseVersion, setRulesBaseVersion] = useState<number>(0)
   const [isRulesSaving, setIsRulesSaving] = useState(false)
@@ -59,11 +60,7 @@ export function SettingsPage() {
   function validateRulesDraft() {
     const draft = rulesDraft
     if (!draft) return
-    api<{ valid: boolean; errors: string[] }>('/api/tools/pdf-slicer/rules/validate', {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ rules: draft }),
-    }).then((result) => {
+    pdfSlicerApi.validateRules(draft).then((result) => {
       if (result.valid) {
         setRulesSaveStatus({ type: 'success', message: '规则校验通过！' })
         setTimeout(() => setRulesSaveStatus(null), 3000)
@@ -93,11 +90,7 @@ export function SettingsPage() {
     setIsRulesSaving(true)
     setRulesSaveStatus(null)
     try {
-      const saved = await api<SlicerRulesResponse>('/api/tools/pdf-slicer/rules', {
-        method: 'PUT',
-        headers: jsonHeaders,
-        body: JSON.stringify({ rules: draft, baseVersion: rulesBaseVersion }),
-      })
+      const saved = await pdfSlicerApi.updateRules(draft, rulesBaseVersion)
       setRulesBaseVersion(saved.baseVersion)
       setRulesDraft(saved)
       rulesApi.setData(saved)
@@ -121,11 +114,7 @@ export function SettingsPage() {
     setIsSaving(true)
     setSaveStatus(null)
     try {
-      const saved = await api<OcrSettings>('/api/tools/pdf-slicer/ocr-settings', {
-        method: 'PATCH',
-        headers: jsonHeaders,
-        body: JSON.stringify(draft),
-      })
+      const saved = await settingsApi.updateOcrSettings(draft)
       document.title = saved.siteTitle || 'Question Manager'
       window.dispatchEvent(new CustomEvent('app-settings-updated', { detail: saved }))
       await reload()

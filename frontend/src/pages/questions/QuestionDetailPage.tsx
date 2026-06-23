@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Check, Crop, FolderArchive, LoaderCircle, PencilLine, ScanSearch, Scissors, Trash2, X } from 'lucide-react'
-import { api, jsonHeaders } from '@/api/client'
+import { ocrApi } from '@/api/ocr'
+import { questionBankApi } from '@/api/questionBank'
 import { FigureCropDialog } from '@/components/questions/FigureDialogs'
 import { EditDialog } from '@/components/questions/EditDialog'
 import { QuestionMarkdownContent, SolutionDisclosure } from '@/components/questions/QuestionContent'
@@ -9,14 +10,14 @@ import { Badge, Button, Empty, PageTitle, Panel } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { OcrProgress, QuestionFigure, QuestionItem } from '@/types'
 import { addQuestionToActiveBasket } from '@/utils/questionBasket'
-import { difficultyLabel10, label } from '@/utils/questionDisplay'
+import { difficultyBadgeVariant, difficultyLabel10, label } from '@/utils/questionDisplay'
 import { richBlocksPlainText } from '@/components/RichContent'
 
 export function QuestionDetailPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const decodedId = decodeURIComponent(id)
-  const { data, error, loading, reload } = useAsync<QuestionItem>(() => api(`/api/question-bank/items/${encodeURIComponent(decodedId)}`), [decodedId])
+  const { data, error, loading, reload } = useAsync<QuestionItem>(() => questionBankApi.getItem(decodedId), [decodedId])
   const [cropOpen, setCropOpen] = useState(false)
   const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null)
   const [editing, setEditing] = useState(false)
@@ -29,32 +30,33 @@ export function QuestionDetailPage() {
   }, [data])
   async function save(nextDraft = draft) {
     setEditNotice(null)
-    await api(`/api/question-bank/items/${encodeURIComponent(decodedId)}`, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify({ item: nextDraft }) })
+    await questionBankApi.updateItem(decodedId, nextDraft)
     setDraft(nextDraft)
     setEditing(false)
     setEditNotice({ kind: 'success', text: '已保存当前 JSON/Markdown，并完成格式校验。' })
     reload()
   }
   async function addFigure(payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
-    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(decodedId)}/figures`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox }) })
+    return questionBankApi.createFigure(decodedId, { usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox })
   }
   async function updateFigure(figureId: string, payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
-    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(decodedId)}/figures/${encodeURIComponent(figureId)}`, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify({ usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox }) })
+    return questionBankApi.updateFigure(decodedId, figureId, { usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox })
   }
   async function deleteFigure(figureId: string) {
-    await api(`/api/question-bank/items/${encodeURIComponent(decodedId)}/figures/${encodeURIComponent(figureId)}`, { method: 'DELETE' })
+    await questionBankApi.deleteFigure(decodedId, figureId)
   }
   async function loadQuestionOcrProgress(runId: string) {
-    const next = await api<OcrProgress>(`/api/tools/pdf-slicer/runs/${runId}/ocr-progress`)
+    const next = await ocrApi.getOcrProgress(runId)
     setOcrProgress(next)
     return next
   }
   async function quickOcr() {
-    if (!data.sourceRunId) return
+    const question = data
+    if (!question?.sourceRunId) return
     setOcrAction('whole')
     try {
-      await api(`/api/tools/pdf-slicer/runs/${data.sourceRunId}/start-ocr`, { method: 'POST' })
-      const runId = data.sourceRunId
+      await ocrApi.startOcr(question.sourceRunId)
+      const runId = question.sourceRunId
       for (let attempt = 0; attempt < 90; attempt += 1) {
         const next = await loadQuestionOcrProgress(runId)
         const status = next.run?.ocrStatus
@@ -70,17 +72,14 @@ export function QuestionDetailPage() {
     }
   }
   async function chunkOcr() {
-    if (!data.sourceRunId) return
+    const question = data
+    if (!question?.sourceRunId) return
     const confirmed = window.confirm('分块 OCR 会重新识别并覆盖当前题干、答案和解析。仅在整图 OCR 效果不好时使用，是否继续？')
     if (!confirmed) return
     setOcrAction('region')
     setEditNotice(null)
     try {
-      const task = await api<{ runId: string; message?: string }>(`/api/question-bank/items/${encodeURIComponent(decodedId)}/rerun-ocr`, {
-        method: 'POST',
-        headers: jsonHeaders,
-        body: JSON.stringify({ route: 'region_chunks' }),
-      })
+      const task = await questionBankApi.rerunItemOcr(decodedId, { route: 'region_chunks' })
       for (let attempt = 0; attempt < 120; attempt += 1) {
         const next = await loadQuestionOcrProgress(task.runId)
         const status = next.run?.ocrStatus
@@ -103,7 +102,7 @@ export function QuestionDetailPage() {
     }
   }
   async function deleteQuestion() {
-    await api(`/api/question-bank/items/${encodeURIComponent(decodedId)}`, { method: 'DELETE' })
+    await questionBankApi.deleteItem(decodedId)
     navigate('/questions')
   }
   useEffect(() => {
@@ -135,11 +134,7 @@ export function QuestionDetailPage() {
                 <span className="text-xs font-semibold text-foreground mt-1 truncate" title={data.sourceTitle}>{data.sourceTitle || '来源待补充'}</span>
               </div>
               <div className="col-span-2 mt-1">
-                <Badge variant={
-                  (data.difficultyScore10 >= 8 || data.difficultyScore === 'hard' || data.difficultyScore === 'expert') ? 'danger' :
-                  (data.difficultyScore10 >= 5 || data.difficultyScore === 'medium') ? 'warning' :
-                  (data.difficultyScore10 >= 3) ? 'default' : 'success'
-                }>
+                <Badge variant={difficultyBadgeVariant(data)}>
                   {difficultyLabel10(data)}
                 </Badge>
               </div>

@@ -1,15 +1,17 @@
 import { useNavigate } from 'react-router-dom'
 import { BookOpen, FolderArchive, RefreshCcw, Sparkles } from 'lucide-react'
-import { api } from '@/api/client'
+import { pdfSlicerApi } from '@/api/pdfSlicer'
+import { questionBankApi } from '@/api/questionBank'
+import { settingsApi } from '@/api/settings'
 import { Button, Badge } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { Dashboard, OcrSettings, QuestionBankResponse } from '@/types'
 import { OverviewTab } from './OverviewTab'
 
 export function TraditionalWorkbenchPage() {
-  const dashboard = useAsync<Dashboard>(() => api('/api/tools/pdf-slicer/dashboard'), [])
-  const questionBank = useAsync<QuestionBankResponse>(() => api('/api/question-bank/items?page=1&pageSize=5'), [])
-  const ocrSettings = useAsync<OcrSettings>(() => api('/api/tools/pdf-slicer/ocr-settings'), [])
+  const dashboard = useAsync<Dashboard>(() => pdfSlicerApi.getDashboard(), [])
+  const questionBank = useAsync<QuestionBankResponse>(() => questionBankApi.listItems({ page: 1, pageSize: 5 }), [])
+  const ocrSettings = useAsync<OcrSettings>(() => settingsApi.getOcrSettings(), [])
   const navigate = useNavigate()
 
   return (

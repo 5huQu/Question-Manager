@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import 'katex/dist/katex.min.css'
 import { FilterX, Plus } from 'lucide-react'
-import { api } from '@/api/client'
+import { settingsApi } from '@/api/settings'
 import { QuestionBasket } from '@/components/QuestionBasket'
 import { UpdateCard } from '@/components/UpdateCard'
 import { AppPageHeader } from '@/components/layout/AppPageHeader'
@@ -61,7 +61,7 @@ export default function App() {
       if (settings) applySettings(settings)
     }
     window.addEventListener('app-settings-updated', handleSettingsUpdated)
-    api<OcrSettings>('/api/settings')
+    settingsApi.getSettings()
       .then(applySettings)
       .catch(() => undefined)
       .finally(() => setSettingsReady(true))

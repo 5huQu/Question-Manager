@@ -18,7 +18,8 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { api, jsonHeaders } from '../api/client'
+import { pendingBankApi } from '../api/pendingBank'
+import { questionBankApi } from '../api/questionBank'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { EditDialog } from '../components/questions/EditDialog'
 import { FigureCropDialog } from '../components/questions/FigureDialogs'
@@ -83,13 +84,8 @@ export default function PendingBankPage() {
   const [actionNotice, setActionNotice] = useState('')
   const [actionBusy, setActionBusy] = useState(false)
 
-  const url = useMemo(() => {
-    const params = new URLSearchParams()
-    if (filter !== 'all') params.set('filter', filter)
-    return `/api/tools/pdf-slicer/runs/${encodeURIComponent(decodedRunId)}/pending-bank?${params.toString()}`
-  }, [decodedRunId, filter])
-
-  const { data, error, loading, reload } = useAsync<PendingBankResponse>(() => api(url), [url])
+  const pendingBankParams = useMemo(() => ({ filter }), [filter])
+  const { data, error, loading, reload } = useAsync<PendingBankResponse>(() => pendingBankApi.getPendingBank(decodedRunId, pendingBankParams), [decodedRunId, pendingBankParams])
 
   const activeItem = useMemo(() => {
     if (!activeId || !data) return null
@@ -143,16 +139,8 @@ export default function PendingBankPage() {
   async function saveEditedQuestion(nextDraft = editingDraft) {
     if (!editingItem) return
     const saved = editingItem.pendingBankReadOnly
-      ? await api<QuestionItem>(`/api/tools/pdf-slicer/runs/${encodeURIComponent(decodedRunId)}/pending-bank/manual-candidate`, {
-          method: 'POST',
-          headers: jsonHeaders,
-          body: JSON.stringify({ item: nextDraft }),
-        })
-      : await api<QuestionItem>(`/api/question-bank/items/${encodeURIComponent(editingItem.id)}`, {
-          method: 'PATCH',
-          headers: jsonHeaders,
-          body: JSON.stringify({ item: nextDraft }),
-        })
+      ? await pendingBankApi.createManualCandidate(decodedRunId, nextDraft)
+      : await questionBankApi.updateItem(editingItem.id, nextDraft)
     setActiveId(saved.id)
     setEditingItem(null)
     setEditingDraft({})
@@ -164,10 +152,12 @@ export default function PendingBankPage() {
     setActionBusy(true)
     setActionNotice(`${label}中...`)
     try {
-      const result = await api<BulkActionResult>(
-        `/api/tools/pdf-slicer/runs/${encodeURIComponent(decodedRunId)}/pending-bank/${endpoint}`,
-        { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ questionIds: ids, ...extraBody }) }
-      )
+      const payload = { questionIds: ids, ...extraBody }
+      const result = endpoint === 'bulk-confirm'
+        ? await pendingBankApi.bulkConfirm(decodedRunId, payload)
+        : endpoint === 'bulk-skip'
+          ? await pendingBankApi.bulkSkip(decodedRunId, { questionIds: ids })
+          : await pendingBankApi.bulkDelete(decodedRunId, { questionIds: ids })
       setSelectedIds(new Set())
       await reload({ silent: true })
       const warnText = result.warnings?.length ? ` (${result.warnings.length} 条警告)` : ''
@@ -191,10 +181,7 @@ export default function PendingBankPage() {
     setActionBusy(true)
     setActionNotice('全部入库中...')
     try {
-      const result = await api<BulkActionResult>(
-        `/api/tools/pdf-slicer/runs/${encodeURIComponent(decodedRunId)}/pending-bank/bulk-confirm`,
-        { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ all: true }) }
-      )
+      const result = await pendingBankApi.bulkConfirm(decodedRunId, { all: true })
       setSelectedIds(new Set())
       await reload({ silent: true })
       const warnText = result.warnings?.length ? ` (${result.warnings.length} 条警告)` : ''
@@ -259,9 +246,9 @@ export default function PendingBankPage() {
         setActionNotice('重新 OCR 中...')
         try {
           if (item?.pendingBankReadOnly) {
-            await api(`/api/tools/pdf-slicer/runs/${encodeURIComponent(decodedRunId)}/pending-bank/${encodeURIComponent(id)}/rerun-ocr`, { method: 'POST' })
+            await pendingBankApi.rerunOcr(decodedRunId, id)
           } else {
-            await api(`/api/question-bank/items/${encodeURIComponent(id)}/rerun-ocr`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ route: 'whole_question_json' }) })
+            await questionBankApi.rerunItemOcr(id, { route: 'whole_question_json' })
           }
           await reload({ silent: true })
           showNotice('已启动当前题重新 OCR')
@@ -276,19 +263,15 @@ export default function PendingBankPage() {
   }
 
   async function addFigure(questionId: string, payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
-    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures`, {
-      method: 'POST', headers: jsonHeaders, body: JSON.stringify({ ...payload, pageNumber: 1 }),
-    })
+    return questionBankApi.createFigure(questionId, { ...payload, pageNumber: 1 })
   }
 
   async function updateFigure(questionId: string, figureId: string, payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
-    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/${encodeURIComponent(figureId)}`, {
-      method: 'PATCH', headers: jsonHeaders, body: JSON.stringify({ ...payload, pageNumber: 1 }),
-    })
+    return questionBankApi.updateFigure(questionId, figureId, { ...payload, pageNumber: 1 })
   }
 
   async function deleteFigure(questionId: string, figureId: string) {
-    await api(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/${encodeURIComponent(figureId)}`, { method: 'DELETE' })
+    await questionBankApi.deleteFigure(questionId, figureId)
   }
 
   // ── Bulk actions ──

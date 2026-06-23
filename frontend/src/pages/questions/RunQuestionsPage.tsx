@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { BadgeCheck, LoaderCircle, RefreshCcw, Tags } from 'lucide-react'
-import { api, jsonHeaders } from '@/api/client'
+import { learningTagsApi } from '@/api/learningTags'
+import { pdfSlicerApi } from '@/api/pdfSlicer'
+import { questionBankApi } from '@/api/questionBank'
 import { RunExportDialog } from '@/components/pdf-slicer/RunExportDialog'
 import { WorkbenchQuestionCard } from '@/components/questions/WorkbenchQuestionCard'
 import { Button, Empty, SelectFilter } from '@/components/ui'
@@ -24,10 +26,10 @@ export function RunQuestionsPage() {
   const [solutionMethod, setSolutionMethod] = useState('')
 
   const { data, error, loading, reload } = useAsync<{ run: ApiRun; items: QuestionItem[] }>(
-    () => api(`/api/tools/pdf-slicer/runs/${encodeURIComponent(decodedRunId)}/questions`),
+    () => questionBankApi.listRunQuestions(decodedRunId),
     [decodedRunId]
   )
-  const tagLibraries = useAsync<TagLibraries>(() => api('/api/question-bank/tag-libraries'), [])
+  const tagLibraries = useAsync<TagLibraries>(() => learningTagsApi.getQuestionBankTagLibraries(), [])
 
   useEffect(() => {
     if (data?.items) setLocalItems(data.items)
@@ -51,7 +53,7 @@ export function RunQuestionsPage() {
       alert('模拟数据已删除 (静态操作)')
       return
     }
-    await api(`/api/question-bank/items/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    await questionBankApi.deleteItem(id)
     setLocalItems((current) => current.filter((item) => item.id !== id))
   }
 
@@ -60,10 +62,7 @@ export function RunQuestionsPage() {
     if (!window.confirm('确认对当前批次执行数据分类？本操作只更新知识点、解题方法和难度。')) return
     setClassifying(true)
     try {
-      const result = await api<{ run: ApiRun; items: QuestionItem[]; report?: { total?: number; updated?: number; failed?: number } }>(
-        `/api/tools/pdf-slicer/runs/${encodeURIComponent(decodedRunId)}/classify`,
-        { method: 'POST', headers: jsonHeaders, body: JSON.stringify({}) }
-      )
+      const result = await pdfSlicerApi.classifyRunQuestions(decodedRunId)
       setLocalItems(result.items)
       await reload()
       const report = result.report
