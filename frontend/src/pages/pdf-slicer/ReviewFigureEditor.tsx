@@ -9,6 +9,7 @@ export function ReviewFigureEditor({
   item,
   splitMode = false,
   splitSaving = false,
+  defaultUsage = 'stem',
   onCancelSplit,
   onConfirmSplit,
   onPreview,
@@ -17,6 +18,7 @@ export function ReviewFigureEditor({
   item: SliceReviewItem
   splitMode?: boolean
   splitSaving?: boolean
+  defaultUsage?: string
   onCancelSplit?: () => void
   onConfirmSplit?: (splitRatio: number) => Promise<void>
   onPreview: () => void
@@ -29,7 +31,7 @@ export function ReviewFigureEditor({
   const [rect, setRect] = useState<BBox>({ x: 0, y: 0, width: 0, height: 0 })
   const [interaction, setInteraction] = useState<CropInteraction | null>(null)
   const [saving, setSaving] = useState(false)
-  const [usage, setUsage] = useState('stem')
+  const [usage, setUsage] = useState(defaultUsage)
   const [optionLabel, setOptionLabel] = useState('A')
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 })
   const [viewportWidth, setViewportWidth] = useState(0)
@@ -48,7 +50,7 @@ export function ReviewFigureEditor({
     setSelectedIndex(-1)
     setRect({ x: 0, y: 0, width: 0, height: 0 })
     setInteraction(null)
-    setUsage('stem')
+    setUsage(defaultUsage)
     setOptionLabel('A')
     setSplitRatio(0.5)
     setSplitDragging(false)
@@ -58,7 +60,7 @@ export function ReviewFigureEditor({
     } else {
       setNaturalSize({ width: 0, height: 0 })
     }
-  }, [item.resultId])
+  }, [item.resultId, defaultUsage])
 
   useEffect(() => {
     const node = viewportRef.current
@@ -252,12 +254,12 @@ export function ReviewFigureEditor({
   return (
     <div className="flex h-full min-h-0 w-full flex-col items-stretch">
       {showToolbar ? (
-        <div className="z-20 flex w-full flex-none flex-wrap items-center justify-between gap-1.5 border-b bg-white/75 px-2 py-1 shadow-sm backdrop-blur">
+        <div className="z-20 flex w-full flex-none flex-wrap items-center justify-between gap-1.5 border-b border-zinc-200 bg-white/75 px-2 py-1 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/75">
           {splitMode ? (
             <>
-              <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-semibold text-zinc-700">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-50">
                 <span>拖动虚线调整细分位置</span>
-                <span className="rounded-md border bg-white px-2 py-1 text-zinc-500">{Math.round(splitRatio * 100)}%</span>
+                <span className="rounded-md border border-zinc-200 bg-zinc-50/50 px-2 py-0.5 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50">{Math.round(splitRatio * 100)}%</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 <Button className="h-8 px-2" size="sm" variant="outline" disabled={splitSaving} onClick={onCancelSplit}>取消</Button>
@@ -267,13 +269,13 @@ export function ReviewFigureEditor({
           ) : (
             <>
               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                <select className="h-8 rounded-md border bg-white/85 px-2 text-xs font-semibold" value={usage} onChange={(event) => setUsage(event.target.value)}>
+                <select className="h-8 rounded-md border border-zinc-200 bg-white/95 px-2 text-xs font-semibold text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950/95 dark:text-zinc-50" value={usage} onChange={(event) => setUsage(event.target.value)}>
                   <option value="stem">题干图</option>
                   <option value="analysis">解析图</option>
                   <option value="options">选项图</option>
                 </select>
                 {usage === 'options' ? (
-                  <select className="h-8 rounded-md border bg-white/85 px-2 text-xs font-semibold" value={optionLabel} onChange={(event) => setOptionLabel(event.target.value)}>
+                  <select className="h-8 rounded-md border border-zinc-200 bg-white/95 px-2 text-xs font-semibold text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950/95 dark:text-zinc-50" value={optionLabel} onChange={(event) => setOptionLabel(event.target.value)}>
                     {['A', 'B', 'C', 'D'].map((labelText) => <option key={labelText} value={labelText}>选项 {labelText}</option>)}
                   </select>
                 ) : null}
@@ -352,14 +354,30 @@ export function ReviewFigureEditor({
         </div>
       </div>
       {figures.length ? (
-        <div className="grid w-full flex-none gap-2 border-t bg-zinc-50 p-3 md:grid-cols-2">
-          {figures.map((figure, index) => (
-            <button key={String(figure.id || index)} className={`rounded-lg border px-3 py-2 text-left text-xs ${index === selectedIndex ? 'border-amber-400 bg-amber-50' : 'bg-white hover:bg-zinc-50'}`} onClick={() => selectFigureFromTray(index)} type="button">
-              <span className="font-semibold">{reviewFigureUsageInfo(figure).label} {index + 1}</span>
-              <span className="ml-2 text-zinc-500">P{Number(figure.page_number ?? figure.pageNumber ?? item.pageStart)}</span>
-              {isFormulaSuspectFigure(figure) ? <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700" title={formulaSuspectTitle(figure)}>疑似公式</span> : null}
-            </button>
-          ))}
+        <div className="grid w-full flex-none gap-2 border-t border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/40 md:grid-cols-2">
+          {figures.map((figure, index) => {
+            const isSelected = index === selectedIndex
+            return (
+              <button
+                key={String(figure.id || index)}
+                className={`rounded-lg border px-3 py-2 text-left text-xs transition cursor-pointer ${
+                  isSelected
+                    ? 'border-zinc-900 bg-zinc-50/40 shadow-sm ring-1 ring-zinc-900 dark:border-zinc-100 dark:bg-zinc-900/40 dark:ring-zinc-100 font-semibold'
+                    : 'border-zinc-200 bg-white hover:bg-zinc-50/50 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900/50 dark:text-zinc-300'
+                }`}
+                onClick={() => selectFigureFromTray(index)}
+                type="button"
+              >
+                <span className="font-semibold">{reviewFigureUsageInfo(figure).label} {index + 1}</span>
+                <span className="ml-2 text-zinc-500 dark:text-zinc-400">P{Number(figure.page_number ?? figure.pageNumber ?? item.pageStart)}</span>
+                {isFormulaSuspectFigure(figure) ? (
+                  <span className="ml-2 inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" title={formulaSuspectTitle(figure)}>
+                    疑似公式
+                  </span>
+                ) : null}
+              </button>
+            )
+          })}
         </div>
       ) : null}
     </div>

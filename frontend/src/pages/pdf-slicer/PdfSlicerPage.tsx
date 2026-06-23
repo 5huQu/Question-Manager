@@ -4,7 +4,7 @@ import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { settingsApi } from '@/api/settings'
 import { SeparatedFileInput } from '@/components/pdf-slicer/SeparatedFileInput'
 import { UploadModeButton } from '@/components/pdf-slicer/UploadModeButton'
-import { Empty } from '@/components/ui'
+import { Empty, Badge } from '@/components/ui'
 import { Modal } from '@/components/dialogs/Modal'
 import { useAsync } from '@/hooks/useAsync'
 import type { Dashboard, OcrSettings } from '@/types'
@@ -137,7 +137,7 @@ export function PdfSlicerPage() {
   }
 
   return (
-    <div className="mock-page-root min-h-[calc(100vh-6rem)] space-y-6 overflow-y-auto bg-zinc-50/10 p-6 text-zinc-950 dark:bg-zinc-950/20 dark:text-zinc-50">
+    <div className="mock-page-root min-h-[calc(100vh-6rem)] space-y-6 overflow-y-auto bg-zinc-50/30 p-6 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
       <header className="border-b border-zinc-200 pb-4 dark:border-zinc-800">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">PDF 切分中心</h1>
         <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">上传 PDF、DOC 或 DOCX 文件，系统将自动识别并切分为独立的题目，完成后可进行人工复核。</p>
@@ -146,11 +146,11 @@ export function PdfSlicerPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
           <p className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">总批次</p>
-          <p className="text-2xl font-bold">{data?.queueSummary.totalRuns ?? 0}</p>
+          <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">{data?.queueSummary.totalRuns ?? 0}</p>
         </div>
         <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
           <p className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">待切题</p>
-          <p className="text-2xl font-bold">{data?.queueSummary.sliceQueued ?? 0}</p>
+          <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">{data?.queueSummary.sliceQueued ?? 0}</p>
         </div>
         <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
           <p className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">待复核</p>
@@ -162,20 +162,20 @@ export function PdfSlicerPage() {
         </div>
       </div>
 
-      <div className="grid xl:grid-cols-[380px_minmax(0,1fr)] gap-6 items-start">
-        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
-          <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900/70">
-            <FileUp className="size-4 text-zinc-500" />
-            <h2 className="text-sm font-semibold">批量上传</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-900 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 lg:col-span-5 xl:col-span-4">
+          <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/50 px-5 py-4 dark:border-zinc-900 dark:bg-zinc-900/10">
+            <FileUp className="size-4 text-zinc-500 dark:text-zinc-400" />
+            <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">批量上传</h2>
           </div>
-          <div className="p-5 space-y-5">
-            <form onSubmit={handleUpload} className="space-y-5">
-              <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+          <div className="p-5 space-y-4">
+            <form onSubmit={handleUpload} className="space-y-4">
+              <p className="text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
                 请选择上传模式。若不确定，请保持"自动识别"。对于分离版试卷，请分别上传原卷和解析。
               </p>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium block">文档名称</label>
+                <label className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400 block">文档名称</label>
                 <input
                   type="text"
                   name="paperTitle"
@@ -186,14 +186,14 @@ export function PdfSlicerPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-medium block">上传模式</label>
-                <div className="grid grid-cols-3 gap-2">
+                <label className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400 block">上传模式</label>
+                <div className="grid grid-cols-3 gap-0.5 bg-zinc-100/80 dark:bg-zinc-900/80 p-0.5 rounded-lg border border-zinc-200/50 dark:border-zinc-800/50">
                   <UploadModeButton active={uploadMode === 'auto'} icon={ScanSearch} label="自动识别" onClick={() => setUploadMode('auto')} />
                   <UploadModeButton active={uploadMode === 'lecture'} icon={BookOpen} label="讲义" onClick={() => setUploadMode('lecture')} />
                   <UploadModeButton active={uploadMode === 'exam'} icon={FileText} label="试卷" onClick={() => setUploadMode('exam')} />
                 </div>
                 {uploadMode === 'exam' ? (
-                  <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div className="grid grid-cols-2 gap-0.5 mt-2 bg-zinc-100/80 dark:bg-zinc-900/80 p-0.5 rounded-lg border border-zinc-200/50 dark:border-zinc-800/50">
                     <UploadModeButton active={examUploadMode === 'full'} icon={FileStack} label="一体解析版" onClick={() => setExamUploadMode('full')} />
                     <UploadModeButton active={examUploadMode === 'separated'} icon={FileText} label="分离原卷+解析" onClick={() => setExamUploadMode('separated')} />
                   </div>
@@ -207,7 +207,7 @@ export function PdfSlicerPage() {
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium block">选择文件</label>
+                  <label className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400 block">选择文件</label>
                   <div
                     onDragEnter={handleDrag}
                     onDragOver={handleDrag}
@@ -215,7 +215,9 @@ export function PdfSlicerPage() {
                     onDrop={handleDrop}
                     onClick={() => document.getElementById('file-upload-input')?.click()}
                     className={`relative flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg cursor-pointer transition-all group ${
-                      dragActive ? 'border-zinc-950 bg-zinc-100 dark:border-zinc-200 dark:bg-zinc-900' : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900/40 dark:hover:bg-zinc-900'
+                      dragActive
+                        ? 'border-zinc-900 bg-zinc-50/30 dark:border-zinc-100 dark:bg-zinc-900/30'
+                        : 'border-zinc-200 bg-zinc-50/20 hover:bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-950/10 dark:hover:bg-zinc-900/20'
                     }`}
                   >
                     <input
@@ -232,7 +234,7 @@ export function PdfSlicerPage() {
                     </div>
                     {selectedFiles && selectedFiles.length > 0 ? (
                       <div className="text-center w-full">
-                        <p className="text-sm font-medium">已选择 {selectedFiles.length} 个文件</p>
+                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">已选择 {selectedFiles.length} 个文件</p>
                         <div className="mt-1 space-y-1 max-h-24 overflow-y-auto">
                           {Array.from(selectedFiles).map((file, idx) => (
                             <p key={idx} className="truncate text-xs text-zinc-500 dark:text-zinc-400">{file.name} ({Math.round(file.size / 1024)} KB)</p>
@@ -241,7 +243,7 @@ export function PdfSlicerPage() {
                       </div>
                     ) : (
                       <>
-                        <p className="text-sm font-medium">拖拽 PDF、DOC 或 DOCX 到此处</p>
+                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">拖拽 PDF、DOC 或 DOCX 到此处</p>
                         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">或点击浏览本地文件</p>
                       </>
                     )}
@@ -252,7 +254,7 @@ export function PdfSlicerPage() {
               <button
                 type="submit"
                 disabled={uploading || !uploadFileCount || (separatedExamUpload && (!questionFiles?.length || !solutionFiles?.length))}
-                className="flex w-full items-center justify-center gap-2 rounded-md bg-zinc-950 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+                className="flex w-full items-center justify-center gap-2 rounded-md bg-zinc-900 py-2.5 text-sm font-semibold text-zinc-50 hover:bg-zinc-900/90 shadow-sm transition-colors disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-50/90 cursor-pointer"
               >
                 <FileUp className="size-4" /> {uploading ? '上传中...' : '开始上传并处理'}
               </button>
@@ -260,15 +262,15 @@ export function PdfSlicerPage() {
           </div>
         </div>
 
-        <div className="flex flex-col rounded-xl border border-zinc-200 bg-white text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
-          <div className="flex items-center justify-between rounded-t-xl border-b border-zinc-200 bg-zinc-50 px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900/70">
-            <h2 className="text-sm font-semibold">任务进度与批次</h2>
-            <button onClick={() => reload()} className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50">
+        <div className="flex flex-col rounded-xl border border-zinc-200 bg-white text-zinc-900 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 lg:col-span-7 xl:col-span-8">
+          <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50/50 px-5 py-4 dark:border-zinc-900 dark:bg-zinc-900/10">
+            <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">任务进度与批次</h2>
+            <button onClick={() => reload()} className="flex items-center gap-1 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 text-zinc-500 rounded-md p-1.5 text-xs font-semibold cursor-pointer">
               <RefreshCcw className="size-3.5" /> 刷新
             </button>
           </div>
 
-          <div className="space-y-4 bg-zinc-50/50 p-5 dark:bg-zinc-900/30">
+          <div className="p-5 space-y-4 bg-zinc-50/30 dark:bg-zinc-900/10 rounded-b-xl border-t border-transparent">
             {loading ? <Empty text="读取中..." /> : error ? <Empty text={error} /> : data?.runs.length ? (
               <div className="space-y-4">
                 {visibleBatches.length ? (
@@ -277,12 +279,12 @@ export function PdfSlicerPage() {
                       <div key={batch.id} className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold">{batch.title || batch.id}</p>
+                            <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">{batch.title || batch.id}</p>
                             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{batch.runCount ?? 0} 个文件 · {workflowModeLabel(batch.workflowMode)}</p>
                           </div>
                           <div className="flex flex-col gap-1 shrink-0 items-end">
-                            <span className="inline-flex items-center rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">{materialTypeLabel(batch.materialType)}</span>
-                            <span className="inline-flex items-center rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">{workflowStatusLabel(batch.workflowStatus)}</span>
+                            <Badge variant="outline" className="text-[10px]">{materialTypeLabel(batch.materialType)}</Badge>
+                            <Badge variant="outline" className="text-[10px]">{workflowStatusLabel(batch.workflowStatus)}</Badge>
                           </div>
                         </div>
                       </div>

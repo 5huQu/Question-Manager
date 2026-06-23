@@ -29,7 +29,7 @@ export function OcrEngineStatus({ ocrSettings }: { ocrSettings: OcrSettings | nu
 
       {/* Model display */}
       <div className="flex justify-between items-center px-1">
-        <span className="text-zinc-450 dark:text-zinc-500 font-medium flex items-center gap-2">
+        <span className="text-zinc-400 dark:text-zinc-500 font-medium flex items-center gap-2">
           <Cpu className="size-3.5 text-zinc-400" />
           <span>OCR 运算模型</span>
         </span>

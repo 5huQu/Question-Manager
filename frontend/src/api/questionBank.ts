@@ -17,6 +17,7 @@ export type QuestionFigurePayload = {
   optionLabel?: string
   pageNumber?: number
   bbox?: Record<string, number>
+  sourcePath?: string
 }
 
 function buildQuery(params: QuestionBankListParams = {}) {

@@ -1,4 +1,4 @@
-import { useMemo, useState, type MouseEvent } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import {
   Calendar,
   CheckCircle2,
@@ -14,11 +14,23 @@ import {
 } from 'lucide-react'
 import { collectionsApi } from '@/api/collections'
 import { exportRecordsApi } from '@/api/exportRecords'
+import { questionBankApi } from '@/api/questionBank'
 import { getActiveCollectionId, notifyBasketUpdated } from '@/components/QuestionBasket'
+import { QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import { useAsync } from '@/hooks/useAsync'
-import type { ExportRecord } from '@/types'
+import type { ExportRecord, QuestionItem } from '@/types'
+import { richBlocksPlainText } from '@/components/RichContent'
 
 type FormatFilter = 'All' | 'Markdown' | 'PDF' | 'LaTeX'
+type OutlineItem = ExportRecord['items'][number] & {
+  question?: QuestionItem
+  error?: string
+}
+type OutlineState = {
+  loading: boolean
+  error: string
+  items: OutlineItem[]
+}
 
 export function ExportRecordsPage() {
   const [searchQuery, setSearchQuery] = useState('')
@@ -26,6 +38,7 @@ export function ExportRecordsPage() {
   const [activeRecord, setActiveRecord] = useState<ExportRecord | null>(null)
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const [isRestoring, setIsRestoring] = useState<string | null>(null)
+  const [outlineByRecordId, setOutlineByRecordId] = useState<Record<string, OutlineState>>({})
 
   const { data, error, loading, setData } = useAsync<{ items: ExportRecord[] }>(
     () => exportRecordsApi.listExportRecords({ limit: 500 }),
@@ -41,6 +54,41 @@ export function ExportRecordsPage() {
       return true
     })
   }, [formatFilter, records, searchQuery])
+
+  useEffect(() => {
+    if (!activeRecord?.items?.length) return
+    if (outlineByRecordId[activeRecord.id]) return
+
+    let cancelled = false
+    const snapshots = [...activeRecord.items].sort((left, right) => Number(left.exportOrder || 0) - Number(right.exportOrder || 0))
+    setOutlineByRecordId((current) => ({
+      ...current,
+      [activeRecord.id]: { loading: true, error: '', items: snapshots },
+    }))
+
+    Promise.all(snapshots.map(async (snapshot): Promise<OutlineItem> => {
+      try {
+        const question = await questionBankApi.getItem(snapshot.questionId)
+        return { ...snapshot, question }
+      } catch (error) {
+        return { ...snapshot, error: error instanceof Error ? error.message : String(error) }
+      }
+    })).then((items) => {
+      if (cancelled) return
+      setOutlineByRecordId((current) => ({
+        ...current,
+        [activeRecord.id]: {
+          loading: false,
+          error: items.every((item) => item.error) ? '题目内容读取失败' : '',
+          items,
+        },
+      }))
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeRecord, outlineByRecordId])
 
   async function handleDelete(id: string, event?: MouseEvent) {
     event?.stopPropagation()
@@ -109,7 +157,7 @@ export function ExportRecordsPage() {
         </div>
 
         <div className="flex w-full items-center gap-1.5 overflow-x-auto sm:w-auto">
-          <span className="mr-1.5 whitespace-nowrap text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-650">
+          <span className="mr-1.5 whitespace-nowrap text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">
             按格式筛选:
           </span>
           {(['All', 'Markdown', 'PDF', 'LaTeX'] as const).map((format) => (
@@ -119,7 +167,7 @@ export function ExportRecordsPage() {
               className={`rounded px-3 py-1 text-xs font-semibold transition-colors ${
                 formatFilter === format
                   ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-950'
-                  : 'bg-zinc-100 text-zinc-650 hover:bg-zinc-200 dark:bg-zinc-800/80 dark:text-zinc-400 dark:hover:bg-zinc-800'
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800/80 dark:text-zinc-400 dark:hover:bg-zinc-800'
               }`}
             >
               {format === 'All' ? '全部' : format}
@@ -165,10 +213,10 @@ export function ExportRecordsPage() {
                 <tr
                   key={record.id}
                   onClick={() => setActiveRecord(record)}
-                  className="cursor-pointer border-b border-zinc-100 transition-colors hover:bg-zinc-50/50 dark:border-zinc-850 dark:hover:bg-zinc-850/30"
+                  className="cursor-pointer border-b border-zinc-100 transition-colors hover:bg-zinc-50/50 dark:border-zinc-800 dark:hover:bg-zinc-800/30"
                 >
                   <td className="p-3 font-mono text-[10px] text-zinc-400">#{record.id}</td>
-                  <td className="p-3 text-left font-bold text-zinc-850 dark:text-zinc-200">
+                  <td className="p-3 text-left font-bold text-zinc-800 dark:text-zinc-200">
                     {record.title || record.filename || '未命名导出'}
                   </td>
                   <td className="p-3 text-center">
@@ -185,13 +233,13 @@ export function ExportRecordsPage() {
                   </td>
                   <td className="p-3 text-center">
                     {record.status === 'failed' ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-                        生成失败
+                      <span className="inline-flex min-w-12 items-center justify-center whitespace-nowrap rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                        失败
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-semibold text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+                      <span className="inline-flex min-w-12 items-center justify-center gap-1 whitespace-nowrap rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-semibold text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
                         <CheckCircle2 className="size-3" />
-                        生成成功
+                        成功
                       </span>
                     )}
                   </td>
@@ -207,7 +255,7 @@ export function ExportRecordsPage() {
                       </button>
                       <button
                         onClick={() => setActiveRecord(record)}
-                        className="rounded p-1 text-zinc-650 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                        className="rounded p-1 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                         title="详情预览"
                       >
                         <Info className="size-3.5" />
@@ -215,7 +263,7 @@ export function ExportRecordsPage() {
                       <button
                         onClick={(event) => handleDelete(record.id, event)}
                         disabled={isDeleting === record.id}
-                        className="rounded p-1 text-zinc-450 hover:bg-red-50 hover:text-red-500 disabled:opacity-30 dark:hover:bg-red-950/20 dark:hover:text-red-400"
+                        className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-30 dark:hover:bg-red-950/20 dark:hover:text-red-400"
                         title="删除记录"
                       >
                         <Trash2 className="size-3.5" />
@@ -239,7 +287,7 @@ export function ExportRecordsPage() {
                     <FileDown className="size-4 text-zinc-400" />
                     试卷大纲结构预览
                   </h3>
-                  <p className="font-mono text-[10px] text-zinc-400 dark:text-zinc-550">
+                  <p className="font-mono text-[10px] text-zinc-400 dark:text-zinc-500">
                     档案编码：#{activeRecord.id}
                   </p>
                 </div>
@@ -251,10 +299,10 @@ export function ExportRecordsPage() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-3 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3 text-xs dark:border-zinc-850 dark:bg-zinc-950/20">
+              <div className="grid grid-cols-3 gap-3 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-950/20">
                 <div>
                   <span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400">文档名称</span>
-                  <span className="mt-0.5 block truncate font-bold text-zinc-850 dark:text-zinc-200">{activeRecord.title || activeRecord.filename}</span>
+                  <span className="mt-0.5 block truncate font-bold text-zinc-800 dark:text-zinc-200">{activeRecord.title || activeRecord.filename}</span>
                 </div>
                 <div>
                   <span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400">输出类型</span>
@@ -268,25 +316,12 @@ export function ExportRecordsPage() {
             </div>
 
             <div className="my-4 flex-1 space-y-3 overflow-y-auto pr-1">
-              <h4 className="mb-2 text-[10.5px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-650">
+              <h4 className="mb-2 text-[10.5px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">
                 收录的试题大纲 ({activeRecord.questionCount} 道题)
               </h4>
 
               {activeRecord.items?.length ? (
-                activeRecord.items.map((item, index) => (
-                  <div
-                    key={`${item.questionId}-${item.exportOrder}`}
-                    className="space-y-1.5 rounded-lg border border-zinc-100 bg-white p-3.5 text-xs dark:border-zinc-850 dark:bg-zinc-900/60"
-                  >
-                    <div className="flex items-center justify-between font-mono text-[9px] text-zinc-400 dark:text-zinc-500">
-                      <span className="font-bold text-zinc-800 dark:text-zinc-300">第 {index + 1} 题</span>
-                      <span>ID: #{item.questionId}</span>
-                    </div>
-                    <div className="truncate font-sans leading-relaxed text-zinc-800 dark:text-zinc-200">
-                      导出顺序：{item.exportOrder + 1}
-                    </div>
-                  </div>
-                ))
+                <ExportOutlineList state={outlineByRecordId[activeRecord.id]} fallbackItems={activeRecord.items} />
               ) : (
                 <div className="rounded border border-dashed border-zinc-200 py-8 text-center text-xs text-zinc-400 dark:border-zinc-800">
                   此历史记录包含的题目内容已在本地缓存中清空，可重新导出生成。
@@ -328,11 +363,61 @@ export function ExportRecordsPage() {
   )
 }
 
+function ExportOutlineList({ state, fallbackItems }: { state?: OutlineState; fallbackItems: ExportRecord['items'] }) {
+  const rows = state?.items?.length ? state.items : fallbackItems
+  return (
+    <div className="space-y-3">
+      {state?.loading ? (
+        <div className="rounded border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-400">
+          正在读取试题内容...
+        </div>
+      ) : null}
+      {state?.error ? (
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+          {state.error}
+        </div>
+      ) : null}
+      {rows.map((item, index) => (
+        <ExportOutlineRow key={`${item.questionId}-${item.exportOrder}`} item={item} index={index} />
+      ))}
+    </div>
+  )
+}
+
+function ExportOutlineRow({ item, index }: { item: OutlineItem; index: number }) {
+  const question = item.question
+  const stem = question ? (question.stemMarkdown || richBlocksPlainText(question.problemBlocks)) : ''
+  const chapter = question?.chapter || question?.knowledgePoints?.[0] || ''
+  return (
+    <div className="space-y-1.5 rounded-lg border border-zinc-100 bg-white p-3.5 text-xs dark:border-zinc-800 dark:bg-zinc-900/60">
+      <div className="flex items-center justify-between gap-2 font-mono text-[9px] text-zinc-400 dark:text-zinc-500">
+        <span className="min-w-0 truncate font-bold text-zinc-800 dark:text-zinc-300">
+          第 {index + 1} 题{question?.questionType ? ` (${question.questionType})` : ''}
+        </span>
+        {chapter ? <span className="max-w-36 shrink-0 truncate">章节: {chapter}</span> : null}
+      </div>
+      <div className="truncate font-sans leading-relaxed text-zinc-800 dark:text-zinc-200">
+        {question ? (
+          <QuestionMarkdownContent content={stem || '题干为空'} className="text-xs leading-relaxed" />
+        ) : (
+          <span className="text-zinc-400">{item.error ? '题目内容暂不可用' : '题目内容读取中...'}</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function FormatBadge({ format }: { format: string }) {
   const normalized = normalizeFormat(format)
+  const icon = {
+    PDF: <FileText className="size-3 shrink-0 text-red-500" />,
+    Markdown: <FileCode2 className="size-3 shrink-0 text-zinc-500" />,
+    LaTeX: <FileCode2 className="size-3 shrink-0 text-emerald-500" />,
+    All: <FileCode2 className="size-3 shrink-0 text-zinc-500" />,
+  }[normalized]
   return (
-    <span className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-      {normalized === 'PDF' ? <FileText className="size-3 text-zinc-500" /> : <FileCode2 className="size-3 text-zinc-500" />}
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+      {icon}
       {normalized}
     </span>
   )

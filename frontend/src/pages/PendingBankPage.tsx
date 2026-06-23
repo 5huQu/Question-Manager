@@ -6,10 +6,12 @@ import {
   Check,
   CheckSquare,
   ChevronDown,
+  ChevronUp,
   Crop,
   Edit3,
   Eye,
   ImageIcon,
+  Inbox,
   LoaderCircle,
   RefreshCcw,
   ScanSearch,
@@ -35,6 +37,32 @@ import type {
   QuestionFigure,
   QuestionItem,
 } from '../types'
+
+// ── Custom Spec Components ──────────────────────────────────────────
+
+function SpecBadge({ children, variant = 'default', className = '' }: { children: ReactNode; variant?: 'default' | 'success' | 'warning' | 'danger'; className?: string }) {
+  const variants = {
+    default: 'bg-zinc-100 text-zinc-800 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
+    success: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/50',
+    warning: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/50',
+    danger: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/50',
+  }
+  return (
+    <span className={`inline-flex items-center justify-center rounded-md px-2 py-0.5 text-[11px] font-medium tracking-wide transition-colors border h-5 ${variants[variant]} ${className}`}>
+      {children}
+    </span>
+  )
+}
+
+function SpecEmpty({ text, description }: { text: string; description?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center p-12 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl bg-zinc-50/10">
+      <Inbox className="size-8 text-zinc-300 dark:text-zinc-700 mb-3" />
+      <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{text}</p>
+      {description ? <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1">{description}</p> : null}
+    </div>
+  )
+}
 
 // ── Main Page ────────────────────────────────────────────────────────
 
@@ -351,8 +379,8 @@ export default function PendingBankPage() {
 
   // ── Render ──
 
-  if (loading && !data) return <Empty text="读取中..." />
-  if (error || !data) return <Empty text={error || '批次不存在或无数据'} />
+  if (loading && !data) return <SpecEmpty text="读取中..." />
+  if (error || !data) return <SpecEmpty text={error || '批次不存在或无数据'} />
 
   const { run, summary, items } = data
   const selectableItems = filter === 'all' ? items.filter(canConfirmDirectly) : items.filter(canSelectForBulk)
@@ -365,7 +393,7 @@ export default function PendingBankPage() {
       : `共 ${items.length} 题`
 
   return (
-    <section className="mock-page-root flex h-[calc(100vh-6rem)] min-h-[640px] flex-col overflow-hidden bg-zinc-50/10 p-6 text-zinc-950 dark:bg-zinc-950/20 dark:text-zinc-50">
+    <section className="mock-page-root flex h-[calc(100vh-8rem)] min-h-[900px] flex-col overflow-hidden bg-zinc-50/30 p-0 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
       {/* Header */}
       <div className="shrink-0 space-y-4">
         <div className="flex flex-col gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800 sm:flex-row sm:items-start sm:justify-between">
@@ -400,33 +428,28 @@ export default function PendingBankPage() {
         </div>
       ) : null}
 
-      {/* Bulk action bar */}
-      {selectedIds.size > 0 ? (
-        <BulkActionBar
-          count={selectedIds.size}
-          busy={actionBusy}
-          onConfirm={handleBulkConfirm}
-          onSkip={handleBulkSkip}
-          onDelete={handleBulkDelete}
-        />
-      ) : null}
-
       {/* Main content: left list + right preview */}
       <div className="mt-3 flex min-h-0 flex-1 gap-3">
         {/* Left: Question list */}
         <div className="flex w-[38%] min-w-[280px] shrink-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
-          <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400">
-            <button onClick={selectAll} className="flex cursor-pointer items-center gap-1.5 transition-colors hover:text-zinc-950 dark:hover:text-zinc-50">
-              {allSelectableSelected
-                ? <CheckSquare className="size-3.5 text-zinc-950 dark:text-zinc-50" />
-                : <Square className="size-3.5" />
-              }
-              <span>{selectLabel}</span>
+          <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/50 px-4 py-2.5 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/10 dark:text-zinc-400">
+            <button
+              onClick={selectAll}
+              className="flex cursor-pointer items-center gap-2 transition-colors hover:text-zinc-950 dark:hover:text-zinc-50"
+            >
+              <span className={`flex items-center justify-center size-3.5 rounded border transition-all duration-150 ${
+                allSelectableSelected
+                  ? 'bg-zinc-900 border-zinc-900 text-zinc-50 dark:bg-zinc-50 dark:border-zinc-50 dark:text-zinc-900'
+                  : 'bg-white border-zinc-300 dark:bg-zinc-950 dark:border-zinc-700 hover:border-zinc-400'
+              }`}>
+                {allSelectableSelected ? <Check className="size-2.5 stroke-[3.5]" /> : null}
+              </span>
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300">{selectLabel}</span>
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-zinc-50/30 dark:bg-zinc-900/10">
             {items.length === 0 ? (
-              <div className="p-6 text-center text-sm text-zinc-500 dark:text-zinc-400">当前筛选条件下没有题目</div>
+              <SpecEmpty text="无可用数据" description="当前筛选条件下没有题目数据" />
             ) : (
               items.map((item) => (
                 <QuestionCard
@@ -458,15 +481,23 @@ export default function PendingBankPage() {
               onDelete={() => deleteSingle(activeItem.id)}
             />
           ) : (
-            <div className="flex h-full items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
-              <div className="text-center space-y-2">
-                <Eye className="size-8 mx-auto opacity-40" />
-                <p>点击左侧题目查看详情</p>
-              </div>
+            <div className="flex h-full items-center justify-center p-6">
+              <SpecEmpty text="未选中任何题目" description="请从左侧列表中点击题目以查看详细内容" />
             </div>
           )}
         </div>
       </div>
+
+      {/* Bulk action bar at the very bottom */}
+      {selectedIds.size > 0 ? (
+        <BulkActionBar
+          count={selectedIds.size}
+          busy={actionBusy}
+          onConfirm={handleBulkConfirm}
+          onSkip={handleBulkSkip}
+          onDelete={handleBulkDelete}
+        />
+      ) : null}
 
       {/* Modals */}
       {editingItem ? (
@@ -496,6 +527,8 @@ export default function PendingBankPage() {
 // ── Batch Overview ──────────────────────────────────────────────────
 
 function BatchOverview({ run, summary }: { run: ApiRun; summary: PendingBankSummary }) {
+  const [collapsed, setCollapsed] = useState(false)
+
   const statusMessage = useMemo(() => {
     if (summary.total === 0) return '本批次暂无识别结果。'
     const pending = summary.ready + summary.blocked
@@ -508,39 +541,69 @@ function BatchOverview({ run, summary }: { run: ApiRun; summary: PendingBankSumm
   }, [summary])
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">{run.paperTitle || run.pdfName}</p>
-          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{statusMessage}</p>
+    <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 shadow-sm overflow-hidden transition-all duration-200">
+      <div className="p-3 border-b border-zinc-100 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/10 flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{run.paperTitle || run.pdfName}</p>
+          {collapsed ? (
+            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400 flex flex-wrap items-center gap-1.5">
+              <span>总数 <strong className="text-zinc-700 dark:text-zinc-300">{summary.total}</strong></span>
+              <span className="text-zinc-300 dark:text-zinc-700">·</span>
+              <span className="text-emerald-700 dark:text-emerald-400">可入库 <strong className="font-bold">{summary.ready}</strong></span>
+              <span className="text-zinc-300 dark:text-zinc-700">·</span>
+              <span className="text-amber-700 dark:text-amber-400">需处理 <strong className="font-bold">{summary.blocked}</strong></span>
+              <span className="text-zinc-300 dark:text-zinc-700">·</span>
+              <span>已入库 <strong className="text-zinc-700 dark:text-zinc-300">{summary.banked}</strong></span>
+              <span className="text-zinc-300 dark:text-zinc-700">·</span>
+              <span>已跳过 <strong className="text-zinc-700 dark:text-zinc-300">{summary.skipped}</strong></span>
+            </p>
+          ) : (
+            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{statusMessage}</p>
+          )}
         </div>
-        <Badge variant={run.sourceFileKind === '讲义型' ? 'warning' : 'default'}>
-          {run.sourceFileKind || '未确认'}
-        </Badge>
+        <div className="flex items-center gap-2 shrink-0">
+          <SpecBadge variant={run.sourceFileKind === '讲义型' ? 'warning' : 'default'}>
+            {run.sourceFileKind || '未确认'}
+          </SpecBadge>
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-md text-zinc-400 hover:text-zinc-600 transition-colors cursor-pointer"
+            title={collapsed ? '展开批次面板' : '折叠批次面板'}
+          >
+            {collapsed ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+          </button>
+        </div>
       </div>
-      <div className="grid grid-cols-5 gap-2">
-        <MetricChip label="总题数" value={summary.total} />
-        <MetricChip label="可入库" value={summary.ready} color="emerald" />
-        <MetricChip label="需处理" value={summary.blocked} color="amber" />
-        <MetricChip label="已入库" value={summary.banked} color="neutral" />
-        <MetricChip label="已跳过" value={summary.skipped} color="muted" />
-      </div>
+      {!collapsed ? (
+        <div className="p-3 bg-white dark:bg-zinc-950">
+          <div className="grid grid-cols-5 gap-2">
+            <MetricChip label="总题数" value={summary.total} />
+            <MetricChip label="可入库" value={summary.ready} color="emerald" />
+            <MetricChip label="需处理" value={summary.blocked} color="amber" />
+            <MetricChip label="已入库" value={summary.banked} color="neutral" />
+            <MetricChip label="已跳过" value={summary.skipped} color="muted" />
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
 
 function MetricChip({ label, value, color }: { label: string; value: number; color?: string }) {
   const colorMap: Record<string, string> = {
-    emerald: 'text-emerald-600 dark:text-emerald-400',
-    amber: 'text-amber-600 dark:text-amber-400',
-    neutral: 'text-foreground',
-    muted: 'text-muted-foreground',
+    emerald: 'bg-emerald-50/50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/10 dark:text-emerald-400 dark:border-emerald-900/20',
+    amber: 'bg-amber-50/50 text-amber-700 border-amber-100 dark:bg-amber-950/10 dark:text-amber-400 dark:border-amber-900/20',
+    neutral: 'bg-zinc-50/50 text-zinc-900 border-zinc-100 dark:bg-zinc-900/10 dark:text-zinc-50 dark:border-zinc-800/50',
+    muted: 'bg-zinc-50/30 text-zinc-500 border-zinc-100 dark:bg-zinc-900/5 dark:text-zinc-400 dark:border-zinc-800/30',
   }
-  const valueColor = color ? colorMap[color] || '' : 'text-zinc-950 dark:text-zinc-50'
+  const colorClasses = color && colorMap[color]
+    ? colorMap[color]
+    : 'bg-white text-zinc-900 border-zinc-200 dark:bg-zinc-950 dark:text-zinc-50 dark:border-zinc-800'
+
   return (
-    <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-center dark:border-zinc-800 dark:bg-zinc-900/60">
-      <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">{label}</p>
-      <p className={`mt-0.5 text-lg font-bold leading-none ${valueColor}`}>{value}</p>
+    <div className={`rounded-lg border px-2 py-1.5 text-center transition-all ${colorClasses}`}>
+      <p className="text-[9px] font-semibold uppercase tracking-wider opacity-85">{label}</p>
+      <p className="mt-0.5 text-base font-bold leading-none">{value}</p>
     </div>
   )
 }
@@ -559,22 +622,22 @@ function FilterBar({ filter, summary, onFilterChange }: { filter: PendingBankFil
   ]
 
   return (
-    <div className="inline-flex h-9 max-w-full shrink-0 items-center justify-start gap-1 overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-100 p-1 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+    <div className="inline-flex h-9 max-w-full shrink-0 items-center justify-start gap-1 overflow-x-auto bg-zinc-100/80 dark:bg-zinc-900/80 p-0.5 rounded-lg border border-zinc-200/50 dark:border-zinc-800/50">
       {tabs.map((tab) => (
         <button
           key={tab.key}
           onClick={() => onFilterChange(tab.key)}
           className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 h-7 text-xs font-medium transition-all cursor-pointer select-none
             ${filter === tab.key
-              ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-50'
-              : 'hover:text-zinc-950 dark:hover:text-zinc-200'
+              ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-xs border border-zinc-200/20'
+              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
             }`}
         >
           {tab.label}
           <span className={`ml-1.5 rounded-sm px-1.5 py-0.5 text-[9px] font-bold transition-all
             ${filter === tab.key
               ? 'bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400'
-              : 'bg-white/60 text-zinc-500 dark:bg-zinc-950/60 dark:text-zinc-400'
+              : 'bg-zinc-200/50 text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400'
             }`}>
             {tab.count}
           </span>
@@ -626,54 +689,60 @@ function QuestionCard({ item, active, selected, selectable, onSelect, onClick }:
 
   return (
     <div
-      className={`flex cursor-pointer items-start gap-2 border-b border-zinc-200 py-2.5 pr-3 transition-colors dark:border-zinc-800
+      onClick={onClick}
+      className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-all duration-150 shadow-sm
         ${active
-          ? 'border-l-2 border-l-zinc-950 bg-zinc-50 pl-2.5 dark:border-l-zinc-50 dark:bg-zinc-900/60'
-          : 'border-l-2 border-l-transparent pl-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-900/40'
+          ? 'border-zinc-900 bg-zinc-50/40 dark:border-zinc-100 dark:bg-zinc-900/40'
+          : 'border-zinc-200 bg-white hover:bg-zinc-50/50 dark:border-zinc-800/80 dark:bg-zinc-950 dark:hover:bg-zinc-900/30'
         }`}
     >
       <button
         onClick={(e) => { e.stopPropagation(); onSelect() }}
         disabled={!selectable}
-        className={`mt-0.5 shrink-0 ${selectable ? 'cursor-pointer' : 'cursor-not-allowed opacity-30'}`}
+        className={`mt-0.5 shrink-0 flex items-center justify-center size-4 rounded border transition-all duration-150 ${
+          !selectable
+            ? 'cursor-not-allowed opacity-30 border-zinc-200 dark:border-zinc-800'
+            : 'cursor-pointer'
+        } ${
+          selected
+            ? 'bg-zinc-900 border-zinc-900 text-zinc-50 dark:bg-zinc-50 dark:border-zinc-50 dark:text-zinc-900'
+            : 'bg-white border-zinc-300 dark:bg-zinc-950 dark:border-zinc-700 hover:border-zinc-400'
+        }`}
       >
-        {selected
-          ? <CheckSquare className="size-4 text-zinc-950 dark:text-zinc-50" />
-          : <Square className="size-4 text-zinc-500 dark:text-zinc-400" />
-        }
+        {selected ? <Check className="size-2.5 stroke-[3]" /> : null}
       </button>
-      <div className="min-w-0 flex-1" onClick={onClick}>
+      <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-semibold text-zinc-950 dark:text-zinc-50">
+          <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">
             {item.questionNo ? `第 ${item.questionNo} 题` : `#${item.serialNo ?? item.id.slice(0, 6)}`}
           </span>
           {item.formatIssue?.code === 'inline_image_reference_mismatch' ? (
-            <Badge variant="danger" className="text-[9px] px-1.5 py-0 font-medium">题图风险</Badge>
+            <SpecBadge variant="danger">题图风险</SpecBadge>
           ) : null}
           {hasFormulaRenderRisk(item) ? (
-            <Badge variant="warning" className="text-[9px] px-1.5 py-0 font-medium">公式未规范</Badge>
+            <SpecBadge variant="warning">公式未规范</SpecBadge>
           ) : null}
-          <Badge variant={bankStatusVariant(item.bankStatus, item)}>
+          <SpecBadge variant={bankStatusVariant(item.bankStatus, item)}>
             {bankStatusLabel(item.bankStatus, item)}
-          </Badge>
+          </SpecBadge>
           {item.questionType && item.questionType !== 'OCR题' ? (
-            <Badge variant="default" className="border-transparent bg-zinc-100 px-1.5 py-0 text-[9px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">{item.questionType}</Badge>
+            <SpecBadge variant="default" className="text-zinc-600 dark:text-zinc-400">{item.questionType}</SpecBadge>
           ) : null}
           {item.pendingBankReadOnly ? (
-            <Badge variant="danger" className="text-[9px] px-1.5 py-0 font-medium">无候选</Badge>
+            <SpecBadge variant="danger">无候选</SpecBadge>
           ) : null}
           {item.similarQuestions?.length ? (
-            <Badge variant="warning" className="text-[9px] px-1.5 py-0 font-medium">疑似重复</Badge>
+            <SpecBadge variant="warning">疑似重复</SpecBadge>
           ) : null}
         </div>
         {item.hasFigures || item.similarQuestions?.length ? (
-          <div className="flex items-center gap-2 mt-1">
-            {item.hasFigures ? <ImageIcon className="size-3 text-zinc-500 dark:text-zinc-400" /> : null}
-            {item.similarQuestions?.length ? <AlertTriangle className="size-3 text-amber-500 animate-pulse" /> : null}
+          <div className="flex items-center gap-2 mt-1.5">
+            {item.hasFigures ? <ImageIcon className="size-3.5 text-zinc-400 dark:text-zinc-500" /> : null}
+            {item.similarQuestions?.length ? <AlertTriangle className="size-3.5 text-amber-500 animate-pulse" /> : null}
           </div>
         ) : null}
         {preview ? (
-          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{preview}</p>
+          <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400 font-normal">{preview}</p>
         ) : null}
       </div>
     </div>
@@ -691,22 +760,24 @@ function BulkActionBar({ count, busy, onConfirm, onSkip, onDelete }: {
 }) {
   const [moreOpen, setMoreOpen] = useState(false)
   return (
-    <div className="mx-1 mt-2 flex shrink-0 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-      <span className="mr-1 text-xs font-semibold text-zinc-500 dark:text-zinc-400">已选 {count} 题</span>
-      <Button size="sm" icon={BadgeCheck} disabled={busy} onClick={onConfirm}>确认入库 {count} 题</Button>
-      <Button size="sm" variant="outline" icon={SkipForward} disabled={busy} onClick={onSkip}>跳过</Button>
-      <div className="relative">
-        <Button size="sm" variant="outline" icon={ChevronDown} disabled={busy} onClick={() => setMoreOpen(!moreOpen)}>更多</Button>
-        {moreOpen ? (
-          <div className="absolute left-0 top-full z-10 mt-1.5 w-36 rounded-md border border-zinc-200 bg-white py-1 text-zinc-950 shadow-md animate-in fade-in-50 duration-100 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
-            <button
-              className="w-full text-left px-3 py-2 text-xs hover:bg-destructive/10 text-destructive flex items-center gap-2 cursor-pointer transition-colors"
-              onClick={() => { setMoreOpen(false); onDelete() }}
-            >
-              <Trash2 className="size-3.5" />批量删除
-            </button>
-          </div>
-        ) : null}
+    <div className="sticky bottom-0 z-50 w-full border-t border-zinc-200 bg-white/80 py-4 px-6 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/80 flex items-center justify-between shadow-[0_-4px_20px_rgba(0,0,0,0.03)] mt-4 rounded-xl border">
+      <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">已选择 {count} 道题目，可执行批量操作</span>
+      <div className="flex items-center gap-2">
+        <Button size="sm" icon={BadgeCheck} disabled={busy} onClick={onConfirm}>确认入库 {count} 题</Button>
+        <Button size="sm" variant="outline" icon={SkipForward} disabled={busy} onClick={onSkip}>跳过</Button>
+        <div className="relative">
+          <Button size="sm" variant="outline" icon={ChevronDown} disabled={busy} onClick={() => setMoreOpen(!moreOpen)}>更多</Button>
+          {moreOpen ? (
+            <div className="absolute right-0 bottom-full z-10 mb-1.5 w-36 rounded-md border border-zinc-200 bg-white/95 py-1 text-zinc-950 shadow-md backdrop-blur-sm animate-in fade-in-50 duration-100 dark:border-zinc-800 dark:bg-zinc-950/95 dark:text-zinc-50">
+              <button
+                className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 dark:hover:bg-red-950/20 text-red-600 flex items-center gap-2 cursor-pointer transition-colors"
+                onClick={() => { setMoreOpen(false); onDelete() }}
+              >
+                <Trash2 className="size-3.5" />批量删除
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   )
@@ -742,25 +813,25 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
   return (
     <div className="flex h-full flex-col">
       {/* Action bar */}
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/70">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50/50 px-5 py-4 dark:border-zinc-900 dark:bg-zinc-900/10">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+          <span className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             {item.questionNo ? `第 ${item.questionNo} 题` : `#${item.serialNo ?? item.id.slice(0, 6)}`}
           </span>
-          <Badge variant={bankStatusVariant(item.bankStatus, item)}>
+          <SpecBadge variant={bankStatusVariant(item.bankStatus, item)}>
             {bankStatusLabel(item.bankStatus, item)}
-          </Badge>
+          </SpecBadge>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="inline-flex h-8 select-none items-center justify-center rounded-md border border-zinc-200 bg-zinc-100 p-1 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+          <div className="bg-zinc-100/80 dark:bg-zinc-900/80 p-0.5 rounded-lg border border-zinc-200/50 dark:border-zinc-800/50 inline-flex h-8 select-none items-center justify-center">
             <button
-              className={`cursor-pointer rounded-sm px-2.5 py-1 text-xs font-medium transition-all ${previewMode === 'content' ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
+              className={`cursor-pointer rounded-sm px-2.5 py-1 text-xs font-medium transition-all select-none ${previewMode === 'content' ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-xs border border-zinc-200/20' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'}`}
               onClick={() => setPreviewMode('content')}
             >
               识别结果
             </button>
             <button
-              className={`cursor-pointer rounded-sm px-2.5 py-1 text-xs font-medium transition-all ${previewMode === 'images' ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
+              className={`cursor-pointer rounded-sm px-2.5 py-1 text-xs font-medium transition-all select-none ${previewMode === 'images' ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-xs border border-zinc-200/20' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'}`}
               onClick={() => setPreviewMode('images')}
             >
               原图 / OCR 图块
@@ -776,19 +847,25 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {item.mergeStatus ? (
-          <div className={`rounded-xl border px-3 py-2 text-xs ${
+          <div className={`flex items-start gap-3 rounded-lg border p-3 text-xs ${
             item.mergeStatus === 'merged'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400'
-              : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400'
+              ? 'border-emerald-200 bg-emerald-50/30 text-emerald-800 dark:border-emerald-900/30 dark:bg-emerald-950/20 dark:text-emerald-400'
+              : 'border-amber-200 bg-amber-50/30 text-amber-800 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-400'
           }`}>
-            <p className="font-semibold">{mergeStatusLabel(item.mergeStatus)}</p>
-            {item.mergeNote ? <p className="mt-1">{item.mergeNote}</p> : null}
+            <AlertTriangle className={`size-4 mt-0.5 shrink-0 ${item.mergeStatus === 'merged' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`} />
+            <div>
+              <p className="font-semibold text-[13px]">{mergeStatusLabel(item.mergeStatus)}</p>
+              {item.mergeNote ? <p className="mt-1 text-zinc-600 dark:text-zinc-400 leading-relaxed">{item.mergeNote}</p> : null}
+            </div>
           </div>
         ) : null}
         {item.needsFormatReview && item.formatIssue ? (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-            <p className="font-semibold">{item.formatIssue.code === 'inline_image_reference_mismatch' ? '需要确认题图' : '公式未规范化'}</p>
-            <p className="mt-1 leading-5">{item.formatIssue.message || '可阅读，入库和导出前需修复。'}</p>
+          <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50/30 p-3 text-xs text-amber-800 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-400">
+            <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-semibold text-[13px]">{item.formatIssue.code === 'inline_image_reference_mismatch' ? '需要确认题图' : '公式未规范化'}</p>
+              <p className="mt-1 text-zinc-600 dark:text-zinc-400 leading-relaxed">{item.formatIssue.message || '可阅读，入库和导出前需修复。'}</p>
+            </div>
           </div>
         ) : null}
         {previewMode === 'images' ? (
@@ -809,9 +886,9 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
                 <ContentSection title="OCR 图块">
                   <div className="grid grid-cols-3 gap-2">
                     {item.ocrSegmentImages.map((seg, i) => (
-                      <div key={i} className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                      <div key={i} className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden bg-white dark:bg-zinc-950">
                         <img src={`/assets/${seg.path}`} alt={seg.label} className="w-full" loading="lazy" />
-                        <p className="text-[10px] text-center py-1 text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800">{seg.label}</p>
+                        <p className="text-[10px] text-center py-1 text-zinc-500 dark:text-zinc-400 bg-zinc-50/50 dark:bg-zinc-900/30 border-t border-zinc-100 dark:border-zinc-900">{seg.label}</p>
                       </div>
                     ))}
                   </div>
@@ -819,18 +896,19 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
               ) : null}
             </div>
           ) : (
-            <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-700 px-4 py-8 text-center text-sm text-zinc-400">
-              当前题目没有原图或 OCR 图块。
-            </div>
+            <SpecEmpty text="无可用图像" description="当前题目没有关联的原图或 OCR 图块" />
           )
         ) : (
           <>
             {/* OCR Failed notice */}
             {isOcrFailed ? (
-              <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
-                <p className="font-semibold">识别失败</p>
-                <p className="mt-1 text-xs">OCR 未能提取到可用内容。{rerunUnavailable ? 'Doc2X 首版请使用整批完全重跑，或手动编辑补录。' : '建议重新 OCR。'}</p>
-                {readOnlyFailure ? <p className="mt-1 text-xs">这道题尚未生成待入库候选，可打开编辑题目手动补录，或只重跑当前题 OCR。</p> : null}
+              <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50/30 p-3 text-xs text-red-800 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400">
+                <AlertTriangle className="size-4 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-semibold text-[13px]">识别失败</p>
+                  <p className="mt-1 text-zinc-600 dark:text-zinc-400 leading-relaxed">OCR 未能提取到可用内容。{rerunUnavailable ? 'Doc2X 首版请使用整批完全重跑，或手动编辑补录。' : '建议重新 OCR。'}</p>
+                  {readOnlyFailure ? <p className="mt-1 text-zinc-500 dark:text-zinc-500">这道题尚未生成待入库候选，可打开编辑题目手动补录，或只重跑当前题 OCR。</p> : null}
+                </div>
               </div>
             ) : null}
 
@@ -853,9 +931,9 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
               <ContentSection title="解析">
                 <MarkdownWithInlineFigures content={item.analysisMarkdown} figures={analysisFigures} />
                 {analysisFigures.filter((figure) => !String(item.analysisMarkdown || '').includes(`DOC2X_FIGURE:${String(figure.blockId || figure.id)}`)).length ? (
-                  <div className="mt-2 flex gap-2 flex-wrap">
+                  <div className="mt-3 flex gap-2 flex-wrap">
                     {analysisFigures.filter((figure) => !String(item.analysisMarkdown || '').includes(`DOC2X_FIGURE:${String(figure.blockId || figure.id)}`)).map((fig, i) => (
-                      <img key={i} src={`/assets/${fig.path}`} alt={`解析图 ${i + 1}`} className="max-h-40 rounded-lg border" loading="lazy" />
+                      <img key={i} src={`/assets/${fig.path}`} alt={`解析图 ${i + 1}`} className="max-h-40 rounded-lg border border-zinc-200 dark:border-zinc-800" loading="lazy" />
                     ))}
                   </div>
                 ) : null}
@@ -863,7 +941,7 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
             ) : null}
 
             {/* Metadata */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-3">
               {item.knowledgePoints?.length ? (
                 <MetaField label="知识点" value={item.knowledgePoints.filter(Boolean).join('、') || '—'} />
               ) : null}
@@ -875,24 +953,27 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
             </div>
 
             {item.similarQuestions?.length ? (
-              <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-                <p className="font-semibold">疑似重复</p>
-                <div className="mt-2 space-y-2">
-                  {item.similarQuestions.map((candidate) => (
-                    <div key={candidate.id} className="rounded-lg border border-amber-200/70 dark:border-amber-800/70 bg-white/60 dark:bg-zinc-900/40 px-2.5 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium">
-                          {candidate.questionNo ? `第 ${candidate.questionNo} 题` : candidate.id.slice(0, 8)}
-                        </span>
-                        <span>{Math.round(candidate.similarity * 100)}%</span>
+              <div className="flex items-start gap-3 rounded-lg border border-amber-250 bg-amber-50/30 p-3 text-xs text-amber-800 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-400">
+                <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-[13px]">疑似重复</p>
+                  <div className="mt-2 space-y-2">
+                    {item.similarQuestions.map((candidate) => (
+                      <div key={candidate.id} className="rounded-xl border border-amber-200/50 bg-white/80 p-3 shadow-xs dark:border-amber-900/30 dark:bg-zinc-950/80">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-zinc-900 dark:text-zinc-50">
+                            {candidate.questionNo ? `第 ${candidate.questionNo} 题` : candidate.id.slice(0, 8)}
+                          </span>
+                          <SpecBadge variant="warning">{Math.round(candidate.similarity * 100)}% 相似度</SpecBadge>
+                        </div>
+                        <p className="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                          {similarQuestionOriginLabel(item, candidate)}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">{candidate.sourceTitle || '题库主库'}</p>
+                        {candidate.stemPreview ? <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300 line-clamp-2">{candidate.stemPreview}</p> : null}
                       </div>
-                      <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-                        {similarQuestionOriginLabel(item, candidate)}
-                      </p>
-                      <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">{candidate.sourceTitle || '题库主库'}</p>
-                      {candidate.stemPreview ? <p className="mt-1 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300 line-clamp-2">{candidate.stemPreview}</p> : null}
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             ) : null}
@@ -907,19 +988,19 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
 function ContentSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
-      <div className="border-b border-zinc-200 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900/70">
-        <p className="text-xs font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">{title}</p>
+      <div className="p-4 border-b border-zinc-100 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/10 py-2.5">
+        <p className="text-xs font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{title}</p>
       </div>
-      <div className="p-4 text-sm leading-relaxed text-zinc-950 dark:text-zinc-50">{children}</div>
+      <div className="p-4 text-[13px] leading-relaxed text-zinc-800 dark:text-zinc-300">{children}</div>
     </div>
   )
 }
 
 function MetaField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/60">
+    <div className="rounded-xl border border-zinc-200 bg-white p-3.5 dark:border-zinc-800 dark:bg-zinc-950 shadow-sm">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{label}</p>
-      <p className="mt-1 truncate text-xs font-bold text-zinc-950 dark:text-zinc-50" title={value}>{value}</p>
+      <p className="mt-1 truncate text-sm font-bold text-zinc-900 dark:text-zinc-50" title={value}>{value}</p>
     </div>
   )
 }
@@ -935,7 +1016,7 @@ function MoreActionsDropdown({ busy, onReOcr, onSkip, onDelete }: {
     <div className="relative">
       <Button size="sm" variant="outline" icon={ChevronDown} disabled={busy} onClick={() => setOpen(!open)}>更多</Button>
       {open ? (
-        <div className="absolute right-0 top-full z-10 mt-1.5 w-36 rounded-md border border-zinc-200 bg-white py-1 text-zinc-950 shadow-md animate-in fade-in-50 duration-100 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
+        <div className="absolute right-0 top-full z-10 mt-1.5 w-36 rounded-md border border-zinc-200 bg-white/95 py-1 text-zinc-950 shadow-md backdrop-blur-sm animate-in fade-in-50 duration-100 dark:border-zinc-800 dark:bg-zinc-950/95 dark:text-zinc-50">
           {onReOcr ? <DropdownItem icon={ScanSearch} label="重新 OCR" onClick={() => { setOpen(false); onReOcr() }} /> : null}
           <DropdownItem icon={SkipForward} label="跳过此题" onClick={() => { setOpen(false); onSkip() }} />
           <DropdownItem icon={Trash2} label="删除此题" danger onClick={() => { setOpen(false); onDelete() }} />
@@ -950,7 +1031,7 @@ function DropdownItem({ icon: Icon, label, danger, onClick }: { icon: typeof Ref
     <button
       className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 cursor-pointer transition-colors
         ${danger
-          ? 'hover:bg-destructive/10 text-destructive'
+          ? 'hover:bg-red-50 dark:hover:bg-red-950/20 text-red-600'
           : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900'
         }`}
       onClick={onClick}
@@ -986,18 +1067,18 @@ function SimilarityReviewDialog({ items, confirmText, onProceed, onCancel }: Sim
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-zinc-950/45 backdrop-blur-sm p-4">
-      <div className="flex h-[86vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl">
-        <div className="shrink-0 border-b border-border px-5 py-4 bg-card">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="flex h-[86vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-2xl animate-in zoom-in-95 duration-150">
+        <div className="shrink-0 border-b border-zinc-100 dark:border-zinc-900 px-5 py-4 bg-zinc-50/50 dark:bg-zinc-900/10">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-lg font-semibold text-foreground">存在疑似重复题</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">存在疑似重复题</h3>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                 检测到 {items.length} 组相似内容。请核对两侧题目，确认不是重复后再入库。当前右侧显示的是{sameRun ? '本批次内重复' : '题库历史重复'}。
               </p>
             </div>
             <button
-              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+              className="rounded-lg p-2 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors cursor-pointer"
               onClick={onCancel}
               aria-label="关闭"
             >
@@ -1014,8 +1095,8 @@ function SimilarityReviewDialog({ items, confirmText, onProceed, onCancel }: Sim
                     key={item.id}
                     className={`shrink-0 rounded-md border px-3 py-2 text-left text-xs transition-all cursor-pointer ${
                       index === activeIndex
-                        ? 'border-zinc-950 bg-zinc-950 text-white shadow-sm font-semibold dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-950'
-                        : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100'
+                        ? 'border-zinc-900 bg-zinc-900 text-zinc-50 dark:border-zinc-100 dark:bg-zinc-50 dark:text-zinc-900 font-semibold'
+                        : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900'
                     }`}
                     onClick={() => setActiveIndex(index)}
                   >
@@ -1028,7 +1109,7 @@ function SimilarityReviewDialog({ items, confirmText, onProceed, onCancel }: Sim
           ) : null}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 bg-zinc-50/10 dark:bg-zinc-900/5">
           <div className="grid min-h-full grid-cols-2 gap-4">
             <SimilarityQuestionPane
               label="待入库题"
@@ -1056,7 +1137,7 @@ function SimilarityReviewDialog({ items, confirmText, onProceed, onCancel }: Sim
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-border bg-muted/40 px-5 py-4">
+        <div className="shrink-0 border-t border-zinc-100 dark:border-zinc-900 bg-zinc-50/10 dark:bg-zinc-900/5 px-5 py-4">
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="outline" onClick={onCancel}>返回核对</Button>
             <Button size="sm" onClick={onProceed}>{confirmText}</Button>
@@ -1095,18 +1176,18 @@ function SimilarityQuestionPane({
   onCandidateChange?: (index: number) => void
 }) {
   return (
-    <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground">
-      <div className="shrink-0 border-b border-border bg-muted/40 px-4 py-3">
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
+      <div className="shrink-0 border-b border-zinc-100 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/10 px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
-            <h4 className="mt-1 truncate text-base font-semibold text-foreground">{title}</h4>
-            <p className="mt-1 truncate text-xs text-muted-foreground">{sourceTitle || '未标注来源'}{questionType ? ` · ${questionType}` : ''}</p>
-            {originLabel ? <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">{originLabel}</p> : null}
+            <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{label}</p>
+            <h4 className="mt-1 truncate text-base font-semibold text-zinc-900 dark:text-zinc-50">{title}</h4>
+            <p className="mt-1 truncate text-xs text-zinc-500 dark:text-zinc-400">{sourceTitle || '未标注来源'}{questionType ? ` · ${questionType}` : ''}</p>
+            {originLabel ? <p className="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400">{originLabel}</p> : null}
           </div>
           {typeof similarity === 'number' ? (
-            <div className="shrink-0 rounded-lg bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
-              {Math.round(similarity * 100)}%
+            <div className="shrink-0 rounded-lg bg-amber-50 text-amber-700 border border-amber-100 px-2.5 py-1 text-sm font-semibold dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/30">
+              {Math.round(similarity * 100)}% 相似度
             </div>
           ) : null}
         </div>
@@ -1117,8 +1198,8 @@ function SimilarityQuestionPane({
                 key={candidate.id}
                 className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${
                   index === candidateIndex
-                    ? 'bg-zinc-950 text-white shadow-sm dark:bg-zinc-50 dark:text-zinc-950'
-                    : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-950 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'
+                    ? 'bg-zinc-950 text-white shadow-sm dark:bg-zinc-50 dark:text-zinc-950 font-semibold'
+                    : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-950 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800'
                 }`}
                 onClick={() => onCandidateChange(index)}
               >
@@ -1161,11 +1242,11 @@ type ConfirmDialogProps = {
 
 function ConfirmDialog({ title, message, danger, confirmText = '确认', cancelText = '取消', onConfirm, onCancel }: ConfirmDialogProps) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/45 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-xl border border-border bg-card text-card-foreground shadow-2xl p-5 space-y-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-2xl p-5 space-y-4 animate-in zoom-in-95 duration-100">
         <div>
-          <h3 className="text-base font-semibold text-foreground">{title}</h3>
-          <p className="mt-1.5 whitespace-pre-line text-sm text-muted-foreground leading-relaxed">{message}</p>
+          <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{title}</h3>
+          <p className="mt-1.5 whitespace-pre-line text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">{message}</p>
         </div>
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="outline" onClick={onCancel}>{cancelText}</Button>

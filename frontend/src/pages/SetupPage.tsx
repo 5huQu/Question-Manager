@@ -151,9 +151,9 @@ export function SetupPage({
             {/* Inputs grid */}
             <div className="grid gap-5 md:grid-cols-2">
               <label className="space-y-1.5 block">
-                <span className="text-xs font-semibold text-zinc-650 dark:text-zinc-400">左上角系统名称</span>
+                <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">左上角系统名称</span>
                 <input
-                  className="w-full h-10 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-950/40 px-3.5 text-sm outline-none transition-all duration-200 hover:border-zinc-350 dark:hover:border-zinc-700 focus:border-zinc-900 dark:focus:border-zinc-300 focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-zinc-100/5 focus:bg-white dark:focus:bg-zinc-950"
+                  className="w-full h-10 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-950/40 px-3.5 text-sm outline-none transition-all duration-200 hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-zinc-900 dark:focus:border-zinc-300 focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-zinc-100/5 focus:bg-white dark:focus:bg-zinc-950"
                   value={draft.systemName}
                   onChange={(event) => setDraft({ ...draft, systemName: event.target.value })}
                   placeholder="例如: Question Manager"
@@ -161,9 +161,9 @@ export function SetupPage({
               </label>
 
               <label className="space-y-1.5 block">
-                <span className="text-xs font-semibold text-zinc-650 dark:text-zinc-400">系统网站标题</span>
+                <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">系统网站标题</span>
                 <input
-                  className="w-full h-10 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-950/40 px-3.5 text-sm outline-none transition-all duration-200 hover:border-zinc-350 dark:hover:border-zinc-700 focus:border-zinc-900 dark:focus:border-zinc-300 focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-zinc-100/5 focus:bg-white dark:focus:bg-zinc-950"
+                  className="w-full h-10 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-950/40 px-3.5 text-sm outline-none transition-all duration-200 hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-zinc-900 dark:focus:border-zinc-300 focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-zinc-100/5 focus:bg-white dark:focus:bg-zinc-950"
                   value={draft.siteTitle}
                   onChange={(event) => setDraft({ ...draft, siteTitle: event.target.value })}
                   placeholder="浏览器标签页标题"
@@ -172,9 +172,9 @@ export function SetupPage({
             </div>
 
             <label className="space-y-1.5 block">
-              <span className="text-xs font-semibold text-zinc-650 dark:text-zinc-400">系统网站描述</span>
+              <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">系统网站描述</span>
               <textarea
-                className="min-h-[90px] w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-950/40 px-3.5 py-2.5 text-sm leading-relaxed outline-none transition-all duration-200 hover:border-zinc-350 dark:hover:border-zinc-700 focus:border-zinc-900 dark:focus:border-zinc-300 focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-zinc-100/5 focus:bg-white dark:focus:bg-zinc-950"
+                className="min-h-[90px] w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-950/40 px-3.5 py-2.5 text-sm leading-relaxed outline-none transition-all duration-200 hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-zinc-900 dark:focus:border-zinc-300 focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-zinc-100/5 focus:bg-white dark:focus:bg-zinc-950"
                 value={draft.siteDescription}
                 onChange={(event) => setDraft({ ...draft, siteDescription: event.target.value })}
                 placeholder="网站简介描述..."
@@ -184,7 +184,7 @@ export function SetupPage({
             {/* Template & Stages */}
             <div className="grid gap-5 md:grid-cols-[1fr_1.2fr]">
               <div className="space-y-2">
-                <span className="text-xs font-semibold text-zinc-655 dark:text-zinc-400 block">试卷导出模板</span>
+                <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block">试卷导出模板</span>
                 <div className="grid grid-cols-2 gap-1 rounded-xl bg-zinc-100/60 p-1 dark:bg-zinc-800/60 border border-zinc-200/30 dark:border-zinc-700/20 backdrop-blur-sm">
                   {([
                     { value: 'builtin', label: '自带模板' },
@@ -210,7 +210,7 @@ export function SetupPage({
               </div>
 
               <div className="space-y-2">
-                <span className="text-xs font-semibold text-zinc-655 dark:text-zinc-400 block">教学学段 (多选)</span>
+                <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block">教学学段 (多选)</span>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {teachingStageOptions.map((stage) => {
                     const active = draft.teachingStages.includes(stage)
@@ -242,28 +242,28 @@ export function SetupPage({
 
             {/* Watermarks */}
             <div className="space-y-2 pt-2">
-              <span className="text-xs font-semibold text-zinc-655 dark:text-zinc-400 block">模板导出品牌文字 / 水印</span>
+              <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 block">模板导出品牌文字 / 水印</span>
               <div className="grid gap-4 md:grid-cols-3">
                 <label className="space-y-1.5 block">
-                  <span className="text-[11px] font-medium text-zinc-450 dark:text-zinc-550">练习单模板水印</span>
+                  <span className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500">练习单模板水印</span>
                   <input
-                    className="w-full h-10 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-950/40 px-3.5 text-sm outline-none transition-all duration-200 hover:border-zinc-350 dark:hover:border-zinc-700 focus:border-zinc-900 dark:focus:border-zinc-300 focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-zinc-100/5 focus:bg-white dark:focus:bg-zinc-950"
+                    className="w-full h-10 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-950/40 px-3.5 text-sm outline-none transition-all duration-200 hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-zinc-900 dark:focus:border-zinc-300 focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-zinc-100/5 focus:bg-white dark:focus:bg-zinc-950"
                     value={draft.worksheetWatermark}
                     onChange={(event) => setDraft({ ...draft, worksheetWatermark: event.target.value })}
                   />
                 </label>
                 <label className="space-y-1.5 block">
-                  <span className="text-[11px] font-medium text-zinc-455 dark:text-zinc-550">试卷模板水印</span>
+                  <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-500">试卷模板水印</span>
                   <input
-                    className="w-full h-10 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-950/40 px-3.5 text-sm outline-none transition-all duration-200 hover:border-zinc-350 dark:hover:border-zinc-700 focus:border-zinc-900 dark:focus:border-zinc-300 focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-zinc-100/5 focus:bg-white dark:focus:bg-zinc-950"
+                    className="w-full h-10 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-950/40 px-3.5 text-sm outline-none transition-all duration-200 hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-zinc-900 dark:focus:border-zinc-300 focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-zinc-100/5 focus:bg-white dark:focus:bg-zinc-950"
                     value={draft.examWatermark}
                     onChange={(event) => setDraft({ ...draft, examWatermark: event.target.value })}
                   />
                 </label>
                 <label className="space-y-1.5 block">
-                  <span className="text-[11px] font-medium text-zinc-455 dark:text-zinc-550">讲义模板水印</span>
+                  <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-500">讲义模板水印</span>
                   <input
-                    className="w-full h-10 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-950/40 px-3.5 text-sm outline-none transition-all duration-200 hover:border-zinc-350 dark:hover:border-zinc-700 focus:border-zinc-900 dark:focus:border-zinc-300 focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-zinc-100/5 focus:bg-white dark:focus:bg-zinc-950"
+                    className="w-full h-10 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-950/40 px-3.5 text-sm outline-none transition-all duration-200 hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-zinc-900 dark:focus:border-zinc-300 focus:ring-4 focus:ring-zinc-900/5 dark:focus:ring-zinc-100/5 focus:bg-white dark:focus:bg-zinc-950"
                     value={draft.lectureWatermark}
                     onChange={(event) => setDraft({ ...draft, lectureWatermark: event.target.value })}
                   />
@@ -278,7 +278,7 @@ export function SetupPage({
               icon={busy ? LoaderCircle : Check}
               disabled={busy}
               onClick={save}
-              className="px-6 h-10.5 rounded-xl bg-gradient-to-r from-zinc-900 to-zinc-805 hover:from-zinc-800 hover:to-zinc-700 text-white dark:from-white dark:to-zinc-200 dark:text-zinc-950 dark:hover:from-white dark:hover:to-white shadow-lg shadow-zinc-950/15 dark:shadow-white/5 transition-all duration-200"
+              className="px-6 h-10.5 rounded-xl bg-gradient-to-r from-zinc-900 to-zinc-800 hover:from-zinc-800 hover:to-zinc-700 text-white dark:from-white dark:to-zinc-200 dark:text-zinc-950 dark:hover:from-white dark:hover:to-white shadow-lg shadow-zinc-950/15 dark:shadow-white/5 transition-all duration-200"
             >
               {busy ? '保存设置中...' : '完成配置，进入系统'}
             </Button>

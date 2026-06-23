@@ -9,8 +9,8 @@ export function QuestionBankPage() {
   const [stage, setStage] = useState('')
   const [questionType, setQuestionType] = useState('')
   const [difficulty, setDifficulty] = useState('')
-  const [knowledgePoint, setKnowledgePoint] = useState('')
-  const [solutionMethod, setSolutionMethod] = useState('')
+  const [knowledgePoint, setKnowledgePoint] = useState<string[]>([])
+  const [solutionMethod, setSolutionMethod] = useState<string[]>([])
   const [page, setPage] = useState(1)
   const pageSize = 20
   const questionBankParams = useMemo(() => ({
@@ -20,8 +20,8 @@ export function QuestionBankPage() {
     stage: stage || undefined,
     questionType: questionType || undefined,
     difficulty: difficulty || undefined,
-    knowledgePoint: knowledgePoint || undefined,
-    solutionMethod: solutionMethod || undefined,
+    knowledgePoint: knowledgePoint.join(',') || undefined,
+    solutionMethod: solutionMethod.join(',') || undefined,
   }), [difficulty, knowledgePoint, page, query, questionType, solutionMethod, stage])
   const questionBank = useAsync<QuestionBankResponse>(() => questionBankApi.listItems(questionBankParams), [questionBankParams])
   function replaceQuestionInBank(item: QuestionItem) {

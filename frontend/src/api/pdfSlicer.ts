@@ -92,6 +92,13 @@ export const pdfSlicerApi = {
       body: JSON.stringify({ figures }),
     })
   },
+  updateSliceReviewItemSolutionFigures(runId: string, resultId: string, figures: ReviewFigure[] | Array<Record<string, unknown>>) {
+    return api<{ item?: SliceReviewItem }>(`/api/tools/pdf-slicer/runs/${encodeURIComponent(runId)}/slice-review/items/${encodeURIComponent(resultId)}/solution-figures`, {
+      method: 'PATCH',
+      headers: jsonHeaders,
+      body: JSON.stringify({ figures }),
+    })
+  },
   updateSliceReviewItem(runId: string, resultId: string, payload: { questionLabel?: string }) {
     return api<{ item?: SliceReviewItem }>(`/api/tools/pdf-slicer/runs/${encodeURIComponent(runId)}/slice-review/items/${encodeURIComponent(resultId)}`, {
       method: 'PATCH',

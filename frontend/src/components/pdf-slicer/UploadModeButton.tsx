@@ -5,10 +5,10 @@ export function UploadModeButton({ active, icon: Icon, label, onClick }: { activ
     <button
       type="button"
       onClick={onClick}
-      className={`flex h-9 items-center justify-center gap-1.5 rounded-lg border px-2 text-xs font-medium transition-colors ${
+      className={`flex h-8 items-center justify-center gap-1.5 rounded-md px-3 text-xs font-semibold transition-all cursor-pointer ${
         active
-          ? 'border-primary bg-accent text-foreground'
-          : 'border-input bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+          ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200/20 dark:bg-zinc-950 dark:text-zinc-50'
+          : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300 border-transparent bg-transparent'
       }`}
     >
       <Icon className="size-3.5" />

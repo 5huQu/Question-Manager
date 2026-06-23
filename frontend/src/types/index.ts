@@ -79,6 +79,7 @@ export type QuestionItem = {
   analysisBlocks?: RichBlock[]
   searchText?: string
   sliceImagePath: string
+  solutionImagePath?: string
   ocrSegmentImages?: Array<{
     kind: 'problem' | 'answer' | 'analysis'
     label: string
@@ -366,6 +367,12 @@ export type SliceReviewItem = {
   pageStart: number
   pageEnd: number
   imageUrl: string
+  solutionImageUrl?: string
+  solutionImagePath?: string
+  hasSolutionSlice?: boolean
+  solutionBbox?: Record<string, number>
+  solutionSegments?: Array<Record<string, unknown>>
+  solutionFigures?: ReviewFigure[]
   autoImagePath: string
   pageImagePath: string
   reviewStatus: string

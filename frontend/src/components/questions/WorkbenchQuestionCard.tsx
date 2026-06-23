@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, Calendar, Check, CheckCircle, ChevronDown, ChevronUp, Crop, Grid, List, PencilLine, PlusSquare, Search, ShoppingBag, Tag, Trash2, X } from 'lucide-react'
+import { BookOpen, Calendar, Check, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Crop, Grid, List, PencilLine, PlusSquare, Search, ShoppingBag, Tag, Trash2, X } from 'lucide-react'
 import { questionBankApi } from '@/api/questionBank'
 import { learningTagsApi } from '@/api/learningTags'
 import { FigureCropDialog } from '@/components/questions/FigureDialogs'
@@ -150,6 +150,19 @@ function QuestionBankDraftCard({
         <QuestionMarkdownContent content={stem || '题干为空'} figures={item.figures} />
       </div>
 
+      {item.knowledgePoints && item.knowledgePoints.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1">
+          {item.knowledgePoints.map((kp) => (
+            <span
+              key={kp}
+              className="inline-flex items-center rounded bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 border border-zinc-200/60 dark:bg-zinc-900/30 dark:text-zinc-400 dark:border-zinc-800/80"
+            >
+              {kp}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className={`grid transition-all duration-300 ease-in-out ${showAnalysis ? 'mt-2 grid-rows-[1fr] opacity-100' : 'pointer-events-none grid-rows-[0fr] opacity-0'}`}>
         <div className="overflow-hidden">
           <div className="space-y-3 rounded border-t border-zinc-200 bg-zinc-50/50 p-3 pt-3 dark:border-zinc-800 dark:bg-zinc-900/30">
@@ -169,7 +182,7 @@ function QuestionBankDraftCard({
         </div>
       </div>
 
-      <div className="mt-1 flex items-center justify-between border-t border-zinc-200 pt-3 dark:border-zinc-800">
+      <div className={`mt-1 flex items-center justify-between pt-3 ${showAnalysis ? '' : 'border-t border-zinc-200 dark:border-zinc-800'}`}>
         <div className="flex items-center gap-3 text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
           {date ? <span className="flex items-center gap-1"><Calendar className="size-3 text-zinc-400" />{date}</span> : null}
           <span className="flex items-center gap-1"><BookOpen className="size-3 text-zinc-400" />{displaySource(item.sourceTitle || '') || '高中数学专项试卷'}</span>
@@ -194,7 +207,7 @@ function QuestionBankDraftCard({
             className={`inline-flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-bold transition-colors ${
               isInBasket
                 ? 'border border-zinc-200 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100'
-                : 'bg-zinc-900 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200'
+                : 'bg-zinc-900 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200'
             }`}
           >
             {isInBasket ? <><Check className="size-3" />已在试题篮</> : <><ShoppingBag className="size-3" />加入试题篮</>}
@@ -202,6 +215,35 @@ function QuestionBankDraftCard({
         </div>
       </div>
     </div>
+  )
+}
+
+
+function CustomCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+}: {
+  checked: boolean
+  indeterminate?: boolean
+  onChange: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onChange()
+      }}
+      className={`flex size-3.5 shrink-0 items-center justify-center rounded border transition-all duration-150 cursor-pointer ${
+        checked || indeterminate
+          ? 'bg-zinc-900 border-zinc-900 text-white dark:bg-zinc-50 dark:border-zinc-50 dark:text-zinc-900'
+          : 'border-zinc-300 hover:border-zinc-400 bg-white dark:border-zinc-700 dark:hover:border-zinc-700 dark:bg-zinc-900'
+      }`}
+    >
+      {checked && <Check className="size-2.5 stroke-[3px]" />}
+      {!checked && indeterminate && <div className="h-[2px] w-1.5 bg-current rounded-xs" />}
+    </button>
   )
 }
 
@@ -227,9 +269,6 @@ export function BankTab({
   onQuestionSaved,
 }: {
   questionBank: QuestionBankResponse | null
-  selectedQuestionId?: string | null
-  setSelectedQuestionId?: (id: string | null) => void
-  selectedQuestion?: QuestionItem | null
   reload: () => void
   loading: boolean
   error: string
@@ -241,18 +280,30 @@ export function BankTab({
   setQuestionType: (value: string) => void
   difficulty: string
   setDifficulty: (value: string) => void
-  knowledgePoint: string
-  setKnowledgePoint: (value: string) => void
-  solutionMethod: string
-  setSolutionMethod: (value: string) => void
+  knowledgePoint: string[]
+  setKnowledgePoint: (value: string[] | ((curr: string[]) => string[])) => void
+  solutionMethod: string[]
+  setSolutionMethod: (value: string[] | ((curr: string[]) => string[])) => void
   page: number
   setPage: (value: number | ((value: number) => number)) => void
   onQuestionSaved?: (item: QuestionItem) => void
 }) {
   const tagLibraries = useAsync<TagLibraries>(() => learningTagsApi.getQuestionBankTagLibraries(), [])
+  const libraries = useAsync(() => learningTagsApi.listLibraries(), [])
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+
+  const [stageExpanded, setStageExpanded] = useState(false)
+  const [questionTypeExpanded, setQuestionTypeExpanded] = useState(true)
+  const [difficultyExpanded, setDifficultyExpanded] = useState(false)
+  const [kpExpanded, setKpExpanded] = useState(false)
+  const [smExpanded, setSmExpanded] = useState(false)
+
+  const [kpSearch, setKpSearch] = useState('')
+  const [smSearch, setSmSearch] = useState('')
+
+  const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({})
 
   const rawItems = questionBank?.items ?? []
   const items = rawItems
@@ -260,10 +311,31 @@ export function BankTab({
   const basketQuestionIds = useMemo(() => new Set((questionBank?.basket?.questions ?? []).map((entry) => entry.item.id)), [questionBank?.basket?.questions])
   const basketCount = questionBank?.basket?.questionCount ?? questionBank?.basket?.questions?.length ?? 0
   const totalItems = questionBank?.totalItems ?? 0
-  const hasActiveFilters = Boolean(query.trim() || stage || questionType || difficulty || knowledgePoint || solutionMethod)
+  const hasActiveFilters = Boolean(query.trim() || stage || questionType || difficulty || knowledgePoint.length > 0 || solutionMethod.length > 0)
   const stageOptions = tagLibraries.data?.stages?.length ? tagLibraries.data.stages : ['高一', '高二', '高三', '高中']
   const questionTypeOptions = tagLibraries.data?.questionTypes?.length ? tagLibraries.data.questionTypes : ['单选题', '多选题', '填空题', '解答题']
   const difficultyOptions = tagLibraries.data?.difficultyLabels?.length ? tagLibraries.data.difficultyLabels : ['基础', '中等', '较难', '压轴']
+
+  const kpChapters = useMemo(() => {
+    const kps = (libraries.data?.libraries ?? []).filter((lib: any) => lib.libraryType === 'knowledge_point')
+    return kps.flatMap((lib: any) => lib.chapters)
+  }, [libraries.data])
+
+  const smGroups = useMemo(() => {
+    const sms = (libraries.data?.libraries ?? []).filter((lib: any) => lib.libraryType === 'method_tag')
+    return sms.flatMap((lib: any) => lib.chapters)
+  }, [libraries.data])
+
+  const activeFiltersCount = (stage ? 1 : 0) + (questionType ? 1 : 0) + (difficulty ? 1 : 0) + knowledgePoint.length + solutionMethod.length
+
+  const handleClearAllFilters = () => {
+    setStage('')
+    setQuestionType('')
+    setDifficulty('')
+    setKnowledgePoint([])
+    setSolutionMethod([])
+    setPage(1)
+  }
 
   function updateFilter(setter: (value: string) => void, value: string) {
     setter(value)
@@ -282,16 +354,11 @@ export function BankTab({
   useEffect(() => {
     function handleReset() {
       setQuery('')
-      setStage('')
-      setQuestionType('')
-      setDifficulty('')
-      setKnowledgePoint('')
-      setSolutionMethod('')
-      setPage(1)
+      handleClearAllFilters()
     }
     window.addEventListener('question-bank-reset-filters', handleReset)
     return () => window.removeEventListener('question-bank-reset-filters', handleReset)
-  }, [setQuery, setStage, setQuestionType, setDifficulty, setKnowledgePoint, setSolutionMethod, setPage])
+  }, [])
 
   async function addToBasket(id: string) {
     if (id.startsWith('mock_')) {
@@ -328,43 +395,329 @@ export function BankTab({
   }
 
   return (
-    <div className="mock-page-root flex h-[calc(100vh-7rem)] overflow-hidden rounded-lg border border-zinc-200 bg-white text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
+    <div className="mock-page-root flex h-[calc(100vh-7rem)] overflow-hidden rounded-lg border border-zinc-200 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
       <aside className="flex w-52 shrink-0 flex-col gap-4 overflow-y-auto border-r border-zinc-200 bg-zinc-50/30 p-4 text-left dark:border-zinc-800 dark:bg-zinc-950/20">
+        {activeFiltersCount > 0 && (
+          <div className="flex items-center justify-between rounded-md bg-zinc-100/50 px-2.5 py-1.5 text-xs border border-zinc-200/60 dark:bg-zinc-900/40 dark:border-zinc-800/60">
+            <span className="text-zinc-500 dark:text-zinc-400 font-medium">已选 {activeFiltersCount} 个条件</span>
+            <button
+              onClick={handleClearAllFilters}
+              className="font-bold text-zinc-900 hover:underline dark:text-zinc-100 cursor-pointer"
+            >
+              清空
+            </button>
+          </div>
+        )}
+
+        {/* 教学阶段 */}
         <div>
-          <h3 className="mb-2.5 px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">教学阶段</h3>
-          <div className="space-y-0.5">
-            {['全部', ...stageOptions].map((option) => (
-              <button key={option} onClick={() => updateFilter(setStage, option === '全部' ? '' : option)} className={filterButtonClass((option === '全部' && !stage) || stage === option)}>
-                <span>{option}</span>
-              </button>
-            ))}
+          <button
+            type="button"
+            onClick={() => setStageExpanded(!stageExpanded)}
+            className="flex w-full items-center justify-between px-2 py-1 text-xs font-bold text-zinc-400 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer"
+          >
+            <span>教学阶段</span>
+            <ChevronDown className={`size-3.5 transition-transform duration-250 ${stageExpanded ? 'rotate-180' : ''}`} />
+          </button>
+          <div className={`grid transition-all duration-250 ease-in-out ${stageExpanded ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0 pointer-events-none'}`}>
+            <div className="overflow-hidden">
+              <div className="space-y-0.5 pl-2 pb-1">
+                {['全部', ...stageOptions].map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => updateFilter(setStage, opt === '全部' ? '' : opt)}
+                    className={filterButtonClass((opt === '全部' && !stage) || stage === opt)}
+                  >
+                    <span>{opt}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
+
         <div className="h-px bg-zinc-200 dark:bg-zinc-800" />
+
+        {/* 试题题型 */}
         <div>
-          <h3 className="mb-2.5 px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">试题题型</h3>
-          <div className="space-y-0.5">
-            {['全部', ...questionTypeOptions].map((option) => (
-              <button key={option} onClick={() => updateFilter(setQuestionType, option === '全部' ? '' : option)} className={filterButtonClass((option === '全部' && !questionType) || questionType === option)}>
-                <span>{option}</span>
-              </button>
-            ))}
+          <button
+            type="button"
+            onClick={() => setQuestionTypeExpanded(!questionTypeExpanded)}
+            className="flex w-full items-center justify-between px-2 py-1 text-xs font-bold text-zinc-400 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer"
+          >
+            <span>试题题型</span>
+            <ChevronDown className={`size-3.5 transition-transform duration-250 ${questionTypeExpanded ? 'rotate-180' : ''}`} />
+          </button>
+          <div className={`grid transition-all duration-250 ease-in-out ${questionTypeExpanded ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0 pointer-events-none'}`}>
+            <div className="overflow-hidden">
+              <div className="space-y-0.5 pl-2 pb-1">
+                {['全部', ...questionTypeOptions].map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => updateFilter(setQuestionType, opt === '全部' ? '' : opt)}
+                    className={filterButtonClass((opt === '全部' && !questionType) || questionType === opt)}
+                  >
+                    <span>{opt}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
+
         <div className="h-px bg-zinc-200 dark:bg-zinc-800" />
+
+        {/* 难度分级 */}
         <div>
-          <h3 className="mb-2.5 px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">难度分级</h3>
-          <div className="space-y-0.5">
-            {['全部', ...difficultyOptions].map((option) => (
-              <button key={option} onClick={() => updateFilter(setDifficulty, option === '全部' ? '' : option)} className={filterButtonClass((option === '全部' && !difficulty) || difficulty === option)}>
-                <span>{option}</span>
-              </button>
-            ))}
+          <button
+            type="button"
+            onClick={() => setDifficultyExpanded(!difficultyExpanded)}
+            className="flex w-full items-center justify-between px-2 py-1 text-xs font-bold text-zinc-400 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer"
+          >
+            <span>难度分级</span>
+            <ChevronDown className={`size-3.5 transition-transform duration-250 ${difficultyExpanded ? 'rotate-180' : ''}`} />
+          </button>
+          <div className={`grid transition-all duration-250 ease-in-out ${difficultyExpanded ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0 pointer-events-none'}`}>
+            <div className="overflow-hidden">
+              <div className="space-y-0.5 pl-2 pb-1">
+                {['全部', ...difficultyOptions].map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => updateFilter(setDifficulty, opt === '全部' ? '' : opt)}
+                    className={filterButtonClass((opt === '全部' && !difficulty) || difficulty === opt)}
+                  >
+                    <span>{opt}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="h-px bg-zinc-200 dark:bg-zinc-800" />
+
+        {/* 知识点树形多选折叠组 */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setKpExpanded(!kpExpanded)}
+            className="flex w-full items-center justify-between px-2 py-1 text-xs font-bold text-zinc-400 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer"
+          >
+            <span>知识点</span>
+            <ChevronDown className={`size-3.5 transition-transform duration-250 ${kpExpanded ? 'rotate-180' : ''}`} />
+          </button>
+
+          <div className={`grid transition-all duration-250 ease-in-out ${kpExpanded ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0 pointer-events-none'}`}>
+            <div className="overflow-hidden">
+              <div className="space-y-2 pb-1">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2 size-3 text-zinc-400" />
+                  <input
+                    type="text"
+                    placeholder="搜索知识点..."
+                    value={kpSearch}
+                    onChange={(e) => setKpSearch(e.target.value)}
+                    className="w-full rounded-md border border-zinc-200 bg-white pl-7 pr-6 py-1 text-xs outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 focus:ring-0"
+                  />
+                  {kpSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setKpSearch('')}
+                      className="absolute right-2 top-2 text-zinc-400 hover:text-zinc-650 dark:hover:text-zinc-350"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-h-60 overflow-y-auto pr-1 space-y-2 select-none">
+                  {kpChapters.map((chapter: any) => {
+                    const filteredKps = chapter.knowledgePoints.filter((kp: any) =>
+                      kp.name.toLowerCase().includes(kpSearch.toLowerCase())
+                    )
+                    const chapterMatches = chapter.name.toLowerCase().includes(kpSearch.toLowerCase())
+                    const displayKps = chapterMatches ? chapter.knowledgePoints : filteredKps
+
+                    if (kpSearch && displayKps.length === 0 && !chapterMatches) {
+                      return null
+                    }
+
+                    const isExpanded = expandedChapters[chapter.code] ?? (kpSearch ? true : false)
+                    const kpNames = chapter.knowledgePoints.map((kp: any) => kp.name)
+                    const selectedChildren = chapter.knowledgePoints.filter((kp: any) =>
+                      knowledgePoint.includes(kp.name)
+                    )
+                    const isAllSelected = selectedChildren.length === chapter.knowledgePoints.length
+                    const isIndeterminate = selectedChildren.length > 0 && selectedChildren.length < chapter.knowledgePoints.length
+
+                    const handleChapterToggle = () => {
+                      if (isAllSelected) {
+                        setKnowledgePoint((curr) => curr.filter((name) => !kpNames.includes(name)))
+                      } else {
+                        setKnowledgePoint((curr) => {
+                          const next = [...curr]
+                          kpNames.forEach((name: string) => {
+                            if (!next.includes(name)) next.push(name)
+                          })
+                          return next
+                        })
+                      }
+                      setPage(1)
+                    }
+
+                    return (
+                      <div key={chapter.code} className="space-y-1">
+                        <div className="flex items-center gap-1.5 py-0.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedChapters((prev) => ({
+                                ...prev,
+                                [chapter.code]: !(prev[chapter.code] ?? (kpSearch ? true : false)),
+                              }))
+                            }
+                            className="p-0.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                          >
+                            <ChevronRight className={`size-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                          </button>
+                          <CustomCheckbox
+                            checked={isAllSelected}
+                            indeterminate={isIndeterminate}
+                            onChange={handleChapterToggle}
+                          />
+                          <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 truncate cursor-pointer" onClick={() =>
+                              setExpandedChapters((prev) => ({
+                                ...prev,
+                                [chapter.code]: !(prev[chapter.code] ?? (kpSearch ? true : false)),
+                              }))
+                            } title={chapter.name}>
+                            {chapter.name}
+                          </span>
+                        </div>
+
+                        {isExpanded && displayKps.length > 0 && (
+                          <div className="pl-6 space-y-1 border-l border-zinc-100 dark:border-zinc-800 ml-2">
+                            {displayKps.map((kp: any) => {
+                              const isSelected = knowledgePoint.includes(kp.name)
+                              const handleKpToggle = () => {
+                                if (isSelected) {
+                                  setKnowledgePoint((curr) => curr.filter((name) => name !== kp.name))
+                                } else {
+                                  setKnowledgePoint((curr) => [...curr, kp.name])
+                                }
+                                setPage(1)
+                              }
+
+                              return (
+                                <div key={kp.code} className="flex items-center gap-1.5 py-0.5">
+                                  <CustomCheckbox checked={isSelected} onChange={handleKpToggle} />
+                                  <span className="text-[11px] text-zinc-600 dark:text-zinc-400 line-clamp-1 leading-snug cursor-pointer" onClick={handleKpToggle} title={kp.name}>
+                                    {kp.name}
+                                  </span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {kpChapters.length === 0 && (
+                    <div className="text-[10px] text-zinc-400 text-center py-2">暂无知识点库数据</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="h-px bg-zinc-200 dark:bg-zinc-800" />
+
+        {/* 解题方法分组多选折叠组 */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setSmExpanded(!smExpanded)}
+            className="flex w-full items-center justify-between px-2 py-1 text-xs font-bold text-zinc-400 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 cursor-pointer"
+          >
+            <span>解题方法</span>
+            <ChevronDown className={`size-3.5 transition-transform duration-250 ${smExpanded ? 'rotate-180' : ''}`} />
+          </button>
+
+          <div className={`grid transition-all duration-250 ease-in-out ${smExpanded ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0 pointer-events-none'}`}>
+            <div className="overflow-hidden">
+              <div className="space-y-2 pb-1">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2 size-3 text-zinc-400" />
+                  <input
+                    type="text"
+                    placeholder="搜索方法..."
+                    value={smSearch}
+                    onChange={(e) => setSmSearch(e.target.value)}
+                    className="w-full rounded-md border border-zinc-200 bg-white pl-7 pr-6 py-1 text-xs outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 focus:ring-0"
+                  />
+                  {smSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setSmSearch('')}
+                      className="absolute right-2 top-2 text-zinc-400 hover:text-zinc-650 dark:hover:text-zinc-300"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-h-60 overflow-y-auto pr-1 space-y-3 select-none">
+                  {smGroups.map((group: any) => {
+                    const displayTags = group.knowledgePoints.filter((tag: any) =>
+                      tag.name.toLowerCase().includes(smSearch.toLowerCase())
+                    )
+
+                    if (displayTags.length === 0) {
+                      return null
+                    }
+
+                    return (
+                      <div key={group.code} className="space-y-1.5">
+                        <div className="px-2 text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
+                          {group.name}
+                        </div>
+                        <div className="space-y-1 pl-2">
+                          {displayTags.map((tag: any) => {
+                            const isSelected = solutionMethod.includes(tag.name)
+                            const handleTagToggle = () => {
+                              if (isSelected) {
+                                setSolutionMethod((curr) => curr.filter((name) => name !== tag.name))
+                              } else {
+                                setSolutionMethod((curr) => [...curr, tag.name])
+                              }
+                              setPage(1)
+                            }
+
+                            return (
+                              <div key={tag.code} className="flex items-center gap-1.5 py-0.5">
+                                <CustomCheckbox checked={isSelected} onChange={handleTagToggle} />
+                                <span className="text-[11px] text-zinc-600 dark:text-zinc-400 line-clamp-1 leading-snug cursor-pointer" onClick={handleTagToggle} title={tag.name}>
+                                  {tag.name}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {smGroups.length === 0 && (
+                    <div className="text-[10px] text-zinc-400 text-center py-2">暂无解题方法数据</div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </aside>
 
-      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden border-r border-zinc-200 bg-zinc-50/10 dark:border-zinc-800">
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-zinc-50/10">
         <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Search className="size-3.5 shrink-0 text-zinc-400" />
@@ -376,33 +729,32 @@ export function BankTab({
             />
           </div>
           <div className="hidden max-w-[220px] shrink-0 items-center gap-1.5 overflow-x-auto py-1 md:flex">
-            {[
-              ['stage', stage, setStage],
-              ['questionType', questionType, setQuestionType],
-              ['difficulty', difficulty, setDifficulty],
-              ['knowledgePoint', knowledgePoint, setKnowledgePoint],
-              ['solutionMethod', solutionMethod, setSolutionMethod],
-            ].map(([key, value, setter]) => value ? (
-              <span key={String(key)} className="inline-flex items-center gap-0.5 rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-                {String(value)}
-                <X className="size-2.5 cursor-pointer text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200" onClick={() => updateFilter(setter as (value: string) => void, '')} />
+            {stage && (
+              <span className="inline-flex items-center gap-0.5 rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                {stage}
+                <X className="size-2.5 cursor-pointer text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200" onClick={() => updateFilter(setStage, '')} />
               </span>
-            ) : null)}
+            )}
+            {questionType && (
+              <span className="inline-flex items-center gap-0.5 rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                {questionType}
+                <X className="size-2.5 cursor-pointer text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200" onClick={() => updateFilter(setQuestionType, '')} />
+              </span>
+            )}
+            {difficulty && (
+              <span className="inline-flex items-center gap-0.5 rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                {difficulty}
+                <X className="size-2.5 cursor-pointer text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200" onClick={() => updateFilter(setDifficulty, '')} />
+              </span>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-2 border-l border-zinc-200 pl-3 dark:border-zinc-800">
-            <div className="flex items-center rounded-md bg-zinc-100 p-0.5 dark:bg-zinc-900">
-              <button type="button" onClick={() => setViewMode('card')} className={`rounded-sm p-1 transition-colors ${viewMode === 'card' ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100' : 'text-zinc-400 hover:text-zinc-600'}`} title="卡片列表">
-                <Grid className="size-3" />
-              </button>
-              <button type="button" onClick={() => setViewMode('list')} className={`rounded-sm p-1 transition-colors ${viewMode === 'list' ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100' : 'text-zinc-400 hover:text-zinc-600'}`} title="表格视图">
-                <List className="size-3" />
-              </button>
-            </div>
+
             <Button size="sm" variant="outline" asLink to="/questions/basket" icon={ShoppingBag}>试题篮 ({basketCount})</Button>
           </div>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+        <div className="flex-1 space-y-4 overflow-y-auto p-4 pb-16">
           <div className="flex items-center justify-between px-1">
             <span className="font-mono text-[10px] text-zinc-400 dark:text-zinc-500">找到 {totalItems} 道试题</span>
             <button type="button" onClick={selectAllCurrentPage} className="text-[10px] font-bold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200">
@@ -410,124 +762,171 @@ export function BankTab({
             </button>
           </div>
 
-          {viewMode === 'card' ? (
-            <div className="space-y-3.5 pb-20">
-              {items.map((item) => {
-                const selected = selectedIds.includes(item.id)
-                const active = activeItem?.id === item.id
-                const inBasket = basketQuestionIds.has(item.id)
-                return (
-                  <QuestionBankDraftCard
-                    key={item.id}
-                    item={item}
-                    isInBasket={inBasket}
-                    isSelected={selected}
-                    isActive={active}
-                    onToggleBasket={addToBasket}
-                    onSelect={toggleSelected}
-                    onClick={() => {
-                      setPreviewId(item.id)
-                      toggleSelected(item.id)
-                    }}
-                  />
-                )
-              })}
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white pb-20 dark:border-zinc-800 dark:bg-zinc-950">
-              <table className="w-full border-collapse text-left text-xs">
-                <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50 font-medium text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/60">
-                    <th className="w-8 p-2" />
-                    <th className="w-20 p-2 font-mono text-[10px]">ID</th>
-                    <th className="w-20 p-2">学段</th>
-                    <th className="w-20 p-2">题型</th>
-                    <th className="p-2">题干与来源</th>
-                    <th className="w-20 p-2 text-center">难度</th>
-                    <th className="w-20 p-2 text-center">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => {
-                    const inBasket = basketQuestionIds.has(item.id)
-                    return (
-                    <tr key={item.id} onClick={() => { setPreviewId(item.id); toggleSelected(item.id) }} className={`cursor-pointer border-b border-zinc-100 transition-colors hover:bg-zinc-50/70 dark:border-zinc-900 dark:hover:bg-zinc-900/50 ${activeItem?.id === item.id || selectedIds.includes(item.id) ? 'bg-zinc-50 dark:bg-zinc-900/40' : ''}`}>
-                      <td className="p-2" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleSelected(item.id)} className="size-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-950 dark:border-zinc-700 dark:bg-zinc-800" /></td>
-                      <td className="p-2 font-mono text-[10px] text-zinc-400">#{item.serialNo ?? item.questionNo ?? item.id}</td>
-                      <td className="p-2 text-zinc-600 dark:text-zinc-400">{item.stage || '-'}</td>
-                      <td className="p-2 text-zinc-600 dark:text-zinc-400">{item.questionType || '-'}</td>
-                      <td className="min-w-0 p-2"><div className="line-clamp-1 font-medium text-zinc-850 dark:text-zinc-200">{previewText(item) || '题干为空'}</div><div className="truncate text-[11px] text-zinc-400">{displaySource(item.sourceTitle || '')}</div></td>
-                      <td className="p-2 text-center"><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">{difficultyLabel10(item)}</span></td>
-                      <td className="p-2 text-center" onClick={(event) => event.stopPropagation()}><button type="button" onClick={() => { if (!inBasket) addToBasket(item.id) }} className={`rounded p-1 ${inBasket ? 'text-zinc-900 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800' : 'text-zinc-300 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200'}`} title={inBasket ? '已在试题篮中' : '加入试题篮'}><ShoppingBag className="size-3.5" /></button></td>
-                    </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <div className="space-y-3.5 pb-6">
+            {items.map((item) => {
+              const selected = selectedIds.includes(item.id)
+              const active = activeItem?.id === item.id
+              const inBasket = basketQuestionIds.has(item.id)
+              return (
+                <QuestionBankDraftCard
+                  key={item.id}
+                  item={item}
+                  isInBasket={inBasket}
+                  isSelected={selected}
+                  isActive={active}
+                  onToggleBasket={addToBasket}
+                  onSelect={toggleSelected}
+                  onClick={() => {
+                    setPreviewId(item.id)
+                    toggleSelected(item.id)
+                  }}
+                />
+              )
+            })}
+          </div>
 
           {loading ? <Empty text={items.length ? '正在刷新题目...' : '正在读取题目...'} /> : null}
           {error ? <Empty text={`题目读取失败：${error}`} /> : null}
           {!items.length && !loading && !error ? <Empty text={hasActiveFilters ? '未找到匹配筛选条件的题目' : '题库中暂无题目'} /> : null}
+
         </div>
 
-        {selectedIds.length > 0 ? (
-          <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 select-none items-center gap-3.5 rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-950 shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
-            <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-zinc-100 font-mono text-[10px] font-bold text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">{selectedIds.length}</span>
-            <span className="shrink-0 whitespace-nowrap text-[11px] font-medium text-zinc-500 dark:text-zinc-400">已选择</span>
-            <div className="h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-800" />
-            <button type="button" onClick={addSelectedToBasket} className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-zinc-900 px-4 py-1.5 font-semibold text-zinc-50 transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"><PlusSquare className="size-3.5 shrink-0" />加入试题篮</button>
-            <button type="button" disabled title="后端暂未提供批量标记接口" className="inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 font-medium text-zinc-400 opacity-60"><Tag className="size-3.5 shrink-0" />批量标记</button>
-            <button type="button" disabled title="后端暂未提供批量删除接口" className="inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 font-medium text-red-400 opacity-60"><Trash2 className="size-3.5 shrink-0" />批量删除</button>
-            <button type="button" onClick={() => setSelectedIds([])} className="shrink-0 rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"><X className="size-3.5" /></button>
+        {/* Unified Bottom Footer Control Center */}
+        <footer className="absolute bottom-0 left-0 right-0 z-10 flex h-12 items-center border-t border-zinc-200/80 bg-white/70 px-4 backdrop-blur-md dark:border-zinc-800/80 dark:bg-zinc-950/70 select-none text-xs">
+          {/* Left Side: Stats or Multi-Select Actions (Left Column) */}
+          <div className="flex-1 flex items-center justify-start">
+            {selectedIds.length === 0 ? (
+              <span className="text-zinc-500 dark:text-zinc-400 font-medium">找到 {totalItems} 道试题 · 每页 20 条</span>
+            ) : (
+              <span className="font-semibold text-zinc-900 dark:text-zinc-100">已选择 {selectedIds.length} 项</span>
+            )}
           </div>
-        ) : null}
+
+          {/* Center Column: Batch Actions (Only show when selectedIds.length > 0) */}
+          {selectedIds.length > 0 && (
+            <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={addSelectedToBasket}
+                className="inline-flex items-center gap-1 rounded bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200 transition-colors cursor-pointer"
+              >
+                <PlusSquare className="size-3.5 shrink-0" />
+                加入试题篮
+              </button>
+              <button
+                type="button"
+                disabled
+                title="后端暂未提供批量标记接口"
+                className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-[11px] font-medium text-zinc-400 opacity-60 cursor-not-allowed"
+              >
+                <Tag className="size-3.5 shrink-0" />
+                批量标记
+              </button>
+              <button
+                type="button"
+                disabled
+                title="后端暂未提供批量删除接口"
+                className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-[11px] font-medium text-red-400 opacity-60 cursor-not-allowed"
+              >
+                <Trash2 className="size-3.5 shrink-0" />
+                批量删除
+              </button>
+              <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" />
+              <button
+                type="button"
+                onClick={() => setSelectedIds([])}
+                className="text-[11px] font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 cursor-pointer"
+              >
+                取消选择
+              </button>
+            </div>
+          )}
+
+          {/* Right Side: Page Controls (Right Column) */}
+          <div className="flex-1 flex items-center justify-end">
+          {(() => {
+            const totalPages = Math.ceil(totalItems / 20);
+            if (totalPages <= 1) return null;
+
+            const startPage = Math.max(1, page - 2);
+            const endPage = Math.min(totalPages, page + 2);
+            const pages = [];
+            for (let i = startPage; i <= endPage; i++) {
+              pages.push(i);
+            }
+
+            return (
+              <div className="flex items-center gap-1">
+                {/* First Page */}
+                <button
+                  type="button"
+                  onClick={() => setPage(1)}
+                  disabled={page === 1}
+                  className="size-7 rounded border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 cursor-pointer transition-colors flex items-center justify-center"
+                  title="第一页"
+                >
+                  <ChevronsLeft className="size-3.5" />
+                </button>
+
+                {/* Prev Page */}
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="size-7 rounded border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 cursor-pointer transition-colors flex items-center justify-center"
+                  title="上一页"
+                >
+                  <ChevronLeft className="size-3.5" />
+                </button>
+
+                {/* Page Numbers */}
+                {pages.map((p) => {
+                  const isActive = p === page;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPage(p)}
+                      className={`size-7 rounded border text-xs font-semibold transition-all cursor-pointer flex items-center justify-center ${
+                        isActive
+                          ? "bg-zinc-900 border-zinc-900 text-zinc-50 dark:bg-zinc-50 dark:border-zinc-50 dark:text-zinc-950 shadow-xs"
+                          : "border-zinc-200 bg-white text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+
+                {/* Next Page */}
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="size-7 rounded border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 cursor-pointer transition-colors flex items-center justify-center"
+                  title="下一页"
+                >
+                  <ChevronRight className="size-3.5" />
+                </button>
+
+                {/* Last Page */}
+                <button
+                  type="button"
+                  onClick={() => setPage(totalPages)}
+                  disabled={page === totalPages}
+                  className="size-7 rounded border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 cursor-pointer transition-colors flex items-center justify-center"
+                  title="最后一页"
+                >
+                  <ChevronsRight className="size-3.5" />
+                </button>
+              </div>
+            );
+          })()}
+          </div>
+        </footer>
       </main>
 
-      <section className="flex w-[360px] shrink-0 select-text flex-col gap-4 overflow-y-auto border-l border-zinc-200 bg-white p-5 text-left dark:border-zinc-800 dark:bg-zinc-950">
-        {activeItem ? (
-          <>
-            <div className="flex items-center justify-between border-b border-zinc-200 pb-3 dark:border-zinc-800">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">排版渲染即时预览</span>
-              <span className="rounded bg-zinc-100 px-2 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-zinc-800">ID: #{activeItem.serialNo ?? activeItem.questionNo ?? activeItem.id}</span>
-            </div>
 
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="rounded border border-zinc-200/70 bg-zinc-50/50 p-2.5 dark:border-zinc-800 dark:bg-zinc-900/30"><span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400">章节分类</span><span className="mt-0.5 block truncate font-bold text-zinc-850 dark:text-zinc-200">{activeItem.chapter || '未设置'}</span></div>
-              <div className="rounded border border-zinc-200/70 bg-zinc-50/50 p-2.5 dark:border-zinc-800 dark:bg-zinc-900/30"><span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400">题型难度</span><span className="mt-0.5 block font-bold text-zinc-850 dark:text-zinc-200">{activeItem.questionType || '未设题型'} ({difficultyLabel10(activeItem)})</span></div>
-            </div>
-
-            <div className="flex-1 space-y-4">
-              <div className="space-y-1.5"><span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-600">【题干】</span><div className="rounded border border-zinc-200/60 bg-zinc-50/20 p-3 text-xs leading-relaxed text-zinc-900 dark:border-zinc-900 dark:bg-zinc-950/10 dark:text-zinc-100"><QuestionMarkdownContent content={activeItem.stemMarkdown || richBlocksPlainText(activeItem.problemBlocks)} figures={activeItem.figures} /></div></div>
-              <div className="h-px bg-zinc-200/60 dark:bg-zinc-800" />
-              <div className="space-y-1.5"><span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-600">【参考答案】</span><div className="rounded border border-zinc-200/60 bg-zinc-50/20 p-3 text-xs font-semibold leading-relaxed text-zinc-900 dark:border-zinc-900 dark:bg-zinc-950/10 dark:text-zinc-100"><QuestionMarkdownContent content={activeItem.answerText || richBlocksPlainText(activeItem.answerBlocks)} figures={activeItem.figures} /></div></div>
-              <div className="h-px bg-zinc-200/60 dark:bg-zinc-800" />
-              <div className="space-y-1.5"><span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-600">【详细解析】</span><div className="rounded border border-zinc-200/60 bg-zinc-50/20 p-3 text-xs leading-relaxed text-zinc-700 dark:border-zinc-900 dark:bg-zinc-950/10 dark:text-zinc-300"><QuestionMarkdownContent content={activeItem.analysisMarkdown || richBlocksPlainText(activeItem.analysisBlocks)} figures={activeItem.figures} /></div></div>
-            </div>
-
-            <div className="space-y-1.5 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-              <span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">知识点分类</span>
-              <div className="flex flex-wrap gap-1">
-                {(activeItem.knowledgePoints?.length ? activeItem.knowledgePoints : (activeItem.chapter ? [activeItem.chapter] : [])).map((tag) => <span key={tag} className="inline-block rounded bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">{tag}</span>)}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => { if (!basketQuestionIds.has(activeItem.id)) addToBasket(activeItem.id) }}
-              className={`mt-1 flex w-full items-center justify-center gap-1.5 rounded py-2 text-xs font-bold transition-colors ${
-                basketQuestionIds.has(activeItem.id)
-                  ? 'border border-zinc-200 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100'
-                  : 'bg-zinc-900 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200'
-              }`}
-            >
-              {basketQuestionIds.has(activeItem.id) ? <CheckCircle className="size-3.5 text-emerald-600" /> : <ShoppingBag className="size-3.5" />}
-              {basketQuestionIds.has(activeItem.id) ? '已在试题篮中' : '加入试题篮'}
-            </button>
-          </>
-        ) : <div className="flex flex-1 items-center justify-center text-xs text-zinc-400">选择题目查看公式排版渲染</div>}
-      </section>
     </div>
   )
 }

@@ -13,15 +13,16 @@ export function Modal({ title, desc, children, onClose, wide, locked, actions }:
 export function ImagePreviewDialog({ item, onClose }: { item: SliceReviewItem; onClose: () => void }) {
   return (
     <LargeImageDialog
-      caption={`P${item.pageStart}${item.pageEnd !== item.pageStart ? `-P${item.pageEnd}` : ''}`}
+      caption={`P${item.pageStart}${item.pageEnd !== item.pageStart ? `-P${item.pageEnd}` : ''}${item.solutionImageUrl ? ' · 含对应解析裁图' : ''}`}
       imageUrl={item.imageUrl}
+      secondaryImageUrl={item.solutionImageUrl}
       onClose={onClose}
       title={`第 ${item.questionLabel || '?'} 题大图`}
     />
   )
 }
 
-export function LargeImageDialog({ title, caption, imageUrl, onClose }: { title: string; caption?: string; imageUrl: string; onClose: () => void }) {
+export function LargeImageDialog({ title, caption, imageUrl, secondaryImageUrl, onClose }: { title: string; caption?: string; imageUrl: string; secondaryImageUrl?: string; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4">
       <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl">
@@ -33,8 +34,17 @@ export function LargeImageDialog({ title, caption, imageUrl, onClose }: { title:
           <button className="rounded-md border p-2 hover:bg-zinc-50" onClick={onClose}><X className="size-4" /></button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-zinc-100 p-4">
-          <div className="mx-auto w-full max-w-5xl">
-            <img alt={title} className="w-full rounded-xl border bg-white shadow-sm" src={imageUrl} />
+          <div className="mx-auto w-full max-w-5xl space-y-3">
+            <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+              {secondaryImageUrl ? <div className="border-b px-3 py-2 text-xs font-semibold text-zinc-500">题干裁图</div> : null}
+              <img alt={title} className="w-full bg-white" src={imageUrl} />
+            </div>
+            {secondaryImageUrl ? (
+              <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+                <div className="border-b px-3 py-2 text-xs font-semibold text-zinc-500">对应答案解析裁图</div>
+                <img alt={`${title} 解析裁图`} className="w-full bg-white" src={secondaryImageUrl} />
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-none items-center justify-between gap-3 border-t bg-white px-4 py-3 text-xs text-zinc-500">

@@ -528,7 +528,7 @@ Markdown/LaTeX 要求：
               className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                 mode === 'form'
                   ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-850 dark:hover:text-zinc-200'
+                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
               }`}
               onClick={() => setMode('form')}
               type="button"
@@ -539,7 +539,7 @@ Markdown/LaTeX 要求：
               className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                 mode === 'metadata'
                   ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-850 dark:hover:text-zinc-200'
+                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
               }`}
               onClick={() => setMode('metadata')}
               type="button"
@@ -550,7 +550,7 @@ Markdown/LaTeX 要求：
               className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                 mode === 'json'
                   ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-850 dark:hover:text-zinc-200'
+                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
               }`}
               onClick={() => setMode('json')}
               type="button"
@@ -658,7 +658,7 @@ Markdown/LaTeX 要求：
             {/* Right Column: Live Preview */}
             <div className="h-full overflow-y-auto pl-2 border-t pt-4 lg:border-t-0 lg:pt-0 lg:border-l border-zinc-200 dark:border-zinc-800 space-y-4 lg:pl-6">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-350">实时预览效果</span>
+                <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-300">实时预览效果</span>
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -700,7 +700,7 @@ Markdown/LaTeX 要求：
                   <div className="bg-zinc-50/50 dark:bg-zinc-800/30 rounded-xl p-3.5 border border-zinc-200/60 dark:border-zinc-700/30">
                     <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block mb-1">答案</span>
 	                    {draftAnswerText(draft).trim() ? (
-	                      <MarkdownContent className="text-sm text-zinc-805 dark:text-zinc-200 leading-relaxed font-medium" content={draftAnswerText(draft)} />
+	                      <MarkdownContent className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed font-medium" content={draftAnswerText(draft)} />
                     ) : (
                       <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">未设置答案</span>
                     )}
@@ -710,7 +710,7 @@ Markdown/LaTeX 要求：
                     <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block mb-1.5">解析</span>
 	                    {draftAnalysisText(draft).trim() ? (
 	                      <>
-	                        <MarkdownContent className="text-sm text-zinc-850 dark:text-zinc-200 leading-relaxed" content={draftAnalysisText(draft)} />
+	                        <MarkdownContent className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed" content={draftAnalysisText(draft)} />
                         <FigureGallery figures={figuresByUsage(draft.figures ?? [], 'analysis')} className="mt-3" />
                       </>
                     ) : (
@@ -821,7 +821,7 @@ function LabeledInput({ label: labelText, help, value, onChange }: { label: stri
       <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-50 block">{labelText}</span>
       <span className="mt-1 block text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal">{help}</span>
       <input
-        className="mt-2 h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-850 px-3 text-xs dark:text-zinc-100 outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 dark:focus:ring-zinc-200 dark:focus:border-zinc-200 focus:bg-white dark:focus:bg-zinc-800 transition-all"
+        className="mt-2 h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 text-xs dark:text-zinc-100 outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 dark:focus:ring-zinc-200 dark:focus:border-zinc-200 focus:bg-white dark:focus:bg-zinc-800 transition-all"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -835,7 +835,7 @@ function LabeledSelect({ label: labelText, help, value, options, placeholder, on
       <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-50 block">{labelText}</span>
       <span className="mt-1 block text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal">{help}</span>
       <select
-        className="mt-2 h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-850 px-3 text-xs dark:text-zinc-100 outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 dark:focus:ring-zinc-200 dark:focus:border-zinc-200 focus:bg-white dark:focus:bg-zinc-800 transition-all cursor-pointer"
+        className="mt-2 h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 text-xs dark:text-zinc-100 outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 dark:focus:ring-zinc-200 dark:focus:border-zinc-200 focus:bg-white dark:focus:bg-zinc-800 transition-all cursor-pointer"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -861,10 +861,10 @@ function MultiTagSelector({ label: labelText, help, options, values, onChange }:
   }
   return (
     <div className="rounded-xl border bg-white dark:bg-zinc-900 dark:border-zinc-800 p-3">
-      <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-550">{labelText}</p>
+      <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-500">{labelText}</p>
       <p className="mt-1 text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal">{help}</p>
       <select
-        className="mt-2 h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-850 px-3 text-xs dark:text-zinc-100 outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 dark:focus:ring-zinc-200 dark:focus:border-zinc-200 focus:bg-white dark:focus:bg-zinc-800 transition-all cursor-pointer"
+        className="mt-2 h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 text-xs dark:text-zinc-100 outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 dark:focus:ring-zinc-200 dark:focus:border-zinc-200 focus:bg-white dark:focus:bg-zinc-800 transition-all cursor-pointer"
         value=""
         onChange={(event) => addTag(event.target.value)}
       >
@@ -876,7 +876,7 @@ function MultiTagSelector({ label: labelText, help, options, values, onChange }:
           {cleanValues.map((value) => (
             <button
               key={value}
-              className="inline-flex items-center gap-1 rounded-md border border-zinc-200 dark:border-zinc-750 bg-zinc-50 dark:bg-zinc-805 px-2 py-0.5 text-left text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:border-red-200 dark:hover:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/20 hover:text-red-600 dark:hover:text-red-300 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-0.5 text-left text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:border-red-200 dark:hover:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/20 hover:text-red-600 dark:hover:text-red-300 transition-colors cursor-pointer"
               onClick={() => removeTag(value)}
               type="button"
             >
@@ -916,7 +916,7 @@ function LabeledTextarea({
     <div className={`block rounded-xl border bg-white p-3 dark:bg-zinc-900 dark:border-zinc-800 ${className}`}>
       <div className="flex items-center justify-between mb-1.5 gap-2">
         <div className="min-w-0 flex-1">
-          <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-550 block">{labelText}</span>
+          <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-500 block">{labelText}</span>
           <span className="mt-0.5 block text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal">{help}</span>
         </div>
         {headerAction && (
@@ -925,18 +925,18 @@ function LabeledTextarea({
           </div>
         )}
         {showPreview && !readOnly && (
-          <div className="flex gap-0.5 bg-zinc-150 dark:bg-zinc-800 p-0.5 rounded-md text-[9px] border border-zinc-200 dark:border-zinc-750 shrink-0 ml-2">
+          <div className="flex gap-0.5 bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-md text-[9px] border border-zinc-200 dark:border-zinc-700 shrink-0 ml-2">
             <button
               type="button"
               onClick={() => setTab('edit')}
-              className={`px-1.5 py-0.5 rounded transition-all cursor-pointer font-medium ${tab === 'edit' ? 'bg-white dark:bg-zinc-700 text-zinc-850 dark:text-zinc-100 font-bold shadow-sm' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-350'}`}
+              className={`px-1.5 py-0.5 rounded transition-all cursor-pointer font-medium ${tab === 'edit' ? 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-100 font-bold shadow-sm' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
             >
               编辑
             </button>
             <button
               type="button"
               onClick={() => setTab('preview')}
-              className={`px-1.5 py-0.5 rounded transition-all cursor-pointer font-medium ${tab === 'preview' ? 'bg-white dark:bg-zinc-700 text-zinc-850 dark:text-zinc-100 font-bold shadow-sm' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-350'}`}
+              className={`px-1.5 py-0.5 rounded transition-all cursor-pointer font-medium ${tab === 'preview' ? 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-100 font-bold shadow-sm' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
             >
               预览
             </button>
@@ -945,13 +945,13 @@ function LabeledTextarea({
       </div>
       {tab === 'edit' ? (
         <textarea
-          className={`mt-2 w-full resize-y rounded-lg border bg-zinc-50 dark:bg-zinc-850 px-3 py-2 font-mono text-xs leading-6 outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 dark:focus:ring-zinc-200 dark:focus:border-zinc-200 transition-all ${minHeight}`}
+          className={`mt-2 w-full resize-y rounded-lg border bg-zinc-50 dark:bg-zinc-800 px-3 py-2 font-mono text-xs leading-6 outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 dark:focus:ring-zinc-200 dark:focus:border-zinc-200 transition-all ${minHeight}`}
           readOnly={readOnly}
           value={value}
           onChange={(event) => onChange(event.target.value)}
         />
       ) : (
-        <div className={`mt-2 w-full rounded-lg border bg-zinc-50/50 dark:bg-zinc-850/30 px-3.5 py-2.5 text-sm overflow-auto ${minHeight}`}>
+        <div className={`mt-2 w-full rounded-lg border bg-zinc-50/50 dark:bg-zinc-800/30 px-3.5 py-2.5 text-sm overflow-auto ${minHeight}`}>
           {value.trim() ? (
             <QuestionContent blocks={paragraphBlocksFromText(value)} />
           ) : (

@@ -218,7 +218,7 @@ export function SettingsPage() {
                             : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900'
                         }`}
                       >
-                        <span className={`flex size-3 items-center justify-center rounded-sm border ${active ? 'border-white bg-transparent dark:border-zinc-950' : 'border-zinc-350'}`}>
+                        <span className={`flex size-3 items-center justify-center rounded-sm border ${active ? 'border-white bg-transparent dark:border-zinc-950' : 'border-zinc-300'}`}>
                           {active ? <span className="size-1 rounded-sm bg-white dark:bg-zinc-950" /> : null}
                         </span>
                         {stage}
@@ -253,7 +253,7 @@ export function SettingsPage() {
           >
             <Field label="soffice.exe 路径">
               <TextInput mono value={draft.sofficePath ?? ''} onChange={(value) => setDraft({ ...draft, sofficePath: value })} />
-              <p className="text-[11px] leading-normal text-zinc-450 dark:text-zinc-500">
+              <p className="text-[11px] leading-normal text-zinc-400 dark:text-zinc-500">
                 默认安装通常无需填写。当前检测路径：{data?.sofficeDetectedPath || '未检测到'}
               </p>
             </Field>
@@ -406,11 +406,11 @@ export function SettingsPage() {
             }
           >
             {rulesApi.loading ? (
-              <p className="text-xs text-zinc-450">加载规则中...</p>
+              <p className="text-xs text-zinc-400">加载规则中...</p>
             ) : rulesApi.error ? (
               <p className="text-xs text-red-500">{rulesApi.error}</p>
             ) : !rulesDraft ? (
-              <p className="text-xs text-zinc-450">暂无规则数据</p>
+              <p className="text-xs text-zinc-400">暂无规则数据</p>
             ) : (
               <>
                 {rulesSaveStatus ? <StatusBanner status={rulesSaveStatus} /> : null}
@@ -430,12 +430,12 @@ export function SettingsPage() {
                     </button>
                   ))}
                 </div>
-                <div className="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-855 dark:bg-zinc-900/20">
+                <div className="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-900 dark:bg-zinc-900/20">
                   <div>
-                    <h4 className="text-xs font-semibold text-zinc-850 dark:text-zinc-200">{activeRuleMeta.label}</h4>
+                    <h4 className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">{activeRuleMeta.label}</h4>
                     <p className="mt-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">{activeRuleMeta.desc}</p>
                   </div>
-                  <button type="button" onClick={() => addRule(activeRuleCategory)} className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-850">
+                  <button type="button" onClick={() => addRule(activeRuleCategory)} className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                     <Plus className="size-3.5" />
                     新增字典词
                   </button>
@@ -448,9 +448,9 @@ export function SettingsPage() {
                     <span className="w-16 text-center">状态</span>
                     <span className="w-10 text-center">删除</span>
                   </div>
-                  <div className="max-h-[300px] divide-y divide-zinc-150 overflow-y-auto dark:divide-zinc-900">
+                  <div className="max-h-[300px] divide-y divide-zinc-100 overflow-y-auto dark:divide-zinc-900">
                     {activeRules.length === 0 ? (
-                      <div className="p-8 text-center text-xs text-zinc-450 dark:text-zinc-550">该字典分类暂无自定义匹配词，请点击上方“新增字典词”。</div>
+                      <div className="p-8 text-center text-xs text-zinc-400 dark:text-zinc-500">该字典分类暂无自定义匹配词，请点击上方“新增字典词”。</div>
                     ) : (
                       activeRules.map((rule, index) => (
                         <RuleRow
@@ -478,7 +478,7 @@ export function SettingsPage() {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5 text-left">
                 <span className="block text-zinc-500 dark:text-zinc-400">LibreOffice 服务</span>
-                <span className="block text-[11px] text-zinc-400 dark:text-zinc-550">用于转换上传的 Word 格式文件</span>
+                <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">用于转换上传的 Word 格式文件</span>
               </div>
               <SmallStatus ready={Boolean(data?.sofficeAvailable)}>{data?.sofficeAvailable ? '就绪' : '未检测到'}</SmallStatus>
             </div>
@@ -498,7 +498,7 @@ export function SettingsPage() {
           desc="DOC/DOCX 转 PDF 需要本机安装 LibreOffice。"
           onClose={() => setShowLibreOfficeAlert(false)}
         >
-          <div className="space-y-4 text-sm leading-6 text-zinc-600 dark:text-zinc-350">
+          <div className="space-y-4 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
             <p>当前没有找到 LibreOffice 的 soffice.exe。PDF 文件仍可上传；DOC/DOCX 文件会被拦截，避免进入无法处理的切题队列。</p>
             <p>安装 LibreOffice 后重启应用即可自动检测。若安装在非默认目录，请在“系统设置”中填写 soffice.exe 的完整路径。</p>
             <div className="flex flex-wrap gap-2 pt-1">
@@ -518,18 +518,18 @@ export function SettingsPage() {
 function SettingsCard({ title, desc, children, footer }: { title: string; desc: string; children: React.ReactNode; footer?: React.ReactNode }) {
   return (
     <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="border-b border-zinc-150 bg-zinc-50/50 p-5 dark:border-zinc-850 dark:bg-zinc-900/10">
+      <div className="border-b border-zinc-100 bg-zinc-50/50 p-5 dark:border-zinc-800 dark:bg-zinc-900/10">
         <h3 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{title}</h3>
         <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">{desc}</p>
       </div>
       <div className="space-y-5 p-5">{children}</div>
-      {footer ? <div className="flex justify-end border-t border-zinc-150 bg-zinc-50/50 px-5 py-3 dark:border-zinc-850 dark:bg-zinc-900/10">{footer}</div> : null}
+      {footer ? <div className="flex justify-end border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/10">{footer}</div> : null}
     </div>
   )
 }
 
 function SectionTitle({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <span className={`block border-b border-zinc-100 pb-1.5 text-xs font-bold uppercase tracking-wider text-zinc-450 dark:border-zinc-900 ${className}`}>{children}</span>
+  return <span className={`block border-b border-zinc-100 pb-1.5 text-xs font-bold uppercase tracking-wider text-zinc-400 dark:border-zinc-900 ${className}`}>{children}</span>
 }
 
 function Field({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) {
@@ -586,7 +586,7 @@ function SaveButton({ label, loading, onClick }: { label: string; loading: boole
     <button
       onClick={onClick}
       disabled={loading}
-      className="inline-flex items-center gap-1.5 rounded bg-zinc-950 px-3 py-1.5 text-xs font-semibold text-zinc-50 transition-colors hover:bg-zinc-850 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+      className="inline-flex items-center gap-1.5 rounded bg-zinc-950 px-3 py-1.5 text-xs font-semibold text-zinc-50 transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
     >
       {loading ? <LoaderCircle className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
       {label}
@@ -625,7 +625,7 @@ function Toast({ status }: { status: { type: 'success' | 'error'; message: strin
       {status.type === 'success' ? <CheckCircle2 className="size-4.5 shrink-0 text-zinc-400" /> : <AlertCircle className="size-4.5 shrink-0 text-red-500" />}
       <div className="space-y-0.5 text-left">
         <span className="block font-bold">{status.type === 'success' ? '配置保存成功' : '配置保存失败'}</span>
-        <span className="block text-[10px] text-zinc-400 dark:text-zinc-550">{status.message}</span>
+        <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{status.message}</span>
       </div>
     </div>
   )
@@ -660,8 +660,8 @@ function RuleRow({ entry, index, onChange, onDelete }: {
         </select>
       </div>
       <div className="flex w-16 shrink-0 justify-center">
-        <button type="button" onClick={() => onChange({ ...entry, enabled: !entry.enabled })} className="p-1 text-zinc-400 transition-colors hover:text-zinc-650">
-          {entry.enabled ? <ToggleRight className="size-4.5 text-zinc-700 dark:text-zinc-300" /> : <ToggleLeft className="size-4.5 text-zinc-350 dark:text-zinc-700" />}
+        <button type="button" onClick={() => onChange({ ...entry, enabled: !entry.enabled })} className="p-1 text-zinc-400 transition-colors hover:text-zinc-600">
+          {entry.enabled ? <ToggleRight className="size-4.5 text-zinc-700 dark:text-zinc-300" /> : <ToggleLeft className="size-4.5 text-zinc-300 dark:text-zinc-700" />}
         </button>
       </div>
       <div className="flex w-10 shrink-0 justify-center">

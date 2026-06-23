@@ -6,7 +6,6 @@ import { useAsync } from '../hooks/useAsync'
 import type { Basket, CollectionExport, CollectionSummary, QuestionItem, BasketQuestion } from '../types'
 import { Button, Empty, Badge } from './ui'
 import { QuestionMarkdownContent } from './questions/QuestionContent'
-import { INITIAL_MOCK_QUESTIONS, getMockBasket, saveMockBasket } from '../pages/mock/mockData'
 
 const activeBasketStorageKey = 'question-manager.activeCollectionId'
 export const basketUpdatedEvent = 'question-basket-updated'
@@ -59,92 +58,13 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
   const [pageExportFormat, setPageExportFormat] = useState<'Markdown' | 'PDF'>('Markdown')
   const [pageVariant, setPageVariant] = useState<'student' | 'teacher'>('teacher')
 
-  const isMock = location.pathname.startsWith('/mock')
-
   const collections = useAsync<{ items: CollectionSummary[] }>(() => {
-    if (isMock) {
-      const mockIds = getMockBasket()
-      return Promise.resolve({
-        items: [
-          {
-            id: 'mock-basket',
-            title: '模拟试卷',
-            questionCount: mockIds.length,
-          }
-        ]
-      })
-    }
     return collectionsApi.listCollections()
-  }, [isMock])
+  }, [])
 
   const active = useAsync<Basket>(() => {
-    if (isMock) {
-      const mockIds = getMockBasket()
-      const mockQuestions: BasketQuestion[] = mockIds.map((id, index) => {
-        const mockQ = INITIAL_MOCK_QUESTIONS.find(q => q.id === id)
-        const questionType = mockQ?.questionType || '单选题'
-        
-        let score = getDefaultScore(questionType)
-        try {
-          const scoresStr = localStorage.getItem('mock_question_scores')
-          if (scoresStr) {
-            const scoresMap = JSON.parse(scoresStr)
-            if (scoresMap[id] !== undefined) {
-              score = Number(scoresMap[id])
-            }
-          }
-        } catch (e) {
-          // ignore
-        }
-
-        const item: QuestionItem = {
-          id: id,
-          serialNo: mockQ?.serialNo ?? index + 1,
-          questionNo: mockQ?.questionNo ?? String(index + 1),
-          stage: mockQ?.stage ?? '高一上',
-          questionType: questionType,
-          difficultyScore: 0,
-          difficultyScore10: 0,
-          difficultyLabel: mockQ?.difficultyLabel ?? '中',
-          chapter: mockQ?.chapter ?? '',
-          knowledgePoints: mockQ?.knowledgePoints ?? [],
-          solutionMethods: [],
-          sourceTitle: '',
-          bankStatus: mockQ?.bankStatus ?? 'ready',
-          stemMarkdown: mockQ?.stemMarkdown ?? '',
-          answerText: mockQ?.answerText ?? '',
-          analysisMarkdown: mockQ?.analysisMarkdown ?? '',
-          sliceImagePath: '',
-          figures: [],
-          sourceRunId: '',
-          updatedAt: mockQ?.date ?? '',
-          hasFigures: mockQ?.hasFigures ?? false,
-        }
-
-        return {
-          relationId: id,
-          sortOrder: index,
-          score: score,
-          sectionName: undefined,
-          item: item
-        }
-      })
-
-      const title = localStorage.getItem('mock_paper_title') || '模拟试卷'
-      const subtitle = localStorage.getItem('mock_paper_subtitle') || '机密 · 启用前'
-      const timeLimit = Number(localStorage.getItem('mock_paper_time_limit')) || 120
-
-      return Promise.resolve({
-        id: 'mock-basket',
-        title: title,
-        subtitle: subtitle,
-        questionCount: mockIds.length,
-        questions: mockQuestions,
-        timeLimit: timeLimit,
-      } as Basket)
-    }
     return collectionsApi.getCollection(activeId)
-  }, [activeId, isMock])
+  }, [activeId])
 
   useEffect(() => {
     if (active.data) {
@@ -155,10 +75,8 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
   }, [active.data])
 
   useEffect(() => {
-    if (!isMock) {
-      localStorage.setItem(activeBasketStorageKey, activeId)
-    }
-  }, [activeId, isMock])
+    localStorage.setItem(activeBasketStorageKey, activeId)
+  }, [activeId])
 
   useEffect(() => {
     const refresh = () => {
@@ -166,10 +84,8 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
       active.reload()
     }
     window.addEventListener(basketUpdatedEvent, refresh)
-    window.addEventListener('mock-basket-changed', refresh)
     return () => {
       window.removeEventListener(basketUpdatedEvent, refresh)
-      window.removeEventListener('mock-basket-changed', refresh)
     }
   }, [collections.reload, active.reload])
 
@@ -183,16 +99,6 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
   const activeQuestions = active.data?.questions || []
 
   async function createPaper() {
-    if (isMock) {
-      const title = newTitle.trim() || `模拟试卷 ${new Date().toLocaleDateString()}`
-      localStorage.setItem('mock_paper_title', title)
-      setNewTitle('')
-      localStorage.removeItem('mock_question_scores')
-      saveMockBasket([])
-      notifyBasketUpdated()
-      return
-    }
-
     const title = newTitle.trim() || `试卷 ${new Date().toLocaleDateString()}`
     const created = await collectionsApi.createCollection({ title, kind: 'paper' })
     setNewTitle('')
@@ -201,84 +107,28 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
   }
 
   async function patchCollection(patch: Record<string, unknown>) {
-    if (isMock) {
-      if (patch.title !== undefined) {
-        localStorage.setItem('mock_paper_title', String(patch.title))
-      }
-      if (patch.subtitle !== undefined) {
-        localStorage.setItem('mock_paper_subtitle', String(patch.subtitle))
-      }
-      if (patch.timeLimit !== undefined) {
-        localStorage.setItem('mock_paper_time_limit', String(patch.timeLimit))
-      }
-      notifyBasketUpdated()
-      return
-    }
-
     await collectionsApi.updateCollection(activeId, patch)
     collections.reload()
     active.reload()
   }
 
   async function patchItem(relationId: string, patch: Record<string, unknown>) {
-    if (isMock) {
-      if (patch.score !== undefined) {
-        try {
-          const scoresStr = localStorage.getItem('mock_question_scores')
-          const scoresMap = scoresStr ? JSON.parse(scoresStr) : {}
-          scoresMap[relationId] = Number(patch.score)
-          localStorage.setItem('mock_question_scores', JSON.stringify(scoresMap))
-        } catch (e) {
-          // ignore
-        }
-      }
-      notifyBasketUpdated()
-      return
-    }
-
     await collectionsApi.updateItem(activeId, relationId, patch)
     notifyBasketUpdated()
   }
 
   async function removeItem(relationId: string) {
-    if (isMock) {
-      const basket = getMockBasket()
-      const next = basket.filter(id => id !== relationId)
-      saveMockBasket(next)
-      notifyBasketUpdated()
-      return
-    }
-
     await collectionsApi.removeItem(activeId, relationId)
     notifyBasketUpdated()
   }
 
   async function clearCollection() {
     if (!window.confirm('确定要清空当前试卷/试题篮中的所有题目吗？')) return
-    if (isMock) {
-      saveMockBasket([])
-      notifyBasketUpdated()
-      return
-    }
-
     await collectionsApi.clearItems(activeId)
     notifyBasketUpdated()
   }
 
   async function moveItem(relationId: string, direction: -1 | 1) {
-    if (isMock) {
-      const basket = getMockBasket()
-      const index = basket.findIndex(id => id === relationId)
-      const target = index + direction
-      if (index < 0 || target < 0 || target >= basket.length) return
-      const next = [...basket]
-      const [item] = next.splice(index, 1)
-      next.splice(target, 0, item)
-      saveMockBasket(next)
-      notifyBasketUpdated()
-      return
-    }
-
     const questions = active.data?.questions ?? []
     const index = questions.findIndex((entry) => entry.relationId === relationId)
     const target = index + direction
@@ -291,10 +141,6 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
   }
 
   async function exportCollection(format: 'markdown' | 'pdf', variant: 'student' | 'teacher', template: 'worksheet' | 'exam' = 'worksheet') {
-    if (isMock) {
-      alert(`模拟导出（Mock Mode）：格式 ${format}，版本 ${variant}，模板 ${template}`)
-      return
-    }
 
     if (format === 'markdown') {
       setCollapsed(true)
@@ -326,7 +172,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
     return (
       <div className="mock-page-root flex h-[calc(100vh-6rem)] overflow-hidden bg-zinc-50/20 dark:bg-zinc-950 relative select-none">
         <main className="flex-1 flex flex-col overflow-hidden border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50/10">
-          <div className="h-12 shrink-0 border-b border-zinc-200 bg-white flex items-center justify-between px-4 dark:bg-zinc-900 dark:border-zinc-850">
+          <div className="h-12 shrink-0 border-b border-zinc-200 bg-white flex items-center justify-between px-4 dark:bg-zinc-900 dark:border-zinc-800">
             <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
               试题大纲与分值分配 ({active.data?.questions.length ?? 0} 道试题)
             </span>
@@ -372,12 +218,6 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                       const next = [...questions]
                       const [item] = next.splice(draggedIndex, 1)
                       next.splice(index, 0, item)
-                      if (isMock) {
-                        saveMockBasket(next.map((question) => question.item.id))
-                        notifyBasketUpdated()
-                        setDraggedIndex(null)
-                        return
-                      }
                       await collectionsApi.reorder(activeId, next.map((question, order) => ({ relationId: question.relationId, sortOrder: order })))
                       notifyBasketUpdated()
                       setDraggedIndex(null)
@@ -388,7 +228,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                       <span className="flex size-6 items-center justify-center rounded bg-zinc-900 text-xs font-mono font-bold text-white dark:bg-zinc-100 dark:text-zinc-950">
                         {index + 1}
                       </span>
-                      <div className="text-zinc-350 dark:text-zinc-700 mt-2 opacity-50 group-hover:opacity-100 transition-opacity">
+                      <div className="text-zinc-300 dark:text-zinc-700 mt-2 opacity-50 group-hover:opacity-100 transition-opacity">
                         <GripVertical className="size-4" />
                       </div>
                     </div>
@@ -403,7 +243,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                       </div>
                       <div className="flex items-center justify-between pt-2.5 border-t border-zinc-100 dark:border-zinc-800 mt-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-zinc-450 dark:text-zinc-550 uppercase tracking-wider">设定分值:</span>
+                          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">设定分值:</span>
                           <div className="flex items-center border border-zinc-200 dark:border-zinc-800 rounded bg-white dark:bg-zinc-900 px-1 py-0.5">
                             <input
                               type="number"
@@ -492,11 +332,11 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
             <div className="space-y-1.5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">输出目标格式</span>
               <div className="grid grid-cols-3 gap-2">
-                <button type="button" onClick={() => setPageExportFormat('Markdown')} className={`flex flex-col items-center gap-1.5 p-2.5 border rounded-lg transition-colors ${pageExportFormat === 'Markdown' ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900/60 font-semibold' : 'border-zinc-250 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-850'}`}>
+                <button type="button" onClick={() => setPageExportFormat('Markdown')} className={`flex flex-col items-center gap-1.5 p-2.5 border rounded-lg transition-colors ${pageExportFormat === 'Markdown' ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900/60 font-semibold' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800'}`}>
                   <FileCode2 className={`size-5 ${pageExportFormat === 'Markdown' ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}`} />
                   <span className="text-[10px]">Markdown (.md)</span>
                 </button>
-                <button type="button" onClick={() => setPageExportFormat('PDF')} className={`flex flex-col items-center gap-1.5 p-2.5 border rounded-lg transition-colors ${pageExportFormat === 'PDF' ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900/60 font-semibold' : 'border-zinc-250 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-850'}`}>
+                <button type="button" onClick={() => setPageExportFormat('PDF')} className={`flex flex-col items-center gap-1.5 p-2.5 border rounded-lg transition-colors ${pageExportFormat === 'PDF' ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900/60 font-semibold' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800'}`}>
                   <FileText className={`size-5 ${pageExportFormat === 'PDF' ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}`} />
                   <span className="text-[10px]">PDF 电子卷</span>
                 </button>
@@ -512,9 +352,9 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                 <Sparkles className="size-3 text-zinc-400" />
                 试卷质量审查
               </h4>
-              <div className="flex items-center justify-between text-zinc-500"><span>试题数量:</span><span className="font-bold text-zinc-850 dark:text-zinc-200">{active.data?.questionCount ?? 0} 道</span></div>
-              <div className="flex items-center justify-between text-zinc-500"><span>估算总分:</span><span className="font-mono font-bold text-zinc-850 dark:text-zinc-200">{totalScore} 分</span></div>
-              <div className="flex items-center justify-between text-zinc-500"><span>考试时长:</span><span className="font-semibold text-zinc-850 dark:text-zinc-200">{localTimeLimit || '-'} 分钟</span></div>
+              <div className="flex items-center justify-between text-zinc-500"><span>试题数量:</span><span className="font-bold text-zinc-800 dark:text-zinc-200">{active.data?.questionCount ?? 0} 道</span></div>
+              <div className="flex items-center justify-between text-zinc-500"><span>估算总分:</span><span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">{totalScore} 分</span></div>
+              <div className="flex items-center justify-between text-zinc-500"><span>考试时长:</span><span className="font-semibold text-zinc-800 dark:text-zinc-200">{localTimeLimit || '-'} 分钟</span></div>
             </div>
           </div>
 
@@ -547,7 +387,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
       {collapsed && (
         <button
           onClick={() => setCollapsed(false)}
-          className="fixed right-0 top-1/2 -translate-y-1/2 bg-white dark:bg-zinc-900 border border-r-0 border-zinc-200 dark:border-zinc-800 shadow-xl hover:shadow-2xl rounded-l-2xl px-2.5 py-4 flex flex-col items-center gap-3 text-zinc-550 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all z-40 group cursor-pointer animate-in slide-in-from-right duration-250"
+          className="fixed right-0 top-1/2 -translate-y-1/2 bg-white dark:bg-zinc-900 border border-r-0 border-zinc-200 dark:border-zinc-800 shadow-xl hover:shadow-2xl rounded-l-2xl px-2.5 py-4 flex flex-col items-center gap-3 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all z-40 group cursor-pointer animate-in slide-in-from-right duration-250"
           title="展开试题篮"
         >
           <div className="relative">
@@ -575,10 +415,10 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
         {/* Drawer Header */}
         <div className="h-14 flex items-center justify-between px-5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 z-20 shrink-0">
           <div className="flex items-center gap-2.5 select-none">
-            <div className="p-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-650 dark:text-zinc-300 rounded-lg border border-zinc-250 dark:border-zinc-700">
+            <div className="p-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-lg border border-zinc-200 dark:border-zinc-700">
               <ShoppingBag className="w-4 h-4" />
             </div>
-            <span className="font-bold text-zinc-850 dark:text-zinc-200 text-sm">试题篮工作台</span>
+            <span className="font-bold text-zinc-800 dark:text-zinc-200 text-sm">试题篮工作台</span>
           </div>
           <div className="flex items-center gap-1.5">
             <button
@@ -586,7 +426,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
               title="全屏独立编辑"
               onClick={() => {
                 setCollapsed(true)
-                navigate(isMock ? '/mock/basket' : '/questions/basket')
+                navigate('/questions/basket')
               }}
             >
               <Maximize2 className="w-4 h-4" />
@@ -610,7 +450,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
               <div className="flex gap-2 relative">
                 <input
                   autoFocus
-                  className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200 focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-650 outline-none transition-all"
+                  className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200 focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 outline-none transition-all"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   onKeyDown={(e) => {
@@ -628,7 +468,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                     createPaper()
                     setShowCreateInput(false)
                   }}
-                  className="px-3 py-2 bg-zinc-900 hover:bg-zinc-850 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-955 dark:hover:bg-zinc-200 rounded-xl text-xs font-semibold transition-all shadow-sm cursor-pointer"
+                  className="px-3 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200 rounded-xl text-xs font-semibold transition-all shadow-sm cursor-pointer"
                 >
                   确定
                 </button>
@@ -643,7 +483,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
               <div className="flex gap-2 relative">
                 <div className="relative flex-1">
                   <select
-                    className="w-full appearance-none rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 pl-3 pr-8 py-2 text-sm text-zinc-800 dark:text-zinc-200 font-semibold focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-650 outline-none transition-all cursor-pointer"
+                    className="w-full appearance-none rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 pl-3 pr-8 py-2 text-sm text-zinc-800 dark:text-zinc-200 font-semibold focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 outline-none transition-all cursor-pointer"
                     value={activeId}
                     onChange={(event) => setActiveId(event.target.value)}
                   >
@@ -658,7 +498,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                   </div>
                 </div>
                 <button
-                  className="p-2 border border-zinc-250 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-655 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all shadow-sm shrink-0 cursor-pointer"
+                  className="p-2 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all shadow-sm shrink-0 cursor-pointer"
                   title="新建试卷"
                   onClick={() => setShowCreateInput(true)}
                 >
@@ -699,21 +539,21 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
 
             {/* Stats Cards Row */}
             <div className="grid grid-cols-3 gap-2.5">
-              <div className="bg-zinc-55/40 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2 flex flex-col justify-center select-none">
+              <div className="bg-zinc-50/40 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2 flex flex-col justify-center select-none">
                 <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500 mb-0.5">
                   <Hash className="w-3 h-3" />
                   <span className="text-[10px] font-semibold">题数</span>
                 </div>
                 <div className="font-bold text-base text-zinc-900 dark:text-zinc-100 leading-none">{active.data?.questionCount ?? 0}</div>
               </div>
-              <div className="bg-zinc-55/40 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2 flex flex-col justify-center select-none">
+              <div className="bg-zinc-50/40 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2 flex flex-col justify-center select-none">
                 <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500 mb-0.5">
                   <Award className="w-3 h-3" />
                   <span className="text-[10px] font-semibold">总分</span>
                 </div>
                 <div className="font-bold text-base text-zinc-900 dark:text-zinc-100 leading-none">{totalScore}</div>
               </div>
-              <div className="bg-zinc-55/40 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2 flex flex-col justify-center focus-within:ring-1 ring-zinc-400 dark:ring-zinc-650 transition-all">
+              <div className="bg-zinc-50/40 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2 flex flex-col justify-center focus-within:ring-1 ring-zinc-400 dark:ring-zinc-600 transition-all">
                 <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500 mb-0.5 select-none">
                   <Clock className="w-3 h-3" />
                   <span className="text-[10px] font-semibold">时长(分)</span>
@@ -769,19 +609,12 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                       const [item] = next.splice(draggedIndex, 1)
                       next.splice(index, 0, item)
 
-                      if (isMock) {
-                        saveMockBasket(next.map(q => q.item.id))
-                        notifyBasketUpdated()
-                        setDraggedIndex(null)
-                        return
-                      }
-
                       await collectionsApi.reorder(activeId, next.map((entry, order) => ({ relationId: entry.relationId, sortOrder: order })))
                       notifyBasketUpdated()
                       setDraggedIndex(null)
                     }}
                     onDragEnd={() => setDraggedIndex(null)}
-                    className={`group bg-card rounded-lg border border-border p-3.5 shadow-sm hover:border-zinc-400 dark:hover:border-zinc-650 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden flex gap-3 cursor-grab active:cursor-grabbing ${
+                    className={`group bg-card rounded-lg border border-border p-3.5 shadow-sm hover:border-zinc-400 dark:hover:border-zinc-600 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden flex gap-3 cursor-grab active:cursor-grabbing ${
                       draggedIndex === index ? 'opacity-40 border-dashed border-border bg-muted/30' : ''
                     }`}
                   >
@@ -797,7 +630,6 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                       <div
                         className="flex items-start gap-1.5 cursor-pointer hover:opacity-85 transition-opacity"
                         onClick={() => {
-                          if (isMock) return
                           setCollapsed(true)
                           navigate(`/questions/${encodeURIComponent(entry.item.id)}`)
                         }}

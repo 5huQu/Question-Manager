@@ -6,7 +6,17 @@ import { Badge, Button } from '@/components/ui'
 import type { ApiRun } from '@/types'
 import { fileRoleLabel, label, materialTypeLabel, statusVariant } from '@/utils/questionDisplay'
 
-export function OcrHistoryRow({ run, onReload }: { run: ApiRun; onReload: () => void }) {
+export function OcrHistoryRow({
+  run,
+  onReload,
+  isSelected = false,
+  onSelect
+}: {
+  run: ApiRun;
+  onReload: () => void;
+  isSelected?: boolean;
+  onSelect?: (id: string) => void;
+}) {
   const [action, setAction] = useState('')
   const [actionError, setActionError] = useState('')
 
@@ -59,7 +69,21 @@ export function OcrHistoryRow({ run, onReload }: { run: ApiRun; onReload: () => 
   const shortRunId = parts.length > 2 ? parts.slice(0, 3).join('_') : run.runId
 
   return (
-    <tr className="border-b border-zinc-100 transition-colors hover:bg-zinc-50 dark:border-zinc-900 dark:hover:bg-zinc-900/50">
+    <tr className={`border-b transition-colors hover:bg-zinc-50/50 dark:hover:bg-zinc-900/30 ${
+      isSelected
+        ? 'bg-zinc-50/40 border-zinc-900 dark:bg-zinc-900/40 dark:border-zinc-100'
+        : 'border-zinc-100 dark:border-zinc-900'
+    }`}>
+      <td className="p-4 align-middle w-10 text-center" onClick={(e) => e.stopPropagation()}>
+        {onSelect && (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onSelect(run.runId)}
+            className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 cursor-pointer"
+          />
+        )}
+      </td>
       <td className="p-4 align-middle max-w-[220px]">
         <div className="truncate font-semibold text-zinc-950 dark:text-zinc-50" title={run.paperTitle || run.pdfName}>
           {run.paperTitle || run.pdfName}
