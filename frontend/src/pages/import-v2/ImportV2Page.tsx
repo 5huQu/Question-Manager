@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { importV2Api, type ImportV2Candidate, type ImportV2OcrDocument, type ImportV2SourceDocument } from '@/api/importV2'
 import { MarkdownContent } from '@/components/MarkdownContent'
+import { MarkdownWithInlineFigures } from '@/components/questions/QuestionContent'
 import { PageTitle, Panel, Badge, Button, Empty } from '@/components/ui'
 import { assetUrl } from '@/utils/questionDisplay'
 
@@ -756,58 +757,31 @@ export default function ImportV2Page() {
                       <span>题干内容</span>
                     </div>
                     <div className="bg-zinc-50/30 dark:bg-zinc-900/5 p-4 rounded-lg border border-zinc-100 dark:border-zinc-900 min-h-16 leading-relaxed">
-                      <MarkdownContent content={activeQuestion.stemMarkdown || '（空）'} className="text-sm font-normal" />
+                      <MarkdownWithInlineFigures content={activeQuestion.stemMarkdown || '（空）'} figures={activeQuestion.figures} className="text-sm font-normal" />
                     </div>
                   </section>
 
-                  {/* 已剪裁题图展示 */}
-                  {activeQuestion.figures && activeQuestion.figures.length > 0 && (
-                    <section className="space-y-1.5 animate-in fade-in duration-200">
-                      <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-500 border-b pb-1 dark:border-zinc-800">
-                        <ImageIcon className="size-3.5 text-zinc-400" />
-                        <span>已提取的题目插图 ({activeQuestion.figures.length})</span>
-                      </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {activeQuestion.figures.map((fig, idx) => (
-                          <div key={fig.id || idx} className="rounded-lg border bg-zinc-50/10 dark:bg-zinc-900/5 p-2 flex flex-col items-center justify-center space-y-1">
-                            {fig.path ? (
-                              <img
-                                src={assetUrl(fig.path)}
-                                alt={`插图 ${idx + 1}`}
-                                className="max-h-24 object-contain rounded border border-zinc-200 dark:border-zinc-800 bg-white"
-                              />
-                            ) : (
-                              <div className="h-16 flex items-center justify-center text-zinc-400 italic text-[10px]">无法加载图片</div>
-                            )}
-                            <span className="text-[10px] text-zinc-400 font-medium">插图 {idx + 1} ({fig.usage === 'analysis' ? '解析图' : '题干图'})</span>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  )}
+                  {/* 自动识别答案 */}
+                  <section className="space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-500 border-b pb-1 dark:border-zinc-800">
+                      <CheckCircle2 className="size-3.5 text-zinc-400" />
+                      <span>自动识别答案</span>
+                    </div>
+                    <div className="bg-zinc-50/30 dark:bg-zinc-900/5 p-4 rounded-lg border border-zinc-100 dark:border-zinc-900 min-h-12 leading-relaxed">
+                      <MarkdownWithInlineFigures content={activeQuestion.answerText || '（无）'} figures={activeQuestion.figures} className="text-sm font-normal" />
+                    </div>
+                  </section>
 
-                  {/* 答案与解析分栏预览 */}
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <section className="space-y-1.5">
-                      <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-500 border-b pb-1 dark:border-zinc-800">
-                        <CheckCircle2 className="size-3.5 text-zinc-400" />
-                        <span>自动识别答案</span>
-                      </div>
-                      <div className="bg-zinc-50/30 dark:bg-zinc-900/5 p-4 rounded-lg border border-zinc-100 dark:border-zinc-900 min-h-12 leading-relaxed">
-                        <MarkdownContent content={activeQuestion.answerText || '（无）'} className="text-sm font-normal" />
-                      </div>
-                    </section>
-
-                    <section className="space-y-1.5">
-                      <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-500 border-b pb-1 dark:border-zinc-800">
-                        <Compass className="size-3.5 text-zinc-400" />
-                        <span>自动解析步骤</span>
-                      </div>
-                      <div className="bg-zinc-50/30 dark:bg-zinc-900/5 p-4 rounded-lg border border-zinc-100 dark:border-zinc-900 min-h-12 leading-relaxed">
-                        <MarkdownContent content={activeQuestion.analysisMarkdown || '（无）'} className="text-sm font-normal" />
-                      </div>
-                    </section>
-                  </div>
+                  {/* 自动解析步骤 */}
+                  <section className="space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-500 border-b pb-1 dark:border-zinc-800">
+                      <Compass className="size-3.5 text-zinc-400" />
+                      <span>自动解析步骤</span>
+                    </div>
+                    <div className="bg-zinc-50/30 dark:bg-zinc-900/5 p-4 rounded-lg border border-zinc-100 dark:border-zinc-900 min-h-12 leading-relaxed">
+                      <MarkdownWithInlineFigures content={activeQuestion.analysisMarkdown || '（无）'} figures={activeQuestion.figures} className="text-sm font-normal" />
+                    </div>
+                  </section>
                 </div>
               </div>
             ) : (

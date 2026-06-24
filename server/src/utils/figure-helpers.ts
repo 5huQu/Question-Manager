@@ -8,7 +8,7 @@ import { db } from '../db/connection.js'
 import { getRun } from '../db/runs.js'
 import { pythonCommand } from '../services/settings/python.js'
 
-const INLINE_IMAGE_REFERENCE_RE = /<img\b[^>]*\bsrc\s*=\s*['"][^'"]+['"][^>]*>/gi
+const INLINE_IMAGE_REFERENCE_RE = /<img\b[^>]*\bsrc\s*=\s*['"][^'"]+['"][^>]*>|!\[[^\]]*\]\([^)]+\)/gi
 const INLINE_IMAGE_PLACEHOLDER_RE = /<!--\s*OCR_IMAGE_REFERENCE:(stem|answer|analysis):\d+\s*-->/gi
 const INLINE_BOUND_FIGURE_RE = /<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->/gi
 const INLINE_IMAGE_WARNING_RE = /\n?>\s*⚠️\s*缺少可绑定的(?:题干|答案|解析)图（引用\s*\d+\/\d+）\s*\n?/g
@@ -578,6 +578,7 @@ function cleanOcrPresentationHtml(value: string, field?: InlineImageField) {
     // figure creates a false 2-references/1-image mismatch.
     .replace(/(<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->)\s*(?:图|figure)\s*\d+\s*/gi, '$1\n')
     .replace(/(<img\b[^>]*\bsrc\s*=\s*['"][^'"]+['"][^>]*>)\s*(?:图|figure)\s*\d+\s*/gi, '$1\n')
+    .replace(/(!\[[^\]]*\]\([^)]+\))\s*(?:图|figure)\s*\d+\s*/gi, '$1\n')
     // Some scanned multiple-choice pages repeat a bare option letter after
     // the corresponding image. The visible `A.` already labels the option.
     .replace(/(<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->)\s*[A-D]\s*(?=\n|$)/gi, '$1\n')

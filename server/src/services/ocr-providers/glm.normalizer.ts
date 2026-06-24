@@ -8,6 +8,7 @@ import {
   type OCRDocumentNormalizerOptions,
   type NormalizedBlockDraft,
   type NormalizedPageDraft,
+  normalizeHtmlImageTags,
   stableNormalizerId,
   stringFrom,
 } from './ocr-document.normalizer.js'
@@ -30,8 +31,11 @@ function pageSizeFromInfo(info: Record<string, unknown>, fallback: Record<string
 
 function markdownForGlmBlock(type: OCRBlockType, content: string) {
   if (!content) return ''
-  if (type === 'image') return '<img src="' + content + '">'
-  return content
+  if (type === 'image') {
+    const normalizedImage = normalizeHtmlImageTags(content)
+    return normalizedImage === content ? `![题图](${content.replace(/\\/g, '\\\\').replace(/\)/g, '\\)')})` : normalizedImage
+  }
+  return normalizeHtmlImageTags(content)
 }
 
 function normalizeGlmBlock(

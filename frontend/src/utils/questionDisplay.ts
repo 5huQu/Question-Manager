@@ -133,6 +133,7 @@ export function splitTags(value: string) {
 }
 
 export function assetUrl(value: string) {
+  if (/^(?:https?:)?\/\//i.test(value) || /^data:image\//i.test(value)) return value
   return `/assets/${value.replace(/^question_assets\//, '').replace(/^\/+/, '')}`
 }
 

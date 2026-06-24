@@ -326,6 +326,8 @@ CREATE TABLE IF NOT EXISTS question_candidates (
   figures_json TEXT NOT NULL DEFAULT '[]',
   source_refs_json TEXT NOT NULL DEFAULT '[]',
   status TEXT NOT NULL DEFAULT 'needs_review',
+  committed_question_id TEXT NOT NULL DEFAULT '',
+  committed_at TEXT NOT NULL DEFAULT '',
   issues_json TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -422,16 +424,27 @@ POST /api/question-candidates/:id/commit
 
 POST /api/question-candidates/commit
 
-8. 进入手动修正
+8. 进入手动修正（规划中 / 暂未实现）
 
 POST /api/question-candidates/:id/manual-fix-session
 
-返回：
+> [!NOTE]
+> 该 API 目前处于**规划中/未实现**状态。
 
-{
-  "sessionId": "...",
-  "url": "/tools/import/candidates/.../manual-fix"
-}
+9. 解析配置管理相关 API（已实现）
+
+- 获取解析器配置：`GET /api/import-flow-v2/parser-config`
+- 更新解析器配置：`PUT /api/import-flow-v2/parser-config`
+- 重置解析器配置：`POST /api/import-flow-v2/parser-config/reset`
+
+10. 其他辅助 API（已实现）
+
+- 原始资料列表查询：`GET /api/source-documents`
+- 上传资料文件：`POST /api/source-documents/upload`
+- 获取指定资料详情：`GET /api/source-documents/:id`
+- OCR 文档列表查询：`GET /api/ocr-documents`
+- 直接导入 OCR 离线 JSON 统一结构：`POST /api/ocr-documents/import-json`
+- 获取指定 OCR 文档详情：`GET /api/ocr-documents/:id`
 
 九、前端页面调整
 
@@ -799,3 +812,42 @@ pdf_slicer_review_items
 新的定位是：
 
 面向数学教师的本地优先资料入库与题库管理工具。系统默认通过 Doc2X 或 GLM-OCR 对整份资料进行识别，自动生成待确认题目；当题号、解析、题图或跨页内容出现异常时，教师可以通过手动修正工具校准题目范围和图片归属，最终形成可检索、可组卷、可导出的数学题库。
+
+十六、当前已完成能力、未完成能力与已知限制 (2026年6月稳定化整理)
+
+### 1. 已完成能力
+
+* **统一的数据结构与数据表定义**：
+  * 定义并实现了原始资料记录 (`SourceDocument`)、统一的 OCR 中间格式 (`OCRDocument`)、待入库候选题 (`QuestionCandidate`) 结构。
+  * 数据库中成功创建了配套的 `source_documents`、`ocr_documents`、`question_candidates` 底表。
+* **资料上传与本地存盘**：
+  * 支持用户上传 PDF 原始文件和 PNG/JPG 图片格式并持久化存储于本地专属 `import-flow-v2/source-documents` 目录。
+* **自动识别 pipeline（GLM-OCR）**：
+  * 接入了 GLM-OCR Layout Parsing 布局解析接口，支持异步轮询识别、中间结果与状态文件的本地写入和持久化记录。
+* **模拟 JSON 导入功能**：
+  * 支持通过前端复选框上传本地模拟的 `OCRDocument` JSON 结构，方便进行纯离线测试与调试。
+* **候选题自动解析与匹配**：
+  * 实现了从 OCR 产出的统一 Markdown 内容中自动按规则切分题号、识别并切分“题干”、“答案”、“解析”等段落的能力。
+  * 支持关联 block layout 并在题干/解析渲染预览中关联及渲染 inline 图像。
+* **规则配置管理**：
+  * 提供了 `/api/import-flow-v2/parser-config` 相关配置接口，可动态获取、自定义或重置切题正则与关键词。
+* **前端展示与确认入库**：
+  * 构建了 `/tools/import`（资料导入 v2）前端控制台。
+  * 支持对提取的题目按条件过滤（全部、可以入库、建议核对、需要修正）和卡片式详细对比。
+  * 支持单个/批量“一键确认入库”，完美将候选题目同步映射保存入 `question_bank_items`，支持知识点/难度系数的转换与题图映射，并修改候选题状态为 `committed`。
+  * 支持批量跳过本地候选记录的操作。
+
+### 2. 未完成能力 / 规划中能力
+
+* **Doc2X 在线识别接入**：
+  * 当前在线自动识别流程仅对接并支持 GLM-OCR；Doc2X 当前仅支持通过离线 JSON 转换导入，暂无直接的在线接口对接。
+* **手动修正交互与 BBox Canvas 深度集成**：
+  * API `POST /api/question-candidates/:id/manual-fix-session` 目前处于暂未开发状态。
+  * 在当前 v2 页面上，对于存在异常问题的题目，尚不支持在界面上直观调用 BBoxCanvas 对题目边界、坐标框、题图归属进行手动微调。
+
+### 3. 已知限制
+
+* **OCR 依赖外部 API 秘钥**：
+  * 自动识别强依赖于 GLM 等第三方 API 凭证。如果未在设置中配置相应 Key，用户必须通过导入模拟 JSON 来浏览待确认页面。
+* **题图只读预览**：
+  * 提取的题目插图在 v2 确认入库界面仅供只读预览展示，如果插图归属有误或错漏，目前需要在入库后到“题库主库”或通过 v1 传统切题中心进行二次修剪和重置。

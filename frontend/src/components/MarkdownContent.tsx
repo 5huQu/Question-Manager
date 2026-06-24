@@ -276,14 +276,26 @@ function isInsideMathAt(value: string, offset: number) {
 }
 
 function normalizeRawLatexOutsideMath(value: string) {
-  const parts = splitMathSegments(value)
-  return parts.map((part) => {
+  const masks: string[] = []
+  const maskPattern = /(!\[[^\]]*\]\([^)]+\)|\[[^\]]*\]\([^)]+\)|<[^>]+>)/g
+  
+  const masked = value.replace(maskPattern, (match) => {
+    masks.push(match)
+    return `___MASKED_VALUE_${masks.length - 1}___`
+  })
+
+  const parts = splitMathSegments(masked)
+  const processed = parts.map((part) => {
     if (part.math) return part.text
     return part.text
       .split('\n')
       .map((line) => wrapRawLatexLine(line))
       .join('\n')
   }).join('')
+
+  return processed.replace(/___MASKED_VALUE_(\d+)___/g, (_, index) => {
+    return masks[Number(index)]
+  })
 }
 
 function splitMathSegments(value: string) {

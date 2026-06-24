@@ -13,7 +13,7 @@ const glmPayload = {
   },
   layout_details: [
     [
-      { index: 1, label: 'text', content: '1. 已知函数 $f(x)=x^2$，求 $f(2)$。', bbox_2d: [10, 20, 600, 80], confidence: 0.98 },
+      { index: 1, label: 'text', content: '1. 已知函数 $f(x)=x^2$，求 $f(2)$。\n<div style="text-align:center">\n<img class="figure" src="https://example.com/a.png?x=1&y=2$z=value" loading="lazy">\n</div>', bbox_2d: [10, 20, 600, 80], confidence: 0.98 },
       { index: 2, label: 'image', content: 'https://example.test/glm-figure-1.png', bbox_2d: [80, 120, 360, 320] },
     ],
     [
@@ -60,6 +60,9 @@ assert.equal(glmDocument.pages[0].blocks.length, 2)
 assert.equal(glmDocument.assets.length, 1)
 assert.match(glmDocument.markdown, /GLM_PAGE:1/)
 assert.match(glmDocument.markdown, /已知函数/)
+assert.match(glmDocument.markdown, /!\[题图\]\(https:\/\/example\.com\/a\.png\?x=1&y=2\$z=value\)/)
+assert.doesNotMatch(glmDocument.markdown, /<img\b/i)
+assert.doesNotMatch(glmDocument.markdown, /<div\b/i)
 assert.ok(glmDocument.pages[0].blocks[0].markdownStart !== undefined)
 
 const doc2xDocument = normalizeDoc2xOCRDocument(doc2xPayload, {
@@ -77,6 +80,7 @@ assert.equal(doc2xDocument.pages[0].blocks.length, 2)
 assert.equal(doc2xDocument.assets.length, 1)
 assert.match(doc2xDocument.markdown, /DOC2X_PAGE:1/)
 assert.match(doc2xDocument.markdown, /三角形面积/)
+assert.match(doc2xDocument.markdown, /!\[题图\]\(https:\/\/example\.test\/doc2x-figure-1\.png\)/)
 assert.equal(doc2xDocument.metadata.taskId, 'doc2x-task-1')
 
 console.log('ocr document normalizer ok')

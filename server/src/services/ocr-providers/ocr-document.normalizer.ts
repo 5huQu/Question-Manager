@@ -92,20 +92,46 @@ export function stableNormalizerId(prefix: string, parts: unknown[]) {
   return prefix + '_' + digest
 }
 
-function escapeHtmlAttribute(value: string) {
+function decodeHtmlAttribute(value: string) {
   return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+}
+
+function markdownImage(url: string) {
+  const source = decodeHtmlAttribute(String(url || '').trim())
+  if (!source) return ''
+  // Keep the common URL form readable. Parentheses are escaped only when needed
+  // so query parameters such as ?, &, $, and = remain unchanged.
+  return `![题图](${source.replace(/\\/g, '\\\\').replace(/\)/g, '\\)')})`
+}
+
+/** Convert provider HTML image tags without enabling arbitrary HTML rendering. */
+export function normalizeHtmlImageTags(value: string) {
+  const withoutImageOnlyDivs = String(value || '').replace(/<div\b[^>]*>\s*(<img\b[\s\S]*?>)\s*<\/div>/gi, '$1')
+  return withoutImageOnlyDivs.replace(/<img\b[\s\S]*?>/gi, (tag) => {
+    const quoted = /\bsrc\s*=\s*(["'])([\s\S]*?)\1/i.exec(tag)
+    const unquoted = /\bsrc\s*=\s*([^\s>]+)/i.exec(tag)
+    const src = quoted?.[2] || unquoted?.[1] || ''
+    return src ? markdownImage(src) : tag
+  })
+}
+
+function imageMarkdownForSource(value: string) {
+  const normalized = normalizeHtmlImageTags(value)
+  if (/^!\[[^\]]*]\([\s\S]*\)$/.test(normalized.trim())) return normalized.trim()
+  return markdownImage(value)
 }
 
 function markdownForBlock(block: NormalizedBlockDraft) {
-  if (block.markdown !== undefined) return block.markdown
+  if (block.markdown !== undefined) return normalizeHtmlImageTags(block.markdown)
   const content = stringFrom(block.content).trim()
   if (!content) return ''
-  if (block.type === 'image') return '<img src="' + escapeHtmlAttribute(content) + '">'
-  return content
+  if (block.type === 'image') return imageMarkdownForSource(content)
+  return normalizeHtmlImageTags(content)
 }
 
 function normalizePageNo(value: number, fallback: number) {
@@ -129,9 +155,9 @@ export function createNormalizedOCRDocument(
     if (markdown) markdown += '\n\n'
     markdown += '<!-- ' + provider.toUpperCase() + '_PAGE:' + pageNo + ' -->\n'
 
-    const pageMarkdown = draft.markdown !== undefined
+    const pageMarkdown = normalizeHtmlImageTags(draft.markdown !== undefined
       ? stringFrom(draft.markdown).trim()
-      : draft.blocks.map(markdownForBlock).filter(Boolean).join('\n\n')
+      : draft.blocks.map(markdownForBlock).filter(Boolean).join('\n\n'))
     const pageContentStart = markdown.length
     markdown += pageMarkdown
 

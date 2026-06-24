@@ -158,4 +158,46 @@ const unplacedImageDocument = { ...imageBetweenDocument, id: 'ocr_unplaced_image
 const unplacedImageCandidates = parseQuestionCandidates(unplacedImageDocument, { now: '2026-06-24T00:00:00.000Z' })
 assert.equal(unplacedImageCandidates.some((candidate) => candidate.issues.some((issue) => issue.code === 'unplaced_figure')), true)
 
+const inlineMarkdownImageDocument = {
+  ...ocrDocument,
+  id: 'ocr_inline_markdown_image_test',
+  markdown: [
+    '1. 如图求值。',
+    '![题图](https://example.com/stem.png?x=1&y=2)',
+    '【解析】',
+    '![解析图](https://example.com/analysis.png?token=a$b)',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const inlineMarkdownImageCandidates = parseQuestionCandidates(inlineMarkdownImageDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.equal(inlineMarkdownImageCandidates.length, 1)
+assert.equal(inlineMarkdownImageCandidates[0].figures.some((figure) => figure.path === 'https://example.com/stem.png?x=1&y=2' && figure.usage === 'stem' && figure.inlineMarker), true)
+assert.equal(inlineMarkdownImageCandidates[0].figures.some((figure) => figure.path === 'https://example.com/analysis.png?token=a$b' && figure.usage === 'analysis' && figure.inlineMarker), true)
+
+const notesAndFormulaDocument = {
+  ...ocrDocument,
+  id: 'ocr_notes_and_formula_test',
+  markdown: [
+    '1. 答卷前，请将姓名填写在答题卡上。',
+    '2. 作答选择题时，请使用 2B 铅笔。',
+    '一、选择题',
+    '1. 正常的第一题。',
+    '19. 正常的第十九题。',
+    '参考公式：',
+    '1. 若 $0 < q < 1$，则 $q^n$ 收敛。',
+    '2. $E(X+Y)=E(X)+E(Y)$。',
+    '【答案】第十九题答案。',
+    '【解析】第十九题解析。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const notesAndFormulaCandidates = parseQuestionCandidates(notesAndFormulaDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.deepEqual(notesAndFormulaCandidates.map((candidate) => candidate.questionNo), ['1', '19'])
+assert.doesNotMatch(notesAndFormulaCandidates[0].stemMarkdown, /答卷前|作答选择题时/)
+assert.doesNotMatch(notesAndFormulaCandidates[1].stemMarkdown, /参考公式|q\^n|E\(X\+Y\)/)
+assert.match(notesAndFormulaCandidates[1].answerText, /第十九题答案/)
+assert.match(notesAndFormulaCandidates[1].analysisMarkdown, /第十九题解析/)
+
 console.log('question parser ok')

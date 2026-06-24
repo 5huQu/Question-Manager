@@ -13,6 +13,7 @@ import {
 } from './solution-matcher.js'
 import { figureForBlock, figuresForRange, sourceRefsForRange } from './figure-linker.js'
 import { statusForIssues, validateQuestionCandidate } from './candidate-validator.js'
+import { normalizeHtmlImageTags } from '../ocr-providers/ocr-document.normalizer.js'
 import { getParserConfig } from './parser-config.js'
 import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
 
@@ -25,15 +26,71 @@ function normalizedLine(value: string) {
   return value.replace(/^\s*(?:#{1,6}\s*)?/, '').replace(/\s+/g, '')
 }
 
+function normalizedStructuralLine(value: string) {
+  return normalizedLine(value).replace(/^(?:第[0-9０-９]{1,3}题|[0-9０-９]{1,3}[.．、])/, '')
+}
+
 function isStructuralLine(line: string, config: ImportFlowV2ParserConfig) {
-  const normalized = normalizedLine(line)
+  const normalized = normalizedStructuralLine(line)
   if (!normalized) return false
-  if (config.sectionHeadings.some((item) => normalized === normalizedLine(item))) return true
+  if (isSectionHeading(line, config)) return true
   return config.documentNoteKeywords.some((item) => normalized.startsWith(normalizedLine(item)))
+}
+
+function isSectionHeading(line: string, config: ImportFlowV2ParserConfig) {
+  const normalized = normalizedStructuralLine(line)
+  return config.sectionHeadings.some((item) => normalized === normalizedLine(item))
+}
+
+function hasPrimaryQuestionMarker(line: string, config: ImportFlowV2ParserConfig) {
+  return config.primaryQuestionPatterns.some((pattern) => {
+    const match = new RegExp(pattern, 'i').exec(line)
+    return Boolean(match && /^[ \t#]*$/.test(line.slice(0, match.index)))
+  })
 }
 
 function stripStructuralText(value: string, config: ImportFlowV2ParserConfig) {
   return String(value || '').split('\n').filter((line) => !isStructuralLine(line, config)).join('\n').trim()
+}
+
+function isReferenceFormulaHeading(line: string, config: ImportFlowV2ParserConfig) {
+  const normalized = normalizedStructuralLine(line)
+  return config.documentNoteKeywords.some((item) => normalized.startsWith(normalizedLine(item)) && normalizedLine(item).includes('参考公式'))
+}
+
+function isAnswerOrAnalysisMarker(line: string) {
+  return /^\s*(?:【\s*)?(?:参考答案|答案与解析|答案|解析|分析|详解)(?:\s*】)?\s*[:：]?/.test(line)
+}
+
+function blankPreservingNewlines(value: string) {
+  return value.replace(/[^\n]/g, ' ')
+}
+
+/**
+ * Hide non-question material before detecting question numbers while preserving
+ * every offset. This prevents numbered exam instructions and reference-formula
+ * items from becoming artificial questions or cutting the preceding real one.
+ */
+function maskStructuralMarkdown(value: string, config: ImportFlowV2ParserConfig) {
+  let inReferenceFormula = false
+  let sawQuestion = false
+  return String(value || '').split(/(?<=\n)/).map((lineWithNewline) => {
+    const line = lineWithNewline.replace(/\n$/, '')
+    if (inReferenceFormula && isAnswerOrAnalysisMarker(line)) {
+      inReferenceFormula = false
+      return lineWithNewline
+    }
+    if (inReferenceFormula && !sawQuestion && isSectionHeading(line, config)) {
+      inReferenceFormula = false
+    }
+    if (inReferenceFormula) return blankPreservingNewlines(lineWithNewline)
+    if (!isStructuralLine(line, config)) {
+      if (hasPrimaryQuestionMarker(line, config)) sawQuestion = true
+      return lineWithNewline
+    }
+    if (isReferenceFormulaHeading(line, config)) inReferenceFormula = true
+    return blankPreservingNewlines(lineWithNewline)
+  }).join('')
 }
 
 function countQuestionNos(chunks: QuestionMarkdownChunk[]) {
@@ -50,7 +107,23 @@ function duplicateQuestionNos(chunks: QuestionMarkdownChunk[]) {
 }
 
 function dedupeFigures(figures: CandidateFigure[]) {
-  return Array.from(new Map(figures.map((figure) => [figure.id, figure])).values())
+  return Array.from(new Map(figures.map((figure) => [`${figure.usage}:${figure.path}`, figure])).values())
+}
+
+function figuresForMarkdown(markdown: string, usage: CandidateFigure['usage']): CandidateFigure[] {
+  const figures: CandidateFigure[] = []
+  const pattern = /!\[[^\]]*]\(\s*(?:<([^>\n]+)>|([^\s)\n]+))\s*\)/g
+  for (const match of normalizeHtmlImageTags(markdown).matchAll(pattern)) {
+    const path = String(match[1] || match[2] || '').replace(/\\\)/g, ')').trim()
+    if (!path) continue
+    figures.push({
+      id: `inline_${usage}_${createId('image', path)}`,
+      usage,
+      path,
+      inlineMarker: String(match.index ?? path),
+    })
+  }
+  return figures
 }
 
 function dedupeSourceRefs(refs: CandidateSourceRef[]) {
@@ -159,6 +232,8 @@ function candidateFromChunk(
   const figures = dedupeFigures([
     ...figuresForRange(document, stemRange, 'stem'),
     ...figuresForRange(document, analysisRange, 'analysis'),
+    ...figuresForMarkdown(fields.stemMarkdown, 'stem'),
+    ...figuresForMarkdown(analysisMarkdown, 'analysis'),
   ])
   const sourceRefs = dedupeSourceRefs([
     ...sourceRefsForRange(document, stemRange, 'stem'),
@@ -200,7 +275,11 @@ function fallbackCandidate(document: OCRDocument, timestamp: string, config: Imp
     analysisMarkdown: fields.analysisMarkdown,
     knowledgePoints: [],
     solutionMethods: [],
-    figures: figuresForRange(document, fields.stemRange || fullRange, 'stem'),
+    figures: dedupeFigures([
+      ...figuresForRange(document, fields.stemRange || fullRange, 'stem'),
+      ...figuresForMarkdown(fields.stemMarkdown, 'stem'),
+      ...figuresForMarkdown(fields.analysisMarkdown, 'analysis'),
+    ]),
     sourceRefs: sourceRefsForRange(document, fields.stemRange || fullRange, 'stem'),
     status: 'needs_review',
     issues: [],
@@ -215,10 +294,11 @@ function fallbackCandidate(document: OCRDocument, timestamp: string, config: Imp
 export function parseQuestionCandidates(document: OCRDocument, options: ParseQuestionCandidatesOptions = {}): QuestionCandidate[] {
   const timestamp = options.now || nowIso()
   const config = options.config || getParserConfig()
-  const markdown = String(document.markdown || '')
+  const markdown = normalizeHtmlImageTags(String(document.markdown || ''))
   const solutionSections = findSolutionSections(markdown, config)
   const useSolutionSections = shouldUseSolutionSections(markdown, solutionSections, config)
-  const questionMarkdown = useSolutionSections ? markdown.slice(0, solutionSections[0].start) : markdown
+  const maskedMarkdown = maskStructuralMarkdown(markdown, config)
+  const questionMarkdown = useSolutionSections ? maskedMarkdown.slice(0, solutionSections[0].start) : maskedMarkdown
   const questionMatches = detectQuestionNumbers(questionMarkdown, config)
   const chunks = splitMarkdownByQuestionNumbers(questionMarkdown, questionMatches)
 
