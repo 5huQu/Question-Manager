@@ -1,7 +1,20 @@
 import type { BBox, CropCorner, QuestionFigure } from '@/types'
 
 export function parseBBox(value: unknown): BBox | null {
-  if (!value || typeof value !== 'object') return null
+  if (!value) return null
+  if (Array.isArray(value)) {
+    if (value.length !== 4) return null
+    const x0 = finiteNumber(value[0])
+    const y0 = finiteNumber(value[1])
+    const x1 = finiteNumber(value[2])
+    const y1 = finiteNumber(value[3])
+    if (x0 === null || y0 === null || x1 === null || y1 === null) return null
+    const width = x1 - x0
+    const height = y1 - y0
+    if (width <= 0 || height <= 0) return null
+    return { x: x0, y: y0, width, height }
+  }
+  if (typeof value !== 'object') return null
   const raw = value as Record<string, unknown>
   const x = finiteNumber(raw.x ?? raw.x0)
   const y = finiteNumber(raw.y ?? raw.y0)

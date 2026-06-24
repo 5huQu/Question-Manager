@@ -1,29 +1,30 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import 'katex/dist/katex.min.css'
 import { FilterX, Plus, ShoppingBag } from 'lucide-react'
 import { settingsApi } from '@/api/settings'
 import { collectionsApi } from '@/api/collections'
-import { QuestionBasket } from '@/components/QuestionBasket'
 import { UpdateCard } from '@/components/UpdateCard'
 import { AppPageHeader } from '@/components/layout/AppPageHeader'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
-import TraditionalWorkbenchPage from '@/pages/workbench/TraditionalWorkbenchPage'
-import PdfSlicerPage from '@/pages/pdf-slicer/PdfSlicerPage'
-import OcrQueuePage from '@/pages/ocr/OcrQueuePage'
-import QuestionBankPage from '@/pages/questions/QuestionBankPage'
-import QuestionCreatePage from '@/pages/questions/QuestionCreatePage'
-import QuestionDetailPage from '@/pages/questions/QuestionDetailPage'
-import RunQuestionsPage from '@/pages/questions/RunQuestionsPage'
-import MarkdownPreviewPage from '@/pages/questions/MarkdownPreviewPage'
-import PendingBankPage from '@/pages/PendingBankPage'
-import LearningTagsPage from '@/pages/LearningTagsPage'
-import SettingsPage from '@/pages/SettingsPage'
-import ExportRecordsPage from '@/pages/ExportRecordsPage'
-import { SetupPage } from '@/pages/SetupPage'
 import type { OcrSettings } from '@/types'
 import type { UpdateCheckResult } from '@/api/client'
+
+const TraditionalWorkbenchPage = lazy(() => import('@/pages/workbench/TraditionalWorkbenchPage'))
+const PdfSlicerPage = lazy(() => import('@/pages/pdf-slicer/PdfSlicerPage'))
+const OcrQueuePage = lazy(() => import('@/pages/ocr/OcrQueuePage'))
+const QuestionBankPage = lazy(() => import('@/pages/questions/QuestionBankPage'))
+const QuestionCreatePage = lazy(() => import('@/pages/questions/QuestionCreatePage'))
+const QuestionDetailPage = lazy(() => import('@/pages/questions/QuestionDetailPage'))
+const RunQuestionsPage = lazy(() => import('@/pages/questions/RunQuestionsPage'))
+const MarkdownPreviewPage = lazy(() => import('@/pages/questions/MarkdownPreviewPage'))
+const PendingBankPage = lazy(() => import('@/pages/PendingBankPage'))
+const LearningTagsPage = lazy(() => import('@/pages/LearningTagsPage'))
+const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
+const ExportRecordsPage = lazy(() => import('@/pages/ExportRecordsPage'))
+const SetupPage = lazy(() => import('@/pages/SetupPage').then(module => ({ default: module.SetupPage })))
+const QuestionBasket = lazy(() => import('@/components/QuestionBasket').then(module => ({ default: module.QuestionBasket })))
+const AnnotationWorkbenchPage = lazy(() => import('@/pages/pdf-slicer/AnnotationWorkbenchPage'))
 
 function NavigateToWorkbench() {
   const navigate = useNavigate()
@@ -88,7 +89,11 @@ export default function App() {
   }
 
   if (!appSettings.setupCompleted || location.pathname === '/setup') {
-    return <SetupPage initialSettings={appSettings} onComplete={applySettings} />
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-background" />}>
+        <SetupPage initialSettings={appSettings} onComplete={applySettings} />
+      </Suspense>
+    )
   }
 
   return (
@@ -107,27 +112,36 @@ export default function App() {
         } />
         <div className="flex-1 overflow-auto">
           <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 md:p-6">
-            <Routes>
-              <Route path="/" element={<NavigateToWorkbench />} />
-              <Route path="/workbench" element={<TraditionalWorkbenchPage />} />
-              <Route path="/tools/pdf-slicer" element={<PdfSlicerPage />} />
-              <Route path="/tools/pdf-slicer/ocr-jobs" element={<OcrQueuePage />} />
-              <Route path="/questions" element={<QuestionBankPage />} />
-              <Route path="/questions/new" element={<QuestionCreatePage />} />
-              <Route path="/questions/basket" element={<QuestionBasket mode="page" />} />
-              <Route path="/questions/:id" element={<QuestionDetailPage />} />
-              <Route path="/questions/collections/:id/markdown-preview" element={<MarkdownPreviewPage />} />
-              <Route path="/learning-tags" element={<LearningTagsPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/exports" element={<ExportRecordsPage />} />
-              <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<RunQuestionsPage />} />
-              <Route path="/tools/pdf-slicer/runs/:runId/pending-bank" element={<PendingBankPage />} />
+            <Suspense fallback={
+              <div className="flex h-[50vh] items-center justify-center">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-950 border-t-transparent dark:border-zinc-50" />
+              </div>
+            }>
+              <Routes>
+                <Route path="/" element={<NavigateToWorkbench />} />
+                <Route path="/workbench" element={<TraditionalWorkbenchPage />} />
+                <Route path="/tools/pdf-slicer" element={<PdfSlicerPage />} />
+                <Route path="/tools/pdf-slicer/ocr-jobs" element={<OcrQueuePage />} />
+                <Route path="/questions" element={<QuestionBankPage />} />
+                <Route path="/questions/new" element={<QuestionCreatePage />} />
+                <Route path="/questions/basket" element={<QuestionBasket mode="page" />} />
+                <Route path="/questions/:id" element={<QuestionDetailPage />} />
+                <Route path="/questions/collections/:id/markdown-preview" element={<MarkdownPreviewPage />} />
+                <Route path="/learning-tags" element={<LearningTagsPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/exports" element={<ExportRecordsPage />} />
+                <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<RunQuestionsPage />} />
+                <Route path="/tools/pdf-slicer/runs/:runId/pending-bank" element={<PendingBankPage />} />
+                <Route path="/tools/pdf-slicer/batches/:batchId/annotate" element={<AnnotationWorkbenchPage />} />
 
-            </Routes>
+              </Routes>
+            </Suspense>
           </div>
         </div>
       </SidebarInset>
-      <QuestionBasket mode="drawer" />
+      <Suspense fallback={null}>
+        <QuestionBasket mode="drawer" />
+      </Suspense>
       {availableUpdate && location.pathname !== '/settings' ? (
         <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-2xl border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
           <UpdateCard compact initialResult={availableUpdate} onUpdateAvailable={setAvailableUpdate} />

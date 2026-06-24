@@ -26,6 +26,7 @@ import type { ExportRecordsResponse } from '@/api/exportRecords'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import type { Dashboard, ExportRecord, OcrSettings, QuestionBankResponse, QuestionItem } from '@/types'
 import { addQuestionToActiveBasket } from '@/utils/questionBasket'
+import { QuickActionDialog } from '@/components/dialogs/QuickActionDialog'
 
 export function OverviewTab({
   dashboard,
@@ -52,6 +53,7 @@ export function OverviewTab({
   exportRecordsLoading?: boolean
 }) {
   const navigate = useNavigate()
+  const [quickAction, setQuickAction] = useState<'daily' | 'random' | null>(null)
   const questions = questionBank?.items.slice(0, 3) ?? []
   const exports = exportRecords?.items.slice(0, 4) ?? []
   const basketIds = new Set((questionBank?.basket?.questions ?? []).map((entry) => entry.item.id))
@@ -252,7 +254,7 @@ export function OverviewTab({
 
             {/* Quick Actions (Random Paper & Daily Question) */}
             <div className="flex gap-3 pt-2">
-              <button className="flex items-center justify-between rounded-xl border border-zinc-200 bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-zinc-50 hover:bg-zinc-800 dark:border-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200 transition-all shadow-sm flex-1 cursor-pointer hover:-translate-y-0.5 active:translate-y-0">
+              <button onClick={() => setQuickAction('random')} className="flex items-center justify-between rounded-xl border border-zinc-200 bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-zinc-50 hover:bg-zinc-800 dark:border-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200 transition-all shadow-sm flex-1 cursor-pointer hover:-translate-y-0.5 active:translate-y-0">
                 <span className="flex items-center gap-1.5">
                   <Sparkles className="size-3.5 text-amber-400" />
                   随机出卷
@@ -260,7 +262,7 @@ export function OverviewTab({
                 <ChevronRight className="size-3 text-zinc-400" />
               </button>
 
-              <button className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800/80 transition-all shadow-sm flex-1 cursor-pointer hover:-translate-y-0.5 active:translate-y-0">
+              <button onClick={() => setQuickAction('daily')} className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800/80 transition-all shadow-sm flex-1 cursor-pointer hover:-translate-y-0.5 active:translate-y-0">
                 <span className="flex items-center gap-1.5">
                   <Flame className="size-3.5 text-orange-500 animate-pulse" />
                   每日一题
@@ -345,6 +347,12 @@ export function OverviewTab({
           </div>
         </div>
       </div>
+      {quickAction ? (
+        <QuickActionDialog
+          initialMode={quickAction}
+          onClose={() => setQuickAction(null)}
+        />
+      ) : null}
     </div>
   )
 }

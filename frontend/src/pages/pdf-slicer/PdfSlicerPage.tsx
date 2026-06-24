@@ -1,4 +1,5 @@
 import { useEffect, useState, type ChangeEvent, type DragEvent, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { BookOpen, FileStack, FileText, FileUp, RefreshCcw, ScanSearch } from 'lucide-react'
 import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { settingsApi } from '@/api/settings'
@@ -10,12 +11,17 @@ import { useAsync } from '@/hooks/useAsync'
 import type { Dashboard, OcrSettings } from '@/types'
 import { materialTypeLabel, workflowModeLabel, workflowStatusLabel } from '@/utils/questionDisplay'
 import { fileListHasWord, libreOfficeDownloadUrl } from '@/utils/wordFiles'
+import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
 import { RunCard } from './RunCard'
 
 export function PdfSlicerPage() {
+  const navigate = useNavigate()
   const { data, error, loading, reload } = useAsync<Dashboard>(() => pdfSlicerApi.getDashboard(), [])
   const ocrSettings = useAsync<OcrSettings>(() => settingsApi.getOcrSettings(), [])
   const [uploading, setUploading] = useState(false)
+  const [stage, setStage] = useState('高三')
+  const stageOptions = gradeOptionsForTeachingStages(ocrSettings.data?.teachingStages)
+  const selectedStage = ensureStageValue(stage, stageOptions)
   const [dragActive, setDragActive] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null)
   const [showWordUploadWarning, setShowWordUploadWarning] = useState(false)
@@ -26,12 +32,6 @@ export function PdfSlicerPage() {
   const separatedExamUpload = uploadMode === 'exam' && examUploadMode === 'separated'
   const uploadFileCount = separatedExamUpload ? (questionFiles?.length ?? 0) + (solutionFiles?.length ?? 0) : (selectedFiles?.length ?? 0)
   const missingLibreOffice = ocrSettings.data?.sofficeAvailable === false
-  const visibleBatches = (data?.batches ?? []).filter((batch) => {
-    const runCount = Number(batch.runCount ?? 0)
-    const title = batch.title || batch.id
-    const technicalTitle = title === batch.id || /^batch_\d+/.test(title) || /^lecture_trial_batch_/.test(title)
-    return runCount > 0 && !technicalTitle && batch.workflowMode === 'separated_exam'
-  })
   const hasActiveRuns = (data?.runs ?? []).some((run) =>
     ['queued', 'running'].includes(run.sliceStatus) || ['queued', 'running'].includes(run.ocrStatus)
   )
@@ -123,14 +123,18 @@ export function PdfSlicerPage() {
     form.append('materialType', materialType)
     form.append('fileRole', fileRole)
     form.append('fileRolesJson', JSON.stringify(fileRoles))
+    form.append('stage', selectedStage)
     setUploading(true)
     try {
-      await pdfSlicerApi.upload(form)
+      const result = await pdfSlicerApi.upload(form) as { nextAction?: string; manualAnnotationBatchId?: string }
       setSelectedFiles(null)
       setQuestionFiles(null)
       setSolutionFiles(null)
       paperTitleInput.value = ''
       reload()
+      if (result.nextAction === 'manual_annotation' && result.manualAnnotationBatchId) {
+        navigate(`/tools/pdf-slicer/batches/${encodeURIComponent(result.manualAnnotationBatchId)}/annotate`)
+      }
     } finally {
       setUploading(false)
     }
@@ -184,6 +188,23 @@ export function PdfSlicerPage() {
                   placeholder="例如：2026届高三模拟考试"
                 />
               </div>
+
+              {stageOptions.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400 block">教学学段/年级</label>
+                  <select
+                    value={selectedStage}
+                    onChange={(event) => setStage(event.target.value)}
+                    className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3.5 py-1.5 text-xs shadow-sm outline-none transition-colors focus-visible:ring-1 focus-visible:ring-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:focus-visible:ring-zinc-300 cursor-pointer"
+                  >
+                    {stageOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400 block">上传模式</label>
@@ -273,24 +294,6 @@ export function PdfSlicerPage() {
           <div className="p-5 space-y-4 bg-zinc-50/30 dark:bg-zinc-900/10 rounded-b-xl border-t border-transparent">
             {loading ? <Empty text="读取中..." /> : error ? <Empty text={error} /> : data?.runs.length ? (
               <div className="space-y-4">
-                {visibleBatches.length ? (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {visibleBatches.map((batch) => (
-                      <div key={batch.id} className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">{batch.title || batch.id}</p>
-                            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{batch.runCount ?? 0} 个文件 · {workflowModeLabel(batch.workflowMode)}</p>
-                          </div>
-                          <div className="flex flex-col gap-1 shrink-0 items-end">
-                            <Badge variant="outline" className="text-[10px]">{materialTypeLabel(batch.materialType)}</Badge>
-                            <Badge variant="outline" className="text-[10px]">{workflowStatusLabel(batch.workflowStatus)}</Badge>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
                 {data.runs.map((run) => <RunCard key={run.runId} run={run} onReload={reload} />)}
               </div>
             ) : <Empty text="暂无批次，先上传一份 PDF、DOC 或 DOCX。" />}

@@ -113,4 +113,26 @@ export const pdfSlicerApi = {
       body: JSON.stringify({ splitRatio }),
     })
   },
+  createOrRestoreAnnotationSession(batchId: string) {
+    return api<any>(`/api/tools/pdf-slicer/batches/${encodeURIComponent(batchId)}/annotation-sessions`, { method: 'POST' })
+  },
+  getAnnotationSession(sessionId: string) {
+    return api<any>(`/api/tools/pdf-slicer/annotation-sessions/${encodeURIComponent(sessionId)}`)
+  },
+  saveAnnotationRegions(sessionId: string, regions: any[], revision: number) {
+    return api<any>(`/api/tools/pdf-slicer/annotation-sessions/${encodeURIComponent(sessionId)}/regions`, {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ regions, revision }),
+    })
+  },
+  validateAnnotationSession(sessionId: string) {
+    return api<{ errors: string[]; warnings: string[] }>(`/api/tools/pdf-slicer/annotation-sessions/${encodeURIComponent(sessionId)}/validate`, { method: 'POST' })
+  },
+  finalizeAnnotationSession(sessionId: string) {
+    return api<{ success: boolean }>(`/api/tools/pdf-slicer/annotation-sessions/${encodeURIComponent(sessionId)}/finalize`, { method: 'POST' })
+  },
+  reviseAnnotationSession(sessionId: string) {
+    return api<any>(`/api/tools/pdf-slicer/annotation-sessions/${encodeURIComponent(sessionId)}/revise`, { method: 'POST' })
+  },
 }

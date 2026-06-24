@@ -25,9 +25,22 @@ export function figureBoxesForReviewItem(item: SliceReviewItem): Array<BBox & { 
 
 export function reviewCropLayout(item: SliceReviewItem) {
   const rawSegments = item.segments?.length ? item.segments : [{ page_number: item.pageStart, bbox: item.bbox }]
-  const segments = rawSegments.map((segment) => {
-    const bbox = parseBBox(segment.bbox)
-    return bbox ? { pageNumber: Number(segment.page_number ?? segment.pageNumber ?? item.pageStart), bbox } : null
+  const segments = rawSegments.map((segment: any) => {
+    let bbox = parseBBox(segment.bbox)
+    if (!bbox) {
+      const parsedFlat = parseBBox(segment)
+      if (parsedFlat) {
+        const isNormalized = parsedFlat.x <= 1 && parsedFlat.y <= 1 && parsedFlat.width <= 1 && parsedFlat.height <= 1
+        const itemBBox = parseBBox(item.bbox)
+        if (isNormalized && itemBBox) {
+          bbox = itemBBox
+        } else {
+          bbox = parsedFlat
+        }
+      }
+    }
+    const pageNum = Number(segment.page_number ?? segment.pageNumber ?? segment.page ?? item.pageStart)
+    return bbox ? { pageNumber: pageNum, bbox } : null
   }).filter(Boolean) as Array<{ pageNumber: number; bbox: BBox }>
   if (!segments.length) return null
 

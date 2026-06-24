@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BadgeCheck, BookOpen, Check, FileJson, FileText, FolderOpen, LoaderCircle, RefreshCcw, ScanSearch, Trash2, X } from 'lucide-react'
+import { BadgeCheck, BookOpen, Check, FileJson, FileText, FolderOpen, LoaderCircle, RefreshCcw, ScanSearch, Trash2, X, Layers } from 'lucide-react'
 import { ocrApi } from '@/api/ocr'
 import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { Badge, Button } from '@/components/ui'
@@ -135,12 +135,21 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
         </div>
 
         <div className="flex items-center gap-2 relative">
-          <button
-            onClick={() => !needsReview && (resultReady || allQuestionsBanked) ? navigate(`/tools/pdf-slicer/runs/${encodeURIComponent(run.runId)}/questions`) : setReviewOpen(true)}
-            className="cursor-pointer rounded-md bg-zinc-900 px-3 py-1 text-xs font-semibold text-zinc-50 shadow-sm transition-colors hover:bg-zinc-900/90 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-50/90 h-7"
-          >
-            {needsReview ? '进入复核' : resultReady || allQuestionsBanked ? '查看批次结果' : reviewDone ? '查看题块' : '进入复核'}
-          </button>
+          {run.sliceStatus === 'awaiting_manual_annotation' ? (
+            <button
+              onClick={() => navigate(`/tools/pdf-slicer/batches/${encodeURIComponent(run.batchId)}/annotate`)}
+              className="cursor-pointer rounded-md bg-indigo-650 px-3 py-1 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-indigo-600 h-7"
+            >
+              开始标注
+            </button>
+          ) : (
+            <button
+              onClick={() => !needsReview && (resultReady || allQuestionsBanked) ? navigate(`/tools/pdf-slicer/runs/${encodeURIComponent(run.runId)}/questions`) : setReviewOpen(true)}
+              className="cursor-pointer rounded-md bg-zinc-900 px-3 py-1 text-xs font-semibold text-zinc-50 shadow-sm transition-colors hover:bg-zinc-900/90 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-50/90 h-7"
+            >
+              {needsReview ? '进入复核' : resultReady || allQuestionsBanked ? '查看批次结果' : reviewDone ? '查看题块' : '进入复核'}
+            </button>
+          )}
           {canOpenPendingBank ? (
             <button
               onClick={() => navigate(`/tools/pdf-slicer/runs/${encodeURIComponent(run.runId)}/pending-bank`)}
@@ -171,6 +180,12 @@ export function RunCard({ run, onReload }: { run: ApiRun; onReload: () => void }
                   <option value="unknown">未确认</option>
                 </select>
               </div>
+              <button
+                onClick={() => navigate(`/tools/pdf-slicer/batches/${encodeURIComponent(run.batchId)}/annotate`)}
+                className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              >
+                <Layers className="size-3.5" /> 手工标注选区
+              </button>
               <button onClick={queueOcr} className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900">
                 <ScanSearch className="size-3.5" /> 重新识别
               </button>

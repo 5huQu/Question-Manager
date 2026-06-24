@@ -9,6 +9,11 @@ import type { ApiRun, SliceReviewItem } from '@/types'
 import { isFormulaSuspectFigure, label } from '@/utils/questionDisplay'
 import { ReviewFigureEditor } from './ReviewFigureEditor'
 
+function questionNumberForSort(questionLabel: string) {
+  const match = String(questionLabel || '').match(/\d+(?:\.\d+)?/)
+  return match ? Number(match[0]) : Number.POSITIVE_INFINITY
+}
+
 export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted }: { run: ApiRun; readonly?: boolean; onClose: () => void; onSubmitted: () => void }) {
   const navigate = useNavigate()
   const { data, loading, error, reload } = useAsync<{ summary: Record<string, number>; items: SliceReviewItem[] }>(() => pdfSlicerApi.getSliceReviewItems(run.runId), [run.runId])
@@ -34,6 +39,13 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
       figures: figureOverrides[item.resultId] ?? item.figures,
       solutionFigures: solutionFigureOverrides[item.resultId] ?? item.solutionFigures,
     }))
+    .sort((left, right) => {
+      const numberDiff = questionNumberForSort(left.questionLabel) - questionNumberForSort(right.questionLabel)
+      if (numberDiff !== 0) return numberDiff
+      // Keep duplicate/non-numeric labels predictable without changing their
+      // existing page order.
+      return left.pageStart - right.pageStart || left.resultId.localeCompare(right.resultId)
+    })
   useEffect(() => {
     if (data?.items.length) {
       setSelected((current) => {
@@ -77,6 +89,76 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
       setPreviewPane('stem')
     }
   }, [activeSolutionItem, previewPane])
+
+  // Global Keyboard Shortcuts for High-density verification workflow
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (readonly) return
+      // Ignore key events when typing inside inputs/selectors
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'SELECT') {
+        return
+      }
+
+      // Space: Toggle between Stem (题干) and Analysis (解析) preview images
+      if (e.key === ' ') {
+        e.preventDefault()
+        if (activeSolutionItem) {
+          setPreviewPane((curr) => curr === 'stem' ? 'solution' : 'stem')
+        }
+      }
+
+      // ArrowUp / ArrowDown: Select previous/next question slice in the list
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        const currentIndex = visibleItems.findIndex((item) => item.resultId === activeId)
+        if (currentIndex >= 0) {
+          let nextIndex = currentIndex
+          if (e.key === 'ArrowUp' && currentIndex > 0) nextIndex = currentIndex - 1
+          if (e.key === 'ArrowDown' && currentIndex < visibleItems.length - 1) nextIndex = currentIndex + 1
+          if (nextIndex !== currentIndex) {
+            const nextItem = visibleItems[nextIndex]
+            if (nextItem) {
+              setActiveId(nextItem.resultId)
+            }
+          }
+        }
+      }
+
+      // Delete: Discard/Delete the currently active slice card
+      if (e.key === 'Delete') {
+        e.preventDefault()
+        if (active) {
+          if (window.confirm(`确定丢弃当前第 ${active.questionLabel || '?'} 题块？`)) {
+            const id = active.resultId
+            setDeletedIds((current) => new Set([...current, id]))
+            setSelected((current) => {
+              const next = new Set(current)
+              next.delete(id)
+              return next
+            })
+            const currentIndex = visibleItems.findIndex((item) => item.resultId === id)
+            const nextActive = visibleItems[currentIndex + 1] ?? visibleItems[currentIndex - 1] ?? null
+            setActiveId(nextActive?.resultId ?? '')
+            
+            pdfSlicerApi.deleteSliceReviewItem(run.runId, id)
+              .then(() => reload())
+              .catch((err) => alert(err instanceof Error ? err.message : String(err)))
+          }
+        }
+      }
+
+      // Ctrl + Enter or Cmd + Enter: Quick Submit & Start OCR
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault()
+        if (selected.size > 0) {
+          submit()
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeId, visibleItems, selected, readonly, activeSolutionItem, active])
   async function submit() {
     if (readonly) return
     setReviewNotice('已提交复核，正在启动 OCR...')
@@ -237,6 +319,7 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
     const nextFigures = payload.item?.figures ?? figures
     setFigureOverrides((current) => ({ ...current, [item.resultId]: nextFigures }))
     setReviewNotice(`已保存第 ${item.questionLabel || '?'} 题的 ${nextFigures.length} 个图框`)
+    await reload({ silent: true })
   }
   async function saveSolutionFigures(item: SliceReviewItem, figures: Array<Record<string, unknown>>) {
     const sourceResultId = item.resultId.replace(/__solution$/, '')
@@ -277,12 +360,12 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
     }
   }
   return (
-    <div className="fixed inset-0 z-50 flex select-none items-center justify-center bg-black/40 p-4 text-left">
+    <div className="fixed inset-0 z-50 flex select-none items-center justify-center bg-black/40 backdrop-blur-sm p-4 text-left">
       <div className="flex h-[90vh] w-full max-w-[88rem] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="flex flex-none items-center justify-between gap-4 border-b border-zinc-200 bg-zinc-50/70 px-5 py-3.5 dark:border-zinc-800 dark:bg-zinc-900/10">
+        <div className="flex flex-none items-center justify-between gap-4 border-b border-zinc-100 bg-zinc-50/50 px-5 py-3.5 dark:border-zinc-900 dark:bg-zinc-900/10">
           <div className="min-w-0">
-            <span className="block truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">{readonly ? '题块查看' : '切题人工复核控制台'}</span>
-            <span className="mt-0.5 block truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+            <span className="block truncate text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{readonly ? '题块查看' : '切题人工复核控制台'}</span>
+            <span className="mt-0.5 block truncate text-[13px] text-zinc-500 dark:text-zinc-400">
               来源：{run.paperTitle || run.pdfName} · 共 {totalItems} 个题块 · 当前选中 {readonly ? (run.approvedQuestions ?? 0) : selected.size} 项
             </span>
           </div>
@@ -323,8 +406,8 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
         </div>
         <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="flex min-h-0 w-80 shrink-0 flex-col overflow-hidden border-r border-zinc-200 bg-zinc-50/20 dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="flex flex-none items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
-            <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">切片队列</p>
+          <div className="flex flex-none items-center justify-between border-b border-zinc-100 bg-zinc-50/50 px-4 py-3 dark:border-zinc-900 dark:bg-zinc-900/10">
+            <p className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400">切片队列</p>
             <div className="flex items-center gap-1.5">
               {readonly ? null : (
                 <>
@@ -349,75 +432,103 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
                   ? 'border-zinc-400 bg-white dark:border-zinc-700 dark:bg-zinc-950/60'
                   : 'border-zinc-200 bg-white hover:bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900/50'
               return (
-              <button key={item.resultId} className={`w-full rounded-lg border p-2.5 text-left transition cursor-pointer ${itemClass}`} onClick={() => setActiveId(item.resultId)} type="button">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate font-semibold text-zinc-900 dark:text-zinc-50 text-sm">第 {item.questionLabel || '?'} 题</span>
-                    {readonly ? null : (
-                      <span
-                        className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          renameItem(item)
-                        }}
-                        role="button"
-                        title="编辑题块名称"
-                      >
-                        <Pencil className="size-3.5" />
-                      </span>
-                    )}
-                  </span>
-                  {readonly ? null : (
-                    <input
-                      checked={selected.has(item.resultId)}
-                      onChange={() => toggle(item.resultId)}
-                      onClick={(event) => event.stopPropagation()}
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 cursor-pointer"
-                    />
-                  )}
+              <button key={item.resultId} className={`w-full rounded-lg border p-2 text-left transition cursor-pointer flex gap-2.5 items-center ${itemClass}`} onClick={() => setActiveId(item.resultId)} type="button">
+                {/* Micro visual thumbnail of slice */}
+                <div className="size-10 shrink-0 overflow-hidden rounded border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 relative">
+                  {item.imageUrl ? (
+                    <img src={item.imageUrl} className="h-full w-full object-cover grayscale opacity-50 dark:opacity-40 transition-opacity" />
+                  ) : null}
                 </div>
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <p className="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">P{item.pageStart}{item.pageEnd !== item.pageStart ? `-P${item.pageEnd}` : ''} · {label(item.reviewStatus)}</p>
-                  <span className="flex shrink-0 items-center gap-1">
-                    {item.hasSolutionSlice ? (
-                      <Badge variant="success" className="text-[10px] px-1.5 py-0">
-                        含解析
-                      </Badge>
-                    ) : null}
-                    {figureCount ? (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                        题图 {figureCount} 张
-                      </Badge>
-                    ) : null}
-                  </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate font-semibold text-zinc-900 dark:text-zinc-50 text-sm">第 {item.questionLabel || '?'} 题</span>
+                      {readonly ? null : (
+                        <span
+                          className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            renameItem(item)
+                          }}
+                          role="button"
+                          title="编辑题块名称"
+                        >
+                          <Pencil className="size-3.5" />
+                        </span>
+                      )}
+                    </span>
+                    {readonly ? null : (
+                      <input
+                        checked={selected.has(item.resultId)}
+                        onChange={() => toggle(item.resultId)}
+                        onClick={(event) => event.stopPropagation()}
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 cursor-pointer"
+                      />
+                    )}
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <p className="min-w-0 text-xs text-zinc-500 dark:text-zinc-400">P{item.pageStart}{item.pageEnd !== item.pageStart ? `-P${item.pageEnd}` : ''} · {label(item.reviewStatus)}</p>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {item.hasSolutionSlice ? (
+                        <Badge variant="success" className="text-[10px] px-1.5 py-0">
+                          含解析
+                        </Badge>
+                      ) : null}
+                      {(() => {
+                        const stemCount = (item.figures ?? []).filter((f: any) => f.usage === 'stem' || f.usage === 'options').length
+                        const analysisCount = (item.solutionFigures ?? []).filter((f: any) => f.usage === 'analysis').length
+                        const badges = []
+                        if (stemCount > 0) {
+                          badges.push(
+                            <Badge key="stem" variant="outline" className="text-[10px] px-1.5 py-0">
+                              题干 {stemCount} 图
+                            </Badge>
+                          )
+                        }
+                        if (analysisCount > 0) {
+                          badges.push(
+                            <Badge key="analysis" variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-200 text-emerald-700 bg-emerald-50/20 dark:border-emerald-900/50 dark:text-emerald-400">
+                              解析 {analysisCount} 图
+                            </Badge>
+                          )
+                        }
+                        return badges.length > 0 ? <div className="flex gap-1">{badges}</div> : null
+                      })()}
+                    </span>
+                  </div>
                 </div>
               </button>
             )}) : <Empty text="暂无切题结果，上传后系统会自动切题。" />}
           </div>
         </aside>
         <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-900">
-          <div className="flex min-h-11 flex-none items-center justify-between border-b border-zinc-200 bg-zinc-50/50 px-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+          <div className="flex min-h-11 flex-none items-center justify-between border-b border-zinc-100 bg-zinc-50/50 px-4 dark:border-zinc-900 dark:bg-zinc-900/10">
             <p className="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">{active ? `第 ${active.questionLabel || '?'} 题预览` : '切片预览'}</p>
             <div className="flex items-center gap-2">
-              {activeSolutionItem ? (
-                <div className="inline-flex rounded-lg border border-zinc-200 bg-white p-0.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+              {active ? (
+                <div className="inline-flex rounded-lg border border-zinc-200/50 bg-zinc-100/80 p-0.5 shadow-xs dark:border-zinc-800/50 dark:bg-zinc-900/80">
                   <button
-                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${previewPane === 'stem' ? 'bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-950' : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100'}`}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${previewPane === 'stem' ? 'bg-white text-zinc-900 shadow-xs border border-zinc-200/20 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`}
                     onClick={() => setPreviewPane('stem')}
                     type="button"
                   >
                     题干图 {active.figures?.length ?? 0}
                   </button>
                   <button
-                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${previewPane === 'solution' ? 'bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-950' : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100'}`}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${!activeSolutionItem ? 'opacity-40 cursor-not-allowed text-zinc-400 dark:text-zinc-600' : previewPane === 'solution' ? 'bg-white text-zinc-900 shadow-xs border border-zinc-200/20 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`}
                     onClick={() => {
+                      if (!activeSolutionItem) {
+                        alert('请先为本题补充解析裁图')
+                        return
+                      }
                       setSplitMode(false)
                       setPreviewPane('solution')
                     }}
+                    title={!activeSolutionItem ? '请先为本题补充解析裁图' : undefined}
                     type="button"
                   >
-                    解析图 {activeSolutionItem.figures?.length ?? 0}
+                    解析图 {active.solutionFigures?.length ?? 0}
                   </button>
                 </div>
               ) : null}
@@ -455,24 +566,24 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
             <h3 className="px-1 text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">复核信息</h3>
             <div className="space-y-3">
               <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-                <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">当前题块</p>
+                <p className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400">当前题块</p>
                 <div className="mt-1.5 flex items-center justify-between gap-3">
-                  <p className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-100">{active ? `第 ${active.questionLabel || '?'} 题` : '未选择'}</p>
+                  <p className="truncate text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{active ? `第 ${active.questionLabel || '?'} 题` : '未选择'}</p>
                   <Badge variant={active?.reviewStatus === 'rejected' ? 'danger' : active?.reviewStatus === 'approved' ? 'success' : 'default'}>
                     {active ? label(active.reviewStatus) : '-'}
                   </Badge>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-900/30">
-                    <p className="text-zinc-400 dark:text-zinc-50">页码</p>
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-900/10">
+                    <p className="text-zinc-500 dark:text-zinc-400">页码</p>
                     <p className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">{active ? `P${active.pageStart}-${active.pageEnd}` : '-'}</p>
                   </div>
-                  <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-900/30">
-                    <p className="text-zinc-400 dark:text-zinc-50">图框</p>
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-900/10">
+                    <p className="text-zinc-500 dark:text-zinc-400">图框</p>
                     <p className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">{active?.figures?.length ? `${active.figures.length} 个` : '无'}</p>
                   </div>
-                  <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-900/30">
-                    <p className="text-zinc-400 dark:text-zinc-50">解析裁图</p>
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-900/10">
+                    <p className="text-zinc-500 dark:text-zinc-400">解析裁图</p>
                     <p className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">{active?.hasSolutionSlice ? '已匹配' : '无'}</p>
                   </div>
                 </div>
@@ -480,9 +591,9 @@ export function SliceReviewDialog({ run, readonly = false, onClose, onSubmitted 
             </div>
           </section>
           {active && suspectFormulaTotal ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50/30 p-3 text-[11px] leading-normal text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
-              <div className="mb-1 flex items-center gap-1.5 font-bold">
-                <AlertTriangle className="size-3.5 text-amber-600 dark:text-amber-400" />
+            <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-3.5 text-[13px] leading-normal text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-400">
+              <div className="mb-1 flex items-center gap-1.5 font-semibold">
+                <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
                 <span>OCR 切题提醒</span>
               </div>
               <p>检测到 {suspectFormulaTotal} 个疑似公式图，可按需删除后再提交复核。</p>

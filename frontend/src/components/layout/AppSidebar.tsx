@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { cn } from '@/lib/utils'
 import {
   BookOpen,
   BookOpenCheck,
@@ -7,6 +8,7 @@ import {
   GraduationCap,
   LayoutDashboard,
   Moon,
+  PanelLeft,
   ScanSearch,
   Scissors,
   Settings2,
@@ -28,7 +30,6 @@ import {
   SidebarMenuItem,
   SidebarRail,
   SidebarSeparator,
-  SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar'
 
@@ -51,7 +52,7 @@ export function AppSidebar({
   onThemeToggle,
 }: AppSidebarProps) {
   const location = useLocation()
-  const { state } = useSidebar()
+  const { state, toggleSidebar } = useSidebar()
   const collapsed = state === 'collapsed'
   const platformItems: NavItem[] = [
     { active: (pathname) => pathname === '/' || pathname === '/workbench', icon: LayoutDashboard, label: '工作台概览', to: '/workbench' },
@@ -76,20 +77,40 @@ export function AppSidebar({
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="border-b border-sidebar-border p-3">
-        <div className="flex h-8 items-center gap-2">
-          {!collapsed ? (
-            <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+      <SidebarHeader className="border-b border-sidebar-border p-3 relative">
+        <div className="flex h-8 items-center justify-between gap-2 relative w-full">
+          <div
+            onClick={!collapsed ? toggleSidebar : undefined}
+            className={cn(
+              "flex items-center gap-2 min-w-0 flex-1 transition-all duration-300 ease-in-out origin-left cursor-pointer",
+              collapsed ? "w-0 opacity-0 pointer-events-none -translate-x-2" : "w-auto opacity-100 translate-x-0"
+            )}
+          >
+            <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90 transition-colors">
               <GraduationCap className="size-4" />
             </div>
-          ) : null}
-          {!collapsed ? (
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold leading-none">{systemName}</p>
               <p className="mt-0.5 text-[10px] font-medium text-muted-foreground">v2.0.0</p>
             </div>
-          ) : null}
-          <SidebarTrigger className="shrink-0" title={collapsed ? '展开侧边栏' : '收起侧边栏'} />
+          </div>
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            className={cn(
+              "flex items-center justify-center rounded-md text-sidebar-foreground/60 transition-all duration-300 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground cursor-pointer shrink-0",
+              collapsed
+                ? "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary/90 size-8 rounded-lg shadow-sm"
+                : "size-7"
+            )}
+            title={collapsed ? '展开侧边栏' : '收起侧边栏'}
+          >
+            {collapsed ? (
+              <GraduationCap className="size-4.5" />
+            ) : (
+              <PanelLeft className="size-4" />
+            )}
+          </button>
         </div>
       </SidebarHeader>
 
@@ -99,24 +120,33 @@ export function AppSidebar({
         <NavGroup label="题库" items={questionItems} pathname={location.pathname} />
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-3">
-        {!collapsed ? (
-          <div className="space-y-1 rounded-lg bg-sidebar-accent/50 px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <span className="relative flex size-1.5">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
-              </span>
-              <span className="text-[10px] font-semibold text-muted-foreground">系统运行中</span>
-            </div>
-            <p className="text-[10px] leading-relaxed text-muted-foreground">引擎正常 · SQLite 正常</p>
+      <SidebarFooter className="border-t border-sidebar-border p-3 overflow-hidden">
+        <div className={cn(
+          "space-y-1 rounded-lg bg-sidebar-accent/50 transition-all duration-300 ease-in-out origin-top overflow-hidden",
+          collapsed ? "max-h-0 opacity-0 py-0 px-0 pointer-events-none mb-0" : "max-h-16 opacity-100 px-3 py-2.5 mb-2"
+        )}>
+          <div className="flex items-center gap-2">
+            <span className="relative flex size-1.5">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+            </span>
+            <span className="text-[10px] font-semibold text-muted-foreground">系统运行中</span>
           </div>
-        ) : null}
-        <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} px-1`}>
-          {!collapsed ? <span className="text-[10px] text-muted-foreground">© 2026</span> : null}
+          <p className="text-[10px] leading-relaxed text-muted-foreground whitespace-nowrap">引擎正常 · SQLite 正常</p>
+        </div>
+        <div className={cn(
+          "flex items-center px-1 transition-all duration-300 ease-in-out",
+          collapsed ? "justify-center" : "justify-between"
+        )}>
+          <span className={cn(
+            "text-[10px] text-muted-foreground transition-all duration-300 ease-in-out origin-left",
+            collapsed ? "w-0 opacity-0 pointer-events-none" : "w-auto opacity-100"
+          )}>
+            © 2026
+          </span>
           <button
             onClick={onThemeToggle}
-            className="flex size-7 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            className="flex size-7 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground shrink-0"
             title={darkMode ? '切换到浅色模式' : '切换到深色模式'}
             type="button"
           >
