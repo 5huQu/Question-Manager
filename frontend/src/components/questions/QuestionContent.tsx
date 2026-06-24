@@ -22,15 +22,27 @@ function inlineFigureIds(content: string) {
 
 function InlineFigure({ figure, index }: { figure: QuestionFigure; index: number }) {
   const [preview, setPreview] = useState(false)
+  const [error, setError] = useState(false)
   return (
     <>
       <figure className="my-3 max-w-xl overflow-hidden rounded-lg border bg-white">
-        <button className="block w-full cursor-zoom-in bg-white text-left" onClick={() => setPreview(true)} type="button">
-          <img alt={figureAlt(figure, index)} className="block h-auto max-h-[28rem] w-auto max-w-full bg-white" src={assetUrl(String(figure.path || ''))} />
+        <button className="block w-full cursor-zoom-in bg-white text-left" onClick={() => !error && setPreview(true)} type="button">
+          {error ? (
+            <div className="flex h-32 items-center justify-center bg-zinc-50 text-xs text-zinc-400">
+              图片加载失败
+            </div>
+          ) : (
+            <img
+              alt={figureAlt(figure, index)}
+              className="block h-auto max-h-[28rem] w-auto max-w-full bg-white"
+              src={assetUrl(String(figure.path || ''))}
+              onError={() => setError(true)}
+            />
+          )}
         </button>
         <figcaption className="border-t px-2.5 py-1.5 text-xs text-zinc-500">{figureCaption(figure, index)}</figcaption>
       </figure>
-      {preview ? <LargeImageDialog caption={figureCaption(figure, index)} imageUrl={assetUrl(String(figure.path || ''))} onClose={() => setPreview(false)} title="题图预览" /> : null}
+      {preview && !error ? <LargeImageDialog caption={figureCaption(figure, index)} imageUrl={assetUrl(String(figure.path || ''))} onClose={() => setPreview(false)} title="题图预览" /> : null}
     </>
   )
 }

@@ -291,6 +291,59 @@ function fallbackCandidate(document: OCRDocument, timestamp: string, config: Imp
   return candidate
 }
 
+function fillDoc2xFigures(
+  document: OCRDocument,
+  stemMarkdown: string,
+  analysisMarkdown: string,
+  existingFigures: CandidateFigure[],
+): { figures: CandidateFigure[]; warnings: string[] } {
+  const figures = [...existingFigures]
+  const warnings: string[] = []
+  
+  const DOC2X_FIGURE_MARKER_RE = /<!--\s*DOC2X_FIGURE:([^\s>]+)\s*-->/g
+  
+  const scan = (markdown: string, usage: CandidateFigure['usage']) => {
+    if (!markdown) return
+    const matches = Array.from(markdown.matchAll(DOC2X_FIGURE_MARKER_RE))
+    for (const match of matches) {
+      const figureId = match[1]
+      
+      const exists = figures.find((f) => f.id === figureId || f.blockId === figureId)
+      if (exists) {
+        if (exists.usage !== usage) {
+          exists.usage = usage
+        }
+        continue
+      }
+      
+      const asset = document.assets.find((a) => a.id === figureId)
+      const block = document.pages.flatMap((p) => p.blocks).find((b) => b.id === figureId || b.assetId === figureId)
+      
+      let path = asset?.path || block?.content || ''
+      
+      if (path && /^https?:\/\//i.test(path)) {
+        warnings.push(`题图下载本地化失败，保留远程 URL: ${path}`)
+      }
+      
+      const newFig: CandidateFigure = {
+        id: figureId,
+        blockId: figureId,
+        usage,
+        path: path || figureId,
+        sourceBlockId: asset?.sourceBlockId || block?.id,
+        pageNo: asset?.pageNo || block?.pageNo || 1,
+        bbox: asset?.bbox || block?.bbox,
+      }
+      figures.push(newFig)
+    }
+  }
+  
+  scan(stemMarkdown, 'stem')
+  scan(analysisMarkdown, 'analysis')
+  
+  return { figures: dedupeFigures(figures), warnings }
+}
+
 export function parseQuestionCandidates(document: OCRDocument, options: ParseQuestionCandidatesOptions = {}): QuestionCandidate[] {
   const timestamp = options.now || nowIso()
   const config = options.config || getParserConfig()
@@ -302,11 +355,38 @@ export function parseQuestionCandidates(document: OCRDocument, options: ParseQue
   const questionMatches = detectQuestionNumbers(questionMarkdown, config)
   const chunks = splitMarkdownByQuestionNumbers(questionMarkdown, questionMatches)
 
-  if (!chunks.length) return [fallbackCandidate(document, timestamp, config)]
+  let candidates: QuestionCandidate[] = []
+  if (!chunks.length) {
+    candidates = [fallbackCandidate(document, timestamp, config)]
+  } else {
+    const solutions = useSolutionSections ? extractSolutionMatches(markdown, solutionSections, config) : new Map<string, SolutionMatch>()
+    const duplicateNos = duplicateQuestionNos(chunks)
+    candidates = chunks.map((chunk) => candidateFromChunk(document, chunk, solutions.get(chunk.questionNo), duplicateNos, timestamp, config))
+    attachImageBlocks(document, chunks, candidates, config)
+  }
 
-  const solutions = useSolutionSections ? extractSolutionMatches(markdown, solutionSections, config) : new Map<string, SolutionMatch>()
-  const duplicateNos = duplicateQuestionNos(chunks)
-  const candidates = chunks.map((chunk) => candidateFromChunk(document, chunk, solutions.get(chunk.questionNo), duplicateNos, timestamp, config))
-  attachImageBlocks(document, chunks, candidates, config)
+  for (const candidate of candidates) {
+    const { figures: finalFigures, warnings } = fillDoc2xFigures(
+      document,
+      candidate.stemMarkdown,
+      candidate.analysisMarkdown,
+      candidate.figures
+    )
+    candidate.figures = finalFigures
+
+    if (warnings.length > 0) {
+      for (const w of warnings) {
+        if (!candidate.issues.some((issue) => issue.message === w)) {
+          candidate.issues.push({
+            code: 'image_download_failed',
+            severity: 'warning',
+            message: w,
+          })
+        }
+      }
+      candidate.status = statusForIssues(candidate.issues)
+    }
+  }
+
   return candidates
 }

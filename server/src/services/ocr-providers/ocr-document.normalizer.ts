@@ -139,6 +139,57 @@ function normalizePageNo(value: number, fallback: number) {
   return Number.isFinite(pageNo) && pageNo > 0 ? pageNo : fallback
 }
 
+export function ensureOcrDocumentFiguresAndPlaceholders(doc: {
+  markdown: string
+  assets: OCRAsset[]
+  sourceDocumentId: string
+  provider: string
+}) {
+  const markdown = doc.markdown || ''
+  const assets = doc.assets || []
+  
+  // Match markdown images and HTML <img> tags
+  const mdPattern = /!\[[^\]]*\]\(\s*(?:<([^>\n]+)>|([^\s)\n]+))\s*\)/gi
+  const htmlPattern = /<img\b[^>]*?\bsrc\s*=\s*(?:(["'])([\s\S]*?)\1|([^\s>]+))[^>]*?>/gi
+  
+  const foundUrls: { matchedText: string; url: string }[] = []
+  
+  for (const match of markdown.matchAll(mdPattern)) {
+    const url = (match[1] || match[2] || '').replace(/\\\)/g, ')').trim()
+    if (url) {
+      foundUrls.push({ matchedText: match[0], url })
+    }
+  }
+  
+  for (const match of markdown.matchAll(htmlPattern)) {
+    const url = (match[2] || match[3] || '').trim()
+    if (url) {
+      foundUrls.push({ matchedText: match[0], url })
+    }
+  }
+  
+  let newMarkdown = markdown
+  for (const item of foundUrls) {
+    let asset = assets.find((a) => a.path === item.url)
+    if (!asset) {
+      const hash = createHash('sha256').update(item.url).digest('hex').slice(0, 16)
+      const assetId = stableNormalizerId(doc.provider + '_inline_asset', [doc.sourceDocumentId, hash])
+      asset = {
+        id: assetId,
+        type: 'image',
+        path: item.url,
+        pageNo: 1,
+      }
+      assets.push(asset)
+    }
+    
+    newMarkdown = newMarkdown.split(item.matchedText).join(`<!-- DOC2X_FIGURE:${asset.id} -->`)
+  }
+  
+  doc.markdown = newMarkdown
+  doc.assets = assets
+}
+
 export function createNormalizedOCRDocument(
   provider: OCRDocumentProvider,
   options: OCRDocumentNormalizerOptions,
@@ -227,7 +278,7 @@ export function createNormalizedOCRDocument(
     })
   }
 
-  return {
+  const doc = {
     id: options.id || createId('ocrdoc', options.sourceDocumentId),
     sourceDocumentId: options.sourceDocumentId,
     provider,
@@ -243,4 +294,8 @@ export function createNormalizedOCRDocument(
     },
     createdAt: options.createdAt || nowIso(),
   }
+
+  ensureOcrDocumentFiguresAndPlaceholders(doc)
+
+  return doc
 }

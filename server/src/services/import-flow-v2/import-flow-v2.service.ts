@@ -16,6 +16,7 @@ import { difficultyLabel10, normalizeDifficultyScore10 } from '../../utils/searc
 import { inferQuestionType } from '../../utils/question-type.js'
 import { parseQuestionCandidates } from '../question-parser/index.js'
 import { normalizeGlmOCRDocument } from '../ocr-providers/glm.normalizer.js'
+import { ensureOcrDocumentFiguresAndPlaceholders } from '../ocr-providers/ocr-document.normalizer.js'
 import { assertGlmOcrConfigured, callGlmLayoutParsing, GlmOcrProviderError } from '../ocr-providers/glm.provider.js'
 import { normalizeTags } from '../tags/tag-libraries.js'
 import { normalizeUploadName } from '../../utils/ocr-helpers.js'
@@ -94,7 +95,7 @@ function bboxRecord(bbox: CandidateFigure['bbox']) {
 function figuresForQuestionBank(figures: CandidateFigure[]) {
   return figures.map((figure) => ({
     id: figure.id,
-    blockId: figure.sourceBlockId,
+    blockId: figure.blockId || figure.sourceBlockId,
     origin: 'import_flow_v2',
     usage: figure.usage,
     category: figure.usage === 'analysis' ? 'analysis' : 'question',
@@ -235,6 +236,67 @@ export function getSourceDocument(id: string) {
   return { sourceDocument }
 }
 
+export async function localizeRemoteImages(doc: OCRDocument) {
+  const sourceDocumentId = doc.sourceDocumentId
+  const assets = doc.assets || []
+  
+  const localAssetsDir = path.join(importDataDir(), 'source-documents', sourceDocumentId, 'assets')
+  ensureDir(localAssetsDir)
+  
+  const failedUrls: string[] = []
+  
+  for (const asset of assets) {
+    if (asset.path && (/^https?:\/\//i.test(asset.path))) {
+      const url = asset.path
+      const hash = createHash('sha256').update(url).digest('hex').slice(0, 16)
+      
+      let ext = '.png'
+      try {
+        const parsedUrl = new URL(url)
+        const pathnameExt = path.extname(parsedUrl.pathname).toLowerCase()
+        if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'].includes(pathnameExt)) {
+          ext = pathnameExt
+        }
+      } catch (e) {
+        // ignore
+      }
+      
+      const filename = `img_${hash}${ext}`
+      const localFilePath = path.join(localAssetsDir, filename)
+      const portablePath = assetPathFor(localFilePath)
+      
+      if (fs.existsSync(localFilePath)) {
+        asset.path = portablePath
+        continue
+      }
+      
+      try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 15000) // 15s timeout
+        const res = await fetch(url, { signal: controller.signal })
+        clearTimeout(timeoutId)
+        if (!res.ok) {
+          throw new Error(`HTTP status ${res.status}`)
+        }
+        const buffer = Buffer.from(await res.arrayBuffer())
+        fs.writeFileSync(localFilePath, buffer)
+        asset.path = portablePath
+      } catch (err) {
+        console.error(`Failed to download remote asset ${url}:`, err)
+        failedUrls.push(url)
+      }
+    }
+  }
+  
+  if (failedUrls.length > 0) {
+    if (!doc.metadata) doc.metadata = {}
+    doc.metadata.image_download_failed_urls = Array.from(new Set([
+      ...(doc.metadata.image_download_failed_urls as string[] || []),
+      ...failedUrls
+    ]))
+  }
+}
+
 async function runGlmSourceDocumentOcr(sourceDocumentId: string, initialState: SourceDocumentOcrTaskState) {
   const sourceDocument = sourceRepo.getSourceDocument(sourceDocumentId)
   if (!sourceDocument) return
@@ -265,6 +327,9 @@ async function runGlmSourceDocumentOcr(sourceDocumentId: string, initialState: S
         storedRawJsonPath: assetPathFor(rawPath),
       },
     })
+    
+    await localizeRemoteImages(normalized)
+
     writeText(markdownPath, normalized.markdown)
     writeJson(pagesPath, normalized.pages)
     writeJson(assetsPath, normalized.assets)
@@ -364,7 +429,7 @@ export function getSourceDocumentOcrStatus(id: string) {
   }
 }
 
-export function importOCRDocumentJson(body: Record<string, unknown>) {
+export async function importOCRDocumentJson(body: Record<string, unknown>) {
   const rawOCRDocument = body.ocrDocument || body
   const raw = asRecord(rawOCRDocument)
   const sourceBody = asRecord(body.sourceDocument)
@@ -385,6 +450,10 @@ export function importOCRDocumentJson(body: Record<string, unknown>) {
   if (!source) throw new RouteError(500, '资料创建失败。')
 
   const normalized = normalizeOCRDocumentPayload(rawOCRDocument, source.id)
+  
+  ensureOcrDocumentFiguresAndPlaceholders(normalized)
+  await localizeRemoteImages(normalized)
+
   const ocrId = normalized.id || ''
   const finalId = ocrId && !ocrRepo.getOcrDocument(ocrId) ? ocrId : ''
   const recordId = finalId || undefined

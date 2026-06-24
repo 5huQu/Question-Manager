@@ -18,6 +18,7 @@ export type CandidateIssueCode =
   | 'formula_parse_error'
   | 'markdown_render_error'
   | 'manual_review_required'
+  | 'image_download_failed'
 
 export type CandidateIssueSeverity = 'warning' | 'error'
 
@@ -25,6 +26,7 @@ export type CandidateFigure = {
   id: string
   usage: CandidateFigureUsage
   path: string
+  blockId?: string
   sourceBlockId?: string
   pageNo?: number
   bbox?: OCRBBox

@@ -108,9 +108,9 @@ export function mountImportFlowV2Routes(app: Express) {
     }
   })
 
-  app.post('/api/ocr-documents/import-json', (req, res) => {
+  app.post('/api/ocr-documents/import-json', async (req, res) => {
     try {
-      res.status(201).json(importOCRDocumentJson(req.body || {}))
+      res.status(201).json(await importOCRDocumentJson(req.body || {}))
     } catch (error) {
       sendRouteError(res, error)
     }
