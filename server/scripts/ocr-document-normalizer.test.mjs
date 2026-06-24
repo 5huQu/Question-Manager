@@ -83,4 +83,54 @@ assert.match(doc2xDocument.markdown, /三角形面积/)
 assert.match(doc2xDocument.markdown, /<!--\s*DOC2X_FIGURE:doc2x_asset_[a-f0-9]{12}\s*-->/)
 assert.equal(doc2xDocument.metadata.taskId, 'doc2x-task-1')
 
+import { localizeRemoteImages, figuresForQuestionBank } from '../dist/services/import-flow-v2/import-flow-v2.service.js'
+
+// Test A: HTML img -> DOC2X_FIGURE -> assets 对应一致
+{
+  const matches = Array.from(glmDocument.markdown.matchAll(/<!--\s*DOC2X_FIGURE:([^\s>]+)\s*-->/g))
+  assert.equal(matches.length, 2)
+  const placeholderIds = matches.map((m) => m[1])
+  for (const id of placeholderIds) {
+    const matchedAsset = glmDocument.assets.find((a) => a.id === id)
+    assert.ok(matchedAsset, `Asset with ID ${id} must exist`)
+    assert.ok(matchedAsset.path.startsWith('http'), 'Asset path must initially be a remote URL')
+  }
+}
+
+// Test B: localizeRemoteImages 后 asset.path 变为本地 portable path
+{
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url) => {
+    return {
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => new ArrayBuffer(1024),
+    }
+  }
+  
+  try {
+    const clonedDocument = JSON.parse(JSON.stringify(glmDocument))
+    clonedDocument.sourceDocumentId = 'test_source_id'
+    await localizeRemoteImages(clonedDocument)
+    
+    for (const asset of clonedDocument.assets) {
+      assert.ok(
+        asset.path.startsWith('data/import-flow-v2/source-documents/test_source_id/assets/'),
+        `Asset path should become local portable path, got ${asset.path}`
+      )
+    }
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
+
+// Test C: figuresForQuestionBank 测试，验证入库后 blockId 不丢失
+{
+  const testCandidateFigures = [
+    { id: 'fig_1', blockId: 'fig_1_block', usage: 'stem', path: 'path/to/fig.png', pageNo: 1 },
+  ]
+  const qbFigures = figuresForQuestionBank(testCandidateFigures)
+  assert.equal(qbFigures[0].blockId, 'fig_1_block')
+}
+
 console.log('ocr document normalizer ok')

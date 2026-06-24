@@ -200,4 +200,23 @@ assert.doesNotMatch(notesAndFormulaCandidates[1].stemMarkdown, /参考公式|q\^
 assert.match(notesAndFormulaCandidates[1].answerText, /第十九题答案/)
 assert.match(notesAndFormulaCandidates[1].analysisMarkdown, /第十九题解析/)
 
+// Test D: candidate 中 DOC2X_FIGURE 能补出 figures
+{
+  const doc2xPlaceholderDocument = {
+    ...ocrDocument,
+    id: 'ocr_placeholder_test',
+    markdown: '1. 第一题如图所示。\n\n<!-- DOC2X_FIGURE:placeholder_fig_1 -->',
+    pages: [],
+    assets: [
+      { id: 'placeholder_fig_1', type: 'image', path: 'import-flow-v2/source-documents/src_parser_test/assets/fig.png', pageNo: 1 },
+    ],
+  }
+  const parsedWithPlaceholders = parseQuestionCandidates(doc2xPlaceholderDocument, { now: '2026-06-24T00:00:00.000Z' })
+  assert.equal(parsedWithPlaceholders.length, 1)
+  assert.equal(parsedWithPlaceholders[0].figures.length, 1)
+  assert.equal(parsedWithPlaceholders[0].figures[0].id, 'placeholder_fig_1')
+  assert.equal(parsedWithPlaceholders[0].figures[0].blockId, 'placeholder_fig_1')
+  assert.equal(parsedWithPlaceholders[0].figures[0].path, 'import-flow-v2/source-documents/src_parser_test/assets/fig.png')
+}
+
 console.log('question parser ok')

@@ -75,6 +75,14 @@ export type ImportV2Candidate = {
   updatedAt: string
 }
 
+export type OcrFigureDiagnostics = {
+  placeholderCount: number
+  assetsCount: number
+  unmatchedPlaceholderCount: number
+  unusedAssetsCount: number
+  failedDownloadCount: number
+}
+
 export type ParseCandidatesResult = {
   candidateCount: number
   readyCount: number
@@ -82,6 +90,7 @@ export type ParseCandidatesResult = {
   needsManualFixCount?: number
   blockedCount: number
   items: ImportV2Candidate[]
+  diagnostics?: OcrFigureDiagnostics
 }
 
 export const importV2Api = {
@@ -134,7 +143,7 @@ export const importV2Api = {
     })
   },
   listCandidates(sourceDocumentId: string) {
-    return api<{ items: ImportV2Candidate[] }>('/api/source-documents/' + encodeURIComponent(sourceDocumentId) + '/candidates')
+    return api<{ items: ImportV2Candidate[]; diagnostics?: OcrFigureDiagnostics }>('/api/source-documents/' + encodeURIComponent(sourceDocumentId) + '/candidates')
   },
   updateCandidate(candidateId: string, candidate: Partial<ImportV2Candidate>) {
     return api<{ candidate: ImportV2Candidate }>('/api/question-candidates/' + encodeURIComponent(candidateId), {

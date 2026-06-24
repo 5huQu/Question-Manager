@@ -13,7 +13,7 @@ import {
   SkipForward,
   Upload,
 } from 'lucide-react'
-import { importV2Api, type ImportV2Candidate, type ImportV2OcrDocument, type ImportV2SourceDocument } from '@/api/importV2'
+import { importV2Api, type ImportV2Candidate, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics } from '@/api/importV2'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { MarkdownWithInlineFigures } from '@/components/questions/QuestionContent'
 import { PageTitle, Panel, Badge, Button, Empty } from '@/components/ui'
@@ -74,6 +74,7 @@ export default function ImportV2Page() {
   const [activeTab, setActiveTab] = useState<'all' | 'ready' | 'warning' | 'error'>('all')
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [diagnostics, setDiagnostics] = useState<OcrFigureDiagnostics | null>(null)
 
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')
@@ -219,6 +220,7 @@ export default function ImportV2Page() {
       await loadLists()
       setSelectedOcrId(result.ocrDocument.id)
       setQuestions([])
+      setDiagnostics(null)
       showNotice('本地模拟 OCRDocument JSON 导入完成，请点击下方生成题目。')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -237,6 +239,7 @@ export default function ImportV2Page() {
       const result = await importV2Api.parseCandidates(selectedOcrId)
       const unified = (result.items || []).map(fromCandidate)
       setQuestions(unified)
+      setDiagnostics(result.diagnostics || null)
       setCommittedIds(new Set(unified.filter((item) => item.status === 'committed').map((item) => item.id)))
       setSelectedIds(new Set())
       if (unified.length > 0) {
@@ -260,6 +263,7 @@ export default function ImportV2Page() {
       const result = await importV2Api.listCandidates(selectedOcr.sourceDocumentId)
       const unified = (result.items || []).map(fromCandidate)
       setQuestions(unified)
+      setDiagnostics(result.diagnostics || null)
       setCommittedIds(new Set(unified.filter((item) => item.status === 'committed').map((item) => item.id)))
       setSelectedIds(new Set())
       if (unified.length > 0) {
@@ -530,6 +534,24 @@ export default function ImportV2Page() {
                       <Button size="sm" icon={Database} variant="outline" onClick={loadCandidatesForSelected} disabled={!selectedOcr || Boolean(busy)}>
                         查看历史候选
                       </Button>
+                    </div>
+                  </div>
+                )}
+
+                {diagnostics && (
+                  <div className="mt-4 space-y-2 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/10">
+                    <h4 className="font-semibold text-zinc-700 dark:text-zinc-300">试卷图源诊断信息</h4>
+                    <div className="grid grid-cols-2 gap-y-1.5 text-[11px] text-zinc-500">
+                      <div>Markdown 占位符数量:</div>
+                      <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.placeholderCount}</div>
+                      <div>Assets 资产数量:</div>
+                      <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.assetsCount}</div>
+                      <div>未匹配 Asset 的占位符:</div>
+                      <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.unmatchedPlaceholderCount}</div>
+                      <div>Candidate 未使用的 Asset:</div>
+                      <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.unusedAssetsCount}</div>
+                      <div>远程图片下载失败数量:</div>
+                      <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.failedDownloadCount}</div>
                     </div>
                   </div>
                 )}

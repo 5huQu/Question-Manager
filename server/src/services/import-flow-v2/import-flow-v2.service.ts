@@ -92,7 +92,7 @@ function bboxRecord(bbox: CandidateFigure['bbox']) {
   return { x: bbox[0], y: bbox[1], width: bbox[2] - bbox[0], height: bbox[3] - bbox[1] }
 }
 
-function figuresForQuestionBank(figures: CandidateFigure[]) {
+export function figuresForQuestionBank(figures: CandidateFigure[]) {
   return figures.map((figure) => ({
     id: figure.id,
     blockId: figure.blockId || figure.sourceBlockId,
@@ -104,6 +104,50 @@ function figuresForQuestionBank(figures: CandidateFigure[]) {
     sourcePath: figure.path,
     path: figure.path,
   }))
+}
+
+export type OcrFigureDiagnostics = {
+  placeholderCount: number
+  assetsCount: number
+  unmatchedPlaceholderCount: number
+  unusedAssetsCount: number
+  failedDownloadCount: number
+}
+
+export function getOcrFigureDiagnostics(ocrDocId: string, candidates: QuestionCandidate[]): OcrFigureDiagnostics | undefined {
+  const record = ocrRepo.getOcrDocument(ocrDocId)
+  if (!record) return undefined
+  
+  const markdown = readText(record.markdownPath)
+  const assets = readJsonFile<OCRAsset[]>(record.assetsJsonPath, [])
+  
+  // 1. markdown 中 DOC2X_FIGURE 占位符数量
+  const placeholderMatches = Array.from(markdown.matchAll(/<!--\s*DOC2X_FIGURE:([^\s>]+)\s*-->/g))
+  const placeholderCount = placeholderMatches.length
+  const placeholderIds = new Set(placeholderMatches.map((m) => m[1]))
+  
+  // 2. assets 数量
+  const assetsCount = assets.length
+  
+  // 3. 占位符未匹配 asset 的数量
+  const unmatchedPlaceholderCount = Array.from(placeholderIds)
+    .filter((id) => !assets.some((a) => a.id === id))
+    .length
+    
+  // 4. asset 未被 candidate 使用的数量
+  const usedAssetIds = new Set(candidates.flatMap((c) => c.figures.map((f) => f.id || f.blockId)))
+  const unusedAssetsCount = assets.filter((a) => !usedAssetIds.has(a.id)).length
+  
+  // 5. 远程图片下载失败数量
+  const failedDownloadCount = assets.filter((a) => a.path && /^https?:\/\//i.test(a.path)).length
+  
+  return {
+    placeholderCount,
+    assetsCount,
+    unmatchedPlaceholderCount,
+    unusedAssetsCount,
+    failedDownloadCount,
+  }
 }
 
 function storedOcrDocumentDir(id: string) {
@@ -531,18 +575,22 @@ export function parseCandidatesForOcrDocument(id: string) {
   candidateRepo.deleteQuestionCandidatesForOcrDocument(id)
   const saved = candidates.map((candidate) => candidateRepo.createQuestionCandidate(candidate)).filter(Boolean) as QuestionCandidate[]
   sourceRepo.updateSourceDocument(document.sourceDocumentId, { status: saved.some((item) => item.status !== 'ready') ? 'partially_parsed' : 'parsed' })
-  return { ...candidateStatusCounts(saved), items: saved }
+  return { ...candidateStatusCounts(saved), items: saved, diagnostics: getOcrFigureDiagnostics(id, saved) }
 }
 
 export function listQuestionCandidatesForSource(sourceDocumentId: string, query: Record<string, unknown>) {
   if (!sourceRepo.getSourceDocument(sourceDocumentId)) throw new RouteError(404, '资料不存在。')
+  const candidates = candidateRepo.listQuestionCandidates({
+    sourceDocumentId,
+    status: query.status ? String(query.status) as any : undefined,
+    limit: Number(query.limit || 500),
+    offset: Number(query.offset || 0),
+  })
+  const [ocrDocument] = ocrRepo.listOcrDocuments({ sourceDocumentId, limit: 1 })
+  const diagnostics = ocrDocument ? getOcrFigureDiagnostics(ocrDocument.id, candidates) : undefined
   return {
-    items: candidateRepo.listQuestionCandidates({
-      sourceDocumentId,
-      status: query.status ? String(query.status) as any : undefined,
-      limit: Number(query.limit || 500),
-      offset: Number(query.offset || 0),
-    }),
+    items: candidates,
+    diagnostics,
   }
 }
 
