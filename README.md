@@ -1,57 +1,106 @@
 # Question Manager
 
-Question Manager 是一个本地优先的数学题库桌面工具，用于完成 PDF 切题、OCR 识别、人工复核、题库管理和试卷导出。项目基于 Electron、React、Express 与 Python，支持 macOS 和 Windows。
+Question Manager 是一个本地优先的数学题库桌面工具，覆盖从 PDF 切题、OCR、人工复核到题库维护、组卷和导出的完整流程。
 
-开源仓库不包含示例试卷、真实题目、SQLite 数据库、OCR 响应、API 密钥或其他运行产物。
+项目以 Electron、React、Express、SQLite 和 Python 构建，支持 macOS 与 Windows。真实试卷、题图、SQLite 数据库、OCR 响应与 API 密钥均不包含在开源仓库中。
 
-## 主要功能
+## 适合处理的资料
 
-- **PDF 切题**：上传试卷或讲义，按页面和题目区域切分，支持人工调整题目边界与图片。
-- **OCR 识别**：调用兼容接口识别题干、选项、答案与解析，并在进入题库前集中复核。
-- **题库管理**：按学段、年级、题型、难度和知识标签管理题目，支持新建、编辑、检索与题图维护。
-- **试题篮与组卷**：将题目加入试题篮，调整顺序、分值和答题空间，生成练习单、试卷或讲义。
-- **多格式导出**：支持 Markdown、LaTeX 和 PDF 导出，可选择内置模板或 Examch 模板。
-- **学习标签**：维护知识点与方法标签，供题目录入、筛选和后续统计使用。
-- **导出记录**：查看历史导出任务和生成文件。
-- **本地数据存储**：数据库、题图、OCR 配置和导出文件默认保存在当前用户的数据目录，不写入应用安装目录。
+- 单份试卷或讲义
+- 题干与答案/解析在同一 PDF 中的混合资料
+- 原卷与解析分开的配套 PDF
+- 跨页大题、含几何图、函数图、选项图或解析图的数学资料
 
-## 桌面版使用方式
+## 核心能力
 
-### 首次启动
+- **PDF 切题与复核**：自动检测题号和页面区域，支持跨页题，并可在 OCR 前人工调整边界。
+- **混合资料拆分**：同一 PDF 中的题干和解析会作为独立分段处理，再按题号合并为一题。
+- **GLM-OCR 区域归属**：GLM-OCR 可识别整份 PDF；系统根据已复核的题干/解析区域回收文本，避免相邻题或解析内容串入当前题。
+- **题图管理**：可在题干切片、解析裁图或 OCR 分块中框图、上传、调整和删除。已匹配的 GLM 图仅作识别诊断，不会重复显示为第二张题图。
+- **图片位置绑定**：OCR 返回图片标签或独立图注（例如“图1”）时，系统按阅读顺序绑定本地复核图；图数不一致时会明确提示“缺少可绑定图片”。
+- **待入库确认**：集中检查 OCR 文本、公式、题图、答案与解析，再确认进入题库。
+- **题库与组卷**：支持标签、难度、题型、检索、题图维护、试题篮和练习单/试卷/讲义编排。
+- **多格式导出**：支持 Markdown、LaTeX 与 PDF，可使用内置模板或 Examch 模板。
 
-桌面应用内置 Python 运行时，普通用户不需要单独安装 Python，也不需要配置 `PATH`。
+## 推荐工作流
 
-首次打开应用时会进入初始化页面。完成以下基础设置后才能进入主界面：
+### 1. 上传并切题
+
+在“PDF 切分中心”上传资料，等待自动切题完成后进入复核。
+
+- 检查每题的起止区域、题号和跨页顺序。
+- 对含图题目，在“框选题图”中选择正确来源：`题干切片`、`解析裁图` 或 OCR 分块。
+- 将图保存为题干图、解析图或选项图。
+
+### 2. OCR 与图文绑定
+
+复核通过后进入 OCR 队列并启动识别。
+
+对于题干与解析混合的资料：
+
+1. GLM-OCR 识别整份 PDF 的版面和文本。
+2. 系统按复核后的题干区、解析区分别取回文本。
+3. 题干与解析按题号合并。
+4. 复核框选的图片保持绑定到各自原始切片；GLM 返回的同图仅用于匹配诊断，不重复渲染。
+
+重新 OCR 会清理该批次的 OCR 文本和生成产物，但保留切题复核与解析侧已确认的图框，随后重新生成题库候选。
+
+### 3. 待入库确认
+
+在“入库确认”中检查：
+
+- 题干、答案、解析是否归属正确；
+- 公式是否可正常渲染；
+- 题图是否出现在正确位置；
+- 是否出现“需要确认题图”或“缺少可绑定图片”提示。
+
+若提示图片引用与已框图片数量不一致，请先在“框选题图”中补齐、删除或调整图片，再保存。图片编辑后会立即重新尝试绑定，无需重新 OCR。
+
+### 4. 入库、组卷与导出
+
+确认无误后入库；随后可在题库中补充标签、难度和知识点，并加入试题篮完成组卷和导出。
+
+## OCR 提供方
+
+在“系统设置”中选择并配置 OCR 提供方。密钥写入本机数据目录的配置文件，前端只显示“是否已配置”，不会返回完整密钥。
+
+| 提供方 | 适用情况 | 说明 |
+| --- | --- | --- |
+| `GLM-OCR` <br> [点击获取GLM免费2000万Token](https://www.bigmodel.cn/invite?icode=xv%2BcI4bIrZk%2BhZnL8f9veH3uFJ1nZ0jLLgipQkYjpcA%3D)| 推荐用于混合题干/解析资料、跨页题和需要区域归属的资料 | 成本较低，注册即有赠送额度。整卷识别后按已复核区域回收文本；支持单题重新 OCR。 |
+| `Doc2X` <br> [点击注册Doc2X](https://doc2x.noedgeai.com?inviteCode=Y2J9Y0)| 已有稳定整份 PDF 识别结果的批量场景 | 成本相对高，准确率高，会下载识别 JSON 与图片；适合整批跑。 |
+
+
+
+OCR 失败时，优先检查：API Key、模型名称、原始 PDF 是否仍存在、切题复核是否已提交，以及 OCR 队列中的失败详情。
+
+## 桌面版使用
+
+桌面应用内置 Python 运行时，普通使用者无需另行安装 Python 或配置 `PATH`。
+
+首次启动需要完成基础设置：
 
 1. 设置系统名称和网页标题。
-2. 选择需要使用的教学学段。
+2. 选择教学学段。
 3. 选择试卷导出模板。
 4. 设置练习单、试卷和讲义水印。
-5. 保存设置并进入工作台。
+5. 在“系统设置”配置至少一个 OCR 提供方。
 
-这些内容之后仍可在“系统设置”中修改。
-
-### 配置 OCR
-
-进入“系统设置”，填写 OCR 服务的 API 地址、API Key 和模型名称。密钥只保存在本机用户数据目录中，接口只向前端返回是否已经配置，不会回传完整密钥。
-
-项目不绑定特定 OCR 服务，只要接口与当前配置格式兼容即可。仓库中的 [`.env.example`](.env.example) 仅作为字段参考，不包含可用密钥。
+这些设置都可在之后修改。
 
 ### 可选外部工具
 
-- **XeLaTeX**：用于编译 LaTeX/PDF 导出文件。
-- **LibreOffice**：用于部分 DOCX 转 PDF 流程。
+- **XeLaTeX**：导出 LaTeX/PDF 时需要。
+- **LibreOffice**：部分 DOCX 转 PDF 流程需要。
 
-应用会自动探测常见安装位置，也可以通过 `XELATEX_PATH` 或 `SOFFICE_PATH` 指定可执行文件。可在系统健康状态中查看这些工具是否可用。
+应用会自动探测常见路径，也可通过 `XELATEX_PATH` 与 `SOFFICE_PATH` 指定。系统健康状态会显示探测结果。
 
 ## 从源码运行
 
 ### 环境要求
 
 - Node.js 24 或更高版本
-- Python 3.11 或更高版本，仅源码开发需要
-- 可选：XeLaTeX
-- 可选：LibreOffice
+- Python 3.11 或更高版本（仅源码开发需要）
+- 可选：XeLaTeX、LibreOffice
 
 安装依赖：
 
@@ -59,6 +108,16 @@ Question Manager 是一个本地优先的数学题库桌面工具，用于完成
 npm install
 python3 -m pip install -r server/python/requirements.txt
 ```
+
+推荐在应用启动后通过“系统设置”配置 OCR。源码开发也可以通过 shell 环境变量传入，例如：
+
+```sh
+export OCR_PROVIDER=glm
+export GLM_OCR_API_KEY='your-secret-key'
+npm run dev
+```
+
+[`.env.example`](.env.example) 仅列出字段参考；开发服务器不会自动加载 `.env.local`。不要提交任何含真实密钥的环境文件。
 
 启动开发环境：
 
@@ -71,11 +130,11 @@ npm run dev
 - 前端：`http://127.0.0.1:5174`
 - API：`http://127.0.0.1:8797`
 
-Vite 开发服务器会把 `/api` 请求代理到本地 API。
+Vite 会将 `/api` 请求代理到本地 API。
 
-## 本地桌面打包
+## 桌面打包
 
-准备内置 Python 运行时并启动 Electron：
+启动 Electron 桌面版：
 
 ```sh
 npm run desktop
@@ -87,50 +146,39 @@ npm run desktop
 npm run pack:desktop
 ```
 
-打包流程会下载固定版本的 CPython，按 `server/python/runtime-requirements.txt` 安装依赖，并验证安装包内的 Python 能够独立完成一次 PDF 处理。最终用户无需安装 Python。
+打包流程会准备固定版本的 CPython，安装 `server/python/runtime-requirements.txt` 中的依赖，并验证包内 Python 可以独立处理 PDF。
 
-### Windows 打包
+### Windows
 
-在 Windows 上解压源码包后，双击：
+在 Windows 中解压源码包后运行：
 
 ```text
 build-and-install-windows.cmd
 ```
 
-脚本会检查 Node.js、安装 npm 依赖、准备 Python 运行时、验证包内切题流程，并生成和启动 NSIS 安装向导。安装完成后，Question Manager 会出现在 Windows“设置 → 应用”中，并提供标准卸载入口。更详细的排错说明见 [`WINDOWS_BUILD.md`](WINDOWS_BUILD.md)。
+脚本会检查 Node.js、安装依赖、准备 Python 运行时、验证切题流程，并生成和启动 NSIS 安装向导。详细排错说明见 [WINDOWS_BUILD.md](WINDOWS_BUILD.md)。
 
-### GitHub Actions 跨平台打包
+## 数据、配置与安全
 
-仓库提供 `Desktop Build` 工作流，在 GitHub 仓库的 Actions 页面中手动运行后，会分别使用 macOS 和 Windows runner：
+桌面版将数据写入操作系统分配给 Question Manager 的用户数据目录；源码开发默认写入仓库目录，也可设置 `QUESTION_DATA_DIR` 覆盖根目录。
 
-1. 安装锁定的 npm 依赖。
-2. 运行数学渲染测试和 API smoke test。
-3. 下载并校验对应平台的内置 Python。
-4. 生成桌面应用并执行包内 Python 切题验证。
-5. 上传 macOS ZIP 和 Windows NSIS 安装器 artifact。
+常用环境变量如下：
 
-推送形如 `v0.1.1` 的版本标签也会自动触发同一套构建。当前产物未进行 Apple 或 Windows 代码签名，系统首次打开时可能显示安全提醒。
+| 变量 | 作用 |
+| --- | --- |
+| `QUESTION_DATA_DIR` | SQLite、上传文件、题图、OCR 草稿和导出文件的根目录。 |
+| `PYTHON_PATH` | 源码开发使用的 Python 可执行文件。 |
+| `XELATEX_PATH` / `SOFFICE_PATH` | 外部导出工具路径。 |
+| `OCR_PROVIDER` | `glm` 或 `doc2x`。 |
+| `GLM_OCR_API_BASE_URL` / `GLM_OCR_API_KEY` / `GLM_OCR_MODEL` | GLM-OCR 配置。 |
+| `DOC2X_API_BASE_URL` / `DOC2X_API_KEY` / `DOC2X_MODEL` | Doc2X 配置。 |
+| `OCR_CLEANUP_*` | 可选的文本清理与分类模型配置。 |
 
-## 数据目录与环境变量
-
-桌面版把运行数据写入操作系统分配给 Question Manager 的用户数据目录。源码开发时默认使用仓库目录，也可以通过以下变量覆盖：
-
-- `QUESTION_DATA_DIR`：SQLite、上传文件、题图、OCR 产物和导出文件的根目录。
-- `PYTHON_PATH`：源码开发使用的 Python 可执行文件。
-- `XELATEX_PATH`：XeLaTeX 可执行文件路径。
-- `SOFFICE_PATH`：LibreOffice `soffice` 可执行文件路径。
-- `OCR_API_BASE_URL`：OCR 接口地址。
-- `OCR_API_KEY`：OCR 接口密钥。
-- `OCR_MODEL`：OCR 模型名称。
-- `OCR_PROVIDER`：`doc2x`（整份 PDF 的 Doc2X v3 识别）或 `glm`（GLM-OCR）。
-- `DOC2X_API_BASE_URL`、`DOC2X_API_KEY`、`DOC2X_MODEL`：Doc2X 配置；Doc2X 结果会立即下载 JSON 与题图，首版支持整批完全重跑，不支持单题重新 OCR。
-- `GLM_OCR_API_BASE_URL`、`GLM_OCR_API_KEY`、`GLM_OCR_MODEL`：GLM-OCR 配置；整卷结果按切题复核后的题号与区域映射，跨页题可重新 OCR 为多页 PDF。
-
-不要提交 `config/`、`data/`、`output/`、OCR 草稿、上传的 PDF 或任何真实密钥。
+请勿提交 `config/`、`data/`、`python/ocr_drafts/`、`experiments/`、上传的 PDF、导出文件或任何密钥。
 
 ## 开发验证
 
-提交代码前建议运行：
+提交前建议执行：
 
 ```sh
 npm run build
@@ -139,10 +187,10 @@ npm run test:smoke
 npm run verify:python-runtime
 ```
 
-其中 smoke test 会使用临时数据目录启动 API、初始化空数据库并访问 `/api/health`。
+`test:smoke` 会使用临时数据目录启动 API、初始化空数据库并检查健康接口；不会读取你的本地题库数据。
 
 ## 开源许可
 
-Question Manager 采用 [GNU Affero General Public License v3.0](LICENSE)（`AGPL-3.0-only`）发布。桌面包包含 PyMuPDF，并按其 AGPL 许可路径分发；第三方组件说明见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+Question Manager 采用 [GNU Affero General Public License v3.0](LICENSE)（`AGPL-3.0-only`）发布。桌面包包含 PyMuPDF，并按其 AGPL 许可路径分发；第三方组件说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-如果你修改本项目并通过网络向用户提供服务，需要按照 AGPL v3 的要求向这些用户提供对应源代码。
+如果你修改本项目并通过网络向用户提供服务，需要按 AGPL v3 向这些用户提供对应源代码。

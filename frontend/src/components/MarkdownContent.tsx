@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import katex from 'katex'
+import 'katex/dist/katex.min.css'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
 import remarkBreaks from 'remark-breaks'
@@ -52,7 +53,19 @@ export function plainTextLength(value: string) {
 export function normalizeMarkdownForRender(value: string) {
   // Arrays must be lifted to protected display-math blocks before the generic
   // inline-math repair runs; otherwise it can insert `$` inside array rows.
-  return normalizeRawLatexOutsideMath(normalizeMarkdownTables(normalizeNestedInlineMath(normalizeLatexArrays(normalizeMathDelimiters(normalizeHtmlTables(String(value || '')))))))
+  return normalizeRawLatexOutsideMath(normalizeMarkdownTables(normalizeNestedInlineMath(normalizeLatexArrays(normalizeMathDelimiters(normalizeHtmlTables(stripDoc2xNoiseComments(String(value || ''))))))))
+}
+
+export function stripDoc2xNoiseComments(value: string) {
+  return stripExamCarryoverNoise(String(value || '')
+    .replace(/<!--\s*DOC2X_PAGE\s*:\s*\d+\s*-->/gi, '')
+    .replace(/<!--\s*figureText\s*:[\s\S]*?-->/gi, ''))
+}
+
+function stripExamCarryoverNoise(value: string) {
+  return String(value || '')
+    .replace(/(?:^|\n)\s*(?:#{1,6}\s*)?[一二三四五六七八九十]+[、.．]\s*[^\n]{0,80}本大题[\s\S]*$/u, '')
+    .replace(/(?:^|\n)\s*<table\b(?=[\s\S]*?<td>\s*题号\s*<\/td>)(?=[\s\S]*?<td>\s*答案\s*<\/td>)[\s\S]*?<\/table>/gi, '')
 }
 
 function normalizeHtmlTables(value: string) {

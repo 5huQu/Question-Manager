@@ -55,7 +55,7 @@ export function normalizeChoiceMarkers(value: string) {
 }
 
 export function label(status: string) {
-  const labels: Record<string, string> = { idle: '未加入OCR', queued: '排队中', running: '运行中', succeeded: '已完成', failed: '失败', pending: '待复核', submitted: '已提交', pending_review: '待复核', ready_for_ocr: '通过' }
+  const labels: Record<string, string> = { idle: '未加入OCR', queued: '排队中', running: '运行中', succeeded: '已完成', failed: '失败', pending: '待复核', submitted: '已提交', pending_review: '待复核', ready_for_ocr: '通过', awaiting_manual_annotation: '等待标注' }
   return labels[status] || status
 }
 
@@ -116,7 +116,7 @@ export function displaySource(value: string) {
 
 export function statusVariant(status: string): 'default' | 'success' | 'warning' | 'danger' {
   if (['succeeded', 'ready_for_ocr'].includes(status)) return 'success'
-  if (['running', 'queued', 'processing'].includes(status)) return 'warning'
+  if (['running', 'queued', 'processing', 'awaiting_manual_annotation'].includes(status)) return 'warning'
   if (status === 'failed') return 'danger'
   return 'default'
 }
