@@ -11,6 +11,7 @@ import type { OcrSettings } from '@/types'
 import type { UpdateCheckResult } from '@/api/client'
 
 const TraditionalWorkbenchPage = lazy(() => import('@/pages/workbench/TraditionalWorkbenchPage'))
+const ImportV2Page = lazy(() => import('@/pages/import-v2/ImportV2Page'))
 const PdfSlicerPage = lazy(() => import('@/pages/pdf-slicer/PdfSlicerPage'))
 const OcrQueuePage = lazy(() => import('@/pages/ocr/OcrQueuePage'))
 const QuestionBankPage = lazy(() => import('@/pages/questions/QuestionBankPage'))
@@ -120,6 +121,7 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<NavigateToWorkbench />} />
                 <Route path="/workbench" element={<TraditionalWorkbenchPage />} />
+                <Route path="/tools/import" element={<ImportV2Page />} />
                 <Route path="/tools/pdf-slicer" element={<PdfSlicerPage />} />
                 <Route path="/tools/pdf-slicer/ocr-jobs" element={<OcrQueuePage />} />
                 <Route path="/questions" element={<QuestionBankPage />} />

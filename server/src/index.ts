@@ -25,6 +25,7 @@ import { mountQuestionBankCollectionsRoutes } from './routes/question-bank/colle
 import { mountExportRecordsRoutes } from './routes/question-bank/export-records.js'
 import { mountActivityDashboardRoutes } from './routes/dashboard/activity.js'
 import { mountQuickActionsRoutes } from './routes/question-bank/quick-actions.js'
+import { mountImportFlowV2Routes } from './routes/import-flow-v2.js'
 
 // Initialize schema before any route handles requests
 ensureSchema()
@@ -48,6 +49,7 @@ mountQuestionBankCollectionsRoutes(app)
 mountExportRecordsRoutes(app)
 mountActivityDashboardRoutes(app)
 mountQuickActionsRoutes(app)
+mountImportFlowV2Routes(app)
 
 // Re-export for Electron and smoke tests
 export { app, startServer, closeDatabase }

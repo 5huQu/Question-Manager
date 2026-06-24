@@ -24,6 +24,9 @@ export function ensureColumn(table: string, column: string, definition: string) 
  * Tables:
  * - pdf_slicer_batches
  * - pdf_slicer_runs
+ * - source_documents
+ * - ocr_documents
+ * - question_candidates
  * - question_bank_items
  * - pdf_slicer_solution_items
  * - pdf_slicer_review_items
@@ -161,6 +164,54 @@ export function ensureSchema() {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS source_documents (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      original_file_name TEXT NOT NULL DEFAULT '',
+      file_path TEXT NOT NULL DEFAULT '',
+      file_type TEXT NOT NULL DEFAULT 'pdf',
+      page_count INTEGER NOT NULL DEFAULT 0,
+      provider TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'uploaded',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ocr_documents (
+      id TEXT PRIMARY KEY,
+      source_document_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      raw_result_path TEXT NOT NULL DEFAULT '',
+      markdown_path TEXT NOT NULL DEFAULT '',
+      blocks_json_path TEXT NOT NULL DEFAULT '',
+      assets_json_path TEXT NOT NULL DEFAULT '',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (source_document_id) REFERENCES source_documents(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS question_candidates (
+      id TEXT PRIMARY KEY,
+      source_document_id TEXT NOT NULL,
+      ocr_document_id TEXT NOT NULL DEFAULT '',
+      question_no TEXT NOT NULL DEFAULT '',
+      stem_markdown TEXT NOT NULL DEFAULT '',
+      answer_text TEXT NOT NULL DEFAULT '',
+      analysis_markdown TEXT NOT NULL DEFAULT '',
+      question_type TEXT NOT NULL DEFAULT '',
+      difficulty_score_10 INTEGER NOT NULL DEFAULT 0,
+      difficulty_label TEXT NOT NULL DEFAULT '',
+      knowledge_points_json TEXT NOT NULL DEFAULT '[]',
+      solution_methods_json TEXT NOT NULL DEFAULT '[]',
+      figures_json TEXT NOT NULL DEFAULT '[]',
+      source_refs_json TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'needs_review',
+      issues_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (source_document_id) REFERENCES source_documents(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS pdf_slicer_review_items (
       result_id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
@@ -226,6 +277,12 @@ export function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_qb_export_records_created_at ON question_bank_export_records(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_qb_export_records_collection ON question_bank_export_records(collection_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_qb_export_records_run ON question_bank_export_records(run_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_source_documents_updated_at ON source_documents(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_source_documents_status ON source_documents(status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ocr_documents_source ON ocr_documents(source_document_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_question_candidates_source ON question_candidates(source_document_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_question_candidates_ocr ON question_candidates(ocr_document_id, question_no);
+    CREATE INDEX IF NOT EXISTS idx_question_candidates_status ON question_candidates(status, updated_at DESC);
   `)
 
   // -- Migration columns for pdf_slicer_runs --

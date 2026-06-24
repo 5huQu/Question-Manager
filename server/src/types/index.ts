@@ -1,5 +1,9 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 
+export type * from './source-document.js'
+export type * from './ocr-document.js'
+export type * from './question-candidate.js'
+
 export type RunStatus = 'idle' | 'queued' | 'running' | 'succeeded' | 'failed'
 export type ReviewStatus = 'pending' | 'submitted'
 export type BankStatus = 'blocked' | 'ready' | 'banked' | 'skipped'

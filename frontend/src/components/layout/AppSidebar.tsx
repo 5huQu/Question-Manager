@@ -5,6 +5,7 @@ import {
   BookOpenCheck,
   Database,
   DownloadCloud,
+  FileJson,
   GraduationCap,
   LayoutDashboard,
   Moon,
@@ -58,6 +59,12 @@ export function AppSidebar({
     { active: (pathname) => pathname === '/' || pathname === '/workbench', icon: LayoutDashboard, label: '工作台概览', to: '/workbench' },
   ]
   const toolItems: NavItem[] = [
+    {
+      active: (pathname) => pathname.startsWith('/tools/import'),
+      icon: FileJson,
+      label: '资料导入 v2',
+      to: '/tools/import',
+    },
     {
       active: (pathname) => pathname.startsWith('/tools/pdf-slicer') && !pathname.endsWith('ocr-jobs') && !pathname.includes('pending-bank'),
       icon: Scissors,
