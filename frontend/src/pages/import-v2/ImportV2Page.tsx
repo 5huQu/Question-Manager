@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
   BadgeAlert,
@@ -60,6 +61,7 @@ function issueLabel(code?: string) {
 }
 
 export default function ImportV2Page() {
+  const navigate = useNavigate()
   const [sourceDocuments, setSourceDocuments] = useState<ImportV2SourceDocument[]>([])
   const [ocrDocuments, setOcrDocuments] = useState<ImportV2OcrDocument[]>([])
   const [selectedOcrId, setSelectedOcrId] = useState('')
