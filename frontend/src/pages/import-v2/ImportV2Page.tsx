@@ -1,42 +1,21 @@
-import { useEffect, useMemo, useState, useRef, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import {
   AlertTriangle,
-  ArrowRight,
   BadgeAlert,
-  BookOpen,
   Check,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   Compass,
-  Crop,
   Database,
-  Edit3,
-  FileJson,
-  FileText,
   ImageIcon,
-  Inbox,
   Layers,
   LoaderCircle,
   Play,
-  RefreshCcw,
   SkipForward,
-  Sparkles,
-  Trash2,
   Upload,
-  X
 } from 'lucide-react'
 import { importV2Api, type ImportV2Candidate, type ImportV2OcrDocument, type ImportV2SourceDocument } from '@/api/importV2'
-import { ocrApi } from '@/api/ocr'
-import { pdfSlicerApi } from '@/api/pdfSlicer'
-import { pendingBankApi } from '@/api/pendingBank'
-import { questionBankApi } from '@/api/questionBank'
-import { settingsApi } from '@/api/settings'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { PageTitle, Panel, Badge, Button, Empty } from '@/components/ui'
-import { EditDialog } from '@/components/questions/EditDialog'
-import { FigureCropDialog } from '@/components/questions/FigureDialogs'
-import type { ApiRun, QuestionItem, QuestionFigure } from '@/types'
 import { assetUrl } from '@/utils/questionDisplay'
 
 // ── 统一数据适配层 (Unified Model Adapter) ─────────────────────────────
@@ -52,7 +31,6 @@ type UnifiedQuestion = {
   figures: Array<{ id: string; usage: string; path: string; pageNo?: number; bbox?: any }>
   hasFigures: boolean
   similarQuestions?: any[]
-  isOcrRun: boolean
   rawItem: any
 }
 
@@ -67,71 +45,8 @@ function fromCandidate(c: ImportV2Candidate): UnifiedQuestion {
     issues: (c.issues || []).map(iss => ({ severity: iss.severity, message: iss.message, code: iss.code })),
     figures: (c.figures || []).map(fig => ({ id: fig.id, usage: fig.usage, path: fig.path, pageNo: fig.pageNo })),
     hasFigures: (c.figures || []).length > 0,
-    isOcrRun: false,
     rawItem: c
   }
-}
-
-function fromQuestionItem(q: QuestionItem): UnifiedQuestion {
-  let status: UnifiedQuestion['status'] = 'ready'
-  if (q.bankStatus === 'banked') status = 'banked'
-  else if (q.bankStatus === 'skipped') status = 'skipped'
-  else if (q.bankStatus === 'blocked') status = 'needs_manual_fix'
-
-  const issues: UnifiedQuestion['issues'] = []
-  if (q.formatIssue) {
-    issues.push({
-      severity: q.formatIssue.code === 'inline_image_reference_mismatch' ? 'error' : 'warning',
-      message: q.formatIssue.message || '',
-      code: q.formatIssue.code
-    })
-  }
-
-  return {
-    id: q.id,
-    questionNo: q.questionNo || '',
-    stemMarkdown: q.stemMarkdown || '',
-    answerText: q.answerText || '',
-    analysisMarkdown: q.analysisMarkdown || '',
-    status,
-    issues,
-    figures: (q.figures || []).map(fig => ({ id: fig.id || '', usage: fig.usage || 'stem', path: fig.path || '', pageNo: fig.pageNumber, bbox: fig.bbox })),
-    hasFigures: q.hasFigures || (q.figures || []).length > 0,
-    similarQuestions: q.similarQuestions,
-    isOcrRun: true,
-    rawItem: q
-  }
-}
-
-// ── 步骤与进度辅助 (Step Mapping Helper) ───────────────────────────────
-
-function getFriendlyProgressStage(run: ApiRun | undefined) {
-  if (!run) return { step: 1, text: '等待上传试卷...' }
-  const status = run.ocrStatus
-  const percent = run.progressPercent || 0
-
-  if (status === 'starting' || status === 'preupload') {
-    return { step: 1, text: '正在准备试卷传输通道...' }
-  }
-  if (status === 'uploading') {
-    return { step: 1, text: '正在上传试卷文件至云端服务器...' }
-  }
-  if (status === 'parsing') {
-    return { step: 2, text: `AI 正在逐页转译文字和公式符号... (${percent}%)` }
-  }
-  if (status === 'normalizing' || status === 'downloading_assets') {
-    return { step: 3, text: '正在进行版面智能重排并分割试题范围...' }
-  }
-  if (status === 'importing') {
-    return { step: 4, text: '智能题号校验，正在生成待确认题目...' }
-  }
-  if (status === 'succeeded') {
-    return { step: 4, text: '试题智能提取已完成！请在下方核对。' }
-  }
-  if (status === 'failed') {
-    return { step: 4, text: `解析失败：${run.ocrError || '请联系管理员或尝试重跑。'}` }
-  }
-  return { step: 2, text: 'AI 识别处理中...' }
 }
 
 export default function ImportV2Page() {
@@ -142,19 +57,12 @@ export default function ImportV2Page() {
   const [committedIds, setCommittedIds] = useState<Set<string>>(new Set())
 
   // UI 交互状态
-  const [ocrProvider, setOcrProvider] = useState<'glm' | 'doc2x'>('glm')
   const [uploading, setUploading] = useState(false)
-  const [runningRunId, setRunningRunId] = useState('')
-  const [ocrProgress, setOcrProgress] = useState<ApiRun | undefined>(undefined)
+  const [runningSourceDocumentId, setRunningSourceDocumentId] = useState('')
   const [isJSONMode, setIsJSONMode] = useState(false)
   const [activeTab, setActiveTab] = useState<'all' | 'ready' | 'warning' | 'error'>('all')
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-
-  // 编辑与裁剪弹窗
-  const [editingItem, setEditingItem] = useState<any | null>(null)
-  const [editingDraft, setEditingDraft] = useState<any>({})
-  const [croppingItem, setCroppingItem] = useState<QuestionItem | null>(null)
 
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')
@@ -180,36 +88,38 @@ export default function ImportV2Page() {
     loadLists().catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }, [])
 
-  // 轮询 OCR 识别进度
   useEffect(() => {
-    if (!runningRunId) return undefined
-
-    const fetchProgress = async () => {
+    if (!runningSourceDocumentId) return undefined
+    let active = true
+    const poll = async () => {
       try {
-        const progressRes = await ocrApi.getOcrProgress(runningRunId)
-        setOcrProgress(progressRes.run)
-        
-        const status = progressRes.run.ocrStatus
-        if (status === 'succeeded') {
-          // 识别成功，重置轮询并加载题目
-          setRunningRunId('')
-          showNotice('文件解析成功！已自动分割出题目。')
-          await loadOcrQuestions(runningRunId)
-        } else if (status === 'failed' || status === 'interrupted') {
-          setRunningRunId('')
-          setError(`识别出错：${progressRes.run.ocrError || '任务已被中断。'}`)
+        const result = await importV2Api.getSourceDocumentOcrStatus(runningSourceDocumentId)
+        if (!active) return
+        setSourceDocuments((items) => items.map((item) => item.id === result.sourceDocument.id ? result.sourceDocument : item))
+        if (result.task.status === 'ocr_succeeded') {
+          await loadLists()
+          if (!active) return
+          if (result.ocrDocument) setSelectedOcrId(result.ocrDocument.id)
+          setIsJSONMode(true)
+          setRunningSourceDocumentId('')
+          showNotice('识别完成。请点击“生成待确认题目”继续。')
+        } else if (result.task.status === 'ocr_failed') {
+          setRunningSourceDocumentId('')
+          setError(result.task.error || 'OCR 识别失败。')
         }
       } catch (err) {
-        setRunningRunId('')
+        if (!active) return
+        setRunningSourceDocumentId('')
         setError(err instanceof Error ? err.message : String(err))
       }
     }
-
-    // 立即执行一次，随后每隔 3.5 秒轮询
-    fetchProgress()
-    const timer = window.setInterval(fetchProgress, 3500)
-    return () => window.clearInterval(timer)
-  }, [runningRunId])
+    void poll()
+    const timer = window.setInterval(() => void poll(), 3000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [runningSourceDocumentId])
 
   // 清除通知和错误
   function showNotice(message: string) {
@@ -217,7 +127,7 @@ export default function ImportV2Page() {
     window.setTimeout(() => setNotice(''), 3000)
   }
 
-  // 1. 上传真实试卷 PDF/图片 并自动启动 OCR 识别
+  // 1. 上传真实 PDF/图片到 v2 专属资料区。
   async function handlePdfUpload(files: FileList | null) {
     if (!files || files.length === 0) return
     const file = files[0]
@@ -237,31 +147,9 @@ export default function ImportV2Page() {
     setSelectedIds(new Set())
 
     try {
-      const form = new FormData()
-      form.append('files', file)
-      form.append('materialType', 'exam') // 默认为试卷
-      form.append('fileRole', 'full') // 默认为一体解析版
-
-      // 上传文件
-      const uploadRes = await pdfSlicerApi.upload(form) as { manualAnnotationBatchId?: string; runId?: string }
-      const runId = uploadRes.runId || uploadRes.manualAnnotationBatchId || ''
-      if (!runId) {
-        throw new Error('上传失败，未能获取批次任务 ID。')
-      }
-
-      // 设置分类 (隐藏了切题流程，默认一体化试卷)
-      await pdfSlicerApi.updateRunClassification(runId, { materialType: 'exam', fileRole: 'full' })
-
-      // 把在 UI 选择的 OCR Provider 写入系统设置，然后再启动 OCR
-      await Promise.all([
-        settingsApi.updateSettings({ ocrProvider }),
-        settingsApi.updateOcrSettings({ ocrProvider })
-      ])
-
-      // 启动 OCR 运行
-      await ocrApi.startOcr(runId)
-      setRunningRunId(runId)
-      showNotice('文件已成功上传，自动识别提取已启动...')
+      await importV2Api.uploadSourceDocument(file)
+      await loadLists()
+      showNotice('资料已保存，可启动 GLM-OCR 识别。')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -269,16 +157,14 @@ export default function ImportV2Page() {
     }
   }
 
-  // 2. 加载普通 PDF/图片 OCR 成功后的题目列表
-  async function loadOcrQuestions(runId: string) {
-    setBusy('load-questions')
+  async function startGlmOcr(sourceDocumentId: string) {
+    setBusy(`ocr-${sourceDocumentId}`)
+    setError('')
     try {
-      const res = await pendingBankApi.getPendingBank(runId)
-      const unified = (res.items || []).map(fromQuestionItem)
-      setQuestions(unified)
-      if (unified.length > 0) {
-        setActiveQuestionId(unified[0].id)
-      }
+      await importV2Api.startSourceDocumentOcr(sourceDocumentId)
+      await loadLists()
+      setRunningSourceDocumentId(sourceDocumentId)
+      showNotice('GLM-OCR 已启动，正在识别资料。')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -286,7 +172,7 @@ export default function ImportV2Page() {
     }
   }
 
-  // 3. 处理本地模拟 JSON 文件导入
+  // 2. 处理本地模拟 JSON 文件导入
   async function handleJsonFile(file: File) {
     setBusy('import')
     setError('')
@@ -359,14 +245,7 @@ export default function ImportV2Page() {
     setBusy(q.id)
     setError('')
     try {
-      if (q.isOcrRun) {
-        // 普通 OCR
-        const runId = q.rawItem.sourceRunId
-        await pendingBankApi.bulkConfirm(runId, { questionIds: [q.id] })
-      } else {
-        // JSON 模拟
-        await importV2Api.commitCandidate(q.id)
-      }
+      await importV2Api.commitCandidate(q.id)
       setCommittedIds((prev) => new Set([...prev, q.id]))
       showNotice('该题目已成功确认入库')
     } catch (err) {
@@ -383,18 +262,8 @@ export default function ImportV2Page() {
     setBusy('bulk-confirm')
     setError('')
     try {
-      const firstQ = questions.find(q => q.id === idsArray[0])
-      if (!firstQ) return
-
-      if (firstQ.isOcrRun) {
-        const runId = firstQ.rawItem.sourceRunId
-        const result = await pendingBankApi.bulkConfirm(runId, { questionIds: idsArray })
-        showNotice(`批量确认完成：成功入库 ${result.success} 题。`)
-      } else {
-        // JSON 模拟下循环单题入库
-        await Promise.all(idsArray.map(id => importV2Api.commitCandidate(id)))
-        showNotice(`批量确认完成：成功入库 ${idsArray.length} 题。`)
-      }
+      await Promise.all(idsArray.map(id => importV2Api.commitCandidate(id)))
+      showNotice(`批量确认完成：成功入库 ${idsArray.length} 题。`)
 
       setCommittedIds((prev) => {
         const next = new Set(prev)
@@ -409,18 +278,12 @@ export default function ImportV2Page() {
     }
   }
 
-  // 8. 批量跳过/删除操作 (仅 OCR Run 模式下原生支持，JSON 模式只在界面移除)
+  // 8. 批量跳过操作仅在当前界面标记，v2 跳过持久化尚未接入。
   async function handleBulkSkip() {
     if (selectedIds.size === 0) return
     const idsArray = Array.from(selectedIds)
     setBusy('bulk-skip')
     try {
-      const firstQ = questions.find(q => q.id === idsArray[0])
-      if (firstQ && firstQ.isOcrRun) {
-        const runId = firstQ.rawItem.sourceRunId
-        await pendingBankApi.bulkSkip(runId, { questionIds: idsArray })
-      }
-      // 界面标记为已跳过
       setCommittedIds((prev) => {
         const next = new Set(prev)
         idsArray.forEach(id => next.add(id))
@@ -433,72 +296,6 @@ export default function ImportV2Page() {
     } finally {
       setBusy('')
     }
-  }
-
-  // 9. 打开内容编辑弹窗 (修正范围)
-  function openEditor(q: UnifiedQuestion) {
-    setEditingItem(q.rawItem)
-    setEditingDraft(q.rawItem)
-  }
-
-  // 10. 保存修改内容
-  async function saveEditedQuestion() {
-    if (!editingItem || !activeQuestion) return
-    setBusy('save-edit')
-    try {
-      if (activeQuestion.isOcrRun) {
-        const saved = await questionBankApi.updateItem(editingItem.id, editingDraft)
-        const nextUnified = fromQuestionItem(saved)
-        setQuestions(prev => prev.map(q => q.id === editingItem.id ? nextUnified : q))
-      } else {
-        const result = await importV2Api.updateCandidate(editingItem.id, editingDraft)
-        const nextUnified = fromCandidate(result.candidate)
-        setQuestions(prev => prev.map(q => q.id === editingItem.id ? nextUnified : q))
-      }
-      setEditingItem(null)
-      setEditingDraft({})
-      showNotice('试题内容修改已保存')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy('')
-    }
-  }
-
-  // 11. 手动框选截取题图 (FigureCropDialog 实现在大图上框选)
-  async function handleCropSave(payload: { usage: string; optionLabel?: string; bbox: Record<string, number>; sourcePath?: string }) {
-    if (!activeQuestion) throw new Error('没有选中的活动题目。')
-    const figure = await questionBankApi.createFigure(activeQuestion.id, { ...payload, pageNumber: 1 })
-    
-    // 局部同步更新本地 UnifiedQuestion figures 状态，带给用户零迟延响应
-    const raw = { ...activeQuestion.rawItem }
-    raw.figures = [...(raw.figures || []), figure]
-    raw.hasFigures = true
-    const nextUnified = fromQuestionItem(raw)
-    setQuestions(prev => prev.map(q => q.id === activeQuestion.id ? nextUnified : q))
-    return figure
-  }
-
-  async function handleCropUpdate(figureId: string, payload: { usage: string; optionLabel?: string; bbox: Record<string, number>; sourcePath?: string }) {
-    if (!activeQuestion) throw new Error('没有选中的活动题目。')
-    const figure = await questionBankApi.updateFigure(activeQuestion.id, figureId, { ...payload, pageNumber: 1 })
-    
-    const raw = { ...activeQuestion.rawItem }
-    raw.figures = (raw.figures || []).map((f: any) => f.id === figureId ? figure : f)
-    const nextUnified = fromQuestionItem(raw)
-    setQuestions(prev => prev.map(q => q.id === activeQuestion.id ? nextUnified : q))
-    return figure
-  }
-
-  async function handleCropDelete(figureId: string) {
-    if (!activeQuestion) return
-    await questionBankApi.deleteFigure(activeQuestion.id, figureId)
-    
-    const raw = { ...activeQuestion.rawItem }
-    raw.figures = (raw.figures || []).filter((f: any) => f.id !== figureId)
-    raw.hasFigures = raw.figures.length > 0
-    const nextUnified = fromQuestionItem(raw)
-    setQuestions(prev => prev.map(q => q.id === activeQuestion.id ? nextUnified : q))
   }
 
   // 多选与过滤计算
@@ -547,14 +344,11 @@ export default function ImportV2Page() {
     })
   }
 
-  // 进度状态解析
-  const friendlyProgress = getFriendlyProgressStage(ocrProgress)
-
   return (
     <div className="space-y-6">
       <PageTitle
-        title="资料导入与自动分割"
-        desc="上传试卷或讲义，AI 会自动识别文字和公式并按题号分割。请在此页面核对并存入系统题库。"
+        title="资料导入"
+        desc="上传资料后可使用 GLM-OCR 自动识别；识别完成后生成待确认题目。"
         path="/tools/import"
       />
 
@@ -572,11 +366,9 @@ export default function ImportV2Page() {
         </div>
       ) : null}
 
-      {/* ── 模块 1 & 2：上传与通道配置 (隐藏运行状态) ── */}
-      {!runningRunId && (
-        <div className="grid gap-6 md:grid-cols-12">
-          <div className="md:col-span-8 space-y-4">
-            <Panel title="第一步：上传试卷文档">
+      <div className="grid gap-6 md:grid-cols-12">
+        <div className="md:col-span-8">
+          <Panel title="上传资料">
               <div
                 onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
                 onDragLeave={() => setDragOver(false)}
@@ -611,74 +403,55 @@ export default function ImportV2Page() {
                   <Upload className="size-8 text-zinc-400 dark:text-zinc-500 mb-3" />
                 )}
                 <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                  {uploading ? '文件正上传中...' : '点击选择或拖拽试卷文件至此处'}
+                  {uploading ? '文件正保存中...' : '点击选择或拖拽资料文件至此处'}
                 </p>
                 <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">
-                  支持 PDF 文档、PNG/JPG 图片以及本地模拟解析 JSON 文件
+                  支持 PDF、PNG/JPG；上传后先保存原始资料，再点击“开始自动识别”。
                 </p>
               </div>
-            </Panel>
-
-            <Panel title="第二步：选择 AI 识别通道">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div
-                  onClick={() => setOcrProvider('glm')}
-                  className={`border rounded-lg p-4 cursor-pointer transition-all ${
-                    ocrProvider === 'glm'
-                      ? 'border-zinc-950 bg-zinc-50/50 dark:border-zinc-50 dark:bg-zinc-900/50'
-                      : 'border-zinc-200 bg-white hover:bg-zinc-50/10 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900/20'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className={`mt-0.5 flex size-4 items-center justify-center rounded-full border transition-all ${
-                      ocrProvider === 'glm' ? 'border-zinc-950 dark:border-zinc-50' : 'border-zinc-300'
-                    }`}>
-                      {ocrProvider === 'glm' && <span className="size-2 rounded-full bg-zinc-950 dark:bg-zinc-50" />}
-                    </span>
-                    <div>
-                      <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">高速图文识别通道 (GLM-OCR)</h4>
-                      <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
-                        解析处理耗时短，擅长还原页面版面结构，强力推荐语文、英语、政史地等以文本为主的试卷使用。
-                      </p>
-                    </div>
-                  </div>
+              {sourceDocuments.filter((item) => item.fileType === 'pdf' || item.fileType === 'image').length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-[11px] font-semibold text-zinc-500">已保存资料</p>
+                  {sourceDocuments.filter((item) => item.fileType === 'pdf' || item.fileType === 'image').slice(0, 5).map((item) => {
+                    const isRunning = item.id === runningSourceDocumentId || item.status === 'ocr_running'
+                    const canStart = item.status === 'uploaded' || item.status === 'ocr_failed'
+                    const statusLabel = item.status === 'ocr_running'
+                      ? '识别中'
+                      : item.status === 'ocr_succeeded' || item.status === 'parsed' || item.status === 'partially_parsed'
+                        ? '已识别'
+                        : item.status === 'ocr_failed'
+                          ? '识别失败'
+                          : '等待识别'
+                    return (
+                      <div key={item.id} className="flex items-center gap-3 rounded-lg border border-zinc-100 px-3 py-2 dark:border-zinc-800">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium text-zinc-800 dark:text-zinc-200">{item.originalFileName || item.title}</p>
+                          <p className="text-[10px] text-zinc-500">{statusLabel}</p>
+                        </div>
+                        {isRunning ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500"><LoaderCircle className="size-3 animate-spin" /> 识别中</span>
+                        ) : canStart ? (
+                          <Button size="sm" icon={Play} disabled={Boolean(busy)} onClick={() => startGlmOcr(item.id)}>
+                            {item.status === 'ocr_failed' ? '重试自动识别' : '开始自动识别'}
+                          </Button>
+                        ) : null}
+                      </div>
+                    )
+                  })}
                 </div>
+              )}
+          </Panel>
+        </div>
 
-                <div
-                  onClick={() => setOcrProvider('doc2x')}
-                  className={`border rounded-lg p-4 cursor-pointer transition-all ${
-                    ocrProvider === 'doc2x'
-                      ? 'border-zinc-950 bg-zinc-50/50 dark:border-zinc-50 dark:bg-zinc-900/50'
-                      : 'border-zinc-200 bg-white hover:bg-zinc-50/10 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900/20'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className={`mt-0.5 flex size-4 items-center justify-center rounded-full border transition-all ${
-                      ocrProvider === 'doc2x' ? 'border-zinc-950 dark:border-zinc-50' : 'border-zinc-300'
-                    }`}>
-                      {ocrProvider === 'doc2x' && <span className="size-2 rounded-full bg-zinc-950 dark:bg-zinc-50" />}
-                    </span>
-                    <div>
-                      <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">高精度公式识别通道 (Doc2X)</h4>
-                      <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
-                        云端排版与理科数学物理等公式识别精确度极高，复杂公式极少出现符号乱码。
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Panel>
-          </div>
-
-          <div className="md:col-span-4 space-y-4">
-            <Panel title="高级调试与模拟导入">
+        <div className="md:col-span-4">
+          <Panel title="OCRDocument 候选生成">
               <div className="space-y-4 text-xs">
                 <p className="text-zinc-500 leading-relaxed">
-                  在进行本地集成或离线测试时，可以通过模拟 JSON 输入快速校验试题提取的匹配性。
+                  可导入模拟 JSON，或选择 GLM-OCR 已生成的 OCRDocument；候选生成不会自动执行。
                 </p>
 
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-zinc-800 dark:text-zinc-200">本地模拟 JSON 流</span>
+                  <span className="font-semibold text-zinc-800 dark:text-zinc-200">导入模拟 JSON</span>
                   <input
                     type="checkbox"
                     checked={isJSONMode}
@@ -710,7 +483,7 @@ export default function ImportV2Page() {
 
                     <div className="flex gap-2">
                       <Button size="sm" icon={Play} onClick={parseSelectedOcr} disabled={!selectedOcrId || Boolean(busy)}>
-                        提取题目
+                        生成待确认题目
                       </Button>
                       <Button size="sm" icon={Database} variant="outline" onClick={loadCandidatesForSelected} disabled={!selectedOcr || Boolean(busy)}>
                         查看历史候选
@@ -719,74 +492,9 @@ export default function ImportV2Page() {
                   </div>
                 )}
               </div>
-            </Panel>
-          </div>
+          </Panel>
         </div>
-      )}
-
-      {/* ── 模块 3：自动识别进度条 (仅运行状态显示) ── */}
-      {runningRunId && (
-        <Panel title="试卷云端识别与题目自动提取进度" className="border-zinc-200 dark:border-zinc-800 shadow-md">
-          <div className="py-6 px-4 space-y-8">
-            <div className="flex items-center gap-4">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm animate-pulse">
-                <Sparkles className="size-5 text-zinc-900 dark:text-zinc-50 animate-bounce" />
-              </div>
-              <div className="space-y-1 min-w-0">
-                <h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                  {friendlyProgress.text}
-                </h3>
-                <p className="text-xs text-zinc-500 truncate" title={runningRunId}>
-                  任务标识：{runningRunId}
-                </p>
-              </div>
-            </div>
-
-            {/* 4 步骤进度条结构 */}
-            <div className="relative">
-              {/* 背景导轨 */}
-              <div className="absolute top-1/2 left-0 h-0.5 w-full bg-zinc-100 dark:bg-zinc-800 -translate-y-1/2" />
-              {/* 填充活跃区 */}
-              <div
-                className="absolute top-1/2 left-0 h-0.5 bg-zinc-900 dark:bg-zinc-55 -translate-y-1/2 transition-all duration-500 ease-out"
-                style={{ width: `${Math.min(100, Math.max(0, (friendlyProgress.step - 1) * 33.3))}%` }}
-              />
-
-              <div className="relative flex justify-between">
-                {[
-                  { step: 1, label: '上传试卷文件' },
-                  { step: 2, label: '云端 AI 识别' },
-                  { step: 3, label: '自动切题提取' },
-                  { step: 4, label: '加载待确认' },
-                ].map((item) => {
-                  const isActive = friendlyProgress.step >= item.step
-                  const isCurrent = friendlyProgress.step === item.step
-                  return (
-                    <div key={item.step} className="flex flex-col items-center space-y-2">
-                      <div className={`z-10 flex size-7 items-center justify-center rounded-full border transition-all duration-300 ${
-                        isActive
-                          ? 'border-zinc-900 bg-zinc-900 text-zinc-55 dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-950 font-semibold'
-                          : 'border-zinc-200 bg-white text-zinc-400 dark:border-zinc-800 dark:bg-zinc-955'
-                      } ${isCurrent ? 'ring-4 ring-zinc-100 dark:ring-zinc-900 scale-110' : ''}`}>
-                        {isActive && friendlyProgress.step > item.step ? (
-                          <Check className="size-3.5 stroke-[3]" />
-                        ) : (
-                          <span className="text-[11px]">{item.step}</span>
-                        )}
-                      </div>
-                      <span className={`text-[11px] font-medium transition-colors ${
-                        isActive ? 'text-zinc-900 dark:text-zinc-50' : 'text-zinc-400'
-                      }`}>
-                        {item.label}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-        </Panel>
-      )}
+      </div>
 
       {/* ── 模块 4-8：题目核对区 (生成完题目后展示) ── */}
       {questions.length > 0 && (
@@ -940,7 +648,7 @@ export default function ImportV2Page() {
             </div>
           </div>
 
-          {/* 右侧：预览与修正详情面板 (65% 宽度) */}
+          {/* 右侧：预览详情面板 (65% 宽度) */}
           <div className="flex-1 flex flex-col border rounded-xl bg-white dark:bg-zinc-955 overflow-hidden shadow-sm min-w-0">
             {activeQuestion ? (
               <div className="flex-1 flex flex-col overflow-hidden">
@@ -965,29 +673,6 @@ export default function ImportV2Page() {
                     >
                       {committedIds.has(activeQuestion.id) ? '已入库' : '确认入库'}
                     </Button>
-
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      icon={Edit3}
-                      disabled={Boolean(busy)}
-                      onClick={() => openEditor(activeQuestion)}
-                    >
-                      修正题目内容
-                    </Button>
-
-                    {/* 普通 PDF OCR 模式下才开启“手动框选截图修正范围 & 题图” */}
-                    {activeQuestion.isOcrRun && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        icon={Crop}
-                        disabled={Boolean(busy)}
-                        onClick={() => setCroppingItem(activeQuestion.rawItem)}
-                      >
-                        手动修正识别范围 & 题图
-                      </Button>
-                    )}
                   </div>
                 </div>
 
@@ -1030,7 +715,7 @@ export default function ImportV2Page() {
                       <span>题干内容</span>
                     </div>
                     <div className="bg-zinc-50/30 dark:bg-zinc-900/5 p-4 rounded-lg border border-zinc-100 dark:border-zinc-900 min-h-16 leading-relaxed">
-                      <MarkdownContent content={activeQuestion.stemMarkdown || '（空，请点击上方“修改内容”补充）'} className="text-sm font-normal" />
+                      <MarkdownContent content={activeQuestion.stemMarkdown || '（空）'} className="text-sm font-normal" />
                     </div>
                   </section>
 
@@ -1110,34 +795,6 @@ export default function ImportV2Page() {
         </div>
       )}
 
-      {/* ── 修正内容对话框 (EditDialog) ── */}
-      {editingItem && (
-        <EditDialog
-          draft={editingDraft}
-          setDraft={setEditingDraft}
-          onClose={() => {
-            setEditingItem(null)
-            setEditingDraft({})
-          }}
-          onSave={saveEditedQuestion}
-        />
-      )}
-
-      {/* ── 手动修正截取范围 & 题图画框 (FigureCropDialog) ── */}
-      {croppingItem && (
-        <FigureCropDialog
-          question={croppingItem}
-          onClose={async (changed) => {
-            setCroppingItem(null)
-            if (changed && ocrProgress?.runId) {
-              await loadOcrQuestions(ocrProgress.runId)
-            }
-          }}
-          onDelete={handleCropDelete}
-          onSave={handleCropSave}
-          onUpdate={handleCropUpdate}
-        />
-      )}
     </div>
   )
 }

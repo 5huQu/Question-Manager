@@ -8,11 +8,14 @@ import * as candidateRepo from '../../repositories/question-candidates.repo.js'
 import type { OCRAsset, OCRDocument, OCRPage } from '../../types/ocr-document.js'
 import type { CandidateFigure, QuestionCandidate, UpdateQuestionCandidateInput } from '../../types/question-candidate.js'
 import { RouteError } from '../../utils/http-error.js'
+import { createId, nowIso } from '../../utils/ids.js'
 import { assetPathFor, resolveStoragePath } from '../../utils/paths.js'
 import { parseJson } from '../../utils/json.js'
 import { difficultyLabel10, normalizeDifficultyScore10 } from '../../utils/search.js'
 import { inferQuestionType } from '../../utils/question-type.js'
 import { parseQuestionCandidates } from '../question-parser/index.js'
+import { normalizeGlmOCRDocument } from '../ocr-providers/glm.normalizer.js'
+import { assertGlmOcrConfigured, callGlmLayoutParsing } from '../ocr-providers/glm.provider.js'
 import { normalizeTags } from '../tags/tag-libraries.js'
 
 function importDataDir() {
@@ -104,9 +107,93 @@ function storedOcrDocumentDir(id: string) {
   return path.join(importDataDir(), 'ocr-documents', id)
 }
 
+type SourceDocumentOcrTaskState = {
+  sourceDocumentId: string
+  provider: 'glm'
+  status: 'ocr_running' | 'ocr_succeeded' | 'ocr_failed'
+  ocrDocumentId?: string
+  startedAt: string
+  finishedAt?: string
+  error?: string
+}
+
+const activeSourceDocumentOcrTasks = new Map<string, Promise<void>>()
+
+function sourceDocumentDir(id: string) {
+  return path.join(importDataDir(), 'source-documents', id)
+}
+
+function sourceDocumentOcrTaskStatePath(id: string) {
+  return path.join(sourceDocumentDir(id), 'ocr-task.json')
+}
+
+function sourceDocumentGlmArtifactDir(sourceDocumentId: string) {
+  return path.join(sourceDocumentDir(sourceDocumentId), 'ocr', 'glm')
+}
+
+function writeSourceDocumentOcrTaskState(state: SourceDocumentOcrTaskState) {
+  writeJson(sourceDocumentOcrTaskStatePath(state.sourceDocumentId), state)
+}
+
+function readSourceDocumentOcrTaskState(sourceDocumentId: string) {
+  return readJsonFile<SourceDocumentOcrTaskState | null>(sourceDocumentOcrTaskStatePath(sourceDocumentId), null)
+}
+
 function sourceTitle(sourceDocumentId: string) {
   const source = sourceRepo.getSourceDocument(sourceDocumentId)
   return source?.title || source?.originalFileName || '资料导入 v2'
+}
+
+type UploadedSourceDocumentFile = {
+  originalname: string
+  mimetype: string
+  buffer: Buffer
+  size: number
+}
+
+function uploadedSourceDocumentDetails(file: UploadedSourceDocumentFile) {
+  const originalFileName = path.basename(String(file.originalname || ''))
+  const extension = path.extname(originalFileName).toLowerCase()
+  const mimeType = String(file.mimetype || '').toLowerCase()
+  const supported = {
+    '.pdf': { fileType: 'pdf' as const, mimeTypes: ['application/pdf'] },
+    '.jpg': { fileType: 'image' as const, mimeTypes: ['image/jpeg', 'image/jpg'] },
+    '.jpeg': { fileType: 'image' as const, mimeTypes: ['image/jpeg', 'image/jpg'] },
+    '.png': { fileType: 'image' as const, mimeTypes: ['image/png'] },
+  }[extension]
+
+  if (!originalFileName || !supported || !file.buffer?.length) {
+    throw new RouteError(400, '请选择 PDF、JPG 或 PNG 文件。')
+  }
+  if (mimeType && mimeType !== 'application/octet-stream' && !supported.mimeTypes.includes(mimeType)) {
+    throw new RouteError(400, '文件类型与扩展名不匹配，请上传 PDF、JPG 或 PNG 文件。')
+  }
+
+  return { originalFileName, extension, fileType: supported.fileType }
+}
+
+export function uploadSourceDocument(file: UploadedSourceDocumentFile | undefined) {
+  if (!file) throw new RouteError(400, '请选择要上传的文件。')
+  const { originalFileName, extension, fileType } = uploadedSourceDocumentDetails(file)
+  const title = path.basename(originalFileName, extension) || originalFileName
+  const sourceDocument = sourceRepo.createSourceDocument({
+    title,
+    originalFileName,
+    fileType,
+    status: 'uploaded',
+  })
+  if (!sourceDocument) throw new RouteError(500, '资料创建失败。')
+
+  const targetPath = path.join(importDataDir(), 'source-documents', sourceDocument.id, `original${extension}`)
+  try {
+    ensureDir(path.dirname(targetPath))
+    fs.writeFileSync(targetPath, file.buffer)
+    const saved = sourceRepo.updateSourceDocument(sourceDocument.id, { filePath: assetPathFor(targetPath) })
+    if (!saved) throw new Error('资料文件保存后未能读取记录。')
+    return { sourceDocument: saved }
+  } catch (error) {
+    throw new RouteError(500, `资料文件保存失败：${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 export function createSourceDocument(body: Record<string, unknown>) {
@@ -140,6 +227,129 @@ export function getSourceDocument(id: string) {
   const sourceDocument = sourceRepo.getSourceDocument(id)
   if (!sourceDocument) throw new RouteError(404, '资料不存在。')
   return { sourceDocument }
+}
+
+async function runGlmSourceDocumentOcr(sourceDocumentId: string, initialState: SourceDocumentOcrTaskState) {
+  const sourceDocument = sourceRepo.getSourceDocument(sourceDocumentId)
+  if (!sourceDocument) return
+
+  const ocrDocumentId = createId('ocrdoc', sourceDocumentId)
+  const artifactDir = sourceDocumentGlmArtifactDir(sourceDocumentId)
+  const startedAt = initialState.startedAt
+  try {
+    const inputPath = resolveStoragePath(sourceDocument.filePath)
+    const result = await callGlmLayoutParsing({
+      filePath: inputPath,
+      requestId: `import-flow-v2-${sourceDocumentId}`,
+    })
+    const rawPath = path.join(artifactDir, 'raw.json')
+    const markdownPath = path.join(artifactDir, 'markdown.md')
+    const pagesPath = path.join(artifactDir, 'pages.json')
+    const assetsPath = path.join(artifactDir, 'assets.json')
+    writeJson(rawPath, result.payload)
+
+    const normalized = normalizeGlmOCRDocument(result.payload, {
+      id: ocrDocumentId,
+      sourceDocumentId,
+      rawResultPath: assetPathFor(rawPath),
+      createdAt: startedAt,
+      metadata: {
+        ...result.metadata,
+        sourceFilePath: sourceDocument.filePath,
+        storedRawJsonPath: assetPathFor(rawPath),
+      },
+    })
+    writeText(markdownPath, normalized.markdown)
+    writeJson(pagesPath, normalized.pages)
+    writeJson(assetsPath, normalized.assets)
+
+    const created = ocrRepo.createOcrDocument({
+      id: ocrDocumentId,
+      sourceDocumentId,
+      provider: 'glm',
+      rawResultPath: normalized.rawResultPath,
+      markdownPath: assetPathFor(markdownPath),
+      blocksJsonPath: assetPathFor(pagesPath),
+      assetsJsonPath: assetPathFor(assetsPath),
+      metadata: normalized.metadata,
+      createdAt: normalized.createdAt,
+    })
+    if (!created) throw new Error('OCRDocument 保存失败。')
+
+    const finishedAt = nowIso()
+    sourceRepo.updateSourceDocument(sourceDocumentId, {
+      provider: 'glm',
+      pageCount: normalized.pages.length,
+      status: 'ocr_succeeded',
+    })
+    writeSourceDocumentOcrTaskState({
+      ...initialState,
+      status: 'ocr_succeeded',
+      ocrDocumentId: created.id,
+      finishedAt,
+    })
+  } catch (error) {
+    const finishedAt = nowIso()
+    const message = error instanceof Error ? error.message : String(error)
+    sourceRepo.updateSourceDocument(sourceDocumentId, { provider: 'glm', status: 'ocr_failed' })
+    writeSourceDocumentOcrTaskState({
+      ...initialState,
+      status: 'ocr_failed',
+      finishedAt,
+      error: message,
+    })
+  }
+}
+
+export function startSourceDocumentOcr(id: string, body: Record<string, unknown>) {
+  const sourceDocument = sourceRepo.getSourceDocument(id)
+  if (!sourceDocument) throw new RouteError(404, '资料不存在。')
+  if (!['pdf', 'image'].includes(sourceDocument.fileType)) {
+    throw new RouteError(400, '只有已上传的 PDF、JPG 或 PNG 资料可以启动 OCR。')
+  }
+  if (!sourceDocument.filePath || !resolveStoragePath(sourceDocument.filePath) || !fs.existsSync(resolveStoragePath(sourceDocument.filePath))) {
+    throw new RouteError(400, '资料原文件不存在，无法启动 OCR。')
+  }
+  if (activeSourceDocumentOcrTasks.has(id) || sourceDocument.status === 'ocr_running') {
+    throw new RouteError(409, '该资料的 OCR 任务正在运行。')
+  }
+  if (!['uploaded', 'ocr_failed'].includes(sourceDocument.status)) {
+    throw new RouteError(409, '该资料已完成 OCR；请直接生成待确认题目。')
+  }
+  if (body.provider !== undefined && String(body.provider).toLowerCase() !== 'glm') {
+    throw new RouteError(400, 'import-flow-v2 真实 OCR 当前仅支持 provider=glm。')
+  }
+  assertGlmOcrConfigured()
+
+  const startedAt = nowIso()
+  const taskState: SourceDocumentOcrTaskState = {
+    sourceDocumentId: id,
+    provider: 'glm',
+    status: 'ocr_running',
+    startedAt,
+  }
+  const updated = sourceRepo.updateSourceDocument(id, { provider: 'glm', status: 'ocr_running' })
+  if (!updated) throw new RouteError(500, 'OCR 任务状态更新失败。')
+  writeSourceDocumentOcrTaskState(taskState)
+
+  const task = runGlmSourceDocumentOcr(id, taskState)
+    .finally(() => activeSourceDocumentOcrTasks.delete(id))
+  activeSourceDocumentOcrTasks.set(id, task)
+  void task
+
+  return { sourceDocument: updated, task: taskState }
+}
+
+export function getSourceDocumentOcrStatus(id: string) {
+  const sourceDocument = sourceRepo.getSourceDocument(id)
+  if (!sourceDocument) throw new RouteError(404, '资料不存在。')
+  const task = readSourceDocumentOcrTaskState(id)
+  const [ocrDocument] = ocrRepo.listOcrDocuments({ sourceDocumentId: id, limit: 1 })
+  return {
+    sourceDocument,
+    task: task ? { ...task, status: sourceDocument.status } : { status: sourceDocument.status },
+    ocrDocument: ocrDocument || undefined,
+  }
 }
 
 export function importOCRDocumentJson(body: Record<string, unknown>) {

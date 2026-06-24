@@ -25,6 +25,16 @@ export type ImportV2OcrDocument = {
   createdAt: string
 }
 
+export type ImportV2OcrTask = {
+  sourceDocumentId?: string
+  provider?: 'glm'
+  status: 'uploaded' | 'ocr_running' | 'ocr_succeeded' | 'ocr_failed' | 'parsed' | 'partially_parsed'
+  ocrDocumentId?: string
+  startedAt?: string
+  finishedAt?: string
+  error?: string
+}
+
 export type ImportV2CandidateIssue = {
   code: string
   severity: 'warning' | 'error'
@@ -64,6 +74,24 @@ export type ParseCandidatesResult = {
 export const importV2Api = {
   listSourceDocuments() {
     return api<{ items: ImportV2SourceDocument[] }>('/api/source-documents')
+  },
+  uploadSourceDocument(file: File) {
+    const body = new FormData()
+    body.append('file', file)
+    return api<{ sourceDocument: ImportV2SourceDocument }>('/api/source-documents/upload', {
+      method: 'POST',
+      body,
+    })
+  },
+  startSourceDocumentOcr(sourceDocumentId: string) {
+    return api<{ sourceDocument: ImportV2SourceDocument; task: ImportV2OcrTask }>('/api/source-documents/' + encodeURIComponent(sourceDocumentId) + '/ocr', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ provider: 'glm' }),
+    })
+  },
+  getSourceDocumentOcrStatus(sourceDocumentId: string) {
+    return api<{ sourceDocument: ImportV2SourceDocument; task: ImportV2OcrTask; ocrDocument?: ImportV2OcrDocument }>('/api/source-documents/' + encodeURIComponent(sourceDocumentId) + '/ocr-status')
   },
   listOcrDocuments(sourceDocumentId?: string) {
     const query = sourceDocumentId ? '?sourceDocumentId=' + encodeURIComponent(sourceDocumentId) : ''

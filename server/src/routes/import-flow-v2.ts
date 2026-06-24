@@ -1,4 +1,5 @@
 import type { Express } from 'express'
+import { upload } from '../config.js'
 import { sendRouteError } from './errors.js'
 import {
   commitQuestionCandidate,
@@ -7,10 +8,13 @@ import {
   getOcrDocument,
   getSourceDocument,
   importOCRDocumentJson,
+  getSourceDocumentOcrStatus,
   listOcrDocuments,
   listQuestionCandidatesForSource,
   listSourceDocuments,
   parseCandidatesForOcrDocument,
+  startSourceDocumentOcr,
+  uploadSourceDocument,
   updateQuestionCandidate,
 } from '../services/import-flow-v2/import-flow-v2.service.js'
 
@@ -31,6 +35,14 @@ export function mountImportFlowV2Routes(app: Express) {
     }
   })
 
+  app.post('/api/source-documents/upload', upload.single('file'), (req, res) => {
+    try {
+      res.status(201).json(uploadSourceDocument(req.file))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
   app.get('/api/source-documents/:id', (req, res) => {
     try {
       res.json(getSourceDocument(decodeURIComponent(String(req.params.id || ''))))
@@ -42,6 +54,22 @@ export function mountImportFlowV2Routes(app: Express) {
   app.get('/api/source-documents/:id/candidates', (req, res) => {
     try {
       res.json(listQuestionCandidatesForSource(decodeURIComponent(String(req.params.id || '')), req.query))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/source-documents/:id/ocr', (req, res) => {
+    try {
+      res.status(202).json(startSourceDocumentOcr(decodeURIComponent(String(req.params.id || '')), req.body || {}))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.get('/api/source-documents/:id/ocr-status', (req, res) => {
+    try {
+      res.json(getSourceDocumentOcrStatus(decodeURIComponent(String(req.params.id || ''))))
     } catch (error) {
       sendRouteError(res, error)
     }
