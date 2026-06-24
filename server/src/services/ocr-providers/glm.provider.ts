@@ -6,7 +6,7 @@ const DEFAULT_GLM_OCR_API_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4/layou
 const DEFAULT_GLM_OCR_MODEL = 'glm-ocr'
 
 export class GlmOcrProviderError extends Error {
-  constructor(message: string) {
+  constructor(message: string, public details?: unknown) {
     super(message)
     this.name = 'GlmOcrProviderError'
   }
@@ -58,10 +58,30 @@ function inputSizeLimitFor(filePath: string) {
   return path.extname(filePath).toLowerCase() === '.pdf' ? 50 * 1024 * 1024 : 10 * 1024 * 1024
 }
 
+function stringField(value: unknown, keys: string[]) {
+  if (!value || typeof value !== 'object') return ''
+  const record = value as Record<string, unknown>
+  for (const key of keys) {
+    const field = record[key]
+    if (typeof field === 'string' && field.trim()) return field.trim()
+    if (typeof field === 'number') return String(field)
+  }
+  return ''
+}
+
 function responseMessage(payload: unknown, fallback: string) {
   if (!payload || typeof payload !== 'object') return fallback
   const value = payload as Record<string, unknown>
-  return String(value.error?.toString?.() || value.message || value.msg || fallback)
+  const error = value.error
+  const code = stringField(error, ['code', 'type']) || stringField(value, ['code', 'type'])
+  const message = stringField(error, ['message', 'msg', 'detail']) || stringField(value, ['message', 'msg', 'detail'])
+  if (code && message) return `${code}: ${message}`
+  if (message) return message
+  try {
+    return JSON.stringify(payload).slice(0, 1600)
+  } catch {
+    return fallback
+  }
 }
 
 export function assertGlmOcrConfigured() {
@@ -113,9 +133,9 @@ export async function callGlmLayoutParsing(input: { filePath: string; requestId:
       }
       const message = `GLM-OCR HTTP ${response.status}: ${responseMessage(payload, response.statusText)}`
       if (![429, 500, 502, 503, 504].includes(response.status) || attempt === config.maxRetries) {
-        throw new GlmOcrProviderError(message)
+        throw new GlmOcrProviderError(message, payload)
       }
-      lastError = new GlmOcrProviderError(message)
+      lastError = new GlmOcrProviderError(message, payload)
     } catch (error) {
       if (error instanceof GlmOcrProviderError) throw error
       lastError = error

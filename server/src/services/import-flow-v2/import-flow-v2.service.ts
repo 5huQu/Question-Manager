@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { dataDir, storageRoot } from '../../config.js'
-import { createQuestion } from '../../db/questions.js'
+import { createQuestion, getQuestion } from '../../db/questions.js'
 import * as sourceRepo from '../../repositories/source-documents.repo.js'
 import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
 import * as candidateRepo from '../../repositories/question-candidates.repo.js'
@@ -15,8 +16,9 @@ import { difficultyLabel10, normalizeDifficultyScore10 } from '../../utils/searc
 import { inferQuestionType } from '../../utils/question-type.js'
 import { parseQuestionCandidates } from '../question-parser/index.js'
 import { normalizeGlmOCRDocument } from '../ocr-providers/glm.normalizer.js'
-import { assertGlmOcrConfigured, callGlmLayoutParsing } from '../ocr-providers/glm.provider.js'
+import { assertGlmOcrConfigured, callGlmLayoutParsing, GlmOcrProviderError } from '../ocr-providers/glm.provider.js'
 import { normalizeTags } from '../tags/tag-libraries.js'
+import { normalizeUploadName } from '../../utils/ocr-helpers.js'
 
 function importDataDir() {
   const dir = path.join(dataDir, 'import-flow-v2')
@@ -131,6 +133,10 @@ function sourceDocumentGlmArtifactDir(sourceDocumentId: string) {
   return path.join(sourceDocumentDir(sourceDocumentId), 'ocr', 'glm')
 }
 
+function glmRequestId(sourceDocumentId: string) {
+  return `ifv2-${createHash('sha256').update(sourceDocumentId).digest('hex').slice(0, 32)}`
+}
+
 function writeSourceDocumentOcrTaskState(state: SourceDocumentOcrTaskState) {
   writeJson(sourceDocumentOcrTaskStatePath(state.sourceDocumentId), state)
 }
@@ -152,7 +158,7 @@ type UploadedSourceDocumentFile = {
 }
 
 function uploadedSourceDocumentDetails(file: UploadedSourceDocumentFile) {
-  const originalFileName = path.basename(String(file.originalname || ''))
+  const originalFileName = normalizeUploadName(path.basename(String(file.originalname || '')))
   const extension = path.extname(originalFileName).toLowerCase()
   const mimeType = String(file.mimetype || '').toLowerCase()
   const supported = {
@@ -240,7 +246,7 @@ async function runGlmSourceDocumentOcr(sourceDocumentId: string, initialState: S
     const inputPath = resolveStoragePath(sourceDocument.filePath)
     const result = await callGlmLayoutParsing({
       filePath: inputPath,
-      requestId: `import-flow-v2-${sourceDocumentId}`,
+      requestId: glmRequestId(sourceDocumentId),
     })
     const rawPath = path.join(artifactDir, 'raw.json')
     const markdownPath = path.join(artifactDir, 'markdown.md')
@@ -291,6 +297,12 @@ async function runGlmSourceDocumentOcr(sourceDocumentId: string, initialState: S
   } catch (error) {
     const finishedAt = nowIso()
     const message = error instanceof Error ? error.message : String(error)
+    writeJson(path.join(artifactDir, 'error.json'), {
+      provider: 'glm',
+      failedAt: finishedAt,
+      message,
+      details: error instanceof GlmOcrProviderError ? error.details : undefined,
+    })
     sourceRepo.updateSourceDocument(sourceDocumentId, { provider: 'glm', status: 'ocr_failed' })
     writeSourceDocumentOcrTaskState({
       ...initialState,
@@ -475,6 +487,16 @@ export function updateQuestionCandidate(id: string, body: Record<string, unknown
 export function commitQuestionCandidate(id: string) {
   const candidate = candidateRepo.getQuestionCandidate(id)
   if (!candidate) throw new RouteError(404, '候选题不存在。')
+  if (candidate.status === 'committed') {
+    if (!candidate.committedQuestionId) {
+      throw new RouteError(409, '候选题已标记为已入库，但缺少已入库题目 ID。')
+    }
+    const committedItem = getQuestion(candidate.committedQuestionId)
+    if (!committedItem) {
+      throw new RouteError(409, `候选题已标记为已入库，但题库中不存在对应题目（${candidate.committedQuestionId}）。`)
+    }
+    return { candidate, item: committedItem }
+  }
   if (!candidate.stemMarkdown.trim()) throw new RouteError(400, '题干为空，不能入库。')
   const difficultyScore10 = normalizeDifficultyScore10(candidate.difficultyScore10)
   const item = createQuestion({
@@ -495,7 +517,13 @@ export function commitQuestionCandidate(id: string) {
     sourceRunId: '',
   })
   if (!item) throw new RouteError(500, '入库失败。')
-  return { candidate, item }
+  const committedCandidate = candidateRepo.updateQuestionCandidate(id, {
+    status: 'committed',
+    committedQuestionId: item.id,
+    committedAt: nowIso(),
+  })
+  if (!committedCandidate) throw new RouteError(500, '题目已创建，但候选题入库状态更新失败。')
+  return { candidate: committedCandidate, item }
 }
 
 export function commitQuestionCandidates(body: Record<string, unknown>) {

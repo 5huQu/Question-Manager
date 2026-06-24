@@ -1,6 +1,6 @@
 import type { OCRBBox } from './ocr-document.js'
 
-export type QuestionCandidateStatus = 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked'
+export type QuestionCandidateStatus = 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked' | 'committed'
 
 export type CandidateFigureUsage = 'stem' | 'analysis' | 'option' | 'unknown'
 
@@ -61,6 +61,8 @@ export type QuestionCandidate = {
   figures: CandidateFigure[]
   sourceRefs: CandidateSourceRef[]
   status: QuestionCandidateStatus
+  committedQuestionId?: string
+  committedAt?: string
   issues: CandidateIssue[]
   createdAt: string
   updatedAt: string
@@ -82,6 +84,8 @@ export type QuestionCandidateRow = {
   figures_json: string
   source_refs_json: string
   status: QuestionCandidateStatus
+  committed_question_id: string
+  committed_at: string
   issues_json: string
   created_at: string
   updated_at: string
@@ -103,6 +107,8 @@ export type CreateQuestionCandidateInput = {
   figures?: CandidateFigure[]
   sourceRefs?: CandidateSourceRef[]
   status?: QuestionCandidateStatus
+  committedQuestionId?: string
+  committedAt?: string
   issues?: CandidateIssue[]
 }
 
@@ -120,5 +126,7 @@ export type UpdateQuestionCandidateInput = Partial<{
   figures: CandidateFigure[]
   sourceRefs: CandidateSourceRef[]
   status: QuestionCandidateStatus
+  committedQuestionId: string
+  committedAt: string
   issues: CandidateIssue[]
 }>

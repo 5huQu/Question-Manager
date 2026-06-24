@@ -29,6 +29,21 @@ function blocksInRange(document: OCRDocument, range?: MarkdownRange) {
     .filter((block) => rangesOverlap(blockRange(block), range))
 }
 
+export function figureForBlock(document: OCRDocument, block: OCRBlock, usage: CandidateFigureUsage = 'unknown'): CandidateFigure | undefined {
+  const asset = block.assetId ? document.assets.find((item) => item.id === block.assetId) : undefined
+  const path = asset?.path || block.content || ''
+  if (!path) return undefined
+  return {
+    id: asset?.id || block.assetId || block.id,
+    usage,
+    path,
+    sourceBlockId: block.id,
+    pageNo: block.pageNo,
+    bbox: asset?.bbox || block.bbox,
+    inlineMarker: block.markdownStart !== undefined ? String(block.markdownStart) : undefined,
+  }
+}
+
 export function sourceRefsForRange(document: OCRDocument, range: MarkdownRange | undefined, kind: CandidateSourceRefKind): CandidateSourceRef[] {
   const blocks = blocksInRange(document, range)
   const byPage = new Map<number, OCRBlock[]>()
@@ -44,21 +59,7 @@ export function sourceRefsForRange(document: OCRDocument, range: MarkdownRange |
 }
 
 export function figuresForRange(document: OCRDocument, range: MarkdownRange | undefined, usage: CandidateFigureUsage): CandidateFigure[] {
-  const assetById = new Map(document.assets.map((asset) => [asset.id, asset]))
   return blocksInRange(document, range)
     .filter((block) => block.assetId || block.type === 'image' || block.type === 'table')
-    .flatMap((block) => {
-      const asset = block.assetId ? assetById.get(block.assetId) : undefined
-      const path = asset?.path || block.content || ''
-      if (!path) return []
-      return [{
-        id: asset?.id || block.assetId || block.id,
-        usage,
-        path,
-        sourceBlockId: block.id,
-        pageNo: block.pageNo,
-        bbox: asset?.bbox || block.bbox,
-        inlineMarker: block.markdownStart !== undefined ? String(block.markdownStart) : undefined,
-      }]
-    })
+    .flatMap((block) => figureForBlock(document, block, usage) || [])
 }

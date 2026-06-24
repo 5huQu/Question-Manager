@@ -26,7 +26,7 @@ type UnifiedQuestion = {
   stemMarkdown: string
   answerText: string
   analysisMarkdown: string
-  status: 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked' | 'banked' | 'skipped'
+  status: 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked' | 'committed' | 'banked' | 'skipped'
   issues: Array<{ severity: 'warning' | 'error'; message: string; code?: string }>
   figures: Array<{ id: string; usage: string; path: string; pageNo?: number; bbox?: any }>
   hasFigures: boolean
@@ -41,12 +41,21 @@ function fromCandidate(c: ImportV2Candidate): UnifiedQuestion {
     stemMarkdown: c.stemMarkdown || '',
     answerText: c.answerText || '',
     analysisMarkdown: c.analysisMarkdown || '',
-    status: c.status === 'ready' ? 'ready' : c.status === 'blocked' ? 'blocked' : 'needs_review',
+    status: c.status === 'committed' ? 'committed' : c.status === 'ready' ? 'ready' : c.status === 'blocked' ? 'blocked' : 'needs_review',
     issues: (c.issues || []).map(iss => ({ severity: iss.severity, message: iss.message, code: iss.code })),
     figures: (c.figures || []).map(fig => ({ id: fig.id, usage: fig.usage, path: fig.path, pageNo: fig.pageNo })),
     hasFigures: (c.figures || []).length > 0,
     rawItem: c
   }
+}
+
+function issueLabel(code?: string) {
+  return ({
+    duplicate_question_no: '重复题号',
+    unplaced_figure: '图片待核对',
+    missing_answer: '缺少答案',
+    missing_analysis: '缺少解析',
+  } as Record<string, string>)[code || '']
 }
 
 export default function ImportV2Page() {
@@ -59,6 +68,7 @@ export default function ImportV2Page() {
   // UI 交互状态
   const [uploading, setUploading] = useState(false)
   const [runningSourceDocumentId, setRunningSourceDocumentId] = useState('')
+  const [sourceOcrErrors, setSourceOcrErrors] = useState<Record<string, string>>({})
   const [isJSONMode, setIsJSONMode] = useState(false)
   const [activeTab, setActiveTab] = useState<'all' | 'ready' | 'warning' | 'error'>('all')
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null)
@@ -81,6 +91,18 @@ export default function ImportV2Page() {
     ])
     setSourceDocuments(sourceResult.items)
     setOcrDocuments(ocrResult.items)
+    const failedItems = sourceResult.items.filter((item) => item.status === 'ocr_failed')
+    if (failedItems.length) {
+      const errors = await Promise.all(failedItems.map(async (item) => {
+        try {
+          const status = await importV2Api.getSourceDocumentOcrStatus(item.id)
+          return [item.id, status.task.error || 'OCR 识别失败。'] as const
+        } catch {
+          return [item.id, 'OCR 识别失败。'] as const
+        }
+      }))
+      setSourceOcrErrors((current) => ({ ...current, ...Object.fromEntries(errors) }))
+    }
     if (!selectedOcrId && ocrResult.items[0]) setSelectedOcrId(ocrResult.items[0].id)
   }
 
@@ -105,7 +127,9 @@ export default function ImportV2Page() {
           showNotice('识别完成。请点击“生成待确认题目”继续。')
         } else if (result.task.status === 'ocr_failed') {
           setRunningSourceDocumentId('')
-          setError(result.task.error || 'OCR 识别失败。')
+          const message = result.task.error || 'OCR 识别失败。'
+          setSourceOcrErrors((current) => ({ ...current, [runningSourceDocumentId]: message }))
+          setError(message)
         }
       } catch (err) {
         if (!active) return
@@ -160,6 +184,11 @@ export default function ImportV2Page() {
   async function startGlmOcr(sourceDocumentId: string) {
     setBusy(`ocr-${sourceDocumentId}`)
     setError('')
+    setSourceOcrErrors((current) => {
+      const next = { ...current }
+      delete next[sourceDocumentId]
+      return next
+    })
     try {
       await importV2Api.startSourceDocumentOcr(sourceDocumentId)
       await loadLists()
@@ -207,7 +236,8 @@ export default function ImportV2Page() {
       const result = await importV2Api.parseCandidates(selectedOcrId)
       const unified = (result.items || []).map(fromCandidate)
       setQuestions(unified)
-      setCommittedIds(new Set())
+      setCommittedIds(new Set(unified.filter((item) => item.status === 'committed').map((item) => item.id)))
+      setSelectedIds(new Set())
       if (unified.length > 0) {
         setActiveQuestionId(unified[0].id)
       }
@@ -229,6 +259,8 @@ export default function ImportV2Page() {
       const result = await importV2Api.listCandidates(selectedOcr.sourceDocumentId)
       const unified = (result.items || []).map(fromCandidate)
       setQuestions(unified)
+      setCommittedIds(new Set(unified.filter((item) => item.status === 'committed').map((item) => item.id)))
+      setSelectedIds(new Set())
       if (unified.length > 0) {
         setActiveQuestionId(unified[0].id)
       }
@@ -245,7 +277,9 @@ export default function ImportV2Page() {
     setBusy(q.id)
     setError('')
     try {
-      await importV2Api.commitCandidate(q.id)
+      const result = await importV2Api.commitCandidate(q.id)
+      const committed = fromCandidate(result.candidate)
+      setQuestions((items) => items.map((item) => item.id === q.id ? committed : item))
       setCommittedIds((prev) => new Set([...prev, q.id]))
       showNotice('该题目已成功确认入库')
     } catch (err) {
@@ -262,7 +296,9 @@ export default function ImportV2Page() {
     setBusy('bulk-confirm')
     setError('')
     try {
-      await Promise.all(idsArray.map(id => importV2Api.commitCandidate(id)))
+      const results = await Promise.all(idsArray.map(id => importV2Api.commitCandidate(id)))
+      const committedById = new Map(results.map((result) => [result.candidate.id, fromCandidate(result.candidate)]))
+      setQuestions((items) => items.map((item) => committedById.get(item.id) || item))
       showNotice(`批量确认完成：成功入库 ${idsArray.length} 题。`)
 
       setCommittedIds((prev) => {
@@ -320,7 +356,7 @@ export default function ImportV2Page() {
 
   // 批量全选判断
   const selectableList = useMemo(() => {
-    return filteredQuestions.filter(q => !committedIds.has(q.id))
+    return filteredQuestions.filter(q => q.status !== 'committed' && !committedIds.has(q.id))
   }, [filteredQuestions, committedIds])
 
   const allSelected = useMemo(() => {
@@ -427,6 +463,11 @@ export default function ImportV2Page() {
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-xs font-medium text-zinc-800 dark:text-zinc-200">{item.originalFileName || item.title}</p>
                           <p className="text-[10px] text-zinc-500">{statusLabel}</p>
+                          {item.status === 'ocr_failed' && sourceOcrErrors[item.id] ? (
+                            <p className="mt-0.5 truncate text-[10px] text-red-600 dark:text-red-400" title={sourceOcrErrors[item.id]}>
+                              {sourceOcrErrors[item.id]}
+                            </p>
+                          ) : null}
                         </div>
                         {isRunning ? (
                           <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500"><LoaderCircle className="size-3 animate-spin" /> 识别中</span>
@@ -572,7 +613,7 @@ export default function ImportV2Page() {
                 </div>
               ) : (
                 filteredQuestions.map((q) => {
-                  const isCommitted = committedIds.has(q.id)
+                  const isCommitted = q.status === 'committed' || committedIds.has(q.id)
                   const isSelected = selectedIds.has(q.id)
                   const isActive = q.id === activeQuestionId
                   const preview = q.stemMarkdown.replace(/\$\$?[^$]+\$\$?/g, '[公式]').replace(/[#*_~`>|\\]/g, '').trim().slice(0, 50)
@@ -667,11 +708,11 @@ export default function ImportV2Page() {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <Button
                       size="sm"
-                      icon={committedIds.has(activeQuestion.id) ? CheckCircle2 : busy === activeQuestion.id ? LoaderCircle : CheckCircle2}
-                      disabled={committedIds.has(activeQuestion.id) || busy === activeQuestion.id || !activeQuestion.stemMarkdown.trim()}
+                      icon={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) ? CheckCircle2 : busy === activeQuestion.id ? LoaderCircle : CheckCircle2}
+                      disabled={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) || busy === activeQuestion.id || !activeQuestion.stemMarkdown.trim()}
                       onClick={() => commitSingleQuestion(activeQuestion)}
                     >
-                      {committedIds.has(activeQuestion.id) ? '已入库' : '确认入库'}
+                      {activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) ? '已入库' : '确认入库'}
                     </Button>
                   </div>
                 </div>
@@ -701,7 +742,7 @@ export default function ImportV2Page() {
                         <p className="font-semibold">⚠️ 智能核对提示：</p>
                         <ul className="list-disc pl-4 space-y-1">
                           {activeQuestion.issues.map((issue, idx) => (
-                            <li key={idx} className="leading-relaxed">{issue.message}</li>
+                            <li key={idx} className="leading-relaxed">{issueLabel(issue.code) ? <span className="font-semibold">【{issueLabel(issue.code)}】</span> : null}{issue.message}</li>
                           ))}
                         </ul>
                       </div>

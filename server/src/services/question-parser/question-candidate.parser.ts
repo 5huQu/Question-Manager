@@ -11,11 +11,29 @@ import {
   type SolutionMatch,
   type SolutionSection,
 } from './solution-matcher.js'
-import { figuresForRange, sourceRefsForRange } from './figure-linker.js'
+import { figureForBlock, figuresForRange, sourceRefsForRange } from './figure-linker.js'
 import { statusForIssues, validateQuestionCandidate } from './candidate-validator.js'
+import { getParserConfig } from './parser-config.js'
+import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
 
 export type ParseQuestionCandidatesOptions = {
   now?: string
+  config?: ImportFlowV2ParserConfig
+}
+
+function normalizedLine(value: string) {
+  return value.replace(/^\s*(?:#{1,6}\s*)?/, '').replace(/\s+/g, '')
+}
+
+function isStructuralLine(line: string, config: ImportFlowV2ParserConfig) {
+  const normalized = normalizedLine(line)
+  if (!normalized) return false
+  if (config.sectionHeadings.some((item) => normalized === normalizedLine(item))) return true
+  return config.documentNoteKeywords.some((item) => normalized.startsWith(normalizedLine(item)))
+}
+
+function stripStructuralText(value: string, config: ImportFlowV2ParserConfig) {
+  return String(value || '').split('\n').filter((line) => !isStructuralLine(line, config)).join('\n').trim()
 }
 
 function countQuestionNos(chunks: QuestionMarkdownChunk[]) {
@@ -53,14 +71,66 @@ function dedupeSourceRefs(refs: CandidateSourceRef[]) {
   return Array.from(grouped.values())
 }
 
-function shouldUseSolutionSections(markdown: string, sections: SolutionSection[]) {
+function figureBelongsToRef(block: OCRDocument['pages'][number]['blocks'][number], ref: CandidateSourceRef) {
+  if (block.pageNo !== ref.pageNo) return false
+  if (!block.bbox || !ref.bbox) return false
+  const centerY = (block.bbox[1] + block.bbox[3]) / 2
+  return centerY >= ref.bbox[1] && centerY <= ref.bbox[3]
+}
+
+function attachImageBlocks(document: OCRDocument, chunks: QuestionMarkdownChunk[], candidates: QuestionCandidate[], config: ImportFlowV2ParserConfig) {
+  const imageBlocks = document.pages.flatMap((page) => page.blocks)
+    .filter((block) => block.type === 'image' || block.assetId)
+  const attached = new Set(candidates.flatMap((candidate) => candidate.figures.map((figure) => figure.sourceBlockId).filter(Boolean)))
+  for (const block of imageBlocks) {
+    if (attached.has(block.id)) continue
+    let index = candidates.findIndex((candidate) => candidate.sourceRefs.some((ref) => figureBelongsToRef(block, ref)))
+    if (index < 0 && block.markdownStart !== undefined) {
+      index = chunks.findIndex((chunk) => block.markdownStart! >= chunk.start && block.markdownStart! < chunk.end)
+    }
+    if (index < 0 && block.bbox) {
+      const samePage = candidates.map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
+        .filter(({ candidate }) => candidate.sourceRefs.some((ref) => ref.pageNo === block.pageNo && ref.bbox))
+        .map(({ candidate, candidateIndex }) => ({
+          candidateIndex,
+          bottom: Math.max(...candidate.sourceRefs.filter((ref) => ref.pageNo === block.pageNo && ref.bbox).map((ref) => ref.bbox![3])),
+        }))
+        .filter((item) => item.bottom <= block.bbox![1])
+      if (samePage.length) index = samePage.sort((left, right) => right.bottom - left.bottom)[0].candidateIndex
+    }
+    if (index < 0) {
+      const likelyFigureCandidates = candidates.map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
+        .filter(({ candidate }) => candidate.sourceRefs.some((ref) => ref.pageNo === block.pageNo))
+        .filter(({ candidate }) => config.figureKeywords.some((keyword) => candidate.stemMarkdown.includes(keyword)))
+      if (likelyFigureCandidates.length) index = likelyFigureCandidates[likelyFigureCandidates.length - 1].candidateIndex
+    }
+    if (index < 0) {
+      const fallback = candidates[candidates.length - 1]
+      fallback.issues.push({ code: 'unplaced_figure', severity: 'warning', message: `有一张图片（${block.id}）未能可靠归属到题目，请核对。`, relatedBlockIds: [block.id] })
+      fallback.status = statusForIssues(fallback.issues)
+      continue
+    }
+    const figure = figureForBlock(document, block, 'stem')
+    if (!figure) continue
+    candidates[index].figures = dedupeFigures([...candidates[index].figures, figure])
+    candidates[index].sourceRefs = dedupeSourceRefs([...candidates[index].sourceRefs, {
+      pageNo: block.pageNo,
+      blockIds: [block.id],
+      bbox: block.bbox,
+      kind: 'figure',
+    }])
+    attached.add(block.id)
+  }
+}
+
+function shouldUseSolutionSections(markdown: string, sections: SolutionSection[], config: ImportFlowV2ParserConfig) {
   if (!sections.length) return false
   const first = sections[0]
-  const before = detectQuestionNumbers(markdown.slice(0, first.start))
+  const before = detectQuestionNumbers(markdown.slice(0, first.start), config)
   if (!before.length) return false
   if (/参考|答案与解析|答案解析/.test(first.title)) return true
   const beforeNos = new Set(before.map((item) => item.questionNo).filter(Boolean))
-  const afterNos = detectQuestionNumbers(markdown.slice(first.contentStart)).map((item) => item.questionNo)
+  const afterNos = detectQuestionNumbers(markdown.slice(first.contentStart), config).map((item) => item.questionNo)
   return afterNos.some((questionNo) => beforeNos.has(questionNo))
 }
 
@@ -78,8 +148,9 @@ function candidateFromChunk(
   solution: SolutionMatch | undefined,
   duplicateNos: Set<string>,
   timestamp: string,
+  config: ImportFlowV2ParserConfig,
 ): QuestionCandidate {
-  const fields = splitQuestionFields(chunk.body, chunk.contentStart)
+  const fields = splitQuestionFields(stripStructuralText(chunk.body, config), chunk.contentStart)
   const answerText = solutionValue(fields.answerText, solution?.answerText)
   const analysisMarkdown = solutionValue(fields.analysisMarkdown, solution?.analysisMarkdown)
   const stemRange = fields.stemRange || { start: chunk.contentStart, end: chunk.end }
@@ -116,8 +187,8 @@ function candidateFromChunk(
   return candidate
 }
 
-function fallbackCandidate(document: OCRDocument, timestamp: string): QuestionCandidate {
-  const fields = splitQuestionFields(document.markdown || '', 0)
+function fallbackCandidate(document: OCRDocument, timestamp: string, config: ImportFlowV2ParserConfig): QuestionCandidate {
+  const fields = splitQuestionFields(stripStructuralText(document.markdown || '', config), 0)
   const fullRange = document.markdown ? { start: 0, end: document.markdown.length } : undefined
   const candidate: QuestionCandidate = {
     id: createId('candidate', document.sourceDocumentId + '_unknown'),
@@ -143,16 +214,19 @@ function fallbackCandidate(document: OCRDocument, timestamp: string): QuestionCa
 
 export function parseQuestionCandidates(document: OCRDocument, options: ParseQuestionCandidatesOptions = {}): QuestionCandidate[] {
   const timestamp = options.now || nowIso()
+  const config = options.config || getParserConfig()
   const markdown = String(document.markdown || '')
-  const solutionSections = findSolutionSections(markdown)
-  const useSolutionSections = shouldUseSolutionSections(markdown, solutionSections)
+  const solutionSections = findSolutionSections(markdown, config)
+  const useSolutionSections = shouldUseSolutionSections(markdown, solutionSections, config)
   const questionMarkdown = useSolutionSections ? markdown.slice(0, solutionSections[0].start) : markdown
-  const questionMatches = detectQuestionNumbers(questionMarkdown)
+  const questionMatches = detectQuestionNumbers(questionMarkdown, config)
   const chunks = splitMarkdownByQuestionNumbers(questionMarkdown, questionMatches)
 
-  if (!chunks.length) return [fallbackCandidate(document, timestamp)]
+  if (!chunks.length) return [fallbackCandidate(document, timestamp, config)]
 
-  const solutions = useSolutionSections ? extractSolutionMatches(markdown, solutionSections) : new Map<string, SolutionMatch>()
+  const solutions = useSolutionSections ? extractSolutionMatches(markdown, solutionSections, config) : new Map<string, SolutionMatch>()
   const duplicateNos = duplicateQuestionNos(chunks)
-  return chunks.map((chunk) => candidateFromChunk(document, chunk, solutions.get(chunk.questionNo), duplicateNos, timestamp))
+  const candidates = chunks.map((chunk) => candidateFromChunk(document, chunk, solutions.get(chunk.questionNo), duplicateNos, timestamp, config))
+  attachImageBlocks(document, chunks, candidates, config)
+  return candidates
 }

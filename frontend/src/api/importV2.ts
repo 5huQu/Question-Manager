@@ -41,6 +41,17 @@ export type ImportV2CandidateIssue = {
   message: string
 }
 
+export type ImportFlowV2ParserConfig = {
+  version: number
+  sectionHeadings: string[]
+  documentNoteKeywords: string[]
+  solutionSectionKeywords: string[]
+  primaryQuestionPatterns: string[]
+  subQuestionPatterns: string[]
+  allowParenthesizedNumberAsPrimary: boolean
+  figureKeywords: string[]
+}
+
 export type ImportV2Candidate = {
   id: string
   sourceDocumentId: string
@@ -56,7 +67,9 @@ export type ImportV2Candidate = {
   solutionMethods: string[]
   figures: Array<{ id: string; usage: string; path: string; pageNo?: number }>
   sourceRefs: Array<{ pageNo: number; blockIds: string[]; kind: string }>
-  status: 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked'
+  status: 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked' | 'committed'
+  committedQuestionId?: string
+  committedAt?: string
   issues: ImportV2CandidateIssue[]
   createdAt: string
   updatedAt: string
@@ -72,6 +85,17 @@ export type ParseCandidatesResult = {
 }
 
 export const importV2Api = {
+  getParserConfig() {
+    return api<{ config: ImportFlowV2ParserConfig }>('/api/import-flow-v2/parser-config')
+  },
+  updateParserConfig(config: ImportFlowV2ParserConfig) {
+    return api<{ config: ImportFlowV2ParserConfig }>('/api/import-flow-v2/parser-config', {
+      method: 'PUT', headers: jsonHeaders, body: JSON.stringify({ config }),
+    })
+  },
+  resetParserConfig() {
+    return api<{ config: ImportFlowV2ParserConfig }>('/api/import-flow-v2/parser-config/reset', { method: 'POST' })
+  },
   listSourceDocuments() {
     return api<{ items: ImportV2SourceDocument[] }>('/api/source-documents')
   },

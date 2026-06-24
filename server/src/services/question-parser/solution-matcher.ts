@@ -1,5 +1,7 @@
 import { detectQuestionNumbers } from './question-number-detector.js'
 import { splitMarkdownByQuestionNumbers } from './markdown-question-splitter.js'
+import { getParserConfig } from './parser-config.js'
+import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
 
 export type MarkdownRange = {
   start: number
@@ -36,7 +38,6 @@ export type SolutionMatch = {
 const PAGE_MARKER_RE = /<!--\s*(?:GLM|DOC2X)_PAGE:\d+\s*-->/g
 const ANSWER_MARKER_RE = /【\s*答案\s*】|答案\s*[:：]/
 const ANALYSIS_MARKER_RE = /【\s*(?:解析|分析|详解)\s*】|(?:解析|分析|详解)\s*[:：]/
-const SOLUTION_SECTION_RE = /(^|\n)([ \t]*(?:#{1,6}\s*)?(参考答案|答案与解析|答案解析|参考解析|解析|分析|详解|答案)\s*[:：]?\s*)(?=\n|$)/g
 
 function cleanField(value: string) {
   return String(value || '').replace(PAGE_MARKER_RE, '').trim()
@@ -117,23 +118,26 @@ function solutionKind(title: string): SolutionSectionKind {
   return 'analysis'
 }
 
-export function findSolutionSections(markdown: string): SolutionSection[] {
+export function findSolutionSections(markdown: string, config: ImportFlowV2ParserConfig = getParserConfig()): SolutionSection[] {
   const source = String(markdown || '')
   const headings: SolutionSection[] = []
-  SOLUTION_SECTION_RE.lastIndex = 0
-  let match: RegExpExecArray | null
-  while ((match = SOLUTION_SECTION_RE.exec(source))) {
-    const leading = match[1] || ''
-    const marker = match[2] || ''
-    const title = match[3] || ''
-    const start = match.index + leading.length
+  const lines = source.split(/(?<=\n)/)
+  let offset = 0
+  for (const lineWithNewline of lines) {
+    const line = lineWithNewline.replace(/\n$/, '')
+    const clean = line.replace(/^\s*(?:#{1,6}\s*)?/, '').replace(/\s*[:：]?\s*$/, '')
+    const title = config.solutionSectionKeywords.find((keyword) => clean === keyword)
+    if (!title) { offset += lineWithNewline.length; continue }
+    const start = offset
+    const contentStart = offset + lineWithNewline.length
     headings.push({
       kind: solutionKind(title),
       title,
       start,
-      contentStart: start + marker.length,
+      contentStart,
       end: source.length,
     })
+    offset += lineWithNewline.length
   }
   for (let index = 0; index < headings.length; index += 1) {
     headings[index].end = index + 1 < headings.length ? headings[index + 1].start : source.length
@@ -169,13 +173,13 @@ function solutionPatchForSection(section: SolutionSection, fields: ParsedQuestio
   }
 }
 
-export function extractSolutionMatches(markdown: string, sections: SolutionSection[] = findSolutionSections(markdown)) {
+export function extractSolutionMatches(markdown: string, sections: SolutionSection[] = findSolutionSections(markdown), config: ImportFlowV2ParserConfig = getParserConfig()) {
   const source = String(markdown || '')
   const matches = new Map<string, SolutionMatch>()
   for (const section of sections) {
     const content = source.slice(section.contentStart, section.end)
     const offset = section.contentStart
-    const starts = detectQuestionNumbers(content)
+    const starts = detectQuestionNumbers(content, config)
     const chunks = splitMarkdownByQuestionNumbers(content, starts)
     for (const chunk of chunks) {
       const fields = splitQuestionFields(chunk.body, offset + chunk.contentStart)

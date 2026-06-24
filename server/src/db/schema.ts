@@ -206,6 +206,8 @@ export function ensureSchema() {
       figures_json TEXT NOT NULL DEFAULT '[]',
       source_refs_json TEXT NOT NULL DEFAULT '[]',
       status TEXT NOT NULL DEFAULT 'needs_review',
+      committed_question_id TEXT NOT NULL DEFAULT '',
+      committed_at TEXT NOT NULL DEFAULT '',
       issues_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -318,6 +320,8 @@ export function ensureSchema() {
   ensureColumn('question_bank_items', 'stem_markdown', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_bank_items', 'answer_text', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_bank_items', 'analysis_markdown', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_candidates', 'committed_question_id', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_candidates', 'committed_at', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_bank_items', 'search_text', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('pdf_slicer_solution_items', 'answer_text', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('pdf_slicer_solution_items', 'analysis_markdown', "TEXT NOT NULL DEFAULT ''")

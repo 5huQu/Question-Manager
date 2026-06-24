@@ -61,6 +61,8 @@ export function mapQuestionCandidate(row: QuestionCandidateRow): QuestionCandida
     figures: parseJson<CandidateFigure[]>(row.figures_json || '[]', []),
     sourceRefs: parseJson<CandidateSourceRef[]>(row.source_refs_json || '[]', []),
     status: row.status,
+    committedQuestionId: row.committed_question_id || undefined,
+    committedAt: row.committed_at || undefined,
     issues: parseJson<CandidateIssue[]>(row.issues_json || '[]', []),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -74,8 +76,8 @@ export function createQuestionCandidate(input: CreateQuestionCandidateInput) {
     INSERT INTO question_candidates (
       id, source_document_id, ocr_document_id, question_no, stem_markdown, answer_text, analysis_markdown,
       question_type, difficulty_score_10, difficulty_label, knowledge_points_json, solution_methods_json,
-      figures_json, source_refs_json, status, issues_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      figures_json, source_refs_json, status, committed_question_id, committed_at, issues_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.sourceDocumentId,
@@ -92,6 +94,8 @@ export function createQuestionCandidate(input: CreateQuestionCandidateInput) {
     stringifyArray(input.figures),
     stringifyArray(input.sourceRefs),
     input.status || 'needs_review',
+    input.committedQuestionId || '',
+    input.committedAt || '',
     stringifyArray(input.issues),
     now,
     now,
@@ -153,6 +157,8 @@ export function updateQuestionCandidate(id: string, input: UpdateQuestionCandida
   add('figures_json', input.figures === undefined ? undefined : stringifyArray(input.figures))
   add('source_refs_json', input.sourceRefs === undefined ? undefined : stringifyArray(input.sourceRefs))
   add('status', input.status)
+  add('committed_question_id', input.committedQuestionId)
+  add('committed_at', input.committedAt)
   add('issues_json', input.issues === undefined ? undefined : stringifyArray(input.issues))
 
   if (!assignments.length) return getQuestionCandidate(id)

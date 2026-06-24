@@ -1,4 +1,6 @@
 export * from './question-number-detector.js'
+export * from './default-parser-config.js'
+export * from './parser-config.js'
 export * from './markdown-question-splitter.js'
 export * from './solution-matcher.js'
 export * from './figure-linker.js'

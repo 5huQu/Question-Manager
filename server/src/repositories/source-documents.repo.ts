@@ -9,6 +9,7 @@ import type {
   UpdateSourceDocumentInput,
 } from '../types/source-document.js'
 import { createId, nowIso } from '../utils/ids.js'
+import { normalizeUploadName } from '../utils/ocr-helpers.js'
 
 type SqlValue = string | number | bigint | null | Buffer
 
@@ -41,8 +42,8 @@ function normalizePageCount(value: number | undefined) {
 export function mapSourceDocument(row: SourceDocumentRow): SourceDocument {
   return {
     id: row.id,
-    title: row.title,
-    originalFileName: row.original_file_name,
+    title: normalizeUploadName(row.title),
+    originalFileName: normalizeUploadName(row.original_file_name),
     filePath: row.file_path,
     fileType: row.file_type,
     pageCount: Number(row.page_count || 0),

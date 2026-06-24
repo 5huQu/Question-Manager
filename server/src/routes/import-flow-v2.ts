@@ -17,8 +17,33 @@ import {
   uploadSourceDocument,
   updateQuestionCandidate,
 } from '../services/import-flow-v2/import-flow-v2.service.js'
+import { getParserConfigForApi, resetParserConfig, saveParserConfig } from '../services/question-parser/parser-config.js'
 
 export function mountImportFlowV2Routes(app: Express) {
+  app.get('/api/import-flow-v2/parser-config', (_req, res) => {
+    try {
+      res.json({ config: getParserConfigForApi() })
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.put('/api/import-flow-v2/parser-config', (req, res) => {
+    try {
+      res.json({ config: saveParserConfig(req.body?.config || req.body) })
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/import-flow-v2/parser-config/reset', (_req, res) => {
+    try {
+      res.json({ config: resetParserConfig() })
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
   app.get('/api/source-documents', (req, res) => {
     try {
       res.json(listSourceDocuments(req.query))

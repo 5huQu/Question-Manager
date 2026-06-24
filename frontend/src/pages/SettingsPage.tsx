@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { settingsApi } from '@/api/settings'
+import { importV2Api, type ImportFlowV2ParserConfig } from '@/api/importV2'
 import { Button } from '@/components/ui'
 import { UpdateCard } from '@/components/UpdateCard'
 import { Modal } from '@/components/dialogs/Modal'
@@ -44,6 +45,10 @@ export function SettingsPage() {
   const [isRulesSaving, setIsRulesSaving] = useState(false)
   const [rulesSaveStatus, setRulesSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [showSlicerGuide, setShowSlicerGuide] = useState(false)
+  const parserConfigApi = useAsync<{ config: ImportFlowV2ParserConfig }>(() => importV2Api.getParserConfig(), [])
+  const [parserConfig, setParserConfig] = useState<ImportFlowV2ParserConfig | null>(null)
+  const [isParserSaving, setIsParserSaving] = useState(false)
+  const [parserSaveStatus, setParserSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   useEffect(() => {
     if (data) {
@@ -58,6 +63,46 @@ export function SettingsPage() {
       setRulesBaseVersion(rulesApi.data.baseVersion)
     }
   }, [rulesApi.data])
+
+  useEffect(() => {
+    if (parserConfigApi.data?.config) setParserConfig(parserConfigApi.data.config)
+  }, [parserConfigApi.data])
+
+  function updateParserList(key: keyof Pick<ImportFlowV2ParserConfig, 'sectionHeadings' | 'documentNoteKeywords' | 'solutionSectionKeywords' | 'primaryQuestionPatterns' | 'subQuestionPatterns' | 'figureKeywords'>, value: string) {
+    if (!parserConfig) return
+    setParserConfig({ ...parserConfig, [key]: value.split('\n').map((item) => item.trim()).filter(Boolean) })
+  }
+
+  async function saveParserConfig() {
+    if (!parserConfig) return
+    setIsParserSaving(true)
+    setParserSaveStatus(null)
+    try {
+      const saved = await importV2Api.updateParserConfig(parserConfig)
+      setParserConfig(saved.config)
+      parserConfigApi.setData(saved)
+      setParserSaveStatus({ type: 'success', message: '导入识别规则已保存，下一次生成待确认题目时生效。' })
+    } catch (err) {
+      setParserSaveStatus({ type: 'error', message: err instanceof Error ? err.message : '保存规则失败' })
+    } finally {
+      setIsParserSaving(false)
+    }
+  }
+
+  async function resetParserConfig() {
+    setIsParserSaving(true)
+    setParserSaveStatus(null)
+    try {
+      const saved = await importV2Api.resetParserConfig()
+      setParserConfig(saved.config)
+      parserConfigApi.setData(saved)
+      setParserSaveStatus({ type: 'success', message: '已恢复默认导入识别规则。' })
+    } catch (err) {
+      setParserSaveStatus({ type: 'error', message: err instanceof Error ? err.message : '恢复默认失败' })
+    } finally {
+      setIsParserSaving(false)
+    }
+  }
 
   async function save(moduleName = '系统设置') {
     setIsSaving(true)
@@ -329,6 +374,47 @@ export function SettingsPage() {
                 </Field>
               </div>
             </div>
+          </SettingsCard>
+
+          <SettingsCard
+            title="导入识别规则"
+            desc="用于 GLM-OCR 导入资料时识别题号、卷面栏目和答案解析区。调整后仅影响之后重新生成的待确认题目。"
+            footer={<div className="flex gap-2"><Button size="sm" variant="outline" onClick={resetParserConfig} disabled={isParserSaving}>恢复默认</Button><SaveButton label="保存规则" loading={isParserSaving} onClick={saveParserConfig} /></div>}
+          >
+            {parserConfigApi.loading && !parserConfig ? <p className="text-xs text-zinc-400">读取导入识别规则中...</p> : null}
+            {parserConfigApi.error ? <p className="text-xs text-red-500">{parserConfigApi.error}</p> : null}
+            {parserConfig ? <>
+              {parserSaveStatus ? <StatusBanner status={parserSaveStatus} /> : null}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Field label="大题标题">
+                  <TextArea rows={5} value={parserConfig.sectionHeadings.join('\n')} onChange={(value) => updateParserList('sectionHeadings', value)} />
+                  <p className="text-[11px] text-zinc-400">用于识别“一、选择题”“二、填空题”等卷面栏目，不会作为题目入库。</p>
+                </Field>
+                <Field label="说明文字">
+                  <TextArea rows={5} value={parserConfig.documentNoteKeywords.join('\n')} onChange={(value) => updateParserList('documentNoteKeywords', value)} />
+                  <p className="text-[11px] text-zinc-400">用于识别“注意事项”“参考公式”等非题目内容。</p>
+                </Field>
+                <Field label="答案解析标记">
+                  <TextArea rows={5} value={parserConfig.solutionSectionKeywords.join('\n')} onChange={(value) => updateParserList('solutionSectionKeywords', value)} />
+                  <p className="text-[11px] text-zinc-400">用于判断后半部分是否进入答案或解析区。</p>
+                </Field>
+                <Field label="图形提示词">
+                  <TextArea rows={5} value={parserConfig.figureKeywords.join('\n')} onChange={(value) => updateParserList('figureKeywords', value)} />
+                  <p className="text-[11px] text-zinc-400">帮助系统在题目附近优先关注可能相关的图形。</p>
+                </Field>
+                <Field label="一级题号规则">
+                  <TextArea mono rows={4} value={parserConfig.primaryQuestionPatterns.join('\n')} onChange={(value) => updateParserList('primaryQuestionPatterns', value)} />
+                  <p className="text-[11px] text-zinc-400">每行一条。用于“第 1 题”“1.”、“1、”等题号。</p>
+                </Field>
+                <Field label="小问编号">
+                  <TextArea mono rows={4} value={parserConfig.subQuestionPatterns.join('\n')} onChange={(value) => updateParserList('subQuestionPatterns', value)} />
+                  <p className="text-[11px] text-zinc-400">用于避免把“（1）（2）”误识别成新题。</p>
+                </Field>
+              </div>
+              <Field label="括号数字作为一级题号">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300"><input type="checkbox" checked={parserConfig.allowParenthesizedNumberAsPrimary} onChange={(event) => setParserConfig({ ...parserConfig, allowParenthesizedNumberAsPrimary: event.target.checked })} />仅当资料完全没有常规题号时，才把“（1）”当作新题号</label>
+              </Field>
+            </> : null}
           </SettingsCard>
 
           <SettingsCard
