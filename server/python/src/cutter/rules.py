@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -91,6 +92,30 @@ class SlicerRules:
     version: int = 1
 
     @property
+    def enabled_auxiliary_markers(self) -> tuple[RuleEntry, ...]:
+        return tuple(entry for entry in self.auxiliary_markers if entry.enabled)
+
+    @property
+    def enabled_notice_terms(self) -> tuple[RuleEntry, ...]:
+        return tuple(entry for entry in self.notice_terms if entry.enabled)
+
+    @property
+    def enabled_reference_formula_markers(self) -> tuple[RuleEntry, ...]:
+        return tuple(entry for entry in self.reference_formula_markers if entry.enabled)
+
+    @property
+    def enabled_training_markers(self) -> tuple[RuleEntry, ...]:
+        return tuple(entry for entry in self.training_markers if entry.enabled)
+
+    @property
+    def enabled_non_question_remainders(self) -> tuple[RuleEntry, ...]:
+        return tuple(entry for entry in self.non_question_remainders if entry.enabled)
+
+    @property
+    def enabled_section_markers(self) -> tuple[RuleEntry, ...]:
+        return tuple(entry for entry in self.section_markers if entry.enabled)
+
+    @property
     def auxiliary_terms(self) -> tuple[str, ...]:
         return tuple(e.term for e in self.auxiliary_markers if e.enabled)
 
@@ -113,6 +138,35 @@ class SlicerRules:
     @property
     def section_terms(self) -> tuple[str, ...]:
         return tuple(e.term for e in self.section_markers if e.enabled)
+
+
+def _normalize_match_text(value: str) -> str:
+    value = unicodedata.normalize("NFKC", value)
+    value = value.replace("　", " ").replace("､", "、")
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def rule_matches(text: str, rule: RuleEntry | str) -> bool:
+    """Match one rule entry against a line of PDF text.
+
+    String rules keep the old fallback behaviour (contains matching).  Configured
+    RuleEntry values additionally honour the setting page's exact/contains choice.
+    """
+    if isinstance(rule, str):
+        term = _normalize_match_text(rule)
+        return bool(term) and term in _normalize_match_text(text)
+
+    term = _normalize_match_text(rule.term)
+    candidate = _normalize_match_text(text)
+    if not term:
+        return False
+    if rule.match_mode == MATCH_EXACT:
+        return candidate == term
+    return term in candidate
+
+
+def any_rule_matches(text: str, rules: tuple[RuleEntry | str, ...]) -> bool:
+    return any(rule_matches(text, rule) for rule in rules)
 
 
 def _make_id(prefix: str, term: str) -> str:

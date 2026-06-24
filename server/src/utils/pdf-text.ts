@@ -90,4 +90,47 @@ function classifyUploadedDocument(input: { fileName: string; textSample?: string
   return { materialType, fileRole, confidence, reasons }
 }
 
-export { extractPdfTextSample, classifyUploadedDocument }
+export interface DocumentProfile {
+  contentMode: 'scan' | 'text' | 'mixed'
+  confidence: number
+  reason: string
+  fileSizeBytes: number
+  pageCount: number
+  pages: Array<{
+    page: number
+    textChars: number
+    textBlocks: number
+    textLines: number
+    imageCount: number
+    maxImageCoverage: number
+    drawingCount: number
+    width: number
+    height: number
+  }>
+  summary: {
+    totalTextChars: number
+    totalTextBlocks: number
+    totalTextLines: number
+    totalImages: number
+    totalDrawings: number
+  }
+}
+
+function profilePdfDocument(pdfPath: string): DocumentProfile | null {
+  if (!fs.existsSync(pdfPath) || path.extname(pdfPath).toLowerCase() !== '.pdf') return null
+  try {
+    const scriptPath = path.join(pythonRoot, 'scripts', 'profile_pdf.py')
+    const output = execFileSync(pythonCommand(), [scriptPath, pdfPath], {
+      env: pythonEnv(),
+      encoding: 'utf8',
+      timeout: 15000,
+      maxBuffer: 4 * 1024 * 1024
+    })
+    return JSON.parse(output) as DocumentProfile
+  } catch (error) {
+    console.error('Error profiling PDF:', error)
+    return null
+  }
+}
+
+export { extractPdfTextSample, classifyUploadedDocument, profilePdfDocument }

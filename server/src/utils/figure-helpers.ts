@@ -130,6 +130,42 @@ export function expandedReviewBBox(bbox: Record<string, any>) {
   return { x: x - 4, y, width: width + 8, height: height + 10 }
 }
 
+function rawReviewBBox(value: any): { x: number; y: number; width: number; height: number } | null {
+  if (!value) return null
+  if (Array.isArray(value) && value.length === 4) {
+    const x0 = Number(value[0])
+    const y0 = Number(value[1])
+    const x1 = Number(value[2])
+    const y1 = Number(value[3])
+    const width = x1 - x0
+    const height = y1 - y0
+    return Number.isFinite(x0) && Number.isFinite(y0) && width > 0 && height > 0
+      ? { x: x0, y: y0, width, height }
+      : null
+  }
+  if (typeof value !== 'object') return null
+  const x = Number(value.x ?? value.x0)
+  const y = Number(value.y ?? value.y0)
+  const width = Number(value.width ?? value.w ?? Number(value.x1 ?? 0) - Number(value.x0 ?? 0))
+  const height = Number(value.height ?? value.h ?? Number(value.y1 ?? 0) - Number(value.y0 ?? 0))
+  return Number.isFinite(x) && Number.isFinite(y) && width > 0 && height > 0
+    ? { x, y, width, height }
+    : null
+}
+
+function isNormalizedReviewBBox(bbox: { x: number; y: number; width: number; height: number }) {
+  return bbox.x >= 0 && bbox.y >= 0 && bbox.width > 0 && bbox.height > 0 &&
+    bbox.x <= 1 && bbox.y <= 1 && bbox.width <= 1 && bbox.height <= 1
+}
+
+function reviewSegmentBBox(segment: Record<string, any>, fallbackBBox?: { x: number; y: number; width: number; height: number }) {
+  const explicit = rawReviewBBox(segment.bbox)
+  if (explicit) return explicit
+  const flat = rawReviewBBox(segment)
+  if (!flat) return null
+  return isNormalizedReviewBBox(flat) && fallbackBBox ? fallbackBBox : flat
+}
+
 type ReviewRow = {
   result_id: string
   run_id: string
@@ -153,9 +189,10 @@ export function figurePixelBBoxForSegments(sourceSegments: Array<Record<string, 
   if (!fs.existsSync(imagePath)) return figure.bbox || {}
   const segments = sourceSegments
     .map((segment) => {
-      const bbox = segment.bbox && typeof segment.bbox === 'object' ? expandedReviewBBox(segment.bbox) : null
+      const rawBBox = reviewSegmentBBox(segment)
+      const bbox = rawBBox ? expandedReviewBBox(rawBBox) : null
       return bbox && bbox.width > 0 && bbox.height > 0
-        ? { pageNumber: Number(segment.page_number ?? segment.pageNumber ?? fallbackPage), bbox }
+        ? { pageNumber: Number(segment.page_number ?? segment.pageNumber ?? segment.page ?? fallbackPage), bbox }
         : null
     })
     .filter(Boolean) as Array<{ pageNumber: number; bbox: { x: number; y: number; width: number; height: number } }>
@@ -191,8 +228,10 @@ export function figurePixelBBoxForSegments(sourceSegments: Array<Record<string, 
 export function reviewFigurePixelBBox(reviewRow: ReviewRow | undefined, figure: Record<string, any>, imagePath: string) {
   if (!reviewRow) return figure.bbox || {}
   const rawSegments = parseJson<Array<Record<string, any>>>(reviewRow.segments_json || '[]', [])
-  const fallbackBBox = parseJson<Record<string, any>>(reviewRow.bbox_json || '{}', {})
-  const sourceSegments = rawSegments.length ? rawSegments : [{ page_number: reviewRow.page_start, bbox: fallbackBBox }]
+  const fallbackBBox = rawReviewBBox(parseJson<any>(reviewRow.bbox_json || '{}', {})) || undefined
+  const sourceSegments = rawSegments.length
+    ? rawSegments.map((segment) => ({ ...segment, bbox: reviewSegmentBBox(segment, fallbackBBox) || segment.bbox }))
+    : [{ page_number: reviewRow.page_start, bbox: fallbackBBox }]
   return figurePixelBBoxForSegments(sourceSegments, reviewRow.page_start, figure, imagePath)
 }
 
@@ -366,7 +405,9 @@ function sourceImagePathForOcrResult(result: Record<string, any>, reviewRow?: Re
 
 function providerFigureWithExistingAsset(figure: Record<string, any>, figureId: string) {
   const providerAssetOrigin = String(figure.origin || '')
-  const providerAssetPath = providerAssetOrigin === 'doc2x_v3' || providerAssetOrigin === 'glm_ocr' ? stripAssetPrefix(String(figure.path || '')) : ''
+  const providerAssetPath = (providerAssetOrigin === 'doc2x_v3' || providerAssetOrigin === 'glm_ocr' || providerAssetOrigin === 'review_manual')
+    ? stripAssetPrefix(String(figure.path || figure.assetPath || ''))
+    : ''
   if (!providerAssetPath || !fs.existsSync(resolveStoragePath(providerAssetPath))) return null
   const usage = String(figure.usage || figure.category || 'stem')
   return {
@@ -380,6 +421,24 @@ function providerFigureWithExistingAsset(figure: Record<string, any>, figureId: 
   }
 }
 
+function sourceFiguresForImportedOcrResult(result: Record<string, any>, reviewRow?: ReviewRow) {
+  const reviewFigures = reviewRow ? parseJson<Array<Record<string, any>>>(reviewRow.figures_json || '[]', []) : []
+  const providerFigures = Array.isArray(result.figures) ? result.figures : []
+  // A reviewed question from a scanned paper has an explicit human figure
+  // selection. Provider page-block images are merely OCR by-products and may
+  // overlap neighbouring options or include a larger area, so they must never
+  // replace the reviewed crop. We still retain provider figures for documents
+  // without a manual question review (notably standalone solution documents).
+  const candidateFigures = reviewRow && reviewFigures.length > 0 && String(result.ocr_record_kind || 'question') !== 'solution'
+    ? reviewFigures
+    : [...reviewFigures, ...providerFigures]
+  return Array.from(new Map(
+    candidateFigures
+      .filter((figure) => figureBelongsToReview(reviewRow, figure))
+      .map((figure, index) => [String(figure.id || `figure_${index}`), figure]),
+  ).values())
+}
+
 /**
  * Build the figure list for an imported OCR result, cropping review images
  * as needed.  Used by question-bank import and OCR re-run pipelines.
@@ -387,9 +446,7 @@ function providerFigureWithExistingAsset(figure: Record<string, any>, figureId: 
 export function figuresForImportedOcrResult(result: Record<string, any>, runId: string) {
   const reviewRow = db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ? AND result_id = ?')
     .get(runId, String(result.id || '')) as ReviewRow | undefined
-  const reviewFigures = reviewRow ? parseJson<Array<Record<string, any>>>(reviewRow.figures_json || '[]', []) : []
-  const sourceFigures = (Array.isArray(result.figures) && result.figures.length ? result.figures : reviewFigures)
-    .filter((figure) => figureBelongsToReview(reviewRow, figure))
+  const sourceFigures = sourceFiguresForImportedOcrResult(result, reviewRow)
   const sourceRel = sourceImagePathForOcrResult(result, reviewRow)
   const sourceAbs = sourceRel ? resolveStoragePath(sourceRel) : ''
   return sourceFigures.map((figure, index) => {
@@ -426,8 +483,7 @@ export function figuresForImportedOcrResult(result: Record<string, any>, runId: 
 
 export async function figuresForImportedOcrResultAsync(result: Record<string, any>, runId: string) {
   const reviewRow = db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ? AND result_id = ?').get(runId, String(result.id || '')) as ReviewRow | undefined
-  const reviewFigures = reviewRow ? parseJson<Array<Record<string, any>>>(reviewRow.figures_json || '[]', []) : []
-  const sourceFigures = (Array.isArray(result.figures) && result.figures.length ? result.figures : reviewFigures).filter((figure) => figureBelongsToReview(reviewRow, figure))
+  const sourceFigures = sourceFiguresForImportedOcrResult(result, reviewRow)
   const sourceRel = sourceImagePathForOcrResult(result, reviewRow)
   const sourceAbs = sourceRel ? resolveStoragePath(sourceRel) : ''
   const figures: Array<Record<string, any>> = []
@@ -513,6 +569,18 @@ function cleanOcrPresentationHtml(value: string, field?: InlineImageField) {
     return field ? `\n\n<!-- OCR_IMAGE_REFERENCE:${field}:${figureCaptionIndex} -->\n\n` : '\n'
   }
   return String(value || '')
+    // `figureText` is OCR's description of text inside a diagram, not question
+    // prose. It is not meaningful without the image and otherwise leaks into
+    // the rendered stem as a faux tag.
+    .replace(/<!--\s*figureText:[\s\S]*?-->/gi, '\n')
+    // Doc2X commonly emits a plain "图 1" caption immediately after the image
+    // marker.  It labels that already-referenced image; treating it as a new
+    // figure creates a false 2-references/1-image mismatch.
+    .replace(/(<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->)\s*(?:图|figure)\s*\d+\s*/gi, '$1\n')
+    .replace(/(<img\b[^>]*\bsrc\s*=\s*['"][^'"]+['"][^>]*>)\s*(?:图|figure)\s*\d+\s*/gi, '$1\n')
+    // Some scanned multiple-choice pages repeat a bare option letter after
+    // the corresponding image. The visible `A.` already labels the option.
+    .replace(/(<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->)\s*[A-D]\s*(?=\n|$)/gi, '$1\n')
     // GLM sometimes represents a diagram only as a centered caption, such as
     // `<div align="center">图1</div>`. Preserve it as an image reference so
     // reviewed crops can be inserted at the intended reading position.
@@ -545,13 +613,47 @@ export function bindInlineImageReferences(result: Record<string, any>, runId: st
     count: inlineImageReferenceCount(cleanOcrPresentationHtml(String(result[entry.resultKey] || ''), entry.field)),
   }))
   const totalReferences = references.reduce((sum, entry) => sum + entry.count, 0)
-  if (!totalReferences) return null
 
   // Force the existing review/cut figures to be the only source for inline
   // binding.  This produces stable local paths through figuresForImported...
   const localFigures = options.localFigures?.length
     ? options.localFigures
     : figuresForImportedOcrResult({ ...result, figures: reviewFigures }, runId)
+
+  if (!totalReferences) {
+    // OCR occasionally keeps "如图 2 所示" in the prose but drops the image
+    // marker entirely. With exactly one reviewer-selected stem figure, the
+    // intended position is unambiguous enough to restore automatically.
+    const stemFigures = localFigures.filter((figure) => {
+      const usage = String(figure.usage || figure.category || 'stem')
+      return usage === 'stem' || usage === 'options'
+    })
+    const figureReference = /如图\s*\d+\s*所示/
+    const stem = String(result.problem_text || '')
+    if (stemFigures.length === 1 && figureReference.test(stem)) {
+      const figure = stemFigures[0]
+      const boundFigure = {
+        ...figure,
+        usage: 'stem',
+        category: 'stem',
+        blockId: 'cut_inline_stem_1',
+        ocrBinding: figure.ocrBinding?.enabled
+          ? { ...figure.ocrBinding, status: 'bound' }
+          : figure.ocrBinding,
+      }
+      if (figure.ocrBinding?.enabled) figure.ocrBinding = { ...figure.ocrBinding, status: 'bound' }
+      const figures = localFigures.map((candidate) => String(candidate.id || '') === String(figure.id || '') ? boundFigure : candidate)
+      return {
+        stem: cleanOcrPresentationHtml(stem, 'stem').replace(figureReference, `<!-- DOC2X_FIGURE:${boundFigure.blockId} -->\n\n$&`),
+        answer: String(result.answer || ''),
+        analysis: String(result.analysis || ''),
+        figures,
+        issue: null,
+      }
+    }
+    return null
+  }
+
   const byUsage = new Map<InlineImageField, Array<Record<string, any>>>()
   for (const field of inlineImageFields) byUsage.set(field.field, [])
   for (const figure of localFigures) {
@@ -563,9 +665,17 @@ export function bindInlineImageReferences(result: Record<string, any>, runId: st
   const issues: Array<{ field: InlineImageField; expected: number; available: number; label: string }> = []
   const selected: Array<Record<string, any>> = []
   const content: Record<InlineImageField, string> = { stem: String(result.problem_text || ''), answer: String(result.answer || ''), analysis: String(result.analysis || '') }
+  let usedNativeDoc2xFigures = false
   for (const entry of references) {
     if (!entry.count) continue
-    const candidates = byUsage.get(entry.field) || []
+    const allCandidates = byUsage.get(entry.field) || []
+    const hasNativeReference = /<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->/i.test(entry.value)
+    const nativeCandidates = hasNativeReference
+      ? allCandidates.filter((figure) => String(figure.origin || '') === 'doc2x_v3')
+      : []
+    // A Doc2X marker names a provider block exactly.  Prefer that provider's
+    // downloaded figure over an overlapping manual crop of the same option.
+    const candidates = nativeCandidates.length === entry.count ? nativeCandidates : allCandidates
     if (candidates.length !== entry.count) {
       issues.push({ field: entry.field, expected: entry.count, available: candidates.length, label: entry.label })
       let missingIndex = 0
@@ -584,19 +694,37 @@ export function bindInlineImageReferences(result: Record<string, any>, runId: st
       : entry.value
     content[entry.field] = sourceValue.replace(referencePattern, () => {
       const optionLabel = isFourImageChoice ? String.fromCharCode(65 + index) : ''
+      const candidate = candidates[index]
+      // `localFigures` is also inspected by the importer for unplaced manual
+      // attachments immediately after this function returns. Keep that source
+      // object in sync with the copied figure written to the question.
+      if (candidate.ocrBinding?.enabled) {
+        candidate.ocrBinding = { ...candidate.ocrBinding, status: 'bound' }
+      }
       const figure = {
-        ...candidates[index],
+        ...candidate,
         usage: isFourImageChoice ? 'options' : entry.field,
         category: isFourImageChoice ? 'options' : entry.field,
         optionLabel,
         blockId: `cut_inline_${entry.field}_${index + 1}`,
+        ocrBinding: candidate.ocrBinding,
       }
       selected.push(figure)
       index += 1
+      if (nativeCandidates.length === entry.count) usedNativeDoc2xFigures = true
       return isFourImageChoice
         ? `\n\n${optionLabel}.\n<!-- DOC2X_FIGURE:${figure.blockId} -->\n\n`
         : `\n\n<!-- DOC2X_FIGURE:${figure.blockId} -->\n\n`
     })
+  }
+  if (usedNativeDoc2xFigures) {
+    for (const figure of localFigures) {
+      if (String(figure.origin || '') === 'doc2x_v3' || !figure.ocrBinding?.enabled || figure.ocrBinding?.status !== 'unplaced') continue
+      const usage = String(figure.usage || figure.category || '')
+      if (usage === 'options' || usage === 'stem') {
+        figure.ocrBinding = { ...figure.ocrBinding, status: 'ignored' }
+      }
+    }
   }
   const selectedById = new Map(selected.map((figure) => [String(figure.id || ''), figure]))
   const boundFigures = localFigures.map((figure) => selectedById.get(String(figure.id || '')) || figure)
@@ -612,5 +740,50 @@ export function bindInlineImageReferences(result: Record<string, any>, runId: st
       message: issues.map((entry) => `${entry.label}图片引用 ${entry.expected} 个，但切分题图 ${entry.available} 个`).join('；'),
       snippet: issues.map((entry) => `${entry.label} ${entry.available}/${entry.expected}`).join('，'),
     } : null,
+  }
+}
+
+export function bindExplicitAttachments(
+  result: Record<string, any>,
+  localFigures: Array<Record<string, any>>
+) {
+  const fields: Array<'problem_text' | 'answer' | 'analysis'> = ['problem_text', 'answer', 'analysis']
+
+  for (const figure of localFigures) {
+    if (!figure.ocrBinding?.enabled || !figure.ocrBinding?.attachmentId) {
+      continue
+    }
+    const attachmentId = String(figure.ocrBinding.attachmentId)
+    // Match the literal protocol token emitted by OCR, e.g. {{figure:F1}}.
+    // Attachment IDs are generated internally today, but escaping keeps this
+    // safe if a future provider uses a different identifier format.
+    const escapedAttachmentId = attachmentId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const pattern = new RegExp(`\\{\\{\\s*figure\\s*:\\s*${escapedAttachmentId}\\s*\\}\\}`, 'gi')
+
+    let found = false
+    for (const field of fields) {
+      const text = String(result[field] || '')
+      if (pattern.test(text)) {
+        found = true
+        const blockId = `cut_inline_${figure.usage || 'stem'}_${attachmentId}`
+        figure.blockId = blockId
+        figure.ocrBinding = {
+          ...figure.ocrBinding,
+          status: 'bound'
+        }
+        result[field] = text.replace(pattern, `\n\n<!-- DOC2X_FIGURE:${blockId} -->\n\n`)
+      }
+    }
+
+    if (!found) {
+      // 如果它之前被标为 bound 且并没有被匹配（比如文本中已被用户手动挪去，且没找到当前匹配），
+      // 我们在导入时将其设定为 unplaced
+      if (figure.ocrBinding.status !== 'ignored') {
+        figure.ocrBinding = {
+          ...figure.ocrBinding,
+          status: 'unplaced'
+        }
+      }
+    }
   }
 }

@@ -8,7 +8,7 @@ import { normalizeDifficultyScore10, difficultyLabel10 } from '../../utils/searc
 import { normalizeTags } from '../tags/tag-libraries.js'
 import { readOcrSettings } from '../settings/ocr-settings.js'
 import { normalizeOcrProvider, createPendingBankRerunTask, startMigratedOcrBackground, pendingBankOcrFailureItems } from './ocr.js'
-import { blocksToMarkdown } from '../../utils/rich-content.js'
+import { blocksToMarkdown, stripDoc2xNoiseComments } from '../../utils/rich-content.js'
 import { RouteError } from '../../utils/http-error.js'
 import * as repo from '../../repositories/pdf-slicer/pending-bank.repo.js'
 
@@ -63,9 +63,9 @@ export function saveManualCandidate(runId: string, body: Record<string, any>) {
   const reviewItem = repo.getReviewItems(runId).find((entry) => entry.resultId === id)
   if (!reviewItem) throw new RouteError(404, '当前题目缺少原始切题记录。')
   const sourceTitle = cleanSourceTitle(run.paperTitle || run.pdfName || '', run.pdfName || 'OCR 导入')
-  const stemMarkdown = String((itemBody.stemMarkdown ?? blocksToMarkdown(itemBody.problemBlocks ?? [])) || '').trim()
-  const answerText = String((itemBody.answerText ?? blocksToMarkdown(itemBody.answerBlocks ?? [])) || '').trim()
-  const analysisMarkdown = String((itemBody.analysisMarkdown ?? blocksToMarkdown(itemBody.analysisBlocks ?? [])) || '').trim()
+  const stemMarkdown = stripDoc2xNoiseComments(String((itemBody.stemMarkdown ?? blocksToMarkdown(itemBody.problemBlocks ?? [])) || '')).trim()
+  const answerText = stripDoc2xNoiseComments(String((itemBody.answerText ?? blocksToMarkdown(itemBody.answerBlocks ?? [])) || '')).trim()
+  const analysisMarkdown = stripDoc2xNoiseComments(String((itemBody.analysisMarkdown ?? blocksToMarkdown(itemBody.analysisBlocks ?? [])) || '')).trim()
   try {
     const item = repo.createQuestion({ id, serialNo: Number.parseInt(String(itemBody.serialNo || ''), 10) || undefined, questionNo: cleanQuestionNoLabel(String(itemBody.questionNo || reviewItem.questionLabel || '')), stage: String(itemBody.stage || '高三'), questionType: itemBody.questionType && itemBody.questionType !== 'OCR题' ? String(itemBody.questionType) : inferQuestionType(stemMarkdown, answerText), difficultyScore: Number(itemBody.difficultyScore ?? 3), difficultyScore10: normalizeDifficultyScore10(itemBody.difficultyScore10), difficultyLabel: itemBody.difficultyLabel || difficultyLabel10(normalizeDifficultyScore10(itemBody.difficultyScore10)), chapter: itemBody.chapter || '待整理', knowledgePoints: normalizeTags(itemBody.knowledgePoints), solutionMethods: normalizeTags(itemBody.solutionMethods), sourceTitle, bankStatus: 'ready', stemMarkdown, answerText, analysisMarkdown, sliceImagePath: stripAssetPrefix(String(itemBody.sliceImagePath || reviewItem.autoImagePath || reviewItem.pageImagePath || '')), figures: Array.isArray(itemBody.figures) ? itemBody.figures : reviewItem.figures, sourceRunId: runId, sourceSolutionRunId: '', mergeStatus: '', mergeNote: '', needsFormatReview: false })
     if (!item) throw new Error('题目创建失败。')

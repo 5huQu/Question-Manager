@@ -23,6 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run GLM-OCR and produce OCR drafts")
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--pdf", type=Path, required=True)
+    parser.add_argument("--solutions-pdf", type=Path)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--drafts-root", type=Path, required=True)
     parser.add_argument("--artifact-dir", type=Path, required=True)
@@ -88,28 +89,44 @@ def main() -> int:
         state.update({"run_id": args.run_id, "phase": phase, "progress": progress, "updated_at": time.time(), **extra})
         atomic_json(state_path, state)
         print(json.dumps({"phase": phase, "progress": progress, **extra}, ensure_ascii=False), flush=True)
+
+    def parse_document(pdf_path: Path, result_path: Path, document: str, start_progress: int, end_progress: int) -> dict:
+        if pdf_path.suffix.lower() == ".pdf":
+            with fitz.open(pdf_path) as document_pdf:
+                if len(document_pdf) > 100:
+                    raise GlmOcrError("GLM-OCR 单次最多解析 100 页，请拆分 PDF 或使用单题重新 OCR。", code="too_many_pages")
+        if result_path.exists() and not args.force:
+            payload = json.loads(result_path.read_text(encoding="utf-8"))
+            update("normalizing", end_progress, document=document, result_path=str(result_path))
+            return payload
+        update("parsing", start_progress, document=document, input_path=str(pdf_path))
+        client = GlmOcrClient(GlmOcrSettings(api_key=key, base_url=(os.getenv("GLM_OCR_API_BASE_URL") or DEFAULT_BASE_URL).strip(), model=(os.getenv("GLM_OCR_MODEL") or DEFAULT_MODEL).strip(), max_retries=max(0, int(os.getenv("OCR_MAX_RETRIES") or "2"))))
+        payload = client.parse(pdf_path, request_id=f"{document}-{args.run_id[:48]}")
+        atomic_json(result_path, payload)
+        return payload
     try:
         input_pdf = args.pdf
         if args.single_question:
             input_pdf = build_single_question_pdf(manifest, args.storage_root, args.artifact_dir / "single_question.pdf")
-        if input_pdf.suffix.lower() == ".pdf":
-            with fitz.open(input_pdf) as document:
-                if len(document) > 100:
-                    raise GlmOcrError("GLM-OCR 单次最多解析 100 页，请拆分 PDF 或使用单题重新 OCR。", code="too_many_pages")
-        result_path = args.artifact_dir / "parse.response.json"
-        if result_path.exists() and not args.force:
-            payload = json.loads(result_path.read_text(encoding="utf-8"))
-            update("normalizing", 85, result_path=str(result_path))
-        else:
-            update("parsing", 5, input_path=str(input_pdf))
-            client = GlmOcrClient(GlmOcrSettings(api_key=key, base_url=(os.getenv("GLM_OCR_API_BASE_URL") or DEFAULT_BASE_URL).strip(), model=(os.getenv("GLM_OCR_MODEL") or DEFAULT_MODEL).strip(), max_retries=max(0, int(os.getenv("OCR_MAX_RETRIES") or "2"))))
-            payload = client.parse(input_pdf, request_id=f"question-{args.run_id[:48]}")
-            atomic_json(result_path, payload)
-        update("normalizing", 90, result_path=str(result_path))
-        report = build_drafts(result_payload=payload, manifest=manifest, drafts_root=args.drafts_root, artifact_dir=args.artifact_dir, storage_root=args.storage_root, single_question=args.single_question)
-        update("importing", 99, report=report, result_path=str(result_path))
-        update("succeeded", 100, report=report, result_path=str(result_path))
-        return 0 if report["successful"] else 3
+        question_manifest = [record for record in manifest if str(record.get("ocr_record_kind") or "question") != "solution"]
+        solution_manifest = [record for record in manifest if str(record.get("ocr_record_kind") or "question") == "solution"]
+        question_result_path = args.artifact_dir / "parse.response.json"
+        question_payload = parse_document(input_pdf, question_result_path, "question", 5, 85 if not solution_manifest else 45)
+        solution_payload = None
+        solution_result_path = args.artifact_dir / "solutions.parse.response.json"
+        if solution_manifest:
+            if not args.solutions_pdf:
+                raise GlmOcrError("当前批次包含解析区域，但未提供解析 PDF。", code="missing_solutions_pdf")
+            solution_payload = parse_document(args.solutions_pdf, solution_result_path, "solution", 48, 85)
+        update("normalizing", 90, result_path=str(question_result_path))
+        question_report = build_drafts(result_payload=question_payload, manifest=question_manifest, drafts_root=args.drafts_root, artifact_dir=args.artifact_dir, storage_root=args.storage_root, single_question=args.single_question)
+        solution_report = {"total": 0, "successful": 0, "failed": 0, "failures": []}
+        if solution_payload is not None:
+            solution_report = build_drafts(result_payload=solution_payload, manifest=solution_manifest, drafts_root=args.drafts_root, artifact_dir=args.artifact_dir, storage_root=args.storage_root, document_role="solution")
+        report = {"questions": question_report, "solutions": solution_report}
+        update("importing", 99, report=report, result_path=str(question_result_path))
+        update("succeeded", 100, report=report, result_path=str(question_result_path))
+        return 0 if question_report["successful"] == question_report["total"] and solution_report["successful"] == solution_report["total"] else 3
     except (GlmOcrError, OSError, ValueError, json.JSONDecodeError) as exc:
         update("failed", int(state.get("progress") or 0), error=str(exc), error_code=getattr(exc, "code", "runner_error"))
         print(str(exc), file=sys.stderr)

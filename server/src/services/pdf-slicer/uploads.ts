@@ -18,6 +18,7 @@ import { convertDocxToPdf, analyzeDocxFormulaTypes } from '../../utils/document-
 import { findReusableSeparatedExamBatch, batchRuns, getRun, mapBatch } from '../../db/runs.js'
 import { sofficePath } from '../settings/tools.js'
 import { startSlicingRunInBackground } from './slicing.js'
+import { profilePdfDocument } from '../../utils/pdf-text.js'
 import type { FileRole, MaterialType, BatchRow } from '../../types/index.js'
 
 export function handlePdfSlicerUploads(
@@ -62,7 +63,7 @@ export function handlePdfSlicerUploads(
       material_type, file_role, stage, classification_confidence, classification_reasons_json,
       created_at, updated_at, slice_status, quick_review_status, total_questions, approved_questions, unreviewed_questions, ocr_status,
       rules_version, rules_hash, rules_fallback_used, rules_warnings_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'pending', 0, 0, 0, 'idle', 0, '', 0, '[]')
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, 0, 0, 'idle', 0, '', 0, '[]')
   `)
   for (const [fileIndex, file] of files.entries()) {
     const originalName = normalizeUploadName(file.originalname)
@@ -84,6 +85,17 @@ export function handlePdfSlicerUploads(
     } else if (sourceKind !== 'pdf') {
       throw new Error(`暂不支持的文件类型：.${sourceKind}`)
     }
+
+    // PDF Document Profiling
+    const profile = profilePdfDocument(pdfPath)
+    let sliceStatus = 'queued'
+    if (profile) {
+      diagnostics.profile = profile
+      if (profile.contentMode === 'scan' || profile.contentMode === 'mixed') {
+        sliceStatus = 'awaiting_manual_annotation'
+      }
+    }
+
     const paperTitle = requestedPaperTitle || cleanSourceTitle(originalName)
     const detectedClassification = options.classifyUploadedDocument({ fileName: originalName, textSample: options.extractPdfTextSample(pdfPath) })
     const fileRoleOverride = requestedFileRoles[fileIndex] ?? requestedFileRole
@@ -113,12 +125,27 @@ export function handlePdfSlicerUploads(
       classification.confidence,
       JSON.stringify(classification.reasons),
       now,
-      now
+      now,
+      sliceStatus
     )
     runIds.push(runId)
-    startSlicingRunInBackground(runId)
+    if (sliceStatus === 'queued') {
+      startSlicingRunInBackground(runId)
+    }
   }
   options.updateBatchWorkflow(batchId)
+  const anyScanOrMixed = runIds.some(rid => {
+    const r = db.prepare('SELECT slice_status FROM pdf_slicer_runs WHERE run_id = ?').get(rid) as { slice_status: string } | undefined
+    return r?.slice_status === 'awaiting_manual_annotation'
+  })
   const batch = db.prepare('SELECT * FROM pdf_slicer_batches WHERE id = ?').get(batchId) as BatchRow
-  return { batchId, uploadedCount: files.length, runIds, batch: mapBatch(batch), runs: batchRuns(batchId) }
+  return {
+    batchId,
+    uploadedCount: files.length,
+    runIds,
+    batch: mapBatch(batch),
+    runs: batchRuns(batchId),
+    nextAction: anyScanOrMixed ? 'manual_annotation' : 'auto_slicing',
+    manualAnnotationBatchId: anyScanOrMixed ? batchId : undefined
+  }
 }

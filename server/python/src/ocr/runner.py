@@ -728,6 +728,7 @@ def build_result_json(
         "figure_labels": model_output.get("figure_labels", []) if model_output else [],
         "figure_visual_elements": model_output.get("figure_visual_elements", []) if model_output else [],
         "figures": manifest_record.get("figures") or [],
+        "attachments": manifest_record.get("attachments") or [],
         "possible_extra_content": model_output.get("possible_extra_content", []) if model_output else [],
         "latex_risk": model_output.get("latex_risk", []) if model_output else [],
         "uncertain_parts": model_output.get("uncertain_parts", []) if model_output else [],
@@ -802,7 +803,30 @@ def _parse_ocr_result(api_result: OCRAPIResult) -> tuple[str, dict[str, Any], di
     return raw_text, parsed_model, post_processing, last_error
 
 
-def _build_chunk_user_content(kind: str, input_images: list[Path]) -> list[dict[str, Any]]:
+def _attachment_entries(manifest_record: dict[str, Any]) -> list[tuple[str, str, Path]]:
+    """Return materialized manual figures that must be sent to the OCR model."""
+    entries: list[tuple[str, str, Path]] = []
+    for raw in manifest_record.get("attachments") or []:
+        if not isinstance(raw, dict):
+            continue
+        attachment_id = str(raw.get("id") or "").strip()
+        image_path = resolve_runtime_path(str(raw.get("path") or ""))
+        if attachment_id and image_path.exists():
+            entries.append((attachment_id, str(raw.get("targetField") or raw.get("usage") or "stem"), image_path))
+    return entries
+
+
+def _append_attachment_content(content: list[dict[str, Any]], manifest_record: dict[str, Any]) -> None:
+    attachments = _attachment_entries(manifest_record)
+    if not attachments:
+        return
+    content.append({"type": "text", "text": "以下是人工框选的独立图片附件。若图片应插入题干、答案或解析，请在对应 JSON 字段的准确位置输出 {{figure:ID}}，不要改写图片内容。"})
+    for attachment_id, target_field, image_path in attachments:
+        content.append({"type": "text", "text": f"附件 ID={attachment_id}，建议字段={target_field}。"})
+        content.append({"type": "image_url", "image_url": {"url": image_to_data_url(image_path), "detail": "high"}})
+
+
+def _build_chunk_user_content(kind: str, input_images: list[Path], manifest_record: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     prompt_text = build_chunk_user_prompt(kind, len(input_images))
     content: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
     for index, image_path in enumerate(input_images, start=1):
@@ -811,13 +835,14 @@ def _build_chunk_user_content(kind: str, input_images: list[Path]) -> list[dict[
             "type": "image_url",
             "image_url": {"url": image_to_data_url(image_path), "detail": "high"},
         })
+    _append_attachment_content(content, manifest_record or {})
     return content
 
 
-def _build_chunk_messages(kind: str, input_images: list[Path]) -> list[dict[str, Any]]:
+def _build_chunk_messages(kind: str, input_images: list[Path], manifest_record: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     return [
         {"role": "system", "content": OCR_CHUNK_SYSTEM_PROMPT},
-        {"role": "user", "content": _build_chunk_user_content(kind, input_images)},
+        {"role": "user", "content": _build_chunk_user_content(kind, input_images, manifest_record)},
     ]
 
 
@@ -1059,7 +1084,7 @@ def _run_region_supplement_impl(
             "input_count": len(input_paths),
             "input_paths": input_paths,
             "chunk_dir": chunk_dir,
-            "messages": _build_chunk_messages(kind, input_paths),
+            "messages": _build_chunk_messages(kind, input_paths, manifest_record),
             "dry_run": dry_run,
         })
 
@@ -1250,10 +1275,11 @@ def _build_user_content(
                     },
                 }
             )
+        _append_attachment_content(content, manifest_record)
         return content
 
     if input_images:
-        return [
+        content = [
             {
                 "type": "text",
                 "text": build_user_prompt(),
@@ -1266,8 +1292,12 @@ def _build_user_content(
                 },
             },
         ]
+        _append_attachment_content(content, manifest_record)
+        return content
 
-    return [{"type": "text", "text": build_user_prompt()}]
+    content = [{"type": "text", "text": build_user_prompt()}]
+    _append_attachment_content(content, manifest_record)
+    return content
 
 
 def process_record(

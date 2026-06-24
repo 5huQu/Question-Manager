@@ -17,6 +17,30 @@ export function normalizedReviewQuestionNo(value: string) {
   return numberMatch ? String(Number(numberMatch[0])) : compact.toUpperCase()
 }
 
+function questionOrderParts(value: string) {
+  return (String(value || '').match(/\d+/g) || []).map(Number)
+}
+
+/**
+ * Return review items in the paper's question-number order rather than by
+ * their opaque result IDs.  Manual annotation result IDs contain random UUIDs,
+ * so lexical ID order is not a meaningful reading order.
+ */
+export function compareReviewItems<T extends { questionLabel: string; pageStart: number; resultId: string }>(left: T, right: T) {
+  const leftParts = questionOrderParts(left.questionLabel)
+  const rightParts = questionOrderParts(right.questionLabel)
+  if (leftParts.length && rightParts.length) {
+    const max = Math.max(leftParts.length, rightParts.length)
+    for (let index = 0; index < max; index += 1) {
+      const diff = (leftParts[index] ?? -1) - (rightParts[index] ?? -1)
+      if (diff) return diff
+    }
+  } else if (leftParts.length || rightParts.length) {
+    return leftParts.length ? -1 : 1
+  }
+  return left.pageStart - right.pageStart || left.resultId.localeCompare(right.resultId)
+}
+
 function solutionCutRecords(runId: string) {
   const run = db.prepare('SELECT run_dir FROM pdf_slicer_runs WHERE run_id = ?').get(runId) as { run_dir?: string } | undefined
   if (!run?.run_dir) return []
@@ -72,7 +96,9 @@ export function getReviewItems(runId: string) {
     const key = normalizedReviewQuestionNo(String(item.question_no || ''))
     if (key && !solutionCutByNo.has(key)) solutionCutByNo.set(key, item)
   }
-  return (db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ? ORDER BY result_id ASC').all(runId) as ReviewRow[]).map((row) => mapReview(row, solutionByNo, solutionCutByNo))
+  return (db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ?').all(runId) as ReviewRow[])
+    .map((row) => mapReview(row, solutionByNo, solutionCutByNo))
+    .sort(compareReviewItems)
 }
 
 export function syncReviewRunCounts(runId: string) {

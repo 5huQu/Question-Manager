@@ -9,7 +9,7 @@ import { resolveStoragePath } from '../../utils/paths.js'
 import { buildSearchText, difficultyLabel10, normalizeDifficultyScore10 } from '../../utils/search.js'
 import { inferQuestionType } from '../../utils/question-type.js'
 import { cleanQuestionNoLabel, syncQuestionBankItemToOcrDraft } from '../../utils/ocr-helpers.js'
-import { blocksToMarkdown } from '../../utils/rich-content.js'
+import { blocksToMarkdown, stripDoc2xNoiseComments } from '../../utils/rich-content.js'
 import { nowIso, createId } from '../../utils/ids.js'
 import { bindInlineImageReferences, imageExtension } from '../../utils/figure-helpers.js'
 import { normalizeTags } from '../tags/tag-libraries.js'
@@ -130,14 +130,26 @@ export function updateItem(id: string, rawBody: Record<string, any>) {
     if (markdownValue != null) return String(markdownValue)
     return previous
   }
-  const stemMarkdown = fieldFromPatch(body.stemMarkdown, body.problemBlocks, before.stemMarkdown)
-  const answerText = fieldFromPatch(body.answerText, body.answerBlocks, before.answerText)
-  const analysisMarkdown = fieldFromPatch(body.analysisMarkdown, body.analysisBlocks, before.analysisMarkdown)
+  const stemMarkdown = stripDoc2xNoiseComments(fieldFromPatch(body.stemMarkdown, body.problemBlocks, before.stemMarkdown))
+  const answerText = stripDoc2xNoiseComments(fieldFromPatch(body.answerText, body.answerBlocks, before.answerText))
+  const analysisMarkdown = stripDoc2xNoiseComments(fieldFromPatch(body.analysisMarkdown, body.analysisBlocks, before.analysisMarkdown))
   const knowledgePoints = body.knowledgePoints ? normalizeTags(body.knowledgePoints) : before.knowledgePoints
   const solutionMethods = body.solutionMethods ? normalizeTags(body.solutionMethods) : before.solutionMethods
   const sourceTitle = body.sourceTitle ?? before.sourceTitle
   const chapter = body.chapter ?? before.chapter
+  const figures = body.figures ? body.figures : before.figures
   const formatIssues = validateQuestionMarkdown({ problem_text: stemMarkdown, answer: answerText, analysis: analysisMarkdown })
+  const unplacedAttachments = (figures as Array<Record<string, any>> || []).filter(
+    (f) => f.ocrBinding?.enabled && f.ocrBinding?.status === 'unplaced'
+  )
+  if (unplacedAttachments.length > 0) {
+    formatIssues.push({
+      field: 'figures',
+      code: 'unplaced_attachment',
+      message: `含有未定位的人工附件图（${unplacedAttachments.map((f: any) => f.ocrBinding.attachmentId || f.id).join('、')}）。可用待定位操作放置到文本中。`,
+      snippet: unplacedAttachments.map((f: any) => f.ocrBinding.attachmentId || f.id).join(','),
+    })
+  }
   const requiresFormatReview = Boolean(formatIssues.length)
   const nextBankStatus = body.bankStatus ?? (!requiresFormatReview && before.bankStatus === 'blocked' && before.needsFormatReview ? 'ready' : null)
   const formatReviewJson = requiresFormatReview ? JSON.stringify(formatReviewPayload(formatIssues, nowIso())) : '{}'
@@ -162,6 +174,7 @@ export function updateItem(id: string, rawBody: Record<string, any>) {
     nextBankStatus,
     nowIso(),
   ])
+  repo.updateQuestionFigures(id, figures)
   syncQuestionBankItemToOcrDraft(repo.getQuestion(id))
   return repo.getQuestion(id)
 }

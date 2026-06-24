@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 import fitz
 
-from .doc2x import normalize_math_delimiters, normalize_question_no
+from .doc2x import classify_solution_document, normalize_math_delimiters, normalize_question_no, solution_fields
 
 
 DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4/layout_parsing"
@@ -196,17 +196,15 @@ def _split_numbered_markdown_legacy(pages: list[str], expected_numbers: list[str
     """Compatibility path for non-exam materials such as lectures."""
     source = _joined_pages(pages)
     starts: list[tuple[str, int, int]] = []
-    cursor = 0
-    for number in expected_numbers:
+    for number in dict.fromkeys(expected_numbers):
         normalized = normalize_question_no(number)
         if not normalized:
             continue
-        match = re.search(QUESTION_START_RE.format(number=re.escape(normalized)), source[cursor:])
+        match = re.search(QUESTION_START_RE.format(number=re.escape(normalized)), source)
         if not match:
             continue
-        start = cursor + match.start()
-        starts.append((normalized, start, cursor + match.end()))
-        cursor += match.end()
+        starts.append((normalized, match.start(), match.end()))
+    starts.sort(key=lambda item: item[1])
     output: dict[str, dict[str, Any]] = {}
     for index, (number, start, content_start) in enumerate(starts):
         end = starts[index + 1][1] if index + 1 < len(starts) else len(source)
@@ -685,14 +683,15 @@ def _strip_images_outside_review_segments(value: str, record: dict[str, Any], pa
     return IMAGE_RE.sub(lambda match: match.group(0) if match.group(1) in allowed_urls else "", value)
 
 
-def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any]], drafts_root: Path, artifact_dir: Path, storage_root: Path, single_question: bool = False) -> dict[str, Any]:
+def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any]], drafts_root: Path, artifact_dir: Path, storage_root: Path, single_question: bool = False, document_role: str = "question") -> dict[str, Any]:
     manifest = _with_pdf_page_sizes(manifest, storage_root)
     pages = _page_texts(result_payload)
     expected = [normalize_question_no(record.get("question_no")) for record in manifest]
     # New manifests explicitly carry the document kind.  Older manifests were
     # produced only by the exam flow, so retain exam parsing for compatibility.
     is_exam = all(str(record.get("material_type") or "exam") == "exam" for record in manifest)
-    parsed = split_exam_markdown(pages, expected) if is_exam else _split_numbered_markdown_legacy(pages, expected)
+    solution_document_kind = classify_solution_document([{"md": page} for page in pages]) if document_role == "solution" else ""
+    parsed = _split_numbered_markdown_legacy(pages, expected) if document_role == "solution" else (split_exam_markdown(pages, expected) if is_exam else _split_numbered_markdown_legacy(pages, expected))
     successes = 0
     failures: list[dict[str, str]] = []
     for record in manifest:
@@ -734,6 +733,10 @@ def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any
                 }
         else:
             item = parsed.get(question_no)
+        if item and record_kind == "solution" and parse_mode != "region":
+            solution_raw = (item.get("analysis") or item.get("answer") or item.get("stem") or "").strip()
+            answer, analysis, has_markers = solution_fields(solution_raw, solution_document_kind)
+            item = {**item, "stem": "", "answer": answer, "analysis": analysis, "has_markers": has_markers}
         if single_question and len(manifest) == 1 and not item:
             raw = _joined_pages(pages)
             stem, answer, analysis, has_markers = _split_fields(raw)
@@ -755,7 +758,7 @@ def build_drafts(*, result_payload: dict[str, Any], manifest: list[dict[str, Any
             figures = list({str(figure.get("id") or index): figure for index, figure in enumerate([*reviewed_figures, *glm_figures])}.values())
             normalized_fields = {"problem_text": normalize_math_delimiters(problem), "answer": normalize_math_delimiters(answer), "analysis": normalize_math_delimiters(analysis)}
             needs_review = (not bool(problem) and record_kind != "solution") or (record_kind == "solution" and not bool(answer) and not bool(analysis)) or (record_kind != "solution" and not bool(answer) and not bool(analysis))
-            result = {**persisted_record, "id": record_id, "question_no": record.get("question_no", question_no), "ocr_status": "draft", **normalized_fields, "figures": figures, "needs_human_review": needs_review, "raw_model_output": _strip_images_outside_review_segments(item["raw"], record, result_payload), "post_processing": {"provider": "glm", "page_indices": item.get("page_indices") or [], "used_text_regions": parse_mode == "region", "has_answer_analysis_markers": bool(item.get("has_markers")), "parse_confidence": item.get("parse_confidence", "high"), "parse_warnings": item.get("parse_warnings") or [], "figure_binding": _glm_figure_diagnostics(record, manifest, result_payload), "render_diagnostics": _formula_diagnostics(normalized_fields)}}
+            result = {**persisted_record, "id": record_id, "question_no": record.get("question_no", question_no), "ocr_status": "draft", **normalized_fields, "figures": figures, "needs_human_review": needs_review, "raw_model_output": _strip_images_outside_review_segments(item["raw"], record, result_payload), "post_processing": {"provider": "glm", "page_indices": item.get("page_indices") or [], "used_text_regions": parse_mode == "region", "has_answer_analysis_markers": bool(item.get("has_markers")), "document_role": document_role, "solution_document_kind": solution_document_kind if record_kind == "solution" else "", "parse_confidence": item.get("parse_confidence", "high"), "parse_warnings": item.get("parse_warnings") or [], "figure_binding": _glm_figure_diagnostics(record, manifest, result_payload), "render_diagnostics": _formula_diagnostics(normalized_fields)}}
             successes += 1
         _atomic_json(draft_dir / "ocr_result.json", result)
         _atomic_text(draft_dir / "question.md", f"# 题目\n\n{result.get('problem_text') or ''}\n\n# 答案\n\n{result.get('answer') or ''}\n\n# 解析\n\n{result.get('analysis') or ''}\n")

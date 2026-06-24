@@ -135,6 +135,32 @@ export function ensureSchema() {
       FOREIGN KEY (source_run_id) REFERENCES pdf_slicer_runs(run_id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS pdf_slicer_annotation_sessions (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'draft',
+      source_profile_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      finalized_at TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS pdf_slicer_annotation_regions (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      source_run_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      question_key TEXT NOT NULL DEFAULT '',
+      question_label TEXT NOT NULL DEFAULT '',
+      question_keys_json TEXT NOT NULL DEFAULT '[]',
+      segments_json TEXT NOT NULL DEFAULT '[]',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS pdf_slicer_review_items (
       result_id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,

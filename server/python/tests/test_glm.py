@@ -122,6 +122,21 @@ class GlmOcrTests(unittest.TestCase):
         self.assertTrue(question["post_processing"]["used_text_regions"])
         self.assertTrue(solution["post_processing"]["used_text_regions"])
 
+    def test_build_drafts_solution_document_maps_unmarked_text_to_analysis(self) -> None:
+        payload = {
+            "data_info": {"pages": [{"width": 1000, "height": 1000}]},
+            "layout_details": [[{"label": "text", "content": "1. 由题意可得 $x=1$，故选 A。", "bbox_2d": [0, 0, 1000, 300]}]],
+        }
+        manifest = [{"id": "SOL_0001", "question_no": "1", "page": 1, "page_span": [1, 1], "ocr_record_kind": "solution", "ocr_parse_mode": "document"}]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            report = build_drafts(result_payload=payload, manifest=manifest, drafts_root=root / "drafts", artifact_dir=root / "artifact", storage_root=root, document_role="solution")
+            result = json.loads((root / "drafts" / "SOL_0001" / "ocr_result.json").read_text(encoding="utf-8"))
+        self.assertEqual(report["successful"], 1)
+        self.assertEqual(result["problem_text"], "")
+        self.assertIn("故选 A", result["analysis"])
+        self.assertEqual(result["post_processing"]["document_role"], "solution")
+
     def test_build_drafts_marks_missing_question_number_for_review(self) -> None:
         payload = {"data_info": {"pages": [{"width": 1000, "height": 1000}]}, "layout_details": [[{"label": "text", "content": "1. 第一题", "bbox_2d": [0, 0, 1000, 200]}]]}
         with tempfile.TemporaryDirectory() as temp:

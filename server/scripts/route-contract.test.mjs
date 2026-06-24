@@ -34,6 +34,15 @@ const expectedRoutes = new Set([
   'POST /api/tools/pdf-slicer/runs/:runId/start-slice',
   'POST /api/tools/pdf-slicer/runs/:runId/open-folder',
   'DELETE /api/tools/pdf-slicer/runs/:runId',
+  'GET /api/tools/pdf-slicer/runs/:runId/document-profile',
+  'POST /api/tools/pdf-slicer/runs/:runId/render-pages',
+  'GET /api/tools/pdf-slicer/runs/:runId/pages/:page',
+  'POST /api/tools/pdf-slicer/batches/:batchId/annotation-sessions',
+  'GET /api/tools/pdf-slicer/annotation-sessions/:sessionId',
+  'PUT /api/tools/pdf-slicer/annotation-sessions/:sessionId/regions',
+  'POST /api/tools/pdf-slicer/annotation-sessions/:sessionId/validate',
+  'POST /api/tools/pdf-slicer/annotation-sessions/:sessionId/finalize',
+  'POST /api/tools/pdf-slicer/annotation-sessions/:sessionId/revise',
   'GET /api/tools/pdf-slicer/runs/:runId/slice-review/items',
   'POST /api/tools/pdf-slicer/runs/:runId/slice-review/items/merge',
   'DELETE /api/tools/pdf-slicer/runs/:runId/slice-review/items/:resultId',
@@ -87,6 +96,8 @@ const expectedRoutes = new Set([
   'GET /api/question-bank/collections/:id/export-records',
   'GET /api/tools/pdf-slicer/runs/:runId/export-records',
   'POST /api/tools/pdf-slicer/runs/:runId/export-batch',
+  'GET /api/question-bank/daily-question',
+  'POST /api/question-bank/random-paper',
 ])
 
 function mountedRoutes(expressApp) {

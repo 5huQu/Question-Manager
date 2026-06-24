@@ -18,7 +18,7 @@ from ..common.schema import (
     QuestionSlice,
     SliceSegment,
 )
-from .rules import SlicerRules
+from .rules import RuleEntry, SlicerRules, any_rule_matches
 
 TOP_PADDING = 10.0
 BOTTOM_PADDING = 8.0
@@ -352,15 +352,15 @@ def _score_slice(
 
 
 def _find_top_stop_marker(page: PageData, top_limit: float = 220.0, rules: SlicerRules | None = None) -> float | None:
-    stop_patterns: tuple[str, ...] = ("题型", "【解题规律", "【典例训练】", "目录", "题型归纳", "题型探析")
-    if rules is not None and rules.section_terms:
-        stop_patterns = rules.section_terms
+    stop_patterns: tuple[RuleEntry | str, ...] = ("题型", "【解题规律", "【典例训练】", "目录", "题型归纳", "题型探析")
+    if rules is not None:
+        stop_patterns = rules.enabled_section_markers
     top_cutoff = page.body_bbox[1] + top_limit
     for line in page.text_lines:
         if line.bbox[1] > top_cutoff:
             break
         text = line.text.strip()
-        if any(pattern in text for pattern in stop_patterns) or _looks_like_section_heading(text) or _looks_like_answer_table_row(text):
+        if any_rule_matches(text, stop_patterns) or _looks_like_section_heading(text) or _looks_like_answer_table_row(text):
             return line.bbox[1]
     return None
 

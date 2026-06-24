@@ -7,9 +7,117 @@ import { getRun } from '../../db/runs.js'
 import { nowIso } from '../../utils/ids.js'
 import { mergeReviewImages, splitReviewImage } from '../../utils/figure-helpers.js'
 import { resolveStoragePath, stripAssetPrefix } from '../../utils/paths.js'
-import { startMigratedOcrBackground } from '../../services/pdf-slicer/ocr.js'
+import { parseJson } from '../../utils/json.js'
+import { startMigratedOcrBackground, materializeReviewFigures } from '../../services/pdf-slicer/ocr.js'
 import type { ReviewRow } from '../../types/index.js'
 import { activeOcrProcesses } from '../../types/index.js'
+
+const REVIEW_FIGURE_CROP_VERSION = 'review-slice-layout-v2'
+
+function processAndCompareFigures(
+  newRawFigures: any[],
+  oldFigures: any[],
+  runId: string,
+  itemId: string,
+  source: 'question' | 'solution',
+  sourceImagePath: string,
+) {
+  let stemIndex = 0
+  let analysisIndex = 0
+
+  return newRawFigures
+    .map((figure, index) => {
+      const formulaSuspect = Boolean(figure.formula_suspect ?? figure.formulaSuspect)
+      const formulaSuspectReason = String(figure.formula_suspect_reason ?? figure.formulaSuspectReason ?? '')
+      const id = String(figure.id || `${source}_fig_${index + 1}`)
+      const usage = String(figure.usage || figure.category || (source === 'solution' ? 'analysis' : 'stem'))
+      const page_number = Number(figure.page_number ?? figure.pageNumber ?? 1)
+      const optionLabel = figure.optionLabel ? String(figure.optionLabel).toUpperCase() : undefined
+
+      const bbox = {
+        x: Number(figure.bbox?.x || figure.reviewBBox?.x || 0),
+        y: Number(figure.bbox?.y || figure.reviewBBox?.y || 0),
+        width: Number(figure.bbox?.width || figure.reviewBBox?.width || 0),
+        height: Number(figure.bbox?.height || figure.reviewBBox?.height || 0),
+      }
+
+      let attachmentId = ''
+      if (usage === 'analysis') {
+        analysisIndex += 1
+        attachmentId = `A${analysisIndex}`
+      } else {
+        stemIndex += 1
+        attachmentId = `F${stemIndex}`
+      }
+
+      const oldFig = oldFigures.find((o) => String(o.id) === id)
+      let assetPath = oldFig?.assetPath || ''
+      let assetHash = oldFig?.assetHash || ''
+      let assetVersion = Number(oldFig?.assetVersion || 1)
+      let ocrBindingStatus = 'pending_render'
+      const createdAt = oldFig?.createdAt || nowIso()
+
+      if (oldFig) {
+        const oldBbox = oldFig.reviewBBox || oldFig.bbox || {}
+        const isBboxEqual =
+          Math.abs(oldBbox.x - bbox.x) < 0.0001 &&
+          Math.abs(oldBbox.y - bbox.y) < 0.0001 &&
+          Math.abs(oldBbox.width - bbox.width) < 0.0001 &&
+          Math.abs(oldBbox.height - bbox.height) < 0.0001
+
+        const isUsageEqual = oldFig.usage === usage && oldFig.optionLabel === optionLabel
+        const isPageEqual = Number(oldFig.pageNumber ?? oldFig.page_number) === page_number
+
+        const hasCurrentCropVersion = oldFig.cropVersion === REVIEW_FIGURE_CROP_VERSION
+        if (isBboxEqual && isUsageEqual && isPageEqual && hasCurrentCropVersion) {
+          ocrBindingStatus = oldFig.ocrBinding?.status || 'ready'
+        } else {
+          assetVersion += 1
+          assetPath = ''
+          assetHash = ''
+          ocrBindingStatus = 'pending_render'
+        }
+      }
+
+      return {
+        id,
+        origin: 'review_manual',
+        usage,
+        category: usage,
+        optionLabel,
+        source,
+        sourceRunId: runId,
+        sourceItemId: itemId,
+        // The review editor stores coordinates in the coordinate system of
+        // the reviewed slice. Keep that slice as the authoritative crop
+        // source: it also covers answer PDFs and manually merged/split items.
+        sourceImagePath: stripAssetPrefix(sourceImagePath),
+        pageNumber: page_number,
+        page_number,
+        reviewBBox: bbox,
+        bbox,
+        kind: String(figure.kind || 'image'),
+        formula_suspect: formulaSuspect,
+        formulaSuspect,
+        formula_suspect_reason: formulaSuspectReason || undefined,
+        formulaSuspectReason: formulaSuspectReason || undefined,
+        assetPath,
+        path: assetPath,
+        assetHash,
+        assetVersion,
+        cropVersion: oldFig?.cropVersion === REVIEW_FIGURE_CROP_VERSION ? REVIEW_FIGURE_CROP_VERSION : undefined,
+        ocrBinding: {
+          enabled: true,
+          attachmentId,
+          targetField: usage === 'options' ? 'options' : usage,
+          status: ocrBindingStatus,
+        },
+        createdAt,
+        updatedAt: nowIso(),
+      }
+    })
+    .filter((figure) => figure.pageNumber > 0 && figure.reviewBBox.width > 0 && figure.reviewBBox.height > 0)
+}
 
 export function mountReviewRoutes(app: Express) {
   app.get('/api/tools/pdf-slicer/runs/:runId/slice-review/items', (req, res) => {
@@ -219,33 +327,25 @@ export function mountReviewRoutes(app: Express) {
       res.status(404).json({ error: '题块不存在。' })
       return
     }
-    const figures = Array.isArray(req.body?.figures) ? req.body.figures.map((figure: Record<string, any>, index: number) => {
-      const formulaSuspect = Boolean(figure.formula_suspect ?? figure.formulaSuspect)
-      const formulaSuspectReason = String(figure.formula_suspect_reason ?? figure.formulaSuspectReason ?? '')
-      return {
-        id: String(figure.id || `review_fig_${index + 1}`),
-        origin: String(figure.origin || 'manual'),
-        page_number: Number(figure.page_number ?? figure.pageNumber ?? 1),
-        usage: String(figure.usage || figure.category || 'stem'),
-        category: String(figure.category || figure.usage || 'stem'),
-        optionLabel: figure.optionLabel ? String(figure.optionLabel).toUpperCase() : undefined,
-        bbox: {
-          x: Number(figure.bbox?.x || 0),
-          y: Number(figure.bbox?.y || 0),
-          width: Number(figure.bbox?.width || 0),
-          height: Number(figure.bbox?.height || 0),
-        },
-        kind: String(figure.kind || 'image'),
-        formula_suspect: formulaSuspect,
-        formulaSuspect,
-        formula_suspect_reason: formulaSuspectReason || undefined,
-        formulaSuspectReason: formulaSuspectReason || undefined,
-      }
-    }).filter((figure: Record<string, any>) => figure.page_number > 0 && figure.bbox.width > 0 && figure.bbox.height > 0) : []
-    db.prepare('UPDATE pdf_slicer_review_items SET figures_json = ?, updated_at = ? WHERE run_id = ? AND result_id = ?')
-      .run(JSON.stringify(figures), nowIso(), run.runId, resultId)
-    const item = getReviewItems(run.runId).find((entry) => entry.resultId === resultId)
-    res.json({ item })
+    try {
+      const oldRow = db.prepare('SELECT figures_json, auto_image_path, page_image_path FROM pdf_slicer_review_items WHERE run_id = ? AND result_id = ?').get(run.runId, resultId) as { figures_json: string; auto_image_path: string; page_image_path: string } | undefined
+      const oldFigures = parseJson<any[]>(oldRow?.figures_json || '[]', [])
+      const figures = processAndCompareFigures(
+        Array.isArray(req.body?.figures) ? req.body.figures : [],
+        oldFigures,
+        run.runId,
+        resultId,
+        'question',
+        oldRow?.auto_image_path || oldRow?.page_image_path || '',
+      )
+      db.prepare('UPDATE pdf_slicer_review_items SET figures_json = ?, updated_at = ? WHERE run_id = ? AND result_id = ?')
+        .run(JSON.stringify(figures), nowIso(), run.runId, resultId)
+      const item = getReviewItems(run.runId).find((entry) => entry.resultId === resultId)
+      res.json({ item })
+    } catch (error) {
+      console.error('保存题干图框失败:', error)
+      res.status(500).json({ error: `保存题干图框失败：${error instanceof Error ? error.message : String(error)}` })
+    }
   })
 
   app.patch('/api/tools/pdf-slicer/runs/:runId/slice-review/items/:resultId/solution-figures', (req, res) => {
@@ -267,34 +367,33 @@ export function mountReviewRoutes(app: Express) {
       res.status(404).json({ error: '当前题块没有匹配的解析裁图。' })
       return
     }
-    const figures = Array.isArray(req.body?.figures) ? req.body.figures.map((figure: Record<string, any>, index: number) => {
-      const formulaSuspect = Boolean(figure.formula_suspect ?? figure.formulaSuspect)
-      const formulaSuspectReason = String(figure.formula_suspect_reason ?? figure.formulaSuspectReason ?? '')
-      return {
-        id: String(figure.id || `solution_fig_${index + 1}`),
-        origin: String(figure.origin || 'manual'),
-        page_number: Number(figure.page_number ?? figure.pageNumber ?? 1),
-        usage: String(figure.usage || figure.category || 'analysis'),
-        category: String(figure.category || figure.usage || 'analysis'),
-        optionLabel: figure.optionLabel ? String(figure.optionLabel).toUpperCase() : undefined,
-        bbox: {
-          x: Number(figure.bbox?.x || 0),
-          y: Number(figure.bbox?.y || 0),
-          width: Number(figure.bbox?.width || 0),
-          height: Number(figure.bbox?.height || 0),
-        },
-        kind: String(figure.kind || 'image'),
-        formula_suspect: formulaSuspect,
-        formulaSuspect,
-        formula_suspect_reason: formulaSuspectReason || undefined,
-        formulaSuspectReason: formulaSuspectReason || undefined,
-      }
-    }).filter((figure: Record<string, any>) => figure.page_number > 0 && figure.bbox.width > 0 && figure.bbox.height > 0) : []
+    const oldRow = db.prepare('SELECT figures_json, source_image_path FROM pdf_slicer_solution_items WHERE id = ? AND source_run_id = ?').get(solution.id, run.runId) as { figures_json: string; source_image_path: string } | undefined
+    const oldFigures = parseJson<any[]>(oldRow?.figures_json || '[]', [])
+    const figures = processAndCompareFigures(
+      Array.isArray(req.body?.figures) ? req.body.figures : [],
+      oldFigures,
+      run.runId,
+      solution.id,
+      'solution',
+      oldRow?.source_image_path || '',
+    )
     db.prepare('UPDATE pdf_slicer_solution_items SET figures_json = ?, updated_at = ? WHERE id = ? AND source_run_id = ?')
       .run(JSON.stringify(figures), nowIso(), solution.id, run.runId)
     const item = getReviewItems(run.runId).find((entry) => entry.resultId === resultId)
     res.json({ item })
   })
+
+  app.post('/api/tools/pdf-slicer/runs/:runId/review-figures/materialize', async (req, res) => {
+    try {
+      const runId = req.params.runId
+      await materializeReviewFigures(runId)
+      res.json({ success: true })
+    } catch (err) {
+      console.error('物化裁剪失败:', err)
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
 
   app.post('/api/tools/pdf-slicer/runs/quick-review', (req, res) => {
     const runId = String(req.body?.runId || '')

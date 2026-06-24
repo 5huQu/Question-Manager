@@ -4,6 +4,7 @@ import unittest
 
 from src.common.schema import DocumentData, PageData, TextLine
 from src.cutter.detect_questions import detect_question_anchors, detect_solution_anchors
+from src.cutter.rules import RuleEntry, SlicerRules
 
 
 def line(text: str, y: float, x: float = 90.0) -> TextLine:
@@ -148,6 +149,51 @@ class CutterDetectionTests(unittest.TestCase):
         )
 
         self.assertEqual([anchor.question_id for anchor in anchors], ["1", "2", "13"])
+
+    def test_exact_match_mode_does_not_treat_a_longer_line_as_an_auxiliary_heading(self) -> None:
+        rules = SlicerRules(
+            auxiliary_markers=(RuleEntry(id="directory", term="目录", match_mode="exact"),),
+        )
+
+        anchors = detect_question_anchors(
+            document([line("目录页", 110.0), line("1. 第一题题干", 140.0)]),
+            rules=rules,
+        )
+
+        self.assertEqual([anchor.question_id for anchor in anchors], ["1"])
+
+    def test_contains_match_mode_skips_a_numbered_column_heading_with_extra_words(self) -> None:
+        rules = SlicerRules(
+            non_question_remainders=(RuleEntry(id="summary", term="方法总结", match_mode="contains"),),
+        )
+
+        anchors = detect_question_anchors(
+            document([
+                line("一、选择题", 100.0),
+                line("1. 方法总结（必看）", 140.0),
+                line("2. 正式题目", 200.0),
+            ]),
+            rules=rules,
+        )
+
+        self.assertEqual([anchor.question_id for anchor in anchors], ["2"])
+
+    def test_training_marker_restores_detection_after_an_auxiliary_heading(self) -> None:
+        rules = SlicerRules(
+            auxiliary_markers=(RuleEntry(id="directory", term="目录"),),
+            training_markers=(RuleEntry(id="training", term="【典例训练】"),),
+        )
+
+        anchors = detect_question_anchors(
+            document([
+                line("目录", 100.0),
+                line("【典例训练】", 125.0),
+                line("1. 正式题目", 150.0),
+            ]),
+            rules=rules,
+        )
+
+        self.assertEqual([anchor.question_id for anchor in anchors], ["1"])
 
 
 if __name__ == "__main__":

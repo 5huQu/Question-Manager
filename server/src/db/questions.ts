@@ -16,6 +16,7 @@ import {
 import {
   blocksToMarkdown,
   paragraphBlock,
+  stripDoc2xNoiseComments,
 } from '../utils/rich-content.js'
 import { normalizeQuestionType } from '../utils/question-type.js'
 import { assetPathFor, stripAssetPrefix } from '../utils/paths.js'
@@ -115,9 +116,11 @@ export function createQuestion(input: Record<string, any> = {}) {
   const now = nowIso()
   const id = input.id || createId('qb')
   const serial = db.prepare('SELECT COALESCE(MAX(serial_no), 0) + 1 AS next FROM question_bank_items').get() as { next: number }
-  const stemMarkdown = String((input.stemMarkdown ?? blocksToMarkdown(input.problemBlocks ?? [])) || '请在右侧编辑 Markdown，录入题干内容。')
-  const answerText = String((input.answerText ?? blocksToMarkdown(input.answerBlocks ?? [])) || '')
-  const analysisMarkdown = String((input.analysisMarkdown ?? blocksToMarkdown(input.analysisBlocks ?? [])) || '')
+  const requestedSerial = Number(input.serialNo)
+  const serialNo = Number.isSafeInteger(requestedSerial) && requestedSerial > 0 ? requestedSerial : serial.next
+  const stemMarkdown = stripDoc2xNoiseComments(String((input.stemMarkdown ?? blocksToMarkdown(input.problemBlocks ?? [])) || '请在右侧编辑 Markdown，录入题干内容。'))
+  const answerText = stripDoc2xNoiseComments(String((input.answerText ?? blocksToMarkdown(input.answerBlocks ?? [])) || ''))
+  const analysisMarkdown = stripDoc2xNoiseComments(String((input.analysisMarkdown ?? blocksToMarkdown(input.analysisBlocks ?? [])) || ''))
   const knowledgePoints = normalizeTags(input.knowledgePoints)
   const solutionMethods = normalizeTags(input.solutionMethods)
   const sourceTitle = input.sourceTitle || '手动创建'
@@ -132,8 +135,8 @@ export function createQuestion(input: Record<string, any> = {}) {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
-    serial.next,
-    input.questionNo || String(serial.next),
+    serialNo,
+    input.questionNo || String(serialNo),
     input.stage || configuredGradeStages()[0] || '高三',
     input.questionType || '未设题型',
     input.difficultyScore ?? 0,

@@ -24,6 +24,8 @@ SECTION_RE = re.compile(r"(?m)^\s*(?:#{1,6}\s*)?[一二三四五六七八九十]
 WATERMARK_LINE_RE = re.compile(
     r"(?m)^\s*(?:#{1,6}\s*)?(?:学科网|组卷网|菁优网)(?:\s|\+|角|企|药|①|编辑题|制图工程师|上课题|上海网|卷网|框架|上市)*\s*$"
 )
+ANSWER_KEY_LINE_RE = re.compile(r"(?m)^\s*(?:第\s*)?\d{1,3}\s*[.．、]\s*(?:答案\s*[:：]?\s*)?(?:[A-D](?:\s*[,，、/]\s*[A-D]){0,3}|[-+]?\d+(?:\.\d+)?|√|×)\s*$")
+SOLUTION_REASONING_RE = re.compile(r"(?:【(?:解析|分析|详解)】|\b(?:证明|解答|由此|因此)\b|∵|∴|故[，：:])")
 
 
 class Doc2xError(RuntimeError):
@@ -108,6 +110,33 @@ def _split_fields(chunk: str) -> tuple[str, str, str, bool]:
     return chunk.strip(), "", "", False
 
 
+def classify_solution_document(pages: list[dict[str, Any]]) -> str:
+    """Classify a separate answer document when it lacks explicit field markers."""
+    text = "\n".join(str(page.get("md") or "") for page in pages)
+    if "【答案】" in text or "【解析】" in text or "【分析】" in text:
+        return "marked"
+    answer_lines = len(ANSWER_KEY_LINE_RE.findall(text))
+    reasoning_hits = len(SOLUTION_REASONING_RE.findall(text))
+    return "answer_key" if answer_lines >= 2 and answer_lines > reasoning_hits else "analysis"
+
+
+def solution_fields(chunk: str, document_kind: str) -> tuple[str, str, str, bool]:
+    """Return answer/analysis fields for one numbered chunk from a solution PDF."""
+    _stem, answer, analysis, has_markers = _split_fields(chunk)
+    if has_markers:
+        # Some answer PDFs put a section-level "【解析】" heading immediately
+        # after the final question of the preceding section.  It is a boundary,
+        # not a field marker for that question; retain the preceding body as
+        # its analysis instead of discarding it as an empty marked field.
+        if not answer and not analysis and _stem.strip():
+            return "", re.sub(r"\n?\s*#{1,6}\s*$", "", _stem).strip(), False
+        return answer, analysis, True
+    value = chunk.strip()
+    if document_kind == "answer_key":
+        return value, "", False
+    return "", value, False
+
+
 def _strip_page_markers(value: str) -> str:
     return PAGE_MARKER_RE.sub("", value).strip()
 
@@ -120,15 +149,20 @@ def split_exam_markdown(pages: list[dict[str, Any]], expected_numbers: list[str]
     first_section = SECTION_RE.search(joined)
     search_start = first_section.start() if first_section else 0
     starts: list[tuple[str, int, int]] = []
-    cursor = search_start
-    for question_no in expected_numbers:
+    # The manifest is an association from question number to a review item, not
+    # a trustworthy representation of the PDF's reading order: manual review
+    # item IDs may be UUIDs.  Locate every expected heading independently, then
+    # order the boundaries by their actual position in the Doc2X Markdown.
+    # This keeps a shuffled manifest from skipping early questions or merging
+    # every intervening question into the next successful match.
+    for question_no in dict.fromkeys(expected_numbers):
         escaped = re.escape(question_no)
         pattern = re.compile(rf"(?m)^\s*(?:#+\s*)?{escaped}[.．、]\s+")
-        match = pattern.search(joined, cursor)
+        match = pattern.search(joined, search_start)
         if not match:
             continue
         starts.append((question_no, match.start(), match.end()))
-        cursor = match.end()
+    starts.sort(key=lambda item: item[1])
 
     output: dict[str, dict[str, Any]] = {}
     for index, (question_no, start, content_start) in enumerate(starts):
@@ -196,8 +230,10 @@ def build_drafts(
     artifact_dir: Path,
     storage_root: Path,
     download_asset: Callable[[str, Path], str],
+    document_role: str = "question",
 ) -> dict[str, Any]:
     pages = (((result_payload.get("data") or {}).get("result") or {}).get("pages") or [])
+    solution_document_kind = classify_solution_document(pages) if document_role == "solution" else ""
     expected = [normalize_question_no(row.get("question_no")) for row in manifest]
     parsed = split_exam_markdown(pages, [number for number in expected if number])
     figures_by_url = _figure_blocks(pages)
@@ -230,6 +266,7 @@ def build_drafts(
                 "post_processing": {"provider": "doc2x", "error": error},
             }
         else:
+            is_solution = document_role == "solution" or str(record.get("ocr_record_kind") or "") == "solution"
             source_page_start = min(item["page_indices"]) + 1 if item["page_indices"] else record.get("page")
             source_page_end = max(item["page_indices"]) + 1 if item["page_indices"] else record.get("page")
             figures: list[dict[str, Any]] = []
@@ -248,7 +285,7 @@ def build_drafts(
                 except ValueError:
                     local_path = local_abs.as_posix()
                 image_pos = raw.find(url)
-                usage = "analysis" if answer_pos >= 0 and image_pos > answer_pos else "stem"
+                usage = "analysis" if is_solution or (answer_pos >= 0 and image_pos > answer_pos) else "stem"
                 bbox = block.get("bbox") or []
                 figure = {
                     "id": str(block.get("id") or f"doc2x_{len(figures) + 1}"),
@@ -264,6 +301,15 @@ def build_drafts(
                 local_figures_by_url[url] = figure
             if not figures:
                 figures = record.get("figures") or []
+            answer = inline_doc2x_figures(item["answer"], local_figures_by_url)
+            analysis = inline_doc2x_figures(item["analysis"], local_figures_by_url)
+            stem = inline_doc2x_figures(item["stem"], local_figures_by_url)
+            has_markers = bool(item.get("has_markers"))
+            if is_solution:
+                answer, analysis, has_markers = solution_fields(str(item.get("raw") or ""), solution_document_kind)
+                answer = inline_doc2x_figures(answer, local_figures_by_url)
+                analysis = inline_doc2x_figures(analysis, local_figures_by_url)
+                stem = ""
             result = {
                 **record,
                 "id": record_id,
@@ -271,16 +317,18 @@ def build_drafts(
                 "page": source_page_start,
                 "page_span": [source_page_start, source_page_end],
                 "ocr_status": "draft",
-                "problem_text": inline_doc2x_figures(item["stem"], local_figures_by_url),
-                "answer": inline_doc2x_figures(item["answer"], local_figures_by_url),
-                "analysis": inline_doc2x_figures(item["analysis"], local_figures_by_url),
+                "problem_text": stem,
+                "answer": answer,
+                "analysis": analysis,
                 "figures": figures,
-                "needs_human_review": not bool(item.get("has_markers")),
+                "needs_human_review": not has_markers,
                 "raw_model_output": raw,
                 "post_processing": {
                     "provider": "doc2x",
                     "page_indices": item["page_indices"],
-                    "has_answer_analysis_markers": bool(item.get("has_markers")),
+                    "has_answer_analysis_markers": has_markers,
+                    "document_role": document_role,
+                    "solution_document_kind": solution_document_kind if is_solution else "",
                 },
             }
             successful += 1

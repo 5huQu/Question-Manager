@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { execFileSync, spawn } from 'node:child_process'
 import { db } from '../../db/connection.js'
 import { runsRoot, sourceRoot, pythonRoot, pythonDataRoot, storageRoot } from '../../config.js'
@@ -23,6 +24,7 @@ import { formatIssueFromReviewJson } from './review.js'
 import {
   cropFigureImage,
   loadCutResultRecord,
+  loadSolutionCutResultRecord,
   normalizedFigureId,
   reviewSegmentReadingKey,
   reviewFigureReadingKey,
@@ -30,11 +32,13 @@ import {
   reviewFigureDefaultUsage,
   expandedReviewBBox,
   reviewFigurePixelBBox,
+  figurePixelBBoxForSegments,
   imageDimensions,
   figuresForImportedOcrResult,
   figuresForImportedOcrResultAsync,
   bindInlineImageReferences,
   sliceImagePathForOcrResult,
+  bindExplicitAttachments,
 } from '../../utils/figure-helpers.js'
 import { resolveStoragePath, stripAssetPrefix, assetPathFor } from '../../utils/paths.js'
 import { configuredGradeStages } from '../settings/app-settings.js'
@@ -48,6 +52,8 @@ import {
 import { normalizeTags } from '../tags/tag-libraries.js'
 
 // ── Local helpers ────────────────────────────────────────────────────────────
+
+const REVIEW_FIGURE_CROP_VERSION = 'review-slice-layout-v2'
 
 function withQuestionAssetPrefix(value: string) {
   const clean = stripAssetPrefix(String(value || ''))
@@ -194,6 +200,31 @@ export function doc2xArtifactDir(row: RunRow) {
 
 export function glmArtifactDir(row: RunRow) {
   return path.join(resolveStoragePath(row.run_dir), 'glm')
+}
+
+type OcrSourceDocuments = {
+  questionPdfPath: string
+  questionPdfRel: string
+  solutionPdfPath: string
+  solutionPdfRel: string
+}
+
+/** Resolve the original question/solution PDFs behind a derived manual run. */
+function ocrSourceDocuments(runRow: RunRow): OcrSourceDocuments {
+  const diagnostics = parseJson<Record<string, any>>(runRow.document_diagnostics_json || '{}', {})
+  const manualSourceIds = new Set<string>(Array.isArray(diagnostics.manualAnnotation?.sourceRunIds) ? diagnostics.manualAnnotation.sourceRunIds.map(String) : [])
+  const batchRows = db.prepare('SELECT * FROM pdf_slicer_runs WHERE batch_id = ?').all(runRow.batch_id) as RunRow[]
+  const candidates = manualSourceIds.size ? batchRows.filter((row) => manualSourceIds.has(row.run_id)) : batchRows
+  const questionRow = candidates.find((row) => normalizeFileRole(row.file_role) === 'questions') || runRow
+  const solutionRow = candidates.find((row) => normalizeFileRole(row.file_role) === 'solutions')
+  const questionPdfRel = String(questionRow.pdf_path || runRow.pdf_path || '')
+  const solutionPdfRel = String(solutionRow?.pdf_path || '')
+  return {
+    questionPdfPath: resolveStoragePath(questionPdfRel),
+    questionPdfRel,
+    solutionPdfPath: solutionPdfRel ? resolveStoragePath(solutionPdfRel) : '',
+    solutionPdfRel,
+  }
 }
 
 function readDoc2xState(row: RunRow) {
@@ -438,10 +469,107 @@ export function createPendingBankRerunTask(sourceRunId: string, resultId: string
   return { batchId, runId, createdCount: 1 }
 }
 
+function computeFileSha256(filePath: string): string {
+  const fileBuffer = fs.readFileSync(filePath)
+  const hashSum = crypto.createHash('sha256')
+  hashSum.update(fileBuffer)
+  return hashSum.digest('hex')
+}
+
+export function materializeReviewFigures(runId: string) {
+  const run = getRun(runId)
+  if (!run) throw new Error('批次不存在。')
+  const reviewItems = db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ?').all(runId) as Array<Record<string, any>>
+  const solutionItems = db.prepare('SELECT * FROM pdf_slicer_solution_items WHERE source_run_id = ?').all(runId) as Array<Record<string, any>>
+  const failures: string[] = []
+  const updateReview = db.prepare('UPDATE pdf_slicer_review_items SET figures_json = ?, updated_at = ? WHERE run_id = ? AND result_id = ?')
+  const updateSolution = db.prepare('UPDATE pdf_slicer_solution_items SET figures_json = ?, updated_at = ? WHERE id = ? AND source_run_id = ?')
+
+  // Review figure bboxes are defined against the displayed review slice, not
+  // necessarily against run.pdfPath. Crop that slice directly so answer PDFs,
+  // manual annotations and merge/split results stay in the correct coordinate
+  // system.
+  const materialize = (fig: Record<string, any>, itemId: string, sourceRel: string, pixelBBox: Record<string, any>) => {
+    const sourceAbs = resolveStoragePath(stripAssetPrefix(sourceRel))
+    const version = Number(fig.assetVersion || 1)
+    const outputRel = path.join('data', 'review_figures', runId, itemId, `${fig.id}_v${version}.png`)
+    const outputAbs = resolveStoragePath(outputRel)
+    if (!sourceRel || !fs.existsSync(sourceAbs)) {
+      throw new Error(`来源切片不存在：${sourceRel || '(空)'}`)
+    }
+    const margin = 0
+    const expanded = {
+      x: Math.max(0, Number(pixelBBox.x || 0) - margin),
+      y: Math.max(0, Number(pixelBBox.y || 0) - margin),
+      width: Number(pixelBBox.width || 0) + margin * 2,
+      height: Number(pixelBBox.height || 0) + margin * 2,
+    }
+    if (!(expanded.width > margin * 2 && expanded.height > margin * 2)) {
+      throw new Error('图框坐标无效')
+    }
+    cropFigureImage(sourceAbs, outputAbs, expanded)
+    if (!fs.existsSync(outputAbs) || fs.statSync(outputAbs).size === 0) {
+      throw new Error('未生成裁剪图片')
+    }
+    fig.sourceImagePath = stripAssetPrefix(sourceRel)
+    fig.assetPath = outputRel
+    fig.path = outputRel
+    fig.assetHash = `sha256:${computeFileSha256(outputAbs)}`
+    fig.cropVersion = REVIEW_FIGURE_CROP_VERSION
+    fig.ocrBinding = { ...fig.ocrBinding, status: 'ready' }
+  }
+
+  for (const item of reviewItems) {
+    const figures = parseJson<any[]>(String(item.figures_json || '[]'), [])
+    let changed = false
+    for (const fig of figures) {
+      if (fig.ocrBinding?.status !== 'pending_render') continue
+      try {
+        const sourceRel = String(fig.sourceImagePath || item.auto_image_path || item.page_image_path || '')
+        materialize(fig, String(item.result_id), sourceRel, reviewFigurePixelBBox(item as any, fig, resolveStoragePath(stripAssetPrefix(sourceRel))))
+        changed = true
+      } catch (error) {
+        failures.push(`题目 ${item.question_label || item.result_id} 的图 ${fig.ocrBinding?.attachmentId || fig.id}：${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    if (changed) updateReview.run(JSON.stringify(figures), nowIso(), runId, item.result_id)
+  }
+
+  for (const item of solutionItems) {
+    const figures = parseJson<any[]>(String(item.figures_json || '[]'), [])
+    let changed = false
+    const cutRecord = loadSolutionCutResultRecord(runId, String(item.id || ''))
+    const segments = Array.isArray(cutRecord?.segments) ? cutRecord.segments : []
+    for (const fig of figures) {
+      if (fig.ocrBinding?.status !== 'pending_render') continue
+      try {
+        const sourceRel = String(fig.sourceImagePath || item.source_image_path || '')
+        const sourceAbs = resolveStoragePath(stripAssetPrefix(sourceRel))
+        const pixelBBox = segments.length
+          ? figurePixelBBoxForSegments(segments, Number(cutRecord?.page || fig.pageNumber || 1), fig, sourceAbs)
+          : (fig.bbox || fig.reviewBBox || {})
+        materialize(fig, String(item.id), sourceRel, pixelBBox)
+        changed = true
+      } catch (error) {
+        failures.push(`解析 ${item.question_no || item.id} 的图 ${fig.ocrBinding?.attachmentId || fig.id}：${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    if (changed) updateSolution.run(JSON.stringify(figures), nowIso(), item.id, runId)
+  }
+
+  if (failures.length) {
+    throw new Error(`人工图框物化失败，已阻止 OCR：${failures.join('；')}`)
+  }
+}
+
 export function exportRunForMigratedOcr(runId: string) {
+  materializeReviewFigures(runId)
   ensureQuestionAssetLink()
   const run = getRun(runId)
   if (!run) throw new Error('批次不存在。')
+  const sourceRun = db.prepare('SELECT * FROM pdf_slicer_runs WHERE run_id = ?').get(runId) as RunRow | undefined
+  if (!sourceRun) throw new Error('批次不存在。')
+  const sourceDocuments = ocrSourceDocuments(sourceRun)
   const items = getReviewItems(runId).filter((item) => item.reviewStatus === 'ready_for_ocr')
   if (!items.length) throw new Error('没有已通过复核的切片，请先提交切题复核。')
   const solutionCutRecords = loadSolutionCutResultRecords(runId)
@@ -491,9 +619,38 @@ export function exportRunForMigratedOcr(runId: string) {
     const solutionImagePath = solutionImageByNo.get(cleanQuestionNoLabel(String(item.questionLabel || ''))) || ''
     const composedPath = solutionImagePath ? composeQuestionSolutionImage(runId, item.questionLabel, reviewedPath, solutionImagePath) : ''
     const ocrImagePath = withQuestionAssetPrefix(composedPath || reviewedPath)
+    const questionFigures = Array.isArray((item as any).figures) ? (item as any).figures : (Array.isArray(cutRecord?.figures) ? cutRecord?.figures : [])
+    const key = cleanQuestionNoLabel(String(item.questionLabel || ''))
+    const matchingSolutions = solutionRows.filter((s) => cleanQuestionNoLabel(String(s.question_no || '')) === key)
+    const solutionFigures = matchingSolutions.flatMap((solution) => parseJson<any[]>(String(solution.figures_json || '[]'), []))
+
+    const allAttachments: any[] = []
+    questionFigures.forEach((fig: any) => {
+      if (fig.ocrBinding?.enabled && fig.assetPath) {
+        allAttachments.push({
+          id: fig.ocrBinding.attachmentId || fig.id,
+          path: withQuestionAssetPrefix(fig.assetPath),
+          usage: fig.usage || 'stem',
+          targetField: fig.usage === 'options' ? 'options' : (fig.usage || 'stem'),
+          source: 'question'
+        })
+      }
+    })
+    solutionFigures.forEach((fig: any) => {
+      if (fig.ocrBinding?.enabled && fig.assetPath) {
+        allAttachments.push({
+          id: fig.ocrBinding.attachmentId || fig.id,
+          path: withQuestionAssetPrefix(fig.assetPath),
+          usage: fig.usage || 'analysis',
+          targetField: 'analysis',
+          source: 'solution'
+        })
+      }
+    })
+
     return {
       id: item.resultId,
-      source_pdf: String(notePayload.sourcePdf || `question_assets/${run.pdfPath}`),
+      source_pdf: String(notePayload.sourcePdf || `question_assets/${sourceDocuments.questionPdfRel || run.pdfPath}`),
       page: item.pageStart,
       page_span: [item.pageStart, item.pageEnd],
       question_no: item.questionLabel,
@@ -509,7 +666,8 @@ export function exportRunForMigratedOcr(runId: string) {
       text_regions: textRegions,
       ocr_record_kind: 'question',
       ocr_parse_mode: hasSameRunSolutions ? 'region' : 'auto',
-      figures: Array.isArray((item as any).figures) ? (item as any).figures : (Array.isArray(cutRecord?.figures) ? cutRecord?.figures : []),
+      figures: questionFigures,
+      attachments: allAttachments,
       original_question_id: String(notePayload.originalQuestionId || ''),
       original_source_run_id: String(notePayload.originalSourceRunId || ''),
       force_region_ocr: Boolean(notePayload.forceRegionOcr),
@@ -524,9 +682,21 @@ export function exportRunForMigratedOcr(runId: string) {
     const rawSegments = Array.isArray(cutRecord.segments) ? cutRecord.segments : []
     const segments = rawSegments.map(normalizeOcrSegment)
     const imagePath = withQuestionAssetPrefix(String(cutRecord.auto_image_path || solution.source_image_path || cutRecord.page_image_path || ''))
+
+    const reviewedFigures = parseJson<Array<Record<string, any>>>(String(solution.figures_json || '[]'), [])
+    const solutionAttachments = reviewedFigures
+      .filter((fig) => fig.ocrBinding?.enabled && fig.assetPath)
+      .map((fig) => ({
+        id: fig.ocrBinding.attachmentId || fig.id,
+        path: withQuestionAssetPrefix(fig.assetPath),
+        usage: 'analysis',
+        targetField: 'analysis',
+        source: 'solution'
+      }))
+
     return {
       id: solutionId,
-      source_pdf: `question_assets/${run.pdfPath}`,
+      source_pdf: `question_assets/${sourceDocuments.solutionPdfRel || sourceDocuments.questionPdfRel || run.pdfPath}`,
       page: Number(cutRecord.page || (Array.isArray(cutRecord.page_span) ? cutRecord.page_span[0] : 1) || 1),
       page_span: Array.isArray(cutRecord.page_span) ? cutRecord.page_span : [Number(cutRecord.page || 1), Number(cutRecord.page || 1)],
       question_no: String(solution.question_no || cutRecord.question_no || ''),
@@ -538,19 +708,14 @@ export function exportRunForMigratedOcr(runId: string) {
       reviewed_segments: segments,
       segments,
       text_regions: [{ kind: 'analysis', segments }],
-      // The solution table is the review-owned copy.  Prefer it so a manual
-      // solution figure survives OCR reruns; use cutter candidates only when
-      // no reviewed figure exists yet.
-      figures: (() => {
-        const reviewedFigures = parseJson<Array<Record<string, any>>>(String(solution.figures_json || '[]'), [])
-        return reviewedFigures.length ? reviewedFigures : (Array.isArray(cutRecord.figures) ? cutRecord.figures : [])
-      })(),
+      figures: reviewedFigures.length ? reviewedFigures : (Array.isArray(cutRecord.figures) ? cutRecord.figures : []),
+      attachments: solutionAttachments,
       status: 'ready_for_ocr',
       ocr_record_kind: 'solution',
-      ocr_parse_mode: 'region',
+      ocr_parse_mode: sourceDocuments.solutionPdfRel ? 'document' : 'region',
       note: String(solution.match_note || ''),
     }
-  }).filter((record) => record.id && record.segments.length)
+  }).filter((record) => record.id && (Boolean(sourceDocuments.solutionPdfRel) || record.segments.length))
   const manifestRecords = [...records, ...solutionRecords]
   const payload = JSON.stringify({ results: manifestRecords }, null, 2)
   fs.writeFileSync(path.join(outputDir, 'reviewed_results.json'), payload)
@@ -575,9 +740,18 @@ export async function importMigratedOcrResults(runId: string) {
   const hasSeparatedSolutions = normalizeFileRole(runRow?.file_role) === 'questions' || sameRunSolutionCount > 0
   if (!fs.existsSync(draftsDir)) return 0
   let imported = 0
-  const entries = await fs.promises.readdir(draftsDir)
+  const reviewOrder = new Map(getReviewItems(runId).map((item, index) => [item.resultId, index]))
+  const entries = (await fs.promises.readdir(draftsDir))
+    .filter((entry) => entry.startsWith(runId))
+    .sort((left, right) => {
+      const leftRank = reviewOrder.get(left)
+      const rightRank = reviewOrder.get(right)
+      if (leftRank != null && rightRank != null) return leftRank - rightRank
+      if (leftRank != null) return -1
+      if (rightRank != null) return 1
+      return left.localeCompare(right)
+    })
   for (const [index, entry] of entries.entries()) {
-    if (!entry.startsWith(runId)) continue
     const resultPath = path.join(draftsDir, entry, 'ocr_result.json')
     if (!fs.existsSync(resultPath)) continue
     const result = JSON.parse(await fs.promises.readFile(resultPath, 'utf8')) as Record<string, any>
@@ -591,6 +765,8 @@ export async function importMigratedOcrResults(runId: string) {
       : String(result.id || '')
     const questionNo = cleanQuestionNoLabel(String(result.question_no || ''))
     const localFigures = await figuresForImportedOcrResultAsync(result, runId)
+    bindExplicitAttachments(result, localFigures)
+
     // Inline <img> references describe locations in the OCR text.  They must
     // bind exclusively to reviewed cut figures: GLM page-level images are
     // useful supplemental assets, but including them here makes an otherwise
@@ -607,7 +783,17 @@ export async function importMigratedOcrResults(runId: string) {
     const questionType = inferQuestionType(stem, answer)
     const figures = inlineImages ? inlineImages.figures : localFigures
     const sliceImagePath = sliceImagePathForOcrResult(result, runId)
+
+    const unplacedAttachments = localFigures.filter((f) => f.ocrBinding?.enabled && f.ocrBinding?.status === 'unplaced')
     const formatIssues = [inlineImages?.issue, ...validateQuestionMarkdown({ problem_text: stem, answer, analysis })].filter(Boolean) as Array<any>
+    if (unplacedAttachments.length > 0) {
+      formatIssues.push({
+        field: 'figures',
+        code: 'unplaced_attachment',
+        message: `含有未定位的人工附件图（${unplacedAttachments.map((f: any) => f.ocrBinding.attachmentId || f.id).join('、')}）。可用待定位操作放置到文本中。`,
+        snippet: unplacedAttachments.map((f: any) => f.ocrBinding.attachmentId || f.id).join(','),
+      })
+    }
     const needsFormatReview = Boolean(formatIssues.length)
     const formatReviewJson = needsFormatReview ? JSON.stringify(formatReviewPayload(formatIssues, nowIso())) : '{}'
     const existing = db.prepare('SELECT id, chapter, source_title, source_run_id, source_solution_run_id, merge_status, merge_note, bank_status, slice_image_path, updated_at FROM question_bank_items WHERE id = ?').get(targetQuestionId) as {
@@ -847,9 +1033,7 @@ export function startMigratedOcrBackground(runId: string, options: { force?: boo
   const runRow = db.prepare('SELECT * FROM pdf_slicer_runs WHERE run_id = ?').get(runId) as RunRow | undefined
   if (!runRow) throw new Error('批次不存在。')
   const settings = readOcrSettings()
-  const provider = runRow.ocr_provider === 'doc2x' || runRow.ocr_provider === 'glm' || runRow.ocr_provider === 'legacy'
-    ? normalizeOcrProvider(runRow.ocr_provider)
-    : normalizeOcrProvider(settings.ocrProvider)
+  const provider = normalizeOcrProvider(settings.ocrProvider)
   if (provider === 'legacy') {
     throw new Error('历史 OCR 已下线，无法重新启动；请在 OCR 设置中选择 GLM-OCR 后从题库或待入库页面重新识别。')
   }
@@ -873,7 +1057,8 @@ export function startMigratedOcrBackground(runId: string, options: { force?: boo
   if (provider === 'doc2x') {
     const artifactDir = doc2xArtifactDir(runRow)
     fs.mkdirSync(artifactDir, { recursive: true })
-    const pdfPath = resolveStoragePath(runRow.pdf_path)
+    const sourceDocuments = ocrSourceDocuments(runRow)
+    const pdfPath = sourceDocuments.questionPdfPath
     if (!pdfPath || !fs.existsSync(pdfPath)) throw new Error('Doc2X 找不到当前批次的原始 PDF。')
     args = [
       'scripts/run_doc2x_ocr.py',
@@ -884,11 +1069,13 @@ export function startMigratedOcrBackground(runId: string, options: { force?: boo
       '--artifact-dir', artifactDir,
       '--storage-root', storageRoot,
     ]
+    if (sourceDocuments.solutionPdfPath && fs.existsSync(sourceDocuments.solutionPdfPath)) args.push('--solutions-pdf', sourceDocuments.solutionPdfPath)
     if (options.force === true) args.push('--force')
   } else if (provider === 'glm') {
     const artifactDir = glmArtifactDir(runRow)
     fs.mkdirSync(artifactDir, { recursive: true })
-    const pdfPath = resolveStoragePath(runRow.pdf_path)
+    const sourceDocuments = ocrSourceDocuments(runRow)
+    const pdfPath = sourceDocuments.questionPdfPath
     const isSingleQuestion = runRow.upload_mode === 'question_bank_rerun' || runRow.upload_mode === 'pending_bank_rerun'
     if (!isSingleQuestion && (!pdfPath || !fs.existsSync(pdfPath))) throw new Error('GLM-OCR 找不到当前批次的原始 PDF。')
     args = [
@@ -899,6 +1086,7 @@ export function startMigratedOcrBackground(runId: string, options: { force?: boo
       '--artifact-dir', artifactDir,
       '--storage-root', storageRoot,
     ]
+    if (!isSingleQuestion && sourceDocuments.solutionPdfPath && fs.existsSync(sourceDocuments.solutionPdfPath)) args.push('--solutions-pdf', sourceDocuments.solutionPdfPath)
     if (isSingleQuestion) args.push('--single-question')
     if (options.force === true) args.push('--force')
   } else {

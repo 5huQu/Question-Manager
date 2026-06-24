@@ -5,7 +5,7 @@ from io import BytesIO
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from src.ocr.doc2x import Doc2xClient, Doc2xError, Doc2xSettings, inline_doc2x_figures, split_exam_markdown
+from src.ocr.doc2x import Doc2xClient, Doc2xError, Doc2xSettings, classify_solution_document, inline_doc2x_figures, solution_fields, split_exam_markdown
 
 
 class FakeResponse:
@@ -97,6 +97,38 @@ class Doc2xMarkdownSplitTests(unittest.TestCase):
         pages = [{"page_idx": 0, "md": "## 一、选择题\n1. 题干\n【答案】A\n【解析】解析"}]
         result = split_exam_markdown(pages, ["1", "2"])
         self.assertEqual(list(result), ["1"])
+
+    def test_unordered_manifest_does_not_change_document_boundaries(self) -> None:
+        pages = [{
+            "page_idx": 0,
+            "md": """
+## 一、选择题
+1. 题干一
+2. 题干二
+3. 题干三
+""",
+        }]
+
+        result = split_exam_markdown(pages, ["3", "1", "2"])
+
+        self.assertEqual(list(result), ["1", "2", "3"])
+        self.assertEqual(result["1"]["stem"], "题干一")
+        self.assertEqual(result["2"]["stem"], "题干二")
+        self.assertEqual(result["3"]["stem"], "题干三")
+
+    def test_classifies_numbered_answer_key_without_markers(self) -> None:
+        pages = [{"md": "1. A\n2. C\n3. D\n4. B"}]
+        self.assertEqual(classify_solution_document(pages), "answer_key")
+
+    def test_classifies_worked_solution_without_markers(self) -> None:
+        pages = [{"md": "1. 由题意可得 x=1，故选 A。\n2. 证明：设 f(x)=x^2。"}]
+        self.assertEqual(classify_solution_document(pages), "analysis")
+
+    def test_keeps_solution_before_empty_next_section_marker(self) -> None:
+        answer, analysis, marked = solution_fields("推导过程\n## 【解析】", "marked")
+        self.assertEqual(answer, "")
+        self.assertEqual(analysis, "推导过程")
+        self.assertFalse(marked)
 
 
 if __name__ == "__main__":

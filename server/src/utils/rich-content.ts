@@ -171,8 +171,20 @@ function stripSemanticExerciseLabel(value: string) {
   return String(value || '').replace(semanticExerciseLabelPattern, '').trimStart()
 }
 
+function stripDoc2xNoiseComments(value: string) {
+  return stripExamCarryoverNoise(String(value || '')
+    .replace(/<!--\s*DOC2X_PAGE\s*:\s*\d+\s*-->/gi, '')
+    .replace(/<!--\s*figureText\s*:[\s\S]*?-->/gi, ''))
+}
+
+function stripExamCarryoverNoise(value: string) {
+  return String(value || '')
+    .replace(/(?:^|\n)\s*(?:#{1,6}\s*)?[一二三四五六七八九十]+[、.．]\s*[^\n]{0,80}本大题[\s\S]*$/u, '')
+    .replace(/(?:^|\n)\s*<table\b(?=[\s\S]*?<td>\s*题号\s*<\/td>)(?=[\s\S]*?<td>\s*答案\s*<\/td>)[\s\S]*?<\/table>/gi, '')
+}
+
 function stripOcrTemplateNoise(value: string) {
-  const lines = stripSemanticExerciseLabel(String(value || '')).split(/\r?\n/)
+  const lines = stripDoc2xNoiseComments(stripSemanticExerciseLabel(String(value || ''))).split(/\r?\n/)
   const watermarkIndexes = new Set<number>()
   lines.forEach((line, index) => {
     const compact = line.replace(/\s+/g, '')
@@ -402,6 +414,7 @@ export {
   normalizeUnicodeRomanNumerals,
   paragraphBlock,
   splitMarkdownTableRow,
+  stripDoc2xNoiseComments,
   stripOcrTemplateNoise,
   textInline,
 }

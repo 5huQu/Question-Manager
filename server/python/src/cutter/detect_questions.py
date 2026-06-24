@@ -4,7 +4,7 @@ import re
 import unicodedata
 
 from ..common.schema import DocumentData, QuestionAnchor
-from .rules import SlicerRules
+from .rules import RuleEntry, SlicerRules, any_rule_matches
 
 SECTION_PATTERN = re.compile(
     r"^(?:(?P<cn>[一二三四五六七八九十]+)[、.．]\s*(?P<section>.+?(?:题|部分))|(?P<topic>题型\s*0?\d+.*)|(?P<example>例题.*))"
@@ -29,11 +29,11 @@ def _resolve_markers(rules: SlicerRules | None) -> tuple:
     if rules is None:
         return AUXILIARY_MARKERS, NOTICE_TERMS, REFERENCE_FORMULA_MARKERS, TRAINING_MARKERS, NON_QUESTION_REMAINDERS
     return (
-        rules.auxiliary_terms,
-        rules.notice_terms_tuple,
-        rules.reference_formula_terms,
-        rules.training_terms,
-        rules.non_question_remainder_terms,
+        rules.enabled_auxiliary_markers,
+        rules.enabled_notice_terms,
+        rules.enabled_reference_formula_markers,
+        rules.enabled_training_markers,
+        rules.enabled_non_question_remainders,
     )
 
 
@@ -53,7 +53,7 @@ def detect_question_anchors(document: DocumentData, rules: SlicerRules | None = 
             if seen_valid_section and anchors and _looks_like_answer_section_start(text, page.number, line.bbox[1], page.height):
                 return _deduplicate(anchors)
 
-            if any(marker in text for marker in _aux):
+            if any_rule_matches(text, _aux):
                 auxiliary_mode = True
 
             section_title = _match_section(text)
@@ -63,7 +63,7 @@ def detect_question_anchors(document: DocumentData, rules: SlicerRules | None = 
                 auxiliary_mode = False
                 continue
 
-            if any(marker in text for marker in _train):
+            if any_rule_matches(text, _train):
                 auxiliary_mode = False
                 continue
 
@@ -92,11 +92,11 @@ def detect_question_anchors(document: DocumentData, rules: SlicerRules | None = 
                 continue
             if auxiliary_mode:
                 continue
-            if _has_auxiliary_context(page.text_lines, line_index, line.bbox[1], _aux):
+            if _has_auxiliary_context(page.text_lines, line_index, line.bbox[1], _aux, _train):
                 continue
             if kind == "arabic" and _has_reference_formula_context(page.text_lines, line_index, line.bbox[1], _ref):
                 continue
-            if remainder in _nqr or (remainder.endswith("类型") and len(remainder) <= 8):
+            if any_rule_matches(remainder, _nqr) or (remainder.endswith("类型") and len(remainder) <= 8):
                 continue
             if not remainder and line.bbox[0] > page.body_bbox[0] + page.width * 0.10:
                 continue
@@ -105,7 +105,7 @@ def detect_question_anchors(document: DocumentData, rules: SlicerRules | None = 
                 in_valid_section = False
             if not seen_valid_section:
                 reasons.append("文档内未检测到明确题目章节。")
-            if remainder and any(term in remainder for term in _notice):
+            if remainder and any_rule_matches(remainder, _notice):
                 continue
 
             anchors.append(
@@ -150,13 +150,13 @@ def detect_solution_anchors(document: DocumentData, rules: SlicerRules | None = 
                 continue
             if kind == "arabic" and _has_reference_formula_context(page.text_lines, line_index, line.bbox[1], _ref):
                 continue
-            if _has_auxiliary_context(page.text_lines, line_index, line.bbox[1], _aux):
+            if _has_auxiliary_context(page.text_lines, line_index, line.bbox[1], _aux, _train):
                 continue
             if _is_probable_answer_table_token(text, remainder):
                 continue
-            if remainder in _nqr or (remainder.endswith("类型") and len(remainder) <= 8):
+            if any_rule_matches(remainder, _nqr) or (remainder.endswith("类型") and len(remainder) <= 8):
                 continue
-            if remainder and any(term in remainder for term in _notice):
+            if remainder and any_rule_matches(remainder, _notice):
                 continue
 
             anchors.append(
@@ -228,8 +228,8 @@ def _normalize_line(text: str) -> str:
     return text.strip()
 
 
-def _looks_like_notice(text: str, _notice: tuple[str, ...] = NOTICE_TERMS) -> bool:
-    return any(term in text for term in _notice)
+def _looks_like_notice(text: str, _notice: tuple[RuleEntry | str, ...] = NOTICE_TERMS) -> bool:
+    return any_rule_matches(text, _notice)
 
 
 def _looks_like_answer_section_start(text: str, page_number: int, y0: float, page_height: float) -> bool:
@@ -256,7 +256,7 @@ def _is_probable_instruction_anchor(
     y0: float,
     page_height: float,
     seen_valid_section: bool,
-    _notice: tuple[str, ...] = NOTICE_TERMS,
+    _notice: tuple[RuleEntry | str, ...] = NOTICE_TERMS,
 ) -> bool:
     if page_number != 1:
         return False
@@ -281,7 +281,14 @@ def _deduplicate(anchors: list[QuestionAnchor]) -> list[QuestionAnchor]:
     return deduplicated
 
 
-def _has_auxiliary_context(lines: list, current_index: int, current_y: float, _aux: tuple[str, ...] = AUXILIARY_MARKERS, max_gap: float = 170.0) -> bool:
+def _has_auxiliary_context(
+    lines: list,
+    current_index: int,
+    current_y: float,
+    _aux: tuple[RuleEntry | str, ...] = AUXILIARY_MARKERS,
+    _train: tuple[RuleEntry | str, ...] = (),
+    max_gap: float = 170.0,
+) -> bool:
     for previous_line in reversed(lines[:current_index]):
         gap = current_y - previous_line.bbox[1]
         if gap < 0:
@@ -289,12 +296,14 @@ def _has_auxiliary_context(lines: list, current_index: int, current_y: float, _a
         if gap > max_gap:
             break
         text = _normalize_line(previous_line.text)
-        if any(marker in text for marker in _aux):
+        if _match_section(text) is not None or any_rule_matches(text, _train):
+            return False
+        if any_rule_matches(text, _aux):
             return True
     return False
 
 
-def _has_reference_formula_context(lines: list, current_index: int, current_y: float, _ref: tuple[str, ...] = REFERENCE_FORMULA_MARKERS, max_gap: float = 130.0) -> bool:
+def _has_reference_formula_context(lines: list, current_index: int, current_y: float, _ref: tuple[RuleEntry | str, ...] = REFERENCE_FORMULA_MARKERS, max_gap: float = 130.0) -> bool:
     for previous_line in reversed(lines[:current_index]):
         gap = current_y - previous_line.bbox[1]
         if gap < 0:
@@ -302,12 +311,12 @@ def _has_reference_formula_context(lines: list, current_index: int, current_y: f
         if gap > max_gap:
             break
         text = _normalize_line(previous_line.text)
-        if any(marker in text for marker in _ref):
+        if any_rule_matches(text, _ref):
             return True
     return False
 
 
-def _has_notice_context(lines: list, current_index: int, current_y: float, _notice: tuple[str, ...] = NOTICE_TERMS, max_gap: float = 170.0) -> bool:
+def _has_notice_context(lines: list, current_index: int, current_y: float, _notice: tuple[RuleEntry | str, ...] = NOTICE_TERMS, max_gap: float = 170.0) -> bool:
     for previous_line in reversed(lines[:current_index]):
         gap = current_y - previous_line.bbox[1]
         if gap < 0:
@@ -315,6 +324,6 @@ def _has_notice_context(lines: list, current_index: int, current_y: float, _noti
         if gap > max_gap:
             break
         text = _normalize_line(previous_line.text)
-        if any(marker in text for marker in _notice):
+        if any_rule_matches(text, _notice):
             return True
     return False
