@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   AlertCircle,
+  BookOpen,
   Check,
   CheckCircle2,
   ExternalLink,
@@ -42,6 +43,7 @@ export function SettingsPage() {
   const [activeRuleCategory, setActiveRuleCategory] = useState<(typeof RULES_CATEGORIES)[number]['key']>('auxiliaryMarkers')
   const [isRulesSaving, setIsRulesSaving] = useState(false)
   const [rulesSaveStatus, setRulesSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [showSlicerGuide, setShowSlicerGuide] = useState(false)
 
   useEffect(() => {
     if (data) {
@@ -115,7 +117,7 @@ export function SettingsPage() {
       .catch((err) => setRulesSaveStatus({ type: 'error', message: `校验请求失败：${err?.message || '未知错误'}` }))
   }
 
-  function resetRulesDraft() {
+  function reloadPublishedRules() {
     rulesApi.reload()
   }
 
@@ -348,14 +350,14 @@ export function SettingsPage() {
               <Field label="分类并发数量限制 (1-20)">
                 <TextInput value={draft.cleanupConcurrency ?? ''} onChange={(value) => setDraft({ ...draft, cleanupConcurrency: value })} />
               </Field>
-              <Field label="分类 API 服务端点 (留空沿用 OCR 地址)" className="md:col-span-2">
-                <TextInput mono value={draft.cleanupApiBaseUrl ?? ''} placeholder={draft.glmOcrApiBaseUrl || draft.doc2xApiBaseUrl || ''} onChange={(value) => setDraft({ ...draft, cleanupApiBaseUrl: value })} />
+              <Field label="分类 API 服务端点 (留空默认使用 DeepSeek)" className="md:col-span-2">
+                <TextInput mono value={draft.cleanupApiBaseUrl ?? ''} placeholder="https://api.deepseek.com" onChange={(value) => setDraft({ ...draft, cleanupApiBaseUrl: value })} />
               </Field>
-              <Field label="分类 API 密钥 (留空沿用 OCR 密钥)">
-                <TextInput mono type="password" value={draft.cleanupApiKey ?? ''} placeholder={data?.cleanupApiKeyConfigured ? '已配置密钥，留空表示不修改' : '留空时沿用 OCR API Key'} onChange={(value) => setDraft({ ...draft, cleanupApiKey: value })} />
+              <Field label="分类 API 密钥">
+                <TextInput mono type="password" value={draft.cleanupApiKey ?? ''} placeholder={data?.cleanupApiKeyConfigured ? '已配置密钥，留空表示不修改' : '请输入 DeepSeek API Key'} onChange={(value) => setDraft({ ...draft, cleanupApiKey: value })} />
               </Field>
               <Field label="分类大模型名称">
-                <TextInput mono value={draft.cleanupModel ?? ''} onChange={(value) => setDraft({ ...draft, cleanupModel: value })} />
+                <TextInput mono value={draft.cleanupModel ?? ''} placeholder="deepseek-v4-flash" onChange={(value) => setDraft({ ...draft, cleanupModel: value })} />
               </Field>
             </div>
             <div className="grid grid-cols-1 gap-4 border-t border-zinc-100 pt-4 dark:border-zinc-800 md:grid-cols-2">
@@ -369,37 +371,13 @@ export function SettingsPage() {
           </SettingsCard>
 
           <SettingsCard
-            title="OCR 系统提示词"
-            desc="控制整卷识别与局部重刷公式时的底层大模型 Prompt。留空则表示使用系统内置默认逻辑。"
-            footer={<SaveButton label="保存提示词模板" loading={isSaving} onClick={() => save('OCR 提示词')} />}
-          >
-            <SectionTitle>整卷试卷识别提示词 (Whole OCR Prompt)</SectionTitle>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="整卷 System Prompt">
-                <TextArea mono rows={3} value={draft.wholeSystemPrompt ?? ''} onChange={(value) => setDraft({ ...draft, wholeSystemPrompt: value })} />
-              </Field>
-              <Field label="整卷 User Prompt">
-                <TextArea mono rows={3} value={draft.wholeUserPrompt ?? ''} onChange={(value) => setDraft({ ...draft, wholeUserPrompt: value })} />
-              </Field>
-            </div>
-            <SectionTitle className="pt-2">分区重刷提示词 (Chunk OCR Prompt)</SectionTitle>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="分区 System Prompt">
-                <TextArea mono rows={3} value={draft.chunkSystemPrompt ?? ''} onChange={(value) => setDraft({ ...draft, chunkSystemPrompt: value })} />
-              </Field>
-              <Field label="分区 User Prompt">
-                <TextArea mono rows={3} value={draft.chunkUserPrompt ?? ''} onChange={(value) => setDraft({ ...draft, chunkUserPrompt: value })} />
-              </Field>
-            </div>
-          </SettingsCard>
-
-          <SettingsCard
             title="PDF 切题规则与字典"
-            desc="维护 PDF 自动切题引擎识别边界所依赖的章节定位和提示干扰词。保存后立即应用于新的识别队列中。"
+            desc="维护自动切题时用来排除目录、说明和栏目编号的词。保存后会用于新上传或重新切题的资料，已切好的历史批次不会自动变化。"
             footer={
               <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={() => setShowSlicerGuide(true)} disabled={isRulesSaving} className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"><BookOpen className="size-3.5" />查看使用说明</button>
                 <button type="button" onClick={validateRulesDraft} disabled={isRulesSaving} className="inline-flex items-center rounded border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">校验草稿</button>
-                <button type="button" onClick={resetRulesDraft} disabled={isRulesSaving} className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"><RotateCcw className="size-3.5" />恢复默认</button>
+                <button type="button" onClick={reloadPublishedRules} disabled={isRulesSaving} className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"><RotateCcw className="size-3.5" />重新读取已发布规则</button>
                 <button type="button" onClick={discardRulesDraft} disabled={isRulesSaving} className="inline-flex items-center rounded border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">放弃修改</button>
                 <SaveButton label={isRulesSaving ? '保存中...' : '保存切题字典'} loading={isRulesSaving} onClick={saveRules} />
               </div>
@@ -440,6 +418,9 @@ export function SettingsPage() {
                     新增字典词
                   </button>
                 </div>
+                <p className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2 text-[11px] leading-5 text-zinc-500 dark:border-zinc-900 dark:bg-zinc-900/20 dark:text-zinc-400">
+                  “包含”表示一行文字里带有该词即可命中；“精确”表示这一行文字必须和词条完全相同。拿不准时，先用“包含”，词太短容易误伤时再用“精确”。
+                </p>
                 <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
                   <div className="flex border-b border-zinc-200 bg-zinc-50/70 px-4 py-2 text-[12px] font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40">
                     <span className="w-10 shrink-0 text-center">序号</span>
@@ -491,6 +472,17 @@ export function SettingsPage() {
       </div>
 
       {saveStatus ? <Toast status={saveStatus} /> : null}
+
+      {showSlicerGuide ? (
+        <Modal
+          title="PDF 自动切题词表使用说明"
+          desc="词表只帮助系统判断编号是不是题目；自动切题后仍建议到复核页快速检查。"
+          onClose={() => setShowSlicerGuide(false)}
+          wide
+        >
+          <PdfSlicerGuide />
+        </Modal>
+      ) : null}
 
       {showLibreOfficeAlert && !data?.sofficeAvailable ? (
         <Modal
@@ -674,12 +666,80 @@ function RuleRow({ entry, index, onChange, onDelete }: {
 }
 
 const RULES_CATEGORIES = [
-  { key: 'auxiliaryMarkers', label: '辅助标记', desc: '跳过辅助页面检测' },
-  { key: 'noticeTerms', label: '注意事项', desc: '避免注意事项误判为题号' },
-  { key: 'referenceFormulaMarkers', label: '参考公式', desc: '在参考公式附近抑制题号' },
-  { key: 'trainingMarkers', label: '训练标记', desc: '不作为边界的训练区标题' },
-  { key: 'nonQuestionRemainders', label: '非题剩余文字', desc: '末尾文字不当作题号' },
-  { key: 'sectionMarkers', label: '章节标记', desc: '识别非标准题型作为分割线' },
+  { key: 'auxiliaryMarkers', label: '辅助区标记', desc: '遇到目录、归纳等非做题区时，暂停识别同页后续题号。' },
+  { key: 'noticeTerms', label: '考试说明词', desc: '跳过试卷开头的答题说明，避免说明中的编号被当成题号。' },
+  { key: 'referenceFormulaMarkers', label: '参考资料标记', desc: '跳过公式表、关系式表和数据表附近的普通数字编号。' },
+  { key: 'trainingMarkers', label: '训练恢复标记', desc: '表示目录或总结结束，之后可以继续识别正式题号。' },
+  { key: 'nonQuestionRemainders', label: '编号栏目标题', desc: '跳过“1. 方法总结”这类有编号但不是题的小标题。' },
+  { key: 'sectionMarkers', label: '跨页截断标记', desc: '题目跨页时，遇到新栏目标题就在标题前结束上一题的裁图。' },
 ] as const
+
+function PdfSlicerGuide() {
+  const sections = [
+    {
+      title: '辅助区标记：目录和总结不是题目',
+      body: '填写“目录、题型归纳、思维导图、方法技巧”等栏目标题。系统看到它们后，会暂时不把同页后面的编号当作题目；遇到正式题型标题或训练标题后，再恢复识别。适合补充“考点精练、专题突破”等词。',
+    },
+    {
+      title: '考试说明词：跳过开头的答题要求',
+      body: '填写“注意事项、答题、作答、考试结束”等词。它们用来防止“1. 请填写姓名”被误切成第 1 题，不会删除 PDF 里的文字。',
+    },
+    {
+      title: '参考资料标记：公式表和数据表不是题目',
+      body: '填写“参考公式、参考关系式、参考数据”等词。系统会避开这些标题附近的“1.”、“2.”等数字编号，减少把表格条目当题目的情况。',
+    },
+    {
+      title: '训练恢复标记：从目录回到正式练习',
+      body: '填写“【典例训练】、【例题】、一、选择题、二、填空题”等标题。它们本身不会切出题目，只是告诉系统下一行开始可以继续寻找题号。',
+    },
+    {
+      title: '编号栏目标题：有编号也可能不是题',
+      body: '填写“方法总结、规律总结、常见类型”等词。它专门处理“1. 方法总结”这样的栏目名；匹配的是题号后面的文字。',
+    },
+    {
+      title: '跨页截断标记：别让上一题吃进下一章',
+      body: '填写可能出现在新页顶部的栏目标题，例如“题型归纳、目录、【典例训练】”。它只在题目跨页时起作用：从这个标题前结束上一题，不会单独创建题目。',
+    },
+  ]
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-5 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
+      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-blue-950 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-100">
+        <p className="font-semibold">这项设置是做什么的？</p>
+        <p className="mt-1 text-[13px]">系统先在 PDF 的可复制文字里寻找题号，再按题号位置切图。词表只负责告诉系统：哪些编号属于目录、说明或栏目，不应该当作题目。</p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border p-4">
+          <h4 className="font-semibold text-zinc-900 dark:text-zinc-50">包含匹配</h4>
+          <p className="mt-1 text-[13px]">一行文字中带有这个词就算命中。大多数情况选它即可。</p>
+        </div>
+        <div className="rounded-xl border p-4">
+          <h4 className="font-semibold text-zinc-900 dark:text-zinc-50">精确匹配</h4>
+          <p className="mt-1 text-[13px]">一行文字必须和词条完全相同才算命中。短词容易误伤正常题目时，选它更稳妥。</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {sections.map((section) => (
+          <section key={section.title} className="rounded-xl border p-4">
+            <h4 className="font-semibold text-zinc-900 dark:text-zinc-50">{section.title}</h4>
+            <p className="mt-1 text-[13px]">{section.body}</p>
+          </section>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+        <p className="font-semibold">使用小建议</p>
+        <ol className="mt-1 list-decimal space-y-1 pl-5 text-[13px]">
+          <li>一次只加一两个词，再用一份容易误切的资料重新切题验证。</li>
+          <li>词尽量具体，例如用“专题突破”，不要只填“专题”。</li>
+          <li>修改后只影响新上传或重新切题的资料；已有切题结果不会自动改动。</li>
+          <li>扫描件或整页图片 PDF 没有可用文字层，会转为人工框选，不使用这套词表。</li>
+        </ol>
+      </div>
+    </div>
+  )
+}
 
 export default SettingsPage

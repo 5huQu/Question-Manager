@@ -262,6 +262,25 @@ export default function PendingBankPage() {
     })
   }
 
+  async function saveQuestionInline(id: string, patch: Partial<QuestionItem>) {
+    setActionBusy(true)
+    try {
+      const item = data?.items.find((entry) => entry.id === id)
+      if (!item) return
+      const nextDraft = {
+        ...item,
+        ...patch,
+      }
+      await questionBankApi.updateItem(id, nextDraft)
+      await reload({ silent: true })
+      showNotice('图片定位已保存')
+    } catch (err) {
+      alert(`保存失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
   async function reOcrSingle(id: string) {
     const item = data?.items.find((entry) => entry.id === id)
     setConfirmDialog({
@@ -479,6 +498,7 @@ export default function PendingBankPage() {
               onCrop={() => setCroppingItem(activeItem)}
               onSkip={() => skipSingle(activeItem.id)}
               onDelete={() => deleteSingle(activeItem.id)}
+              onSaveInline={saveQuestionInline}
             />
           ) : (
             <div className="flex h-full items-center justify-center p-6">
@@ -789,7 +809,7 @@ function figuresByUsage(figures: QuestionFigure[], usage: string) {
   return figures.filter((fig) => String(fig.usage || 'stem') === usage)
 }
 
-function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable, onCrop, onSkip, onDelete }: {
+function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable, onCrop, onSkip, onDelete, onSaveInline }: {
   item: QuestionItem
   busy: boolean
   onConfirm: () => void
@@ -799,12 +819,13 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
   onCrop: () => void
   onSkip: () => void
   onDelete: () => void
+  onSaveInline?: (id: string, patch: Partial<QuestionItem>) => Promise<void>
 }) {
   const [previewMode, setPreviewMode] = useState<'content' | 'images'>('content')
   const analysisFigures = figuresByUsage(item.figures, 'analysis')
   const isOcrFailed = !item.stemMarkdown || item.stemMarkdown.trim() === ''
   const readOnlyFailure = Boolean(item.pendingBankReadOnly)
-  const hasImageAssets = Boolean(item.sliceImagePath || item.ocrSegmentImages?.length)
+  const hasImageAssets = Boolean(item.sliceImagePath || item.solutionImagePath || item.ocrSegmentImages?.length)
 
   useEffect(() => {
     setPreviewMode('content')
@@ -863,11 +884,111 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
           <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50/30 p-3 text-xs text-amber-800 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-400">
             <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
             <div>
-              <p className="font-semibold text-[13px]">{item.formatIssue.code === 'inline_image_reference_mismatch' ? '需要确认题图' : '公式未规范化'}</p>
+              <p className="font-semibold text-[13px]">
+                {item.formatIssue.code === 'inline_image_reference_mismatch'
+                  ? '需要确认题图'
+                  : item.formatIssue.code === 'unplaced_attachment'
+                  ? '有人工图框未在文本中定位'
+                  : '公式未规范化'}
+              </p>
               <p className="mt-1 text-zinc-600 dark:text-zinc-400 leading-relaxed">{item.formatIssue.message || '可阅读，入库和导出前需修复。'}</p>
             </div>
           </div>
         ) : null}
+        {(() => {
+          const unplaced = (item.figures ?? []).filter((f: any) => f.ocrBinding?.enabled && f.ocrBinding?.status === 'unplaced')
+          if (!unplaced.length) return null
+          return (
+            <div className="rounded-xl border border-orange-200 bg-orange-50/20 p-4 shadow-sm dark:border-orange-900/30 dark:bg-orange-950/10">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="size-4.5 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-sm text-orange-900 dark:text-orange-400">检测到 {unplaced.length} 张未定位的人工框选图</p>
+                  <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">请选择将其放置在文本中（追加在段尾）或忽略该警告：</p>
+                  
+                  <div className="mt-3.5 space-y-3">
+                    {unplaced.map((fig: any) => {
+                      const figureId = fig.ocrBinding.attachmentId || fig.id
+                      const blockId = `cut_inline_${fig.usage || 'stem'}_${figureId}`
+                      const imageUrl = fig.path ? `/assets/${fig.path}` : ''
+                      return (
+                        <div key={fig.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-zinc-200/60 bg-white p-3 rounded-lg dark:border-zinc-800 dark:bg-zinc-950/80">
+                          <div className="flex items-center gap-3">
+                            {imageUrl ? (
+                              <img
+                                src={imageUrl}
+                                alt={figureId}
+                                className="h-12 w-auto max-w-[120px] rounded border border-zinc-200 object-contain dark:border-zinc-800 bg-zinc-50"
+                              />
+                            ) : (
+                              <div className="h-12 w-16 rounded border border-zinc-200 bg-zinc-100 flex items-center justify-center text-[10px] text-zinc-400">无图</div>
+                            )}
+                            <div>
+                              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">附件 {figureId}</span>
+                              <span className="ml-2 rounded-md bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500">
+                                {fig.usage === 'options' ? `选项 ${fig.optionLabel || ''}` : fig.usage === 'analysis' ? '解析' : '题干'}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                const newFigures = item.figures.map((f: any) => {
+                                  if (f.id === fig.id) {
+                                    return { ...f, usage: 'stem', category: 'stem', blockId, ocrBinding: { ...f.ocrBinding, status: 'bound' } }
+                                  }
+                                  return f
+                                })
+                                const newStem = `${item.stemMarkdown || ''}\n\n<!-- DOC2X_FIGURE:${blockId} -->\n\n`
+                                await onSaveInline?.(item.id, { stemMarkdown: newStem, figures: newFigures })
+                              }}
+                            >
+                              插入题干
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                const newFigures = item.figures.map((f: any) => {
+                                  if (f.id === fig.id) {
+                                    return { ...f, usage: 'analysis', category: 'analysis', blockId, ocrBinding: { ...f.ocrBinding, status: 'bound' } }
+                                  }
+                                  return f
+                                })
+                                const newAnalysis = `${item.analysisMarkdown || ''}\n\n<!-- DOC2X_FIGURE:${blockId} -->\n\n`
+                                await onSaveInline?.(item.id, { analysisMarkdown: newAnalysis, figures: newFigures })
+                              }}
+                            >
+                              插入解析
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                const newFigures = item.figures.map((f: any) => {
+                                  if (f.id === fig.id) {
+                                    return { ...f, ocrBinding: { ...f.ocrBinding, status: 'ignored' } }
+                                  }
+                                  return f
+                                })
+                                await onSaveInline?.(item.id, { figures: newFigures })
+                              }}
+                            >
+                              忽略
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
         {previewMode === 'images' ? (
           hasImageAssets ? (
             <div className="space-y-4">
@@ -878,6 +999,16 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
                     alt="原题切片"
                     className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700"
                     loading="lazy"
+                  />
+                </ContentSection>
+              ) : null}
+
+              {item.solutionImagePath ? (
+                <ContentSection title="解析裁图">
+                  <img
+                    src={`/assets/${item.solutionImagePath}`}
+                    alt="解析裁图"
+                    className="max-h-[42rem] w-auto max-w-full rounded-lg border border-zinc-200 bg-white dark:border-zinc-700"
                   />
                 </ContentSection>
               ) : null}

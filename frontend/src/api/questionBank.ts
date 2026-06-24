@@ -101,4 +101,29 @@ export const questionBankApi = {
       body: form,
     })
   },
+  getDailyQuestion(params: { knowledgePoint?: string; solutionMethod?: string } = {}) {
+    const query = new URLSearchParams()
+    if (params.knowledgePoint) query.set('knowledgePoint', params.knowledgePoint)
+    if (params.solutionMethod) query.set('solutionMethod', params.solutionMethod)
+    const queryString = query.toString()
+    return api<{ question: QuestionItem; markdown: string; answerMarkdown: string }>(
+      `/api/question-bank/daily-question${queryString ? `?${queryString}` : ''}`
+    )
+  },
+  generateRandomPaper(payload: {
+    knowledgePoints?: string[]
+    solutionMethods?: string[]
+    counts?: {
+      singleChoice?: number
+      multiChoice?: number
+      fillBlank?: number
+      bigQuestion?: number
+    }
+  }) {
+    return api<{ questions: QuestionItem[]; warnings: string[] }>('/api/question-bank/random-paper', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    })
+  },
 }

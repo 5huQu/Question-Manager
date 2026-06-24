@@ -18,7 +18,7 @@ export function notifyBasketUpdated() {
   window.dispatchEvent(new Event(basketUpdatedEvent))
 }
 
-function stripLeadingQuestionNo(value: string, questionNo = '') {
+export function stripLeadingQuestionNo(value: string, questionNo = '') {
   const text = String(value || '').trimStart()
   const escaped = String(questionNo || '').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   if (escaped) {
