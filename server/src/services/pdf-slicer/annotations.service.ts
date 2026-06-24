@@ -1,14 +1,16 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { execFileSync } from 'node:child_process'
+import childProcess from 'node:child_process'
 import { db } from '../../db/connection.js'
-import { pythonRoot, runsRoot } from '../../config.js'
+import { pythonRoot, runsRoot, dataDir } from '../../config.js'
 import { createId, nowIso } from '../../utils/ids.js'
 import { parseJson } from '../../utils/json.js'
 import { assetPathFor, resolveStoragePath } from '../../utils/paths.js'
 import { pythonCommand, pythonEnv } from '../settings/python.js'
 import { normalizedReviewQuestionNo } from '../../db/review.js'
 import { updateBatchWorkflow } from '../../db/runs.js'
+import { validateQuestionCandidate, statusForIssues } from '../question-parser/candidate-validator.js'
+import type { CandidateFigure, CandidateSourceRef } from '../../types/question-candidate.js'
 
 export interface AnnotationSegment {
   page: number
@@ -178,7 +180,27 @@ export function saveRegions(sessionId: string, regions: any[], clientRevision: n
     if (!Array.isArray(regions) || regions.length > 500) {
       throw new Error('标注区域格式无效，或区域数量超过 500 个。')
     }
-    const sourceRuns = db.prepare('SELECT run_id, document_diagnostics_json FROM pdf_slicer_runs WHERE batch_id = ?').all(session.batch_id) as Array<{ run_id: string; document_diagnostics_json: string }>
+    let sourceRuns: Array<{ run_id: string; document_diagnostics_json: string }> = []
+    if (sessionId.startsWith('sess_candidate_')) {
+      const candidate = db.prepare('SELECT source_document_id FROM question_candidates WHERE id = ?').get(session.batch_id) as any
+      if (candidate) {
+        const sourceDoc = db.prepare('SELECT page_count, original_file_name FROM source_documents WHERE id = ?').get(candidate.source_document_id) as any
+        if (sourceDoc) {
+          sourceRuns = [{
+            run_id: candidate.source_document_id,
+            document_diagnostics_json: JSON.stringify({
+              profile: {
+                pageCount: Number(sourceDoc.page_count || 0),
+                pdfName: sourceDoc.original_file_name
+              }
+            })
+          }]
+        }
+      }
+    } else {
+      sourceRuns = db.prepare('SELECT run_id, document_diagnostics_json FROM pdf_slicer_runs WHERE batch_id = ?').all(session.batch_id) as Array<{ run_id: string; document_diagnostics_json: string }>
+    }
+
     const pageCountByRun = new Map(sourceRuns.map((run) => [
       run.run_id,
       Number(parseJson<Record<string, any>>(run.document_diagnostics_json || '{}', {}).profile?.pageCount || 0),
@@ -261,7 +283,7 @@ export function renderRunPage(runId: string, pageNum: number): string {
     fs.mkdirSync(pagePngDir, { recursive: true })
     const scriptPath = path.join(pythonRoot, 'scripts', 'render_pdf_page.py')
     try {
-      execFileSync(pythonCommand(), [scriptPath, pdfPath, String(pageNum), pagePngPath, '--dpi', '150'], {
+      childProcess.execFileSync(pythonCommand(), [scriptPath, pdfPath, String(pageNum), pagePngPath, '--dpi', '150'], {
         env: pythonEnv(),
         encoding: 'utf8',
         timeout: 10000
@@ -276,6 +298,9 @@ export function renderRunPage(runId: string, pageNum: number): string {
 }
 
 export function validateSession(sessionId: string): { errors: string[]; warnings: string[] } {
+  if (sessionId.startsWith('sess_candidate_')) {
+    return { errors: [], warnings: [] }
+  }
   const regions = getRegionsForSession(sessionId)
   const errors: string[] = []
   const warnings: string[] = []
@@ -370,7 +395,7 @@ export function validateSession(sessionId: string): { errors: string[]; warnings
   return { errors, warnings }
 }
 
-export function finalizeSession(sessionId: string): void {
+export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: string; analysisMarkdown?: string }): void {
   const session = getSession(sessionId)
   if (!session) {
     throw new Error('标注会话不存在。')
@@ -382,6 +407,209 @@ export function finalizeSession(sessionId: string): void {
   const { errors } = validateSession(sessionId)
   if (errors.length > 0) {
     throw new Error(`校验未通过，阻断性错误：\n${errors.join('\n')}`)
+  }
+
+  if (sessionId.startsWith('sess_candidate_')) {
+    const candidateId = session.batchId
+    const candidate = db.prepare('SELECT * FROM question_candidates WHERE id = ?').get(candidateId) as any
+    if (!candidate) {
+      throw new Error('候选题目不存在。')
+    }
+    const sourceDoc = db.prepare('SELECT * FROM source_documents WHERE id = ?').get(candidate.source_document_id) as any
+    if (!sourceDoc) {
+      throw new Error('原资料文件不存在。')
+    }
+
+    const pdfPath = resolveStoragePath(sourceDoc.file_path)
+    const regions = session.regions || []
+
+    const targetAssetsDir = path.join(dataDir, 'import-flow-v2', 'source-documents', sourceDoc.id, 'assets')
+    fs.mkdirSync(targetAssetsDir, { recursive: true })
+
+    const tempJsonFile = path.join(targetAssetsDir, `manual_crop_input_${sessionId}.json`)
+    fs.writeFileSync(tempJsonFile, JSON.stringify(regions.map(r => ({
+      id: r.id,
+      kind: r.kind,
+      question_key: r.questionKey,
+      question_label: r.questionLabel,
+      segments: r.segments
+    }))))
+
+    const scriptPath = path.join(pythonRoot, 'scripts', 'crop_manual_annotation.py')
+    const croppedResults = new Map<string, any>()
+    try {
+      const outputStr = childProcess.execFileSync(pythonCommand(), [
+        scriptPath,
+        '--pdf', pdfPath,
+        '--regions-json-file', tempJsonFile,
+        '--output-dir', targetAssetsDir,
+        '--dpi', '180'
+      ], {
+        env: pythonEnv(),
+        encoding: 'utf8',
+        timeout: 60000
+      })
+      const resultObj = JSON.parse(outputStr)
+      if (resultObj.error) {
+        throw new Error(resultObj.error)
+      }
+      for (const item of resultObj.results || []) {
+        if (item.error) {
+          throw new Error(`剪裁失败：${item.error}`)
+        }
+        croppedResults.set(item.regionId, item)
+      }
+    } catch (err) {
+      console.error(`Crop failed for candidate session ${sessionId}:`, err)
+      throw new Error(`物理图片裁切失败，请检查标注区域范围。原因为：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      try {
+        fs.unlinkSync(tempJsonFile)
+      } catch {}
+    }
+
+    const currentFigures = parseJson<CandidateFigure[]>(candidate.figures_json || '[]', [])
+    const newFigures: CandidateFigure[] = []
+
+    let stemMarkdown = payload?.stemMarkdown !== undefined ? payload.stemMarkdown : candidate.stem_markdown
+    const analysisMarkdown = payload?.analysisMarkdown !== undefined ? payload.analysisMarkdown : candidate.analysis_markdown
+
+    const figureRegions = regions.filter(r => r.kind === 'shared_answer_key')
+    for (const r of figureRegions) {
+      const crop = croppedResults.get(r.id)
+      if (!crop) continue
+
+      const firstSeg = r.segments[0]
+      const pageNo = firstSeg ? firstSeg.page : 1
+      const bbox: [number, number, number, number] = [
+        parseFloat(firstSeg.x.toFixed(6)),
+        parseFloat(firstSeg.y.toFixed(6)),
+        parseFloat((firstSeg.x + firstSeg.width).toFixed(6)),
+        parseFloat((firstSeg.y + firstSeg.height).toFixed(6))
+      ]
+
+      const relativePath = assetPathFor(crop.imagePath)
+      const oldFigureIds = r.questionKeys || []
+      const oldFigureId = oldFigureIds[0]
+
+      if (oldFigureId && currentFigures.some(f => f.id === oldFigureId)) {
+        const updatedFig = currentFigures.find(f => f.id === oldFigureId)!
+        updatedFig.pageNo = pageNo
+        updatedFig.bbox = bbox
+        updatedFig.path = relativePath
+        newFigures.push(updatedFig)
+      } else {
+        const newFigId = `fig_manual_${createId('fig')}`
+        const newFig: CandidateFigure = {
+          id: newFigId,
+          usage: (r.note as any) || 'stem',
+          path: relativePath,
+          pageNo,
+          bbox
+        }
+        newFigures.push(newFig)
+        stemMarkdown = stemMarkdown.trim() + `\n<!-- DOC2X_FIGURE:${newFigId} -->\n`
+      }
+    }
+
+    for (const fig of currentFigures) {
+      const isOverwritten = figureRegions.some(r => {
+        const oldIds = r.questionKeys || []
+        return oldIds.includes(fig.id)
+      })
+      if (!isOverwritten) {
+        newFigures.push(fig)
+      }
+    }
+
+    const newSourceRefs: CandidateSourceRef[] = []
+
+    const questionRegions = regions.filter(r => r.kind === 'question')
+    for (const r of questionRegions) {
+      for (const seg of r.segments) {
+        newSourceRefs.push({
+          pageNo: seg.page,
+          blockIds: [],
+          kind: 'stem',
+          bbox: [
+            parseFloat(seg.x.toFixed(6)),
+            parseFloat(seg.y.toFixed(6)),
+            parseFloat((seg.x + seg.width).toFixed(6)),
+            parseFloat((seg.y + seg.height).toFixed(6))
+          ]
+        })
+      }
+    }
+
+    const solutionRegions = regions.filter(r => r.kind === 'solution')
+    for (const r of solutionRegions) {
+      for (const seg of r.segments) {
+        newSourceRefs.push({
+          pageNo: seg.page,
+          blockIds: [],
+          kind: 'analysis',
+          bbox: [
+            parseFloat(seg.x.toFixed(6)),
+            parseFloat(seg.y.toFixed(6)),
+            parseFloat((seg.x + seg.width).toFixed(6)),
+            parseFloat((seg.y + seg.height).toFixed(6))
+          ]
+        })
+      }
+    }
+
+    // Type casting for QuestionCandidate
+    const candidateObj = {
+      id: candidate.id,
+      sourceDocumentId: candidate.source_document_id,
+      ocrDocumentId: candidate.ocr_document_id || undefined,
+      questionNo: candidate.question_no,
+      stemMarkdown,
+      answerText: candidate.answer_text,
+      analysisMarkdown,
+      figures: newFigures,
+      sourceRefs: newSourceRefs,
+      status: candidate.status,
+      issues: [],
+      createdAt: candidate.created_at,
+      updatedAt: candidate.updated_at
+    } as any
+
+    const siblingRows = db.prepare('SELECT question_no FROM question_candidates WHERE source_document_id = ? AND id != ?').all(candidate.source_document_id, candidate.id) as any[]
+    const duplicateNos = new Set(siblingRows.map(r => r.question_no).filter(Boolean))
+
+    const nextIssues = validateQuestionCandidate(candidateObj, duplicateNos)
+    const nextStatus = statusForIssues(nextIssues)
+
+    db.prepare(`
+      UPDATE question_candidates
+      SET stem_markdown = ?,
+          analysis_markdown = ?,
+          figures_json = ?,
+          source_refs_json = ?,
+          issues_json = ?,
+          status = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).run(
+      stemMarkdown,
+      analysisMarkdown,
+      JSON.stringify(newFigures),
+      JSON.stringify(newSourceRefs),
+      JSON.stringify(nextIssues),
+      nextStatus,
+      nowIso(),
+      candidate.id
+    )
+
+    const now = nowIso()
+    db.prepare(`
+      UPDATE pdf_slicer_annotation_sessions
+      SET status = 'finalized', finalized_at = ?, updated_at = ?
+      WHERE id = ?
+    `).run(now, now, sessionId)
+
+    return
   }
 
   const batchId = session.batchId
@@ -430,7 +658,7 @@ export function finalizeSession(sessionId: string): void {
 
     const scriptPath = path.join(pythonRoot, 'scripts', 'crop_manual_annotation.py')
     try {
-      const outputStr = execFileSync(pythonCommand(), [
+      const outputStr = childProcess.execFileSync(pythonCommand(), [
         scriptPath,
         '--pdf', pdfPath,
         '--regions-json-file', tempJsonFile,

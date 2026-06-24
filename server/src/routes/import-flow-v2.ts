@@ -16,6 +16,8 @@ import {
   startSourceDocumentOcr,
   uploadSourceDocument,
   updateQuestionCandidate,
+  renderSourceDocumentPage,
+  createOrRestoreCandidateManualFixSession,
 } from '../services/import-flow-v2/import-flow-v2.service.js'
 import { getParserConfigForApi, resetParserConfig, saveParserConfig } from '../services/question-parser/parser-config.js'
 
@@ -151,6 +153,28 @@ export function mountImportFlowV2Routes(app: Express) {
   app.post('/api/question-candidates/commit', (req, res) => {
     try {
       res.json(commitQuestionCandidates(req.body || {}))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.get('/api/import-flow-v2/source-documents/:id/pages/:page', (req, res) => {
+    try {
+      const pageNum = parseInt(req.params.page, 10)
+      if (isNaN(pageNum) || pageNum < 1) {
+        res.status(400).json({ error: '无效的页码参数。' })
+        return
+      }
+      const pagePath = renderSourceDocumentPage(decodeURIComponent(String(req.params.id || '')), pageNum)
+      res.sendFile(pagePath)
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/question-candidates/:id/manual-fix-session', (req, res) => {
+    try {
+      res.json(createOrRestoreCandidateManualFixSession(decodeURIComponent(String(req.params.id || ''))))
     } catch (error) {
       sendRouteError(res, error)
     }

@@ -157,4 +157,9 @@ export const importV2Api = {
       method: 'POST',
     })
   },
+  createManualFixSession(candidateId: string) {
+    return api<{ id: string; batchId: string; revision: number; status: string; sourceProfileJson: string; regions: any[] }>('/api/question-candidates/' + encodeURIComponent(candidateId) + '/manual-fix-session', {
+      method: 'POST',
+    })
+  },
 }

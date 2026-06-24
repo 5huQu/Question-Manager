@@ -116,7 +116,7 @@ export function mountAnnotationRoutes(app: Express) {
   // POST Finalize annotation and crop/stitch to DB review items
   app.post('/api/tools/pdf-slicer/annotation-sessions/:sessionId/finalize', (req, res) => {
     try {
-      finalizeSession(req.params.sessionId)
+      finalizeSession(req.params.sessionId, req.body)
       res.json({ success: true })
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : String(err) })

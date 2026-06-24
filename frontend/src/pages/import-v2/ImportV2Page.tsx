@@ -294,6 +294,19 @@ export default function ImportV2Page() {
     }
   }
 
+  async function startManualFix(candidateId: string, mode: 'stem' | 'analysis' | 'figure') {
+    try {
+      setBusy(candidateId)
+      await importV2Api.createManualFixSession(candidateId)
+      const sourceDocId = activeQuestion?.rawItem?.sourceDocumentId || selectedOcr?.sourceDocumentId || ''
+      navigate(`/tools/import/candidates/${encodeURIComponent(candidateId)}/manual-fix?mode=${mode}&sourceDocumentId=${encodeURIComponent(sourceDocId)}`)
+    } catch (err) {
+      window.alert('初始化手动修正失败：' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setBusy('')
+    }
+  }
+
   // 7. 多选/批量确认存入题库
   async function handleBulkConfirm() {
     if (selectedIds.size === 0) return
@@ -729,6 +742,33 @@ export default function ImportV2Page() {
 
                   {/* 核对操作按钮 */}
                   <div className="flex items-center gap-1.5 flex-wrap">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      icon={Layers}
+                      disabled={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) || Boolean(busy)}
+                      onClick={() => startManualFix(activeQuestion.id, 'stem')}
+                    >
+                      修正题目范围
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      icon={Compass}
+                      disabled={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) || Boolean(busy)}
+                      onClick={() => startManualFix(activeQuestion.id, 'analysis')}
+                    >
+                      修正解析范围
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      icon={ImageIcon}
+                      disabled={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) || Boolean(busy)}
+                      onClick={() => startManualFix(activeQuestion.id, 'figure')}
+                    >
+                      补充题图
+                    </Button>
                     <Button
                       size="sm"
                       icon={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) ? CheckCircle2 : busy === activeQuestion.id ? LoaderCircle : CheckCircle2}

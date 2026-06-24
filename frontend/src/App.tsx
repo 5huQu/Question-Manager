@@ -26,6 +26,7 @@ const ExportRecordsPage = lazy(() => import('@/pages/ExportRecordsPage'))
 const SetupPage = lazy(() => import('@/pages/SetupPage').then(module => ({ default: module.SetupPage })))
 const QuestionBasket = lazy(() => import('@/components/QuestionBasket').then(module => ({ default: module.QuestionBasket })))
 const AnnotationWorkbenchPage = lazy(() => import('@/pages/pdf-slicer/AnnotationWorkbenchPage'))
+const CandidateFixWorkbenchPage = lazy(() => import('@/pages/import-v2/CandidateFixWorkbenchPage'))
 
 function NavigateToWorkbench() {
   const navigate = useNavigate()
@@ -135,6 +136,7 @@ export default function App() {
                 <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<RunQuestionsPage />} />
                 <Route path="/tools/pdf-slicer/runs/:runId/pending-bank" element={<PendingBankPage />} />
                 <Route path="/tools/pdf-slicer/batches/:batchId/annotate" element={<AnnotationWorkbenchPage />} />
+                <Route path="/tools/import/candidates/:candidateId/manual-fix" element={<CandidateFixWorkbenchPage />} />
 
               </Routes>
             </Suspense>

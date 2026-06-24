@@ -24,6 +24,8 @@ const expectedRoutes = new Set([
   'GET /api/source-documents/:id/candidates',
   'POST /api/source-documents/:id/ocr',
   'GET /api/source-documents/:id/ocr-status',
+  'GET /api/import-flow-v2/source-documents/:id/pages/:page',
+  'POST /api/question-candidates/:id/manual-fix-session',
   'GET /api/ocr-documents',
   'POST /api/ocr-documents/import-json',
   'GET /api/ocr-documents/:id',
