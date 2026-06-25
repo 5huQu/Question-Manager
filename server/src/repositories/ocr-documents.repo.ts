@@ -50,7 +50,7 @@ export function mapOcrDocument(row: OCRDocumentRow): StoredOCRDocument {
 
 export function createOcrDocument(input: CreateOCRDocumentInput) {
   const createdAt = input.createdAt || nowIso()
-  const id = input.id || createId('ocrdoc', input.sourceDocumentId)
+  const id = input.id || createId('ocrdoc')
   db.prepare(`
     INSERT INTO ocr_documents (
       id, source_document_id, provider, raw_result_path, markdown_path, blocks_json_path, assets_json_path, metadata_json, created_at

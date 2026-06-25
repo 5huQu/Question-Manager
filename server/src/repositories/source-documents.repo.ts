@@ -59,7 +59,7 @@ export function createSourceDocument(input: CreateSourceDocumentInput) {
   const now = nowIso()
   const title = String(input.title ?? input.originalFileName ?? '')
   const originalFileName = String(input.originalFileName ?? '')
-  const id = input.id || createId('srcdoc', title || originalFileName)
+  const id = input.id || createId('docimport')
   db.prepare(`
     INSERT INTO source_documents (
       id, title, original_file_name, file_path, file_type, page_count, provider, status, created_at, updated_at
@@ -182,4 +182,3 @@ export function getSourceDocumentImportStats(sourceDocumentId: string): SourceDo
     allCommitted,
   }
 }
-
