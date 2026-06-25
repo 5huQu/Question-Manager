@@ -25,6 +25,8 @@ export function ensureColumn(table: string, column: string, definition: string) 
  * - pdf_slicer_batches
  * - pdf_slicer_runs
  * - source_documents
+ * - import_jobs
+ * - import_job_documents
  * - ocr_documents
  * - question_candidates
  * - question_bank_items
@@ -195,6 +197,36 @@ export function ensureSchema() {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS import_jobs (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      mode TEXT NOT NULL DEFAULT 'single_document',
+      status TEXT NOT NULL DEFAULT 'draft',
+      province TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      paper_title TEXT NOT NULL DEFAULT '',
+      batch_name TEXT NOT NULL DEFAULT '',
+      stage TEXT NOT NULL DEFAULT '高三',
+      subject TEXT NOT NULL DEFAULT '数学',
+      paper_kind TEXT NOT NULL DEFAULT 'unknown',
+      exam_year INTEGER NOT NULL DEFAULT 0,
+      source_org TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS import_job_documents (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      source_document_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (job_id) REFERENCES import_jobs(id) ON DELETE CASCADE,
+      FOREIGN KEY (source_document_id) REFERENCES source_documents(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS ocr_documents (
       id TEXT PRIMARY KEY,
       source_document_id TEXT NOT NULL,
@@ -308,6 +340,10 @@ export function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_qb_export_records_run ON question_bank_export_records(run_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_source_documents_updated_at ON source_documents(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_source_documents_status ON source_documents(status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_import_jobs_updated_at ON import_jobs(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_import_jobs_status ON import_jobs(status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_import_job_documents_job ON import_job_documents(job_id, sort_order, created_at);
+    CREATE INDEX IF NOT EXISTS idx_import_job_documents_source ON import_job_documents(source_document_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_ocr_documents_source ON ocr_documents(source_document_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_question_candidates_source ON question_candidates(source_document_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_question_candidates_ocr ON question_candidates(ocr_document_id, question_no);

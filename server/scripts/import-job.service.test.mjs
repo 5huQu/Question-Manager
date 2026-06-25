@@ -1,0 +1,211 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'import-job-service-test-'))
+process.env.QUESTION_DATA_DIR = tempRoot
+
+const { closeDatabase } = await import('../dist/index.js')
+const { createSourceDocument } = await import('../dist/repositories/source-documents.repo.js')
+const { createOcrDocument } = await import('../dist/repositories/ocr-documents.repo.js')
+const {
+  createImportJob,
+  addSourceDocumentToImportJob,
+  parseCandidatesForImportJob,
+  parseCandidatesForOcrDocument,
+  commitQuestionCandidate,
+} = await import('../dist/services/import-flow-v2/import-flow-v2.service.js')
+const { assetPathFor } = await import('../dist/utils/paths.js')
+
+function block(markdown, content, id, pageNo = 1, type = 'text', cursorHint = 0) {
+  const markdownStart = markdown.indexOf(content, cursorHint)
+  assert.notEqual(markdownStart, -1, `test block content must exist in markdown: ${content}`)
+  return {
+    id,
+    pageNo,
+    type,
+    content,
+    markdownStart,
+    markdownEnd: markdownStart + content.length,
+    bbox: [20, 20 + markdownStart, 700, 60 + markdownStart],
+  }
+}
+
+function blocks(markdown, entries) {
+  let cursor = 0
+  return entries.map((entry, index) => {
+    const content = Array.isArray(entry) ? entry[0] : entry
+    const id = Array.isArray(entry) ? entry[1] : `b_${index + 1}`
+    const next = block(markdown, content, id, 1, 'text', cursor)
+    cursor = next.markdownEnd
+    return next
+  })
+}
+
+function makeSourceDocument(id, title, metadata = {}) {
+  const sourceDocument = createSourceDocument({
+    id,
+    title,
+    originalFileName: `${id}.json`,
+    filePath: `import-flow-v2/source-documents/${id}/original.json`,
+    fileType: 'json',
+    pageCount: 1,
+    provider: 'glm',
+    status: 'ocr_succeeded',
+    metadata,
+  })
+  assert.ok(sourceDocument)
+  return sourceDocument
+}
+
+function makeOcrDocument(id, sourceDocumentId, markdown, pageBlocks, assets = []) {
+  const dir = path.join(tempRoot, 'data', 'import-flow-v2', 'source-documents', sourceDocumentId, id)
+  fs.mkdirSync(dir, { recursive: true })
+  const markdownPath = path.join(dir, 'markdown.md')
+  const pagesPath = path.join(dir, 'pages.json')
+  const assetsPath = path.join(dir, 'assets.json')
+  const rawPath = path.join(dir, 'raw.json')
+  fs.writeFileSync(markdownPath, markdown, 'utf8')
+  fs.writeFileSync(pagesPath, JSON.stringify([{ pageNo: 1, width: 800, height: 1100, blocks: pageBlocks }]), 'utf8')
+  fs.writeFileSync(assetsPath, JSON.stringify(assets), 'utf8')
+  fs.writeFileSync(rawPath, JSON.stringify({ id, sourceDocumentId, markdown }), 'utf8')
+  const ocrDocument = createOcrDocument({
+    id,
+    sourceDocumentId,
+    provider: 'glm',
+    rawResultPath: assetPathFor(rawPath),
+    markdownPath: assetPathFor(markdownPath),
+    blocksJsonPath: assetPathFor(pagesPath),
+    assetsJsonPath: assetPathFor(assetsPath),
+  })
+  assert.ok(ocrDocument)
+  return ocrDocument
+}
+
+try {
+  console.log('1. Creating an import job and parsing a full document...')
+  const fullSource = makeSourceDocument('src_job_full', 'Full Source')
+  const fullMarkdown = [
+    '1. 已知 $x=1$，求 $x+1$。',
+    '答案：2',
+    '解析：因为 $1+1=2$。',
+  ].join('\n')
+  makeOcrDocument('ocr_job_full', fullSource.id, fullMarkdown, blocks(fullMarkdown, [
+    ['1. 已知 $x=1$，求 $x+1$。', 'b_full_stem'],
+    ['答案：2', 'b_full_answer'],
+    ['解析：因为 $1+1=2$。', 'b_full_analysis'],
+  ]))
+
+  const singleJob = createImportJob({
+    id: 'job_single_document',
+    title: 'Single Document Job',
+    mode: 'single_document',
+    paperTitle: 'Import Job Single Paper',
+    examYear: 2026,
+  })
+  assert.equal(singleJob.importJob.mode, 'single_document')
+  addSourceDocumentToImportJob(singleJob.importJob.id, { sourceDocumentId: fullSource.id, role: 'full' })
+  const singleResult = parseCandidatesForImportJob(singleJob.importJob.id)
+  assert.equal(singleResult.items.length, 1)
+  assert.equal(singleResult.items[0].questionNo, '1')
+  assert.equal(singleResult.items[0].answerText, '2')
+  assert.match(singleResult.items[0].analysisMarkdown, /1\+1=2/)
+  assert.equal(singleResult.items[0].paperTitle, 'Import Job Single Paper')
+
+  console.log('2. Parsing separated questions and solutions into the same candidates...')
+  const questionsSource = makeSourceDocument('src_job_questions', 'Questions Source', { paperTitle: 'Source Paper Should Be Overridden' })
+  const solutionsSource = makeSourceDocument('src_job_solutions', 'Solutions Source')
+  const questionsMarkdown = [
+    '1. 已知 $x=1$，求 $x+1$。',
+    '',
+    '2. 已知 $a=2$，求 $2a$。',
+  ].join('\n')
+  makeOcrDocument('ocr_job_questions', questionsSource.id, questionsMarkdown, blocks(questionsMarkdown, [
+    ['1. 已知 $x=1$，求 $x+1$。', 'b_q1_stem'],
+    ['2. 已知 $a=2$，求 $2a$。', 'b_q2_stem'],
+  ]))
+
+  const solutionsMarkdown = [
+    '1. 答案：2',
+    '解析：因为 $1+1=2$。',
+    '![解析图](analysis-1.png)',
+    '',
+    '2. 答案：4',
+    '解析：因为 $2a=4$。',
+    '',
+    '3. 答案：6',
+    '解析：这是多余解析。',
+  ].join('\n')
+  makeOcrDocument('ocr_job_solutions', solutionsSource.id, solutionsMarkdown, blocks(solutionsMarkdown, [
+    ['1. 答案：2', 'b_s1_answer'],
+    ['解析：因为 $1+1=2$。', 'b_s1_analysis'],
+    ['2. 答案：4', 'b_s2_answer'],
+    ['解析：因为 $2a=4$。', 'b_s2_analysis'],
+    ['3. 答案：6', 'b_s3_answer'],
+    ['解析：这是多余解析。', 'b_s3_analysis'],
+  ]))
+
+  const separatedJob = createImportJob({
+    id: 'job_separated_documents',
+    title: 'Separated Document Job',
+    mode: 'separated_documents',
+    paperTitle: 'Import Job Separated Paper',
+    batchName: 'Separated Batch',
+    examYear: 2026,
+  })
+  addSourceDocumentToImportJob(separatedJob.importJob.id, { sourceDocumentId: questionsSource.id, role: 'questions' })
+  addSourceDocumentToImportJob(separatedJob.importJob.id, { sourceDocumentId: solutionsSource.id, role: 'solutions' })
+  const separatedResult = parseCandidatesForImportJob(separatedJob.importJob.id)
+  assert.equal(separatedResult.items.length, 2)
+  const q1 = separatedResult.items.find((item) => item.questionNo === '1')
+  const q2 = separatedResult.items.find((item) => item.questionNo === '2')
+  assert.ok(q1)
+  assert.ok(q2)
+  assert.equal(q1.answerText, '2')
+  assert.match(q1.analysisMarkdown, /1\+1=2/)
+  assert.equal(q1.figures.some((figure) => figure.usage === 'analysis' && figure.path === 'analysis-1.png'), true)
+  assert.equal(q1.sourceRefs.some((ref) => ref.kind === 'answer' && ref.blockIds.includes('b_s1_answer')), true)
+  assert.equal(q1.sourceRefs.some((ref) => ref.kind === 'analysis' && ref.blockIds.includes('b_s1_analysis')), true)
+  assert.equal(q1.issues.some((issue) => issue.code === 'unmatched_solution'), true)
+  assert.equal(q2.answerText, '4')
+  assert.match(q2.analysisMarkdown, /2a=4/)
+  assert.equal(q2.status, 'ready')
+  assert.equal(q2.paperTitle, 'Import Job Separated Paper')
+  assert.equal(q2.batchName, 'Separated Batch')
+
+  console.log('3. Committing a merged candidate to the bank...')
+  const commitResult = commitQuestionCandidate(q2.id)
+  assert.equal(commitResult.candidate.status, 'committed')
+  assert.equal(commitResult.item.answerText, '4')
+  assert.equal(commitResult.item.analysisMarkdown.includes('2a=4'), true)
+  assert.equal(commitResult.item.sourceRunId, `ifv2-job:${separatedJob.importJob.id}`)
+  assert.equal(commitResult.item.importSourceId, `ifv2-job:${separatedJob.importJob.id}`)
+
+  console.log('4. Verifying direct OCRDocument parsing is unchanged...')
+  const directSource = makeSourceDocument('src_direct_parse', 'Direct Parse Source')
+  const directMarkdown = [
+    '1. 已知 $b=4$，求 $2b$。',
+    '答案：8',
+    '解析：直接计算。',
+  ].join('\n')
+  const directOcr = makeOcrDocument('ocr_direct_parse', directSource.id, directMarkdown, blocks(directMarkdown, [
+    ['1. 已知 $b=4$，求 $2b$。', 'b_direct_stem'],
+    ['答案：8', 'b_direct_answer'],
+    ['解析：直接计算。', 'b_direct_analysis'],
+  ]))
+  const directResult = parseCandidatesForOcrDocument(directOcr.id)
+  assert.equal(directResult.items.length, 1)
+  assert.equal(directResult.items[0].answerText, '8')
+  const directCommit = commitQuestionCandidate(directResult.items[0].id)
+  assert.equal(directCommit.item.sourceRunId, `ifv2:${directSource.id}`)
+  assert.equal(directCommit.item.importSourceId, directSource.id)
+
+  console.log('import job service ok')
+} catch (error) {
+  console.error('Test failed:', error)
+  process.exit(1)
+} finally {
+  closeDatabase()
+  fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+}
