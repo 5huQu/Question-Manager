@@ -25,16 +25,16 @@ function InlineFigure({ figure, index }: { figure: QuestionFigure; index: number
   const [error, setError] = useState(false)
   return (
     <>
-      <figure className="my-3 max-w-xl overflow-hidden rounded-lg border bg-white">
-        <button className="block w-full cursor-zoom-in bg-white text-left" onClick={() => !error && setPreview(true)} type="button">
+      <figure className="my-3 w-full max-w-[26rem] overflow-hidden rounded-lg border bg-white">
+        <button className="flex h-48 w-full cursor-zoom-in justify-center bg-white p-2 text-left" onClick={() => !error && setPreview(true)} type="button">
           {error ? (
-            <div className="flex h-32 items-center justify-center bg-zinc-50 text-xs text-zinc-400">
+            <div className="flex h-32 w-full items-center justify-center bg-zinc-50 text-xs text-zinc-400">
               图片加载失败
             </div>
           ) : (
             <img
               alt={figureAlt(figure, index)}
-              className="block h-auto max-h-[28rem] w-auto max-w-full bg-white"
+              className="block h-full w-full object-contain bg-white"
               src={assetUrl(String(figure.path || ''))}
               onError={() => setError(true)}
             />
@@ -181,9 +181,9 @@ export function FigureGallery({ figures, className = '', compact = false }: { fi
     <>
       <div className={`grid gap-3 ${compact ? 'grid-cols-1' : 'sm:grid-cols-2'} ${className}`}>
         {visible.map((figure, index) => (
-          <figure key={figure.id || `${figure.path}-${index}`} className={`overflow-hidden rounded-lg border bg-white ${compact ? 'max-w-40' : 'max-w-64'}`}>
-            <button className="block w-full cursor-zoom-in bg-white text-left" onClick={() => setPreview(figure)} type="button">
-              <img alt={figureAlt(figure, index)} className="block h-auto w-full bg-white" src={assetUrl(String(figure.path || ''))} />
+          <figure key={figure.id || `${figure.path}-${index}`} className={`overflow-hidden rounded-lg border bg-white ${compact ? 'max-w-40' : 'max-w-[26rem]'}`}>
+            <button className={`flex w-full cursor-zoom-in justify-center bg-white p-2 text-left ${compact ? 'h-32' : 'h-44'}`} onClick={() => setPreview(figure)} type="button">
+              <img alt={figureAlt(figure, index)} className="block h-full w-full object-contain bg-white" src={assetUrl(String(figure.path || ''))} />
             </button>
             <figcaption className="border-t px-2.5 py-1.5 text-xs text-zinc-500">{figureCaption(figure, index)}</figcaption>
           </figure>

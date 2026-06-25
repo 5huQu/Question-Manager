@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { BadgeCheck, LoaderCircle, RefreshCcw, Tags } from 'lucide-react'
+import { collectionsApi } from '@/api/collections'
 import { learningTagsApi } from '@/api/learningTags'
 import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { questionBankApi } from '@/api/questionBank'
 import { RunExportDialog } from '@/components/pdf-slicer/RunExportDialog'
+import { getActiveCollectionId, basketUpdatedEvent } from '@/components/QuestionBasket'
 import { WorkbenchQuestionCard } from '@/components/questions/WorkbenchQuestionCard'
 import { Button, Empty, Input, SelectFilter } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
@@ -30,6 +32,21 @@ export function RunQuestionsPage() {
     [decodedRunId]
   )
   const tagLibraries = useAsync<TagLibraries>(() => learningTagsApi.getQuestionBankTagLibraries(), [])
+
+  const activeBasketId = getActiveCollectionId()
+  const basket = useAsync(() => collectionsApi.getCollection(activeBasketId), [activeBasketId])
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      basket.reload()
+    }
+    window.addEventListener(basketUpdatedEvent, handleUpdate)
+    return () => window.removeEventListener(basketUpdatedEvent, handleUpdate)
+  }, [basket.reload])
+
+  const basketQuestionIds = useMemo(() => {
+    return new Set((basket.data?.questions ?? []).map((entry) => entry.item.id))
+  }, [basket.data?.questions])
 
   useEffect(() => {
     if (data?.items) setLocalItems(data.items)
@@ -98,7 +115,9 @@ export function RunQuestionsPage() {
       && (!solutionMethod || (item.solutionMethods ?? []).includes(solutionMethod))
   })
   const hasActiveFilters = Boolean(query.trim() || stage || questionType || difficulty || knowledgePoint || solutionMethod)
-  const allQuestionsBanked = items.length > 0 && items.every((item) => item.bankStatus === 'banked')
+  const isImportV2Run = decodedRunId.startsWith('ifv2:')
+  const displayRunId = isImportV2Run ? decodedRunId.slice('ifv2:'.length) : run.runId
+  const allQuestionsBanked = isImportV2Run || (items.length > 0 && items.every((item) => item.bankStatus === 'banked'))
 
   return (
     <section className="mock-page-root min-h-[calc(100vh-6rem)] space-y-6 overflow-y-auto bg-zinc-50/30 p-6 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
@@ -108,7 +127,7 @@ export function RunQuestionsPage() {
           <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             {run.paperTitle || run.pdfName}
           </h1>
-          <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">批次 ID: {run.runId}</p>
+          <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">批次 ID: {displayRunId}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -152,6 +171,7 @@ export function RunQuestionsPage() {
             onDelete={deleteQuestion}
             onReload={reload}
             onQuestionSaved={replaceQuestionInRun}
+            isInBasket={basketQuestionIds.has(item.id)}
           />
         ))}
         {!items.length ? (
