@@ -170,3 +170,7 @@ export function updateQuestionCandidate(id: string, input: UpdateQuestionCandida
 export function deleteQuestionCandidatesForOcrDocument(ocrDocumentId: string) {
   db.prepare('DELETE FROM question_candidates WHERE ocr_document_id = ?').run(ocrDocumentId)
 }
+
+export function deleteQuestionCandidate(id: string) {
+  db.prepare('DELETE FROM question_candidates WHERE id = ?').run(id)
+}

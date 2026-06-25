@@ -78,7 +78,7 @@ export type ImportV2Candidate = {
   difficultyLabel?: string
   knowledgePoints: string[]
   solutionMethods: string[]
-  figures: Array<{ id: string; usage: string; path: string; pageNo?: number }>
+  figures: Array<{ id: string; usage: string; path: string; pageNo?: number; blockId?: string; sourceBlockId?: string; bbox?: [number, number, number, number]; inlineMarker?: string; optionLabel?: string }>
   sourceRefs: Array<{ pageNo: number; blockIds: string[]; kind: string }>
   status: 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked' | 'committed'
   committedQuestionId?: string
@@ -173,6 +173,16 @@ export const importV2Api = {
   createManualFixSession(candidateId: string) {
     return api<{ id: string; batchId: string; revision: number; status: string; sourceProfileJson: string; regions: any[] }>('/api/question-candidates/' + encodeURIComponent(candidateId) + '/manual-fix-session', {
       method: 'POST',
+    })
+  },
+  deleteSourceDocument(sourceDocumentId: string) {
+    return api<{ success: boolean }>('/api/source-documents/' + encodeURIComponent(sourceDocumentId), {
+      method: 'DELETE',
+    })
+  },
+  deleteQuestionCandidate(candidateId: string) {
+    return api<{ success: boolean }>('/api/question-candidates/' + encodeURIComponent(candidateId), {
+      method: 'DELETE',
     })
   },
 }

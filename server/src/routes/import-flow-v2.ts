@@ -18,10 +18,28 @@ import {
   updateQuestionCandidate,
   renderSourceDocumentPage,
   createOrRestoreCandidateManualFixSession,
+  deleteSourceDocument,
+  deleteQuestionCandidate,
 } from '../services/import-flow-v2/import-flow-v2.service.js'
 import { getParserConfigForApi, resetParserConfig, saveParserConfig } from '../services/question-parser/parser-config.js'
 
 export function mountImportFlowV2Routes(app: Express) {
+  app.delete('/api/source-documents/:id', (req, res) => {
+    try {
+      res.json(deleteSourceDocument(decodeURIComponent(String(req.params.id || ''))))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.delete('/api/question-candidates/:id', (req, res) => {
+    try {
+      res.json(deleteQuestionCandidate(decodeURIComponent(String(req.params.id || ''))))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
   app.get('/api/import-flow-v2/parser-config', (_req, res) => {
     try {
       res.json({ config: getParserConfigForApi() })
