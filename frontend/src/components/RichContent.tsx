@@ -98,7 +98,7 @@ export const RichContent = memo(function RichContent({
   className?: string
   prefix?: string
 }) {
-  const visibleFigures = figures.filter((figure) => figure.path && String(figure.usage || 'stem') === 'stem')
+  const visibleFigures = figures.filter((figure) => figure.path && !String(figure.path).trim().startsWith('<') && String(figure.usage || 'stem') === 'stem')
   return (
     <div className={`rich-content min-w-0 max-w-none text-zinc-950 dark:text-zinc-50 ${className}`}>
       {prefix ? <p className="mb-2 text-xs font-semibold text-zinc-500">{prefix}</p> : null}

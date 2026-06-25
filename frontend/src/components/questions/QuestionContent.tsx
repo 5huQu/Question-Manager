@@ -127,7 +127,7 @@ export function QuestionContent({ blocks, figures = [], className = '', prefix }
 export function QuestionMarkdownContent({ content, figures = [], className = '', prefix }: { content: string; figures?: QuestionFigure[]; className?: string; prefix?: string }) {
   const stemFigures = figuresByUsage(figures, 'stem')
   const optionFigures = figuresByUsage(figures, 'options')
-  const visibleFigures = stemFigures.filter((figure) => figure.path)
+  const visibleFigures = stemFigures.filter((figure) => figure.path && !String(figure.path).trim().startsWith('<'))
   const parsedChoice = parseChoiceQuestion(content)
   const stemContent = parsedChoice?.stem || content
   const inlineIds = inlineFigureIds(stemContent)
@@ -175,7 +175,7 @@ export function ChoiceOptions({ options, figures = [] }: { options: ChoiceOption
 
 export function FigureGallery({ figures, className = '', compact = false }: { figures: QuestionFigure[]; className?: string; compact?: boolean }) {
   const [preview, setPreview] = useState<QuestionFigure | null>(null)
-  const visible = figures.filter((figure) => figure.path)
+  const visible = figures.filter((figure) => figure.path && !String(figure.path).trim().startsWith('<'))
   if (!visible.length) return null
   return (
     <>
