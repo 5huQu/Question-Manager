@@ -38,8 +38,8 @@ $X_1$ & 0 & 1 & 2 & 3 \
 P & \frac{1}{27} & \frac{2}{9} & \frac{4}{9} & \frac{8}{27} \
 \end{array}`,
 })
-assert.equal(rawArrayResult.ok, true)
-assert.deepEqual(rawArrayResult.errors, [])
+assert.equal(rawArrayResult.ok, false)
+assert.equal(rawArrayResult.errors[0].code, 'raw_latex_outside_math')
 
 const brokenInlineArrayResult = validate({
   problem_text: '',
@@ -52,8 +52,8 @@ P &$\dfrac{1}{27}$&$\dfrac{2}{9}$&$\dfrac{4}{9}$&$\dfrac{8}{27} \\$
 $\end{array}$
 所以 $E(X)=2$．`,
 })
-assert.equal(brokenInlineArrayResult.ok, true)
-assert.deepEqual(brokenInlineArrayResult.errors, [])
+assert.equal(brokenInlineArrayResult.ok, false)
+assert.ok(['math_delimiter_unclosed', 'raw_latex_outside_math', 'katex_parse_error'].includes(brokenInlineArrayResult.errors[0].code))
 
 const corruptedPayload = {
   ...riskyButValidPayload,
@@ -125,24 +125,24 @@ const bareBecauseBeforeCasesResult = validate({
 $$
 ，`,
 })
-assert.equal(bareBecauseBeforeCasesResult.ok, true)
-assert.deepEqual(bareBecauseBeforeCasesResult.errors, [])
+assert.equal(bareBecauseBeforeCasesResult.ok, false)
+assert.equal(bareBecauseBeforeCasesResult.errors[0].code, 'raw_latex_outside_math')
 
 const adjacentLogicCommandResult = validate({
   problem_text: '',
   answer: '',
   analysis: String.raw`$\because $\therefore x>0`,
 })
-assert.equal(adjacentLogicCommandResult.ok, true)
-assert.deepEqual(adjacentLogicCommandResult.errors, [])
+assert.equal(adjacentLogicCommandResult.ok, false)
+assert.equal(adjacentLogicCommandResult.errors[0].code, 'raw_latex_outside_math')
 
 const adjacentThereforeBecauseResult = validate({
   problem_text: '',
   answer: '',
   analysis: String.raw`$\therefore $\because x>0`,
 })
-assert.equal(adjacentThereforeBecauseResult.ok, true)
-assert.deepEqual(adjacentThereforeBecauseResult.errors, [])
+assert.equal(adjacentThereforeBecauseResult.ok, false)
+assert.equal(adjacentThereforeBecauseResult.errors[0].code, 'raw_latex_outside_math')
 
 const unclosedResult = validate({
   problem_text: '正常 $A$。',

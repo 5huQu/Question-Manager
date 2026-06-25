@@ -6,27 +6,7 @@ import remarkRehype from 'remark-rehype'
 import rehypeKatex from 'rehype-katex'
 
 function normalizeMarkdownForRender(value) {
-  return normalizeRawLatexOutsideMath(normalizeLatexArrays(normalizeMarkdownTables(normalizeNestedInlineMath(normalizeMathDelimiters(String(value || ''))))))
-}
-
-function normalizeAdjacentLogicMath(value) {
-  return value.replace(/\$(\\(?:because|therefore))\s*\$\s*(\\(?:because|therefore))\b/g, (_, left, right) => {
-    return `$${left} ${right}$`
-  })
-}
-
-function normalizeMathDelimiters(value) {
-  return value
-    .replace(/\r\n?/g, '\n')
-    .replace(/\$\$\s*\\begin\{cases\}([\s\S]*?)\\end\{cases\}\s*\$\$/g, (_, body) => `$$\n\\begin{cases}${body}\\end{cases}\n$$`)
-    .replace(/([，。；：,.]\s*(?:则|即|于是|所以|故|可得|有)\s*)\$\$[ \t]*([^\n$]+?)[ \t]*\$\$/g, (_, prefix, body) => `${prefix}$${body}$`)
-    .replace(/([^\n])[\t ]*\$\$\n/g, (_, prefix) => `${prefix}\n\n$$\n`)
-    .replace(/\n\$\$[\t ]+([，。；：,.])/g, (_, mark) => `\n$$\n${mark}`)
-    .replace(/\n\$\$([，。；：,.])([^\n])/g, (_, mark, next) => `\n$$\n${mark}\n\n${next}`)
-    .replace(/\\\(/g, '$')
-    .replace(/\\\)/g, '$')
-    .replace(/\\\[/g, '$$')
-    .replace(/\\\]/g, '$$')
+  return normalizeMarkdownTables(String(value || ''))
 }
 
 function normalizeMarkdownTables(value) {
@@ -59,19 +39,6 @@ function normalizeMarkdownTables(value) {
   return output.join('\n')
 }
 
-function normalizeNestedInlineMath(value) {
-  let next = normalizeAdjacentLogicMath(value)
-  for (let index = 0; index < 4; index += 1) {
-    const previous = next
-    next = next.replace(
-      /\$([^$\n]*\\(?:cup|cap|to|rightarrow|leftarrow|leftrightarrow|Rightarrow|Leftarrow|cdot|times|leq|geq|neq|in|notin|subset|supset|subseteq|supseteq)\s*)\$([A-Za-z0-9_{}\\^]+)\$/g,
-      (_, left, right) => `$${left}${right}$`,
-    )
-    if (next === previous) break
-  }
-  return next
-}
-
 function isMarkdownTableRow(line) {
   return /^\s*\|.*\|\s*$/.test(line) && splitTableRow(line).length >= 2
 }
@@ -92,128 +59,6 @@ function normalizeTableRow(line, width) {
 
 function normalizeTableSeparator(width) {
   return `| ${Array.from({ length: width }, () => '---').join(' | ')} |`
-}
-
-function normalizeLatexArrays(value) {
-  const normalizedBrokenInlineArrays = value.replace(/\$\\begin\{array\}\{([^{}]*)\}\$([\s\S]*?)\$\\end\{array\}\$/g, (_, columns, body) => {
-    const rows = normalizeLatexArrayBody(body)
-    return `\n\n$$\n\\begin{array}{${columns}}\n${rows}\n\\end{array}\n$$\n\n`
-  })
-  return normalizedBrokenInlineArrays.replace(/\\begin\{array\}\{([^{}]*)\}([\s\S]*?)\\end\{array\}/g, (match, columns, body, offset) => {
-    const previous = normalizedBrokenInlineArrays[offset - 1]
-    const next = normalizedBrokenInlineArrays[offset + match.length]
-    if (previous === '$' || next === '$') return match
-    const rows = normalizeLatexArrayBody(body)
-    const array = `\\begin{array}{${columns}}\n${rows}\n\\end{array}`
-    return isInsideMathAt(normalizedBrokenInlineArrays, offset) ? array : `\n\n$$\n${array}\n$$\n\n`
-  })
-}
-
-function normalizeLatexArrayBody(body) {
-  return body
-    .replace(/\r\n?/g, '\n')
-    .split('\n')
-    .map((line) => normalizeLatexArrayLine(line))
-    .filter(Boolean)
-    .join('\n')
-}
-
-function normalizeLatexArrayLine(line) {
-  const trimmed = line.trim().replace(/\$([^$\n]+)\$/g, '$1')
-  if (!trimmed) return ''
-  if (/^\\hline\b/.test(trimmed)) return '\\hline'
-  if (/\\\\\s*$/.test(trimmed)) return trimmed
-  if (/\\\s*$/.test(trimmed)) return trimmed.replace(/\\\s*$/, '\\\\')
-  return trimmed
-}
-
-function isInsideMathAt(value, offset) {
-  let inlineOpen = false
-  let displayOpen = false
-  for (let index = 0; index < offset; index += 1) {
-    if (value[index] !== '$' || value[index - 1] === '\\') continue
-    if (value[index + 1] === '$') {
-      displayOpen = !displayOpen
-      index += 1
-    } else if (!displayOpen) {
-      inlineOpen = !inlineOpen
-    }
-  }
-  return inlineOpen || displayOpen
-}
-
-function normalizeRawLatexOutsideMath(value) {
-  const parts = splitMathSegments(value)
-  return parts.map((part) => {
-    if (part.math) return part.text
-    return part.text
-      .split('\n')
-      .map((line) => wrapRawLatexLine(line))
-      .join('\n')
-  }).join('')
-}
-
-function splitMathSegments(value) {
-  const pattern = /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/g
-  const parts = []
-  let cursor = 0
-  for (const match of value.matchAll(pattern)) {
-    if (match.index === undefined) continue
-    if (match.index > cursor) parts.push({ text: value.slice(cursor, match.index), math: false })
-    parts.push({ text: match[0], math: true })
-    cursor = match.index + match[0].length
-  }
-  if (cursor < value.length) parts.push({ text: value.slice(cursor), math: false })
-  return parts
-}
-
-function wrapRawLatexLine(line) {
-  if (!hasRawLatex(line) || isMarkdownTableRow(line)) return line
-  let next = line
-  next = replaceRawLatexOutsideMath(next, /(^|[^\w\\$])(\\(?:because|therefore))(?=$|[^\w])/g)
-  next = replaceRawLatexOutsideMath(next, /(^|[^\w\\$])([([{（][-+A-Za-z0-9_{}\\^*/=<>,.\s]+[)\]}）])(?=$|[^\w\\])/g)
-  next = replaceRawLatexOutsideMath(next, /(^|[^\w\\$])([A-Za-z][A-Za-z0-9_{}\\^]*(?:\([^，。；：,.;\n（）]*\))?(?:\s*(?:=|<|>|\\leq|\\geq|\\neq)\s*[-+A-Za-z0-9_{}\\^*/().]+)+)/g)
-  next = replaceRawLatexOutsideMath(next, /(^|[^\w\\$])(\d+(?:\.\d+)?(?:\s*(?:\\times|\\cdot|[+\-*/])\s*(?:\\[a-zA-Z]+(?:\{[^{}]*\})+|[A-Za-z0-9]+(?:\.\d+)?|\{[^{}]*\}))*\s*(?:=|<|>|\\leq|\\geq|\\neq)\s*[-+A-Za-z0-9_{}\\^*/().]+(?:\s*(?:=|<|>|\\leq|\\geq|\\neq)\s*[-+A-Za-z0-9_{}\\^*/().]+)*)/g)
-  next = replaceRawLatexOutsideMath(next, /(^|[^\w\\$])((?:\\[a-zA-Z]+(?:\{[^{}]*\})*|[A-Za-z](?:\([^，。；：,.;\n（）]*\))?)(?:\s*(?:=|<|>|\\leq|\\geq|\\neq)\s*[-+A-Za-z0-9_{}\\^*/().]+)+)/g)
-  return next
-}
-
-function replaceRawLatexOutsideMath(value, pattern) {
-  return splitMathSegments(value).map((part) => {
-    if (part.math) return part.text
-    return part.text.replace(pattern, wrapRawLatexMatch)
-  }).join('')
-}
-
-function wrapRawLatexMatch(match, prefix, body) {
-  const text = body.trim()
-  if (!isSafeAutoMath(text)) return match
-  return `${prefix}$${text}$`
-}
-
-function isSafeAutoMath(text) {
-  if (!text || /^\$.*\$$/.test(text) || /_{2,}/.test(text) || !hasBalancedBraces(text)) return false
-  if (/[\u4e00-\u9fff]/.test(text)) return false
-  if (/\\frac/.test(text) && !/^([([{（]|\d|\\(?:overline|hat|bar)\b)/.test(text)) return false
-  return hasRawLatex(text) || /[A-Za-z]\([^)]*\)\s*(?:=|<|>|\\leq|\\geq|\\neq)/.test(text) || /[A-Za-z][A-Za-z0-9_{}\\^]*\s*(?:=|<|>|\\leq|\\geq|\\neq)/.test(text)
-}
-
-function hasRawLatex(value) {
-  return /\\[a-zA-Z]+|[_^]\s*\{?[\w\\]+|\\frac|\\sqrt|\\sum|\\int|\\lim|\\cdot|\\times|\\leq|\\geq|\\infty|\\begin/.test(value)
-}
-
-function hasVisibleRawLatexCommand(value) {
-  return /\\(?:frac|dfrac|sqrt|begin|end|triangle|perp|parallel|neq|geq|leq|cdot|times|binom|sum|int|lim|infty|mathbb|vec|overrightarrow|cup|cap|le|ge|because|therefore)\b/.test(value)
-}
-
-function hasBalancedBraces(value) {
-  let depth = 0
-  for (const char of value) {
-    if (char === '{') depth += 1
-    if (char === '}') depth -= 1
-    if (depth < 0) return false
-  }
-  return depth === 0
 }
 
 function isEscaped(value, index) {
@@ -466,7 +311,7 @@ function validateQuestionPayload(payload) {
   const errors = []
   for (const field of ['problem_text', 'answer', 'analysis']) {
     const rawText = String(payload[field] || '')
-    const delimiterErrors = validateField(field, normalizeNestedInlineMath(normalizeMathDelimiters(rawText)))
+    const delimiterErrors = validateField(field, rawText)
       .filter((error) => error.code === 'math_delimiter_unclosed')
     if (delimiterErrors.length) {
       errors.push(...delimiterErrors)
@@ -474,7 +319,6 @@ function validateQuestionPayload(payload) {
     }
     const text = normalizeMarkdownForRender(rawText)
     const fieldErrors = validateField(field, text)
-      .filter((error) => error.code !== 'raw_latex_outside_math' || hasVisibleRawLatexCommand(error.context || error.snippet || ''))
     errors.push(...fieldErrors)
     errors.push(...validateFrontendMarkdown(field, text, { renderKatex: fieldErrors.length === 0 }))
   }
