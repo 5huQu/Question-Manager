@@ -1,5 +1,17 @@
 import { api, jsonHeaders } from './client'
 
+export type SourceDocumentImportStats = {
+  ocrDocumentCount: number
+  candidateCount: number
+  readyCount: number
+  needsReviewCount: number
+  needsManualFixCount: number
+  blockedCount: number
+  committedCount: number
+  uncommittedCount: number
+  allCommitted: boolean
+}
+
 export type ImportV2SourceDocument = {
   id: string
   title: string
@@ -9,6 +21,7 @@ export type ImportV2SourceDocument = {
   pageCount: number
   provider?: 'doc2x' | 'glm' | 'manual' | 'json'
   status: string
+  importStats?: SourceDocumentImportStats
   createdAt: string
   updatedAt: string
 }

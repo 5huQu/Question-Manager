@@ -3,6 +3,7 @@ import type {
   CreateSourceDocumentInput,
   SourceDocument,
   SourceDocumentFileType,
+  SourceDocumentImportStats,
   SourceDocumentProvider,
   SourceDocumentRow,
   SourceDocumentStatus,
@@ -80,7 +81,10 @@ export function createSourceDocument(input: CreateSourceDocumentInput) {
 
 export function getSourceDocument(id: string) {
   const row = db.prepare(`SELECT * FROM source_documents WHERE id = ?`).get(id) as SourceDocumentRow | undefined
-  return row ? mapSourceDocument(row) : null
+  if (!row) return null
+  const doc = mapSourceDocument(row)
+  doc.importStats = getSourceDocumentImportStats(id)
+  return doc
 }
 
 export function listSourceDocuments(filters: ListSourceDocumentsFilters = {}) {
@@ -107,7 +111,11 @@ export function listSourceDocuments(filters: ListSourceDocumentsFilters = {}) {
     ORDER BY updated_at DESC, created_at DESC
     LIMIT ? OFFSET ?
   `).all(...values, limit, offset) as SourceDocumentRow[]
-  return rows.map(mapSourceDocument)
+  return rows.map(row => {
+    const doc = mapSourceDocument(row)
+    doc.importStats = getSourceDocumentImportStats(doc.id)
+    return doc
+  })
 }
 
 export function updateSourceDocument(id: string, input: UpdateSourceDocumentInput) {
@@ -132,3 +140,46 @@ export function updateSourceDocument(id: string, input: UpdateSourceDocumentInpu
   db.prepare(`UPDATE source_documents SET ${assignments.join(', ')} WHERE id = ?`).run(...values, id)
   return getSourceDocument(id)
 }
+
+export function getSourceDocumentImportStats(sourceDocumentId: string): SourceDocumentImportStats {
+  const ocrRow = db.prepare(`
+    SELECT COUNT(*) as count FROM ocr_documents WHERE source_document_id = ?
+  `).get(sourceDocumentId) as { count: number } | undefined
+  const ocrDocumentCount = ocrRow ? Number(ocrRow.count) : 0
+
+  const candidateRows = db.prepare(`
+    SELECT status, COUNT(*) as count FROM question_candidates WHERE source_document_id = ? GROUP BY status
+  `).all(sourceDocumentId) as { status: string; count: number }[]
+
+  let readyCount = 0
+  let needsReviewCount = 0
+  let needsManualFixCount = 0
+  let blockedCount = 0
+  let committedCount = 0
+
+  for (const row of candidateRows) {
+    const count = Number(row.count)
+    if (row.status === 'ready') readyCount = count
+    else if (row.status === 'needs_review') needsReviewCount = count
+    else if (row.status === 'needs_manual_fix') needsManualFixCount = count
+    else if (row.status === 'blocked') blockedCount = count
+    else if (row.status === 'committed') committedCount = count
+  }
+
+  const candidateCount = readyCount + needsReviewCount + needsManualFixCount + blockedCount + committedCount
+  const uncommittedCount = readyCount + needsReviewCount + needsManualFixCount + blockedCount
+  const allCommitted = candidateCount > 0 && committedCount === candidateCount
+
+  return {
+    ocrDocumentCount,
+    candidateCount,
+    readyCount,
+    needsReviewCount,
+    needsManualFixCount,
+    blockedCount,
+    committedCount,
+    uncommittedCount,
+    allCommitted,
+  }
+}
+

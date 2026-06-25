@@ -10,6 +10,18 @@ export type SourceDocumentStatus =
   | 'parsed'
   | 'partially_parsed'
 
+export type SourceDocumentImportStats = {
+  ocrDocumentCount: number
+  candidateCount: number
+  readyCount: number
+  needsReviewCount: number
+  needsManualFixCount: number
+  blockedCount: number
+  committedCount: number
+  uncommittedCount: number
+  allCommitted: boolean
+}
+
 export type SourceDocument = {
   id: string
   title: string
@@ -19,6 +31,7 @@ export type SourceDocument = {
   pageCount: number
   provider?: SourceDocumentProvider
   status: SourceDocumentStatus
+  importStats?: SourceDocumentImportStats
   createdAt: string
   updatedAt: string
 }

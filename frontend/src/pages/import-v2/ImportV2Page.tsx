@@ -205,6 +205,61 @@ export default function ImportV2Page() {
     }
   }
 
+  async function handleSourceDocumentAction(item: ImportV2SourceDocument) {
+    setBusy(`action-${item.id}`)
+    setError('')
+    try {
+      if (item.status === 'uploaded' || item.status === 'ocr_failed') {
+        await startGlmOcr(item.id)
+      } else if (item.status === 'ocr_succeeded') {
+        // 1. 获取该资料关联的第一个 OCRDocument
+        const ocrRes = await importV2Api.listOcrDocuments(item.id)
+        const ocrDoc = ocrRes.items[0]
+        if (!ocrDoc) {
+          throw new Error('未找到该资料对应的 OCR 结果文件。')
+        }
+        setSelectedOcrId(ocrDoc.id)
+        // 2. 生成待确认题目
+        const result = await importV2Api.parseCandidates(ocrDoc.id)
+        const unified = (result.items || []).map(fromCandidate)
+        setQuestions(unified)
+        setDiagnostics(result.diagnostics || null)
+        setCommittedIds(new Set(unified.filter((q) => q.status === 'committed').map((q) => q.id)))
+        setSelectedIds(new Set())
+        if (unified.length > 0) {
+          setActiveQuestionId(unified[0].id)
+        }
+        await loadLists()
+        showNotice('已自动提取并生成待核对题目')
+      } else if (item.status === 'parsed' || item.status === 'partially_parsed') {
+        if (item.importStats?.allCommitted) {
+          navigate('/questions')
+          return
+        }
+        const ocrRes = await importV2Api.listOcrDocuments(item.id)
+        const ocrDoc = ocrRes.items[0]
+        if (ocrDoc) {
+          setSelectedOcrId(ocrDoc.id)
+        }
+        const result = await importV2Api.listCandidates(item.id)
+        const unified = (result.items || []).map(fromCandidate)
+        setQuestions(unified)
+        setDiagnostics(result.diagnostics || null)
+        setCommittedIds(new Set(unified.filter((q) => q.status === 'committed').map((q) => q.id)))
+        setSelectedIds(new Set())
+        if (unified.length > 0) {
+          setActiveQuestionId(unified[0].id)
+        }
+        await loadLists()
+        showNotice('已加载当前识别记录的待确认题目')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
   // 2. 处理本地模拟 JSON 文件导入
   async function handleJsonFile(file: File) {
     setBusy('import')
@@ -404,9 +459,15 @@ export default function ImportV2Page() {
     <div className="space-y-6">
       <PageTitle
         title="资料导入"
-        desc="上传资料后可使用 GLM-OCR 自动识别；识别完成后生成待确认题目。"
+        desc="上传资料后可使用 GLM-OCR 自动识别；识别完成后生成待确认题目。资料导入不会直接进入题库，请在确认入库前进行核对。"
         path="/tools/import"
       />
+
+      {/* 明确提示文案 */}
+      <div className="rounded-lg border border-amber-200 bg-amber-50/20 p-3.5 text-xs text-amber-800 dark:border-amber-900/30 dark:bg-amber-95/10 dark:text-amber-400 flex items-center gap-2.5 shadow-sm animate-in fade-in duration-200">
+        <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
+        <span>资料导入不会直接进入题库。请核对后点击确认入库。</span>
+      </div>
 
       {/* 消息提示框 */}
       {notice ? (
@@ -470,7 +531,6 @@ export default function ImportV2Page() {
                   <p className="text-[11px] font-semibold text-zinc-500">已保存资料</p>
                   {sourceDocuments.filter((item) => item.fileType === 'pdf' || item.fileType === 'image').slice(0, 5).map((item) => {
                     const isRunning = item.id === runningSourceDocumentId || item.status === 'ocr_running'
-                    const canStart = item.status === 'uploaded' || item.status === 'ocr_failed'
                     const statusLabel = item.status === 'ocr_running'
                       ? '识别中'
                       : item.status === 'ocr_succeeded' || item.status === 'parsed' || item.status === 'partially_parsed'
@@ -483,6 +543,11 @@ export default function ImportV2Page() {
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-xs font-medium text-zinc-800 dark:text-zinc-200">{item.originalFileName || item.title}</p>
                           <p className="text-[10px] text-zinc-500">{statusLabel}</p>
+                          {item.importStats && item.importStats.candidateCount > 0 ? (
+                            <p className="text-[10px] text-zinc-400 mt-0.5 leading-normal">
+                              已生成 {item.importStats.candidateCount} 道待确认题目 · 已入库 {item.importStats.committedCount} / {item.importStats.candidateCount} · 需要修正 {item.importStats.needsManualFixCount}
+                            </p>
+                          ) : null}
                           {item.status === 'ocr_failed' && sourceOcrErrors[item.id] ? (
                             <p className="mt-0.5 truncate text-[10px] text-red-600 dark:text-red-400" title={sourceOcrErrors[item.id]}>
                               {sourceOcrErrors[item.id]}
@@ -491,11 +556,30 @@ export default function ImportV2Page() {
                         </div>
                         {isRunning ? (
                           <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500"><LoaderCircle className="size-3 animate-spin" /> 识别中</span>
-                        ) : canStart ? (
-                          <Button size="sm" icon={Play} disabled={Boolean(busy)} onClick={() => startGlmOcr(item.id)}>
-                            {item.status === 'ocr_failed' ? '重试自动识别' : '开始自动识别'}
+                        ) : (
+                          <Button
+                            size="sm"
+                            icon={
+                              item.status === 'uploaded' || item.status === 'ocr_failed'
+                                ? Play
+                                : item.importStats?.allCommitted
+                                  ? Database
+                                  : CheckCircle2
+                            }
+                            disabled={Boolean(busy)}
+                            onClick={() => handleSourceDocumentAction(item)}
+                          >
+                            {item.status === 'uploaded'
+                              ? '开始自动识别'
+                              : item.status === 'ocr_failed'
+                                ? '重新识别'
+                                : item.status === 'ocr_succeeded'
+                                  ? '生成待确认题目'
+                                  : item.importStats?.allCommitted
+                                    ? '导入完成 / 查看题库'
+                                    : '继续核对入库'}
                           </Button>
-                        ) : null}
+                        )}
                       </div>
                     )
                   })}

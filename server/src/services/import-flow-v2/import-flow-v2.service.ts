@@ -635,7 +635,7 @@ export function commitQuestionCandidate(id: string) {
     answerText: candidate.answerText,
     analysisMarkdown: candidate.analysisMarkdown,
     figures: figuresForQuestionBank(candidate.figures),
-    sourceRunId: '',
+    sourceRunId: `ifv2:${candidate.sourceDocumentId}`,
   })
   if (!item) throw new RouteError(500, '入库失败。')
   const committedCandidate = candidateRepo.updateQuestionCandidate(id, {
