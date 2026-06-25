@@ -10,6 +10,7 @@ import type {
   UpdateSourceDocumentInput,
 } from '../types/source-document.js'
 import { createId, nowIso } from '../utils/ids.js'
+import { normalizeImportMetadata, importMetadataPatch } from '../utils/import-metadata.js'
 import { normalizeUploadName } from '../utils/ocr-helpers.js'
 
 type SqlValue = string | number | bigint | null | Buffer
@@ -41,6 +42,17 @@ function normalizePageCount(value: number | undefined) {
 }
 
 export function mapSourceDocument(row: SourceDocumentRow): SourceDocument {
+  const metadata = normalizeImportMetadata({
+    province: row.province,
+    city: row.city,
+    paper_title: row.paper_title,
+    batch_name: row.batch_name,
+    stage: row.stage,
+    subject: row.subject,
+    paper_kind: row.paper_kind,
+    exam_year: row.exam_year,
+    source_org: row.source_org,
+  })
   return {
     id: row.id,
     title: normalizeUploadName(row.title),
@@ -50,6 +62,7 @@ export function mapSourceDocument(row: SourceDocumentRow): SourceDocument {
     pageCount: Number(row.page_count || 0),
     provider: row.provider || undefined,
     status: row.status,
+    ...metadata,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -60,10 +73,13 @@ export function createSourceDocument(input: CreateSourceDocumentInput) {
   const title = String(input.title ?? input.originalFileName ?? '')
   const originalFileName = String(input.originalFileName ?? '')
   const id = input.id || createId('docimport')
+  const metadata = normalizeImportMetadata(input as Record<string, unknown>)
   db.prepare(`
     INSERT INTO source_documents (
-      id, title, original_file_name, file_path, file_type, page_count, provider, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, title, original_file_name, file_path, file_type, page_count, provider, status,
+      province, city, paper_title, batch_name, stage, subject, paper_kind, exam_year, source_org,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     title,
@@ -73,6 +89,15 @@ export function createSourceDocument(input: CreateSourceDocumentInput) {
     normalizePageCount(input.pageCount),
     input.provider || '',
     input.status || 'uploaded',
+    metadata.province,
+    metadata.city,
+    metadata.paperTitle,
+    metadata.batchName,
+    metadata.stage,
+    metadata.subject,
+    metadata.paperKind,
+    metadata.examYear,
+    metadata.sourceOrg,
     now,
     now,
   )
@@ -134,6 +159,16 @@ export function updateSourceDocument(id: string, input: UpdateSourceDocumentInpu
   add('page_count', input.pageCount === undefined ? undefined : normalizePageCount(input.pageCount))
   add('provider', input.provider)
   add('status', input.status)
+  const metadata = importMetadataPatch(input as Record<string, unknown>)
+  add('province', metadata.province)
+  add('city', metadata.city)
+  add('paper_title', metadata.paperTitle)
+  add('batch_name', metadata.batchName)
+  add('stage', metadata.stage)
+  add('subject', metadata.subject)
+  add('paper_kind', metadata.paperKind)
+  add('exam_year', metadata.examYear)
+  add('source_org', metadata.sourceOrg)
 
   if (!assignments.length) return getSourceDocument(id)
   add('updated_at', nowIso())

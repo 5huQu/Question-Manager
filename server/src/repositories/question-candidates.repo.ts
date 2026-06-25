@@ -10,6 +10,7 @@ import type {
   UpdateQuestionCandidateInput,
 } from '../types/question-candidate.js'
 import { createId, nowIso } from '../utils/ids.js'
+import { normalizeImportMetadata, importMetadataPatch } from '../utils/import-metadata.js'
 import { parseJson } from '../utils/json.js'
 
 type SqlValue = string | number | bigint | null | Buffer
@@ -45,6 +46,17 @@ function stringifyArray(value: unknown[] | undefined) {
 }
 
 export function mapQuestionCandidate(row: QuestionCandidateRow): QuestionCandidate {
+  const metadata = normalizeImportMetadata({
+    province: row.province,
+    city: row.city,
+    paper_title: row.paper_title,
+    batch_name: row.batch_name,
+    stage: row.stage,
+    subject: row.subject,
+    paper_kind: row.paper_kind,
+    exam_year: row.exam_year,
+    source_org: row.source_org,
+  })
   return {
     id: row.id,
     sourceDocumentId: row.source_document_id,
@@ -61,6 +73,7 @@ export function mapQuestionCandidate(row: QuestionCandidateRow): QuestionCandida
     figures: parseJson<CandidateFigure[]>(row.figures_json || '[]', []),
     sourceRefs: parseJson<CandidateSourceRef[]>(row.source_refs_json || '[]', []),
     status: row.status,
+    ...metadata,
     committedQuestionId: row.committed_question_id || undefined,
     committedAt: row.committed_at || undefined,
     issues: parseJson<CandidateIssue[]>(row.issues_json || '[]', []),
@@ -72,12 +85,14 @@ export function mapQuestionCandidate(row: QuestionCandidateRow): QuestionCandida
 export function createQuestionCandidate(input: CreateQuestionCandidateInput) {
   const now = nowIso()
   const id = input.id || createId('candidate', input.questionNo || input.sourceDocumentId)
+  const metadata = normalizeImportMetadata(input as Record<string, unknown>)
   db.prepare(`
     INSERT INTO question_candidates (
       id, source_document_id, ocr_document_id, question_no, stem_markdown, answer_text, analysis_markdown,
       question_type, difficulty_score_10, difficulty_label, knowledge_points_json, solution_methods_json,
-      figures_json, source_refs_json, status, committed_question_id, committed_at, issues_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      figures_json, source_refs_json, status, province, city, paper_title, batch_name, stage, subject, paper_kind, exam_year, source_org,
+      committed_question_id, committed_at, issues_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.sourceDocumentId,
@@ -94,6 +109,15 @@ export function createQuestionCandidate(input: CreateQuestionCandidateInput) {
     stringifyArray(input.figures),
     stringifyArray(input.sourceRefs),
     input.status || 'needs_review',
+    metadata.province,
+    metadata.city,
+    metadata.paperTitle,
+    metadata.batchName,
+    metadata.stage,
+    metadata.subject,
+    metadata.paperKind,
+    metadata.examYear,
+    metadata.sourceOrg,
     input.committedQuestionId || '',
     input.committedAt || '',
     stringifyArray(input.issues),
@@ -157,6 +181,16 @@ export function updateQuestionCandidate(id: string, input: UpdateQuestionCandida
   add('figures_json', input.figures === undefined ? undefined : stringifyArray(input.figures))
   add('source_refs_json', input.sourceRefs === undefined ? undefined : stringifyArray(input.sourceRefs))
   add('status', input.status)
+  const metadata = importMetadataPatch(input as Record<string, unknown>)
+  add('province', metadata.province)
+  add('city', metadata.city)
+  add('paper_title', metadata.paperTitle)
+  add('batch_name', metadata.batchName)
+  add('stage', metadata.stage)
+  add('subject', metadata.subject)
+  add('paper_kind', metadata.paperKind)
+  add('exam_year', metadata.examYear)
+  add('source_org', metadata.sourceOrg)
   add('committed_question_id', input.committedQuestionId)
   add('committed_at', input.committedAt)
   add('issues_json', input.issues === undefined ? undefined : stringifyArray(input.issues))

@@ -21,6 +21,7 @@ import {
 import { normalizeQuestionType } from '../utils/question-type.js'
 import { assetPathFor, stripAssetPrefix } from '../utils/paths.js'
 import { cleanSourceTitle, normalizeUploadName, ocrSegmentImages } from '../utils/ocr-helpers.js'
+import { normalizeImportMetadata } from '../utils/import-metadata.js'
 import { configuredGradeStages } from '../services/settings/app-settings.js'
 
 // ---------------------------------------------------------------------------
@@ -59,6 +60,16 @@ export function mapQuestion(row: QuestionRow) {
   const answerText = row.answer_text || ''
   const analysisMarkdown = row.analysis_markdown || ''
   const questionType = normalizeQuestionType(row.question_type, stemMarkdown, answerText)
+  const { stage: _metadataStage, ...metadata } = normalizeImportMetadata({
+    province: row.province,
+    city: row.city,
+    paper_title: row.paper_title,
+    batch_name: row.batch_name,
+    subject: row.subject,
+    paper_kind: row.paper_kind,
+    exam_year: row.exam_year,
+    source_org: row.source_org,
+  })
   return {
     id: row.id,
     serialNo: row.serial_no,
@@ -72,6 +83,8 @@ export function mapQuestion(row: QuestionRow) {
     knowledgePoints,
     solutionMethods,
     sourceTitle: cleanSourceTitle(row.source_title),
+    ...metadata,
+    importSourceId: row.import_source_id || '',
     bankStatus: row.bank_status,
     stemMarkdown,
     answerText,
@@ -125,14 +138,16 @@ export function createQuestion(input: Record<string, any> = {}) {
   const solutionMethods = normalizeTags(input.solutionMethods)
   const sourceTitle = input.sourceTitle || '手动创建'
   const chapter = input.chapter || knowledgePoints[0] || '知识点未设置'
+  const metadata = normalizeImportMetadata(input)
   const validationIssues = validateQuestionMarkdown({ problem_text: stemMarkdown, answer: answerText, analysis: analysisMarkdown })
   const formatIssues = [...(input.formatIssue ? [input.formatIssue] : []), ...validationIssues]
   const needsFormatReview = Boolean(input.needsFormatReview || formatIssues.length)
   db.prepare(`
     INSERT INTO question_bank_items (
       id, serial_no, question_no, stage, question_type, difficulty_score, chapter, source_title, bank_status,
+      province, city, paper_title, batch_name, subject, paper_kind, exam_year, source_org, import_source_id,
       difficulty_score_10, difficulty_label, knowledge_points_json, solution_methods_json, stem_markdown, answer_text, analysis_markdown, search_text, slice_image_path, figures_json, source_run_id, source_solution_run_id, merge_status, merge_note, format_review_required, format_review_reasons_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     serialNo,
@@ -143,6 +158,15 @@ export function createQuestion(input: Record<string, any> = {}) {
     chapter,
     sourceTitle,
     needsFormatReview && (input.bankStatus || 'ready') === 'ready' ? 'blocked' : (input.bankStatus || 'ready'),
+    metadata.province,
+    metadata.city,
+    metadata.paperTitle,
+    metadata.batchName,
+    metadata.subject,
+    metadata.paperKind,
+    metadata.examYear,
+    metadata.sourceOrg,
+    input.importSourceId || input.import_source_id || '',
     normalizeDifficultyScore10(input.difficultyScore10),
     input.difficultyLabel || difficultyLabel10(normalizeDifficultyScore10(input.difficultyScore10)),
     JSON.stringify(knowledgePoints),

@@ -1,6 +1,7 @@
 import type { OCRDocument } from '../../types/ocr-document.js'
 import type { CandidateFigure, CandidateSourceRef, QuestionCandidate } from '../../types/question-candidate.js'
 import { createId, nowIso } from '../../utils/ids.js'
+import { DEFAULT_IMPORT_METADATA } from '../../utils/import-metadata.js'
 import { detectQuestionNumbers } from './question-number-detector.js'
 import { splitMarkdownByQuestionNumbers, type QuestionMarkdownChunk } from './markdown-question-splitter.js'
 import {
@@ -312,6 +313,7 @@ function candidateFromChunk(
     figures,
     sourceRefs,
     status: 'needs_review',
+    ...DEFAULT_IMPORT_METADATA,
     issues: [],
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -342,6 +344,7 @@ function fallbackCandidate(document: OCRDocument, timestamp: string, config: Imp
     ]),
     sourceRefs: sourceRefsForRange(document, fields.stemRange || fullRange, 'stem'),
     status: 'needs_review',
+    ...DEFAULT_IMPORT_METADATA,
     issues: [],
     createdAt: timestamp,
     updatedAt: timestamp,
