@@ -21,6 +21,7 @@ const expectedRoutes = new Set([
   'POST /api/source-documents',
   'POST /api/source-documents/upload',
   'GET /api/source-documents/:id',
+  'PATCH /api/source-documents/:id',
   'DELETE /api/source-documents/:id',
   'GET /api/source-documents/:id/candidates',
   'POST /api/source-documents/:id/ocr',

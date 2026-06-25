@@ -13,7 +13,12 @@ const {
   createSourceDocument,
   getSourceDocument,
   listSourceDocuments,
+  updateSourceDocument,
+  mapSourceDocument,
 } = await import('../dist/repositories/source-documents.repo.js')
+const {
+  mapQuestionCandidate,
+} = await import('../dist/repositories/question-candidates.repo.js')
 const {
   createOcrDocument,
 } = await import('../dist/repositories/ocr-documents.repo.js')
@@ -23,6 +28,7 @@ const {
 } = await import('../dist/services/import-flow-v2/import-flow-v2.service.js')
 const {
   getQuestion,
+  mapQuestion,
 } = await import('../dist/db/questions.js')
 const {
   assetPathFor,
@@ -39,9 +45,29 @@ try {
     pageCount: 2,
     provider: 'glm',
     status: 'uploaded',
+    metadata: {
+      province: '浙江',
+      city: '杭州',
+      paperTitle: '2025 杭州一模数学',
+      batchName: '一模批次',
+      stage: '高三',
+      subject: '数学',
+      paperKind: 'not-a-kind',
+      examYear: 2025,
+      sourceOrg: '杭州教研室',
+    },
   })
   
   assert.ok(doc)
+  assert.equal(doc.province, '浙江')
+  assert.equal(doc.city, '杭州')
+  assert.equal(doc.paperTitle, '2025 杭州一模数学')
+  assert.equal(doc.batchName, '一模批次')
+  assert.equal(doc.stage, '高三')
+  assert.equal(doc.subject, '数学')
+  assert.equal(doc.paperKind, 'unknown')
+  assert.equal(doc.examYear, 2025)
+  assert.equal(doc.sourceOrg, '杭州教研室')
   assert.ok(doc.importStats)
   assert.equal(doc.importStats.ocrDocumentCount, 0)
   assert.equal(doc.importStats.candidateCount, 0)
@@ -52,6 +78,27 @@ try {
   assert.equal(doc.importStats.committedCount, 0)
   assert.equal(doc.importStats.uncommittedCount, 0)
   assert.equal(doc.importStats.allCommitted, false)
+
+  const updatedDoc = updateSourceDocument(doc.id, {
+    paperKind: 'mock',
+    batchName: '更新批次',
+  })
+  assert.ok(updatedDoc)
+  assert.equal(updatedDoc.paperKind, 'mock')
+  assert.equal(updatedDoc.batchName, '更新批次')
+
+  assert.equal(mapSourceDocument({
+    id: 'legacy_source',
+    title: 'Legacy Source',
+    original_file_name: '',
+    file_path: '',
+    file_type: 'pdf',
+    page_count: 0,
+    provider: '',
+    status: 'uploaded',
+    created_at: '',
+    updated_at: '',
+  }).paperKind, 'unknown')
 
   console.log('2. Mocking OCR result files on disk...')
   const localAssetsDir = path.join(tempRoot, 'data', 'import-flow-v2', 'source-documents', doc.id)
@@ -111,6 +158,38 @@ try {
   
   const candidate = parseResult.items[0]
   assert.equal(candidate.questionNo, '1')
+  assert.equal(candidate.province, '浙江')
+  assert.equal(candidate.city, '杭州')
+  assert.equal(candidate.paperTitle, '2025 杭州一模数学')
+  assert.equal(candidate.batchName, '更新批次')
+  assert.equal(candidate.stage, '高三')
+  assert.equal(candidate.subject, '数学')
+  assert.equal(candidate.paperKind, 'mock')
+  assert.equal(candidate.examYear, 2025)
+  assert.equal(candidate.sourceOrg, '杭州教研室')
+
+  assert.equal(mapQuestionCandidate({
+    id: 'legacy_candidate',
+    source_document_id: doc.id,
+    ocr_document_id: '',
+    question_no: '',
+    stem_markdown: '',
+    answer_text: '',
+    analysis_markdown: '',
+    question_type: '',
+    difficulty_score_10: 0,
+    difficulty_label: '',
+    knowledge_points_json: '[]',
+    solution_methods_json: '[]',
+    figures_json: '[]',
+    source_refs_json: '[]',
+    status: 'needs_review',
+    committed_question_id: '',
+    committed_at: '',
+    issues_json: '[]',
+    created_at: '',
+    updated_at: '',
+  }).paperKind, 'unknown')
 
   // Verify stats updated after parsing candidates
   const docAfterParse = getSourceDocument(doc.id)
@@ -134,7 +213,47 @@ try {
   const question = getQuestion(questionId)
   assert.ok(question)
   assert.equal(question.sourceRunId, `ifv2:${doc.id}`)
-  assert.equal(question.sourceTitle, 'Test Stats Document')
+  assert.equal(question.sourceTitle, '2025 杭州一模数学')
+  assert.equal(question.province, '浙江')
+  assert.equal(question.city, '杭州')
+  assert.equal(question.paperTitle, '2025 杭州一模数学')
+  assert.equal(question.batchName, '更新批次')
+  assert.equal(question.stage, '高三')
+  assert.equal(question.subject, '数学')
+  assert.equal(question.paperKind, 'mock')
+  assert.equal(question.examYear, 2025)
+  assert.equal(question.sourceOrg, '杭州教研室')
+  assert.equal(question.importSourceId, doc.id)
+
+  assert.equal(mapQuestion({
+    id: 'legacy_question',
+    serial_no: 1,
+    question_no: '1',
+    stage: '高三',
+    question_type: '',
+    difficulty_score: 0,
+    difficulty_score_10: 0,
+    difficulty_label: '',
+    chapter: '',
+    knowledge_points_json: '[]',
+    solution_methods_json: '[]',
+    source_title: 'Legacy Question',
+    bank_status: 'ready',
+    stem_markdown: '',
+    answer_text: '',
+    analysis_markdown: '',
+    search_text: '',
+    slice_image_path: '',
+    figures_json: '[]',
+    source_run_id: '',
+    source_solution_run_id: '',
+    merge_status: '',
+    merge_note: '',
+    format_review_required: 0,
+    format_review_reasons_json: '{}',
+    created_at: '',
+    updated_at: '',
+  }).paperKind, 'unknown')
 
   // Verify stats updated after commit
   const docAfterCommit = getSourceDocument(doc.id)
