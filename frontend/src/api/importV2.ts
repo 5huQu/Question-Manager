@@ -21,6 +21,15 @@ export type ImportV2SourceDocument = {
   pageCount: number
   provider?: 'doc2x' | 'glm' | 'manual' | 'json'
   status: string
+  province: string
+  city: string
+  paperTitle: string
+  batchName: string
+  stage: string
+  subject: string
+  paperKind: 'gaokao_real' | 'local_real' | 'mock' | 'school_exam' | 'lecture' | 'daily_practice' | 'unknown'
+  examYear: number
+  sourceOrg: string
   importStats?: SourceDocumentImportStats
   createdAt: string
   updatedAt: string
@@ -81,6 +90,15 @@ export type ImportV2Candidate = {
   figures: Array<{ id: string; usage: string; path: string; pageNo?: number; blockId?: string; sourceBlockId?: string; bbox?: [number, number, number, number]; inlineMarker?: string; optionLabel?: string }>
   sourceRefs: Array<{ pageNo: number; blockIds: string[]; kind: string }>
   status: 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked' | 'committed'
+  province: string
+  city: string
+  paperTitle: string
+  batchName: string
+  stage: string
+  subject: string
+  paperKind: 'gaokao_real' | 'local_real' | 'mock' | 'school_exam' | 'lecture' | 'daily_practice' | 'unknown'
+  examYear: number
+  sourceOrg: string
   committedQuestionId?: string
   committedAt?: string
   issues: ImportV2CandidateIssue[]
@@ -121,12 +139,20 @@ export const importV2Api = {
   listSourceDocuments() {
     return api<{ items: ImportV2SourceDocument[] }>('/api/source-documents')
   },
-  uploadSourceDocument(file: File) {
+  uploadSourceDocument(file: File, metadata?: Partial<ImportV2SourceDocument>) {
     const body = new FormData()
     body.append('file', file)
+    if (metadata) body.append('metadata', JSON.stringify(metadata))
     return api<{ sourceDocument: ImportV2SourceDocument }>('/api/source-documents/upload', {
       method: 'POST',
       body,
+    })
+  },
+  updateSourceDocument(sourceDocumentId: string, sourceDocument: Partial<ImportV2SourceDocument>) {
+    return api<{ sourceDocument: ImportV2SourceDocument }>('/api/source-documents/' + encodeURIComponent(sourceDocumentId), {
+      method: 'PATCH',
+      headers: jsonHeaders,
+      body: JSON.stringify({ sourceDocument }),
     })
   },
   startSourceDocumentOcr(sourceDocumentId: string) {

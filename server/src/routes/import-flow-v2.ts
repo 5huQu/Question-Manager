@@ -15,6 +15,7 @@ import {
   parseCandidatesForOcrDocument,
   startSourceDocumentOcr,
   uploadSourceDocument,
+  updateSourceDocument,
   updateQuestionCandidate,
   renderSourceDocumentPage,
   createOrRestoreCandidateManualFixSession,
@@ -82,7 +83,15 @@ export function mountImportFlowV2Routes(app: Express) {
 
   app.post('/api/source-documents/upload', upload.single('file'), (req, res) => {
     try {
-      res.status(201).json(uploadSourceDocument(req.file))
+      res.status(201).json(uploadSourceDocument(req.file, req.body || {}))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.patch('/api/source-documents/:id', (req, res) => {
+    try {
+      res.json(updateSourceDocument(decodeURIComponent(String(req.params.id || '')), req.body || {}))
     } catch (error) {
       sendRouteError(res, error)
     }
