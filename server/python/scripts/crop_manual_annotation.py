@@ -96,6 +96,12 @@ def main():
                     min(w_pdf, x1 + 4.0),
                     min(h_pdf, y1 + 4.0)
                 )
+                if clip.x1 <= clip.x0 or clip.y1 <= clip.y0:
+                    raise ValueError(
+                        f"Invalid crop rectangle on page {page_num}: "
+                        f"x={seg.get('x')}, y={seg.get('y')}, "
+                        f"width={seg.get('width')}, height={seg.get('height')}"
+                    )
 
                 # Store absolute bounding box for reference
                 cropped_segments.append({
