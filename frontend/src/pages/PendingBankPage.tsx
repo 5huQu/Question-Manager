@@ -26,6 +26,7 @@ import { MarkdownContent } from '../components/MarkdownContent'
 import { EditDialog } from '../components/questions/EditDialog'
 import { FigureCropDialog } from '../components/questions/FigureDialogs'
 import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '../components/questions/QuestionContent'
+import { figuresByUsage } from '../utils/questionDisplay'
 import { Badge, Button, Empty } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
 import type {
@@ -804,10 +805,6 @@ function BulkActionBar({ count, busy, onConfirm, onSkip, onDelete }: {
 }
 
 // ── Preview Panel ───────────────────────────────────────────────────
-
-function figuresByUsage(figures: QuestionFigure[], usage: string) {
-  return figures.filter((fig) => String(fig.usage || 'stem') === usage)
-}
 
 function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable, onCrop, onSkip, onDelete, onSaveInline }: {
   item: QuestionItem

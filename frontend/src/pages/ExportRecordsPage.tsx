@@ -398,7 +398,7 @@ function ExportOutlineRow({ item, index }: { item: OutlineItem; index: number })
       </div>
       <div className="truncate font-sans leading-relaxed text-zinc-800 dark:text-zinc-200">
         {question ? (
-          <QuestionMarkdownContent content={stem || '题干为空'} className="text-xs leading-relaxed" />
+          <QuestionMarkdownContent content={stem || '题干为空'} figures={question?.figures} className="text-xs leading-relaxed" />
         ) : (
           <span className="text-zinc-400">{item.error ? '题目内容暂不可用' : '题目内容读取中...'}</span>
         )}

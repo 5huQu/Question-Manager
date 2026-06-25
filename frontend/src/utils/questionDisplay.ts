@@ -137,8 +137,21 @@ export function assetUrl(value: string) {
   return `/assets/${value.replace(/^question_assets\//, '').replace(/^\/+/, '')}`
 }
 
-export function figuresByUsage(figures: QuestionFigure[], usage: string) {
-  return figures.filter((figure) => String(figure.usage || 'stem') === usage)
+export function figuresByUsage(figures: QuestionFigure[], target: string) {
+  return figures.filter((figure) => {
+    const usage = String(figure.usage || '').trim()
+    const category = String(figure.category || '').trim()
+    if (target === 'stem') {
+      if (usage === 'analysis' || category === 'analysis') {
+        return false
+      }
+      return !usage || usage === 'stem' || usage === 'question' || category === 'question'
+    }
+    if (target === 'analysis') {
+      return usage === 'analysis' || category === 'analysis'
+    }
+    return usage === target
+  })
 }
 
 export function figureUsageLabel(usage: string) {

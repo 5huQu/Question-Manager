@@ -97,17 +97,23 @@ function bboxRecord(bbox: CandidateFigure['bbox']) {
 }
 
 export function figuresForQuestionBank(figures: CandidateFigure[]) {
-  return figures.map((figure) => ({
-    id: figure.id,
-    blockId: figure.blockId || figure.sourceBlockId,
-    origin: 'import_flow_v2',
-    usage: figure.usage,
-    category: figure.usage === 'analysis' ? 'analysis' : 'question',
-    pageNumber: figure.pageNo,
-    bbox: bboxRecord(figure.bbox),
-    sourcePath: figure.path,
-    path: figure.path,
-  }))
+  return figures.map((figure) => {
+    let usage = (figure.usage as any) || 'stem'
+    if (usage === 'question') {
+      usage = 'stem'
+    }
+    return {
+      id: figure.id,
+      blockId: figure.blockId || figure.sourceBlockId,
+      origin: 'import_flow_v2',
+      usage,
+      category: usage === 'analysis' ? 'analysis' : 'question',
+      pageNumber: figure.pageNo,
+      bbox: bboxRecord(figure.bbox),
+      sourcePath: figure.path,
+      path: figure.path,
+    }
+  })
 }
 
 export type OcrFigureDiagnostics = {
