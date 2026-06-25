@@ -134,6 +134,40 @@ function markdownForBlock(block: NormalizedBlockDraft) {
   return normalizeHtmlImageTags(content)
 }
 
+function markdownNeedleForStoredBlock(block: OCRBlock) {
+  if (block.assetId) return `<!-- DOC2X_FIGURE:${block.assetId} -->`
+  return markdownForBlock({
+    type: block.type,
+    content: block.content,
+  })
+}
+
+function realignBlockMarkdownOffsets(doc: OCRDocument) {
+  let cursor = 0
+  doc.pages = doc.pages.map((page) => ({
+    ...page,
+    blocks: page.blocks.map((block) => {
+      const needle = markdownNeedleForStoredBlock(block)
+      if (!needle) {
+        const { markdownStart, markdownEnd, ...rest } = block
+        return rest
+      }
+      const start = doc.markdown.indexOf(needle, cursor)
+      if (start < 0) {
+        if (!block.assetId) return block
+        const { markdownStart, markdownEnd, ...rest } = block
+        return rest
+      }
+      cursor = start + needle.length
+      return {
+        ...block,
+        markdownStart: start,
+        markdownEnd: cursor,
+      }
+    }),
+  }))
+}
+
 function normalizePageNo(value: number, fallback: number) {
   const pageNo = Math.floor(Number(value))
   return Number.isFinite(pageNo) && pageNo > 0 ? pageNo : fallback
@@ -279,7 +313,7 @@ export function createNormalizedOCRDocument(
   }
 
   const doc = {
-    id: options.id || createId('ocrdoc', options.sourceDocumentId),
+    id: options.id || createId('ocrdoc'),
     sourceDocumentId: options.sourceDocumentId,
     provider,
     rawResultPath: options.rawResultPath,
@@ -296,6 +330,7 @@ export function createNormalizedOCRDocument(
   }
 
   ensureOcrDocumentFiguresAndPlaceholders(doc)
+  realignBlockMarkdownOffsets(doc)
 
   return doc
 }

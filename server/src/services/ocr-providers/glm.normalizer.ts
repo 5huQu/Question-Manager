@@ -31,10 +31,6 @@ function pageSizeFromInfo(info: Record<string, unknown>, fallback: Record<string
 
 function markdownForGlmBlock(type: OCRBlockType, content: string) {
   if (!content) return ''
-  if (type === 'image') {
-    const normalizedImage = normalizeHtmlImageTags(content)
-    return normalizedImage === content ? `![题图](${content.replace(/\\/g, '\\\\').replace(/\)/g, '\\)')})` : normalizedImage
-  }
   return normalizeHtmlImageTags(content)
 }
 
@@ -56,22 +52,29 @@ function normalizeGlmBlock(
     label,
     content,
   ])
+  const hasImageAsset = type === 'image' && content
+  const hasTableImageAsset = type === 'table' && /^https?:\/\//i.test(content)
+  const assetId = hasImageAsset || hasTableImageAsset
+    ? stringFrom(block.asset_id || block.assetId) || stableNormalizerId('glm_asset', [
+        sourceDocumentId,
+        pageNo,
+        blockId,
+        content,
+      ])
+    : ''
   const confidence = numberFrom(block.confidence, Number.NaN)
   const draft: NormalizedBlockDraft = {
     id: blockId,
     type,
     content,
     bbox,
-    markdown: markdownForGlmBlock(type, content),
+    markdown: assetId ? `<!-- DOC2X_FIGURE:${assetId} -->` : markdownForGlmBlock(type, content),
   }
   if (Number.isFinite(confidence)) draft.confidence = confidence
-  if (type === 'image' && content) {
+  if (assetId) {
+    draft.assetId = assetId
     draft.assetPath = content
-    draft.assetType = 'image'
-  }
-  if (type === 'table' && content && /^https?:\/\//i.test(content)) {
-    draft.assetPath = content
-    draft.assetType = 'table_image'
+    draft.assetType = type === 'table' ? 'table_image' : 'image'
   }
   return draft
 }
