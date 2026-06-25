@@ -11,6 +11,7 @@ import { normalizedReviewQuestionNo } from '../../db/review.js'
 import { updateBatchWorkflow } from '../../db/runs.js'
 import { validateQuestionCandidate, statusForIssues } from '../question-parser/candidate-validator.js'
 import type { CandidateFigure, CandidateSourceRef } from '../../types/question-candidate.js'
+import * as candidateRepo from '../../repositories/question-candidates.repo.js'
 
 export interface AnnotationSegment {
   page: number
@@ -60,6 +61,45 @@ function withTransaction<T>(operation: () => T): T {
       // The statement that failed may already have closed the transaction.
     }
     throw error
+  }
+}
+
+function parseManualCropOutput(rawOutput: string): Record<string, any> {
+  const trimmed = rawOutput.trim()
+  if (!trimmed) {
+    throw new Error('裁图脚本没有返回结果。')
+  }
+
+  try {
+    return JSON.parse(trimmed) as Record<string, any>
+  } catch {}
+
+  for (let index = trimmed.lastIndexOf('{'); index >= 0; index = trimmed.lastIndexOf('{', index - 1)) {
+    try {
+      return JSON.parse(trimmed.slice(index)) as Record<string, any>
+    } catch {}
+  }
+
+  const preview = trimmed.replace(/\s+/g, ' ').slice(0, 500)
+  throw new Error(`裁图脚本返回了非 JSON 输出：${preview}`)
+}
+
+function runManualCropScript(args: string[], timeout = 60000): Record<string, any> {
+  try {
+    const output = childProcess.execFileSync(pythonCommand(), args, {
+      env: pythonEnv(),
+      encoding: 'utf8',
+      timeout,
+    })
+    return parseManualCropOutput(output)
+  } catch (error) {
+    const execError = error as { stdout?: unknown; stderr?: unknown; message?: string }
+    const stdout = Buffer.isBuffer(execError.stdout) ? execError.stdout.toString('utf8') : String(execError.stdout || '')
+    if (stdout.trim()) {
+      return parseManualCropOutput(stdout)
+    }
+    const stderr = Buffer.isBuffer(execError.stderr) ? execError.stderr.toString('utf8') : String(execError.stderr || '')
+    throw new Error(stderr.trim() || execError.message || String(error))
   }
 }
 
@@ -395,7 +435,7 @@ export function validateSession(sessionId: string): { errors: string[]; warnings
   return { errors, warnings }
 }
 
-export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: string; analysisMarkdown?: string }): void {
+export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: string; answerText?: string; analysisMarkdown?: string }): void {
   const session = getSession(sessionId)
   if (!session) {
     throw new Error('标注会话不存在。')
@@ -438,18 +478,13 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
     const scriptPath = path.join(pythonRoot, 'scripts', 'crop_manual_annotation.py')
     const croppedResults = new Map<string, any>()
     try {
-      const outputStr = childProcess.execFileSync(pythonCommand(), [
+      const resultObj = runManualCropScript([
         scriptPath,
         '--pdf', pdfPath,
         '--regions-json-file', tempJsonFile,
         '--output-dir', targetAssetsDir,
         '--dpi', '180'
-      ], {
-        env: pythonEnv(),
-        encoding: 'utf8',
-        timeout: 60000
-      })
-      const resultObj = JSON.parse(outputStr)
+      ])
       if (resultObj.error) {
         throw new Error(resultObj.error)
       }
@@ -470,8 +505,10 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
 
     const currentFigures = parseJson<CandidateFigure[]>(candidate.figures_json || '[]', [])
     const newFigures: CandidateFigure[] = []
+    const nextRegionFigureIds = new Map<string, string>()
 
     let stemMarkdown = payload?.stemMarkdown !== undefined ? payload.stemMarkdown : candidate.stem_markdown
+    const answerText = payload?.answerText !== undefined ? payload.answerText : candidate.answer_text
     const analysisMarkdown = payload?.analysisMarkdown !== undefined ? payload.analysisMarkdown : candidate.analysis_markdown
 
     const figureRegions = regions.filter(r => r.kind === 'shared_answer_key')
@@ -508,6 +545,7 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
           bbox
         }
         newFigures.push(newFig)
+        nextRegionFigureIds.set(r.id, newFigId)
         stemMarkdown = stemMarkdown.trim() + `\n<!-- DOC2X_FIGURE:${newFigId} -->\n`
       }
     }
@@ -565,7 +603,7 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
       ocrDocumentId: candidate.ocr_document_id || undefined,
       questionNo: candidate.question_no,
       stemMarkdown,
-      answerText: candidate.answer_text,
+      answerText,
       analysisMarkdown,
       figures: newFigures,
       sourceRefs: newSourceRefs,
@@ -584,6 +622,7 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
     db.prepare(`
       UPDATE question_candidates
       SET stem_markdown = ?,
+          answer_text = ?,
           analysis_markdown = ?,
           figures_json = ?,
           source_refs_json = ?,
@@ -593,6 +632,7 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
       WHERE id = ?
     `).run(
       stemMarkdown,
+      answerText,
       analysisMarkdown,
       JSON.stringify(newFigures),
       JSON.stringify(newSourceRefs),
@@ -608,6 +648,17 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
       SET status = 'finalized', finalized_at = ?, updated_at = ?
       WHERE id = ?
     `).run(now, now, sessionId)
+
+    const updateRegionFigureKeys = db.prepare(`
+      UPDATE pdf_slicer_annotation_regions
+      SET question_keys_json = ?, updated_at = ?
+      WHERE id = ? AND session_id = ?
+    `)
+    for (const [regionId, figureId] of nextRegionFigureIds) {
+      updateRegionFigureKeys.run(JSON.stringify([figureId]), now, regionId, sessionId)
+    }
+
+    revalidateAllCandidatesForSourceDocument(candidate.source_document_id)
 
     return
   }
@@ -658,18 +709,13 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
 
     const scriptPath = path.join(pythonRoot, 'scripts', 'crop_manual_annotation.py')
     try {
-      const outputStr = childProcess.execFileSync(pythonCommand(), [
+      const resultObj = runManualCropScript([
         scriptPath,
         '--pdf', pdfPath,
         '--regions-json-file', tempJsonFile,
         '--output-dir', processingOutputDir,
         '--dpi', '180'
-      ], {
-        env: pythonEnv(),
-        encoding: 'utf8',
-        timeout: 60000 // 1 min max
-      })
-      const resultObj = JSON.parse(outputStr)
+      ])
       if (resultObj.error) {
         throw new Error(resultObj.error)
       }
@@ -894,4 +940,46 @@ export function reviseSession(sessionId: string): AnnotationSession {
   })
 
   return getSession(nextSessionId)!
+}
+
+export function revalidateAllCandidatesForSourceDocument(sourceDocumentId: string) {
+  // Fetch all candidates for the source document
+  const candidates = candidateRepo.listQuestionCandidates({ sourceDocumentId })
+  
+  // Count occurrences of questionNo to find duplicates
+  const counts = new Map<string, number>()
+  for (const c of candidates) {
+    if (c.status === 'committed') continue
+    const qNo = c.questionNo.trim()
+    if (!qNo) continue
+    counts.set(qNo, (counts.get(qNo) || 0) + 1)
+  }
+  
+  const duplicateNos = new Set<string>()
+  for (const [qNo, count] of counts.entries()) {
+    if (count > 1) {
+      duplicateNos.add(qNo)
+    }
+  }
+
+  // Re-validate each candidate and save if changed
+  for (const c of candidates) {
+    if (c.status === 'committed') continue
+    
+    // Filter out standard validation issues before validating
+    const baseIssues = c.issues.filter(
+      (iss) =>
+        !['missing_question_no', 'duplicate_question_no', 'missing_stem', 'missing_answer', 'missing_analysis'].includes(iss.code)
+    )
+    
+    const nextIssues = validateQuestionCandidate({ ...c, issues: baseIssues }, duplicateNos)
+    const nextStatus = statusForIssues(nextIssues)
+    
+    if (JSON.stringify(nextIssues) !== JSON.stringify(c.issues) || nextStatus !== c.status) {
+      candidateRepo.updateQuestionCandidate(c.id, {
+        issues: nextIssues,
+        status: nextStatus
+      })
+    }
+  }
 }

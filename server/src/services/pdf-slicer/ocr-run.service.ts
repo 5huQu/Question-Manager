@@ -9,6 +9,7 @@ import { runQuestionClassification } from './classification.js'
 import { configuredGradeStages } from '../settings/app-settings.js'
 import { RouteError } from '../../utils/http-error.js'
 import * as repo from '../../repositories/pdf-slicer/runs.repo.js'
+import { getSourceDocument } from '../../repositories/source-documents.repo.js'
 
 export function bulkOcr(body: Record<string, any>) {
   const runIds = Array.isArray(body?.runIds) ? body.runIds.map(String) : []
@@ -56,8 +57,55 @@ export function ocrProgress(runId: string) {
 
 export function runQuestions(runId: string) {
   const run = repo.getRun(runId)
-  if (!run) throw new RouteError(404, '批次不存在。')
-  return { run, items: repo.questionsForRun(runId) }
+  if (run) return { run, items: repo.questionsForRun(runId) }
+  if (runId.startsWith('ifv2:')) {
+    const sourceDocumentId = runId.slice('ifv2:'.length)
+    const sourceDocument = getSourceDocument(sourceDocumentId)
+    if (!sourceDocument) throw new RouteError(404, '资料不存在。')
+    const items = repo.questionsForRun(runId)
+    return {
+      run: {
+        runId,
+        batchId: sourceDocumentId,
+        uploadMode: 'import_flow_v2',
+        paperTitle: sourceDocument.title || sourceDocument.originalFileName,
+        pdfName: sourceDocument.originalFileName || sourceDocument.title,
+        pdfPath: sourceDocument.filePath,
+        sourceFileName: sourceDocument.originalFileName,
+        sourceFileKind: sourceDocument.fileType,
+        materialType: 'exam',
+        fileRole: 'full',
+        stage: '高三',
+        classificationConfidence: 0,
+        classificationReasons: [],
+        runDir: '',
+        documentDiagnostics: {},
+        createdAt: sourceDocument.createdAt,
+        updatedAt: sourceDocument.updatedAt,
+        sliceStatus: 'succeeded',
+        sliceError: '',
+        quickReviewStatus: 'submitted',
+        totalQuestions: items.length,
+        approvedQuestions: items.length,
+        unreviewedQuestions: 0,
+        ocrStatus: 'succeeded',
+        ocrError: '',
+        progressPercent: 1,
+        processedQuestions: items.length,
+        totalOcrQuestions: items.length,
+        importedQuestions: items.length,
+        bankedQuestions: items.length,
+        solutionItems: 0,
+        ocrProvider: sourceDocument.provider === 'glm' ? 'glm' : 'legacy',
+        ocrExternalUid: '',
+        ocrProviderPhase: '',
+        ocrProviderProgress: 100,
+        ocrProviderResultPath: '',
+      },
+      items,
+    }
+  }
+  throw new RouteError(404, '批次不存在。')
 }
 
 export async function classifyRun(runId: string) {

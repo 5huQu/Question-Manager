@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { db } from '../../db/connection.js'
 import { dataDir, storageRoot, pythonRoot } from '../../config.js'
 import { pythonCommand, pythonEnv } from '../settings/python.js'
-import { getRegionsForSession } from '../pdf-slicer/annotations.service.js'
+import { getRegionsForSession, revalidateAllCandidatesForSourceDocument } from '../pdf-slicer/annotations.service.js'
 import { createQuestion, getQuestion } from '../../db/questions.js'
 import * as sourceRepo from '../../repositories/source-documents.repo.js'
 import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
@@ -17,7 +17,7 @@ import { createId, nowIso } from '../../utils/ids.js'
 import { assetPathFor, resolveStoragePath } from '../../utils/paths.js'
 import { parseJson } from '../../utils/json.js'
 import { difficultyLabel10, normalizeDifficultyScore10 } from '../../utils/search.js'
-import { inferQuestionType } from '../../utils/question-type.js'
+import { inferQuestionType, normalizeQuestionType } from '../../utils/question-type.js'
 import { parseQuestionCandidates } from '../question-parser/index.js'
 import { normalizeGlmOCRDocument } from '../ocr-providers/glm.normalizer.js'
 import { ensureOcrDocumentFiguresAndPlaceholders } from '../ocr-providers/ocr-document.normalizer.js'
@@ -87,7 +87,7 @@ function candidateStatusCounts(candidates: QuestionCandidate[]) {
     readyCount: candidates.filter((item) => item.status === 'ready').length,
     needsReviewCount: candidates.filter((item) => item.status === 'needs_review').length,
     needsManualFixCount: candidates.filter((item) => item.status === 'needs_manual_fix').length,
-    blockedCount: candidates.filter((item) => item.status === 'blocked' || item.status === 'needs_manual_fix').length,
+    blockedCount: candidates.filter((item) => item.status === 'blocked').length,
   }
 }
 
@@ -584,8 +584,10 @@ export function parseCandidatesForOcrDocument(id: string) {
   const candidates = parseQuestionCandidates(document)
   candidateRepo.deleteQuestionCandidatesForOcrDocument(id)
   const saved = candidates.map((candidate) => candidateRepo.createQuestionCandidate(candidate)).filter(Boolean) as QuestionCandidate[]
+  revalidateAllCandidatesForSourceDocument(document.sourceDocumentId)
+  const finalCandidates = candidateRepo.listQuestionCandidates({ sourceDocumentId: document.sourceDocumentId })
   sourceRepo.updateSourceDocument(document.sourceDocumentId, { status: saved.some((item) => item.status !== 'ready') ? 'partially_parsed' : 'parsed' })
-  return { ...candidateStatusCounts(saved), items: saved, diagnostics: getOcrFigureDiagnostics(id, saved) }
+  return { ...candidateStatusCounts(finalCandidates), items: finalCandidates, diagnostics: getOcrFigureDiagnostics(id, finalCandidates) }
 }
 
 export function listQuestionCandidatesForSource(sourceDocumentId: string, query: Record<string, unknown>) {
@@ -608,7 +610,10 @@ export function updateQuestionCandidate(id: string, body: Record<string, unknown
   const patch = (body.candidate || body) as UpdateQuestionCandidateInput
   const updated = candidateRepo.updateQuestionCandidate(id, patch)
   if (!updated) throw new RouteError(404, '候选题不存在。')
-  return { candidate: updated }
+  revalidateAllCandidatesForSourceDocument(updated.sourceDocumentId)
+  const finalUpdated = candidateRepo.getQuestionCandidate(id)
+  if (!finalUpdated) throw new RouteError(404, '候选题不存在。')
+  return { candidate: finalUpdated }
 }
 
 export function commitQuestionCandidate(id: string) {
@@ -628,7 +633,7 @@ export function commitQuestionCandidate(id: string) {
   const difficultyScore10 = normalizeDifficultyScore10(candidate.difficultyScore10)
   const item = createQuestion({
     questionNo: candidate.questionNo,
-    questionType: candidate.questionType || inferQuestionType(candidate.stemMarkdown, candidate.answerText),
+    questionType: normalizeQuestionType(candidate.questionType || inferQuestionType(candidate.stemMarkdown, candidate.answerText), candidate.stemMarkdown, candidate.answerText),
     difficultyScore: 0,
     difficultyScore10,
     difficultyLabel: candidate.difficultyLabel || difficultyLabel10(difficultyScore10),
@@ -707,20 +712,65 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
   if (!sourceDocument) {
     throw new RouteError(404, '源资料文件不存在。')
   }
+  const [ocrDocument] = ocrRepo.listOcrDocuments({ sourceDocumentId: candidate.sourceDocumentId, limit: 1 })
+  const pageSizeByPage = new Map<number, { width: number; height: number }>()
+  if (ocrDocument) {
+    try {
+      const document = loadOcrDocument(ocrDocument.id)
+      for (const page of document.pages) {
+        pageSizeByPage.set(page.pageNo, { width: page.width, height: page.height })
+      }
+    } catch {
+      // Existing manual-fix sessions should still be restorable if OCR artifacts are missing.
+    }
+  }
+  const normalizeBBoxSegment = (pageNo: number, bbox: [number, number, number, number] | undefined) => {
+    if (!bbox) return null
+    const pageSize = pageSizeByPage.get(pageNo)
+    const rawWidth = bbox[2] - bbox[0]
+    const rawHeight = bbox[3] - bbox[1]
+    if (rawWidth <= 0 || rawHeight <= 0) return null
+    const alreadyRelative = bbox.every((value) => Number.isFinite(value) && value >= 0 && value <= 1)
+    const segment = alreadyRelative
+      ? { page: pageNo, x: bbox[0], y: bbox[1], width: rawWidth, height: rawHeight }
+      : pageSize && pageSize.width > 0 && pageSize.height > 0
+        ? {
+            page: pageNo,
+            x: bbox[0] / pageSize.width,
+            y: bbox[1] / pageSize.height,
+            width: rawWidth / pageSize.width,
+            height: rawHeight / pageSize.height,
+          }
+        : null
+    if (!segment) return null
+    return segment.x >= 0 && segment.y >= 0 && segment.width > 0 && segment.height > 0 && segment.x + segment.width <= 1 && segment.y + segment.height <= 1
+      ? segment
+      : null
+  }
 
   const sessionId = `sess_candidate_${candidate.id}`
   const existing = db.prepare('SELECT * FROM pdf_slicer_annotation_sessions WHERE id = ?').get(sessionId) as any
   if (existing) {
+    let row = existing
+    if (existing.status !== 'draft') {
+      const now = nowIso()
+      db.prepare(`
+        UPDATE pdf_slicer_annotation_sessions
+        SET status = 'draft', revision = revision + 1, finalized_at = '', updated_at = ?
+        WHERE id = ?
+      `).run(now, sessionId)
+      row = db.prepare('SELECT * FROM pdf_slicer_annotation_sessions WHERE id = ?').get(sessionId) as any
+    }
     const regions = getRegionsForSession(sessionId)
     return {
-      id: existing.id,
-      batchId: existing.batch_id,
-      revision: existing.revision,
-      status: existing.status,
-      sourceProfileJson: existing.source_profile_json,
-      createdAt: existing.created_at,
-      updatedAt: existing.updated_at,
-      finalizedAt: existing.finalized_at,
+      id: row.id,
+      batchId: row.batch_id,
+      revision: row.revision,
+      status: row.status,
+      sourceProfileJson: row.source_profile_json,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      finalizedAt: row.finalized_at,
       regions
     }
   }
@@ -749,13 +799,7 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
   // 1. 映射题干 (stem)
   const stemRefs = candidate.sourceRefs.filter(r => r.kind === 'stem')
   if (stemRefs.length > 0) {
-    const segments = stemRefs.map(r => ({
-      page: r.pageNo,
-      x: r.bbox ? r.bbox[0] : 0,
-      y: r.bbox ? r.bbox[1] : 0,
-      width: r.bbox ? r.bbox[2] - r.bbox[0] : 0,
-      height: r.bbox ? r.bbox[3] - r.bbox[1] : 0
-    })).filter(s => s.width > 0 && s.height > 0)
+    const segments = stemRefs.map(r => normalizeBBoxSegment(r.pageNo, r.bbox)).filter(Boolean)
 
     if (segments.length > 0) {
       insertRegion.run(
@@ -778,13 +822,7 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
   // 2. 映射解析 (analysis / answer)
   const analysisRefs = candidate.sourceRefs.filter(r => r.kind === 'analysis' || r.kind === 'answer')
   if (analysisRefs.length > 0) {
-    const segments = analysisRefs.map(r => ({
-      page: r.pageNo,
-      x: r.bbox ? r.bbox[0] : 0,
-      y: r.bbox ? r.bbox[1] : 0,
-      width: r.bbox ? r.bbox[2] - r.bbox[0] : 0,
-      height: r.bbox ? r.bbox[3] - r.bbox[1] : 0
-    })).filter(s => s.width > 0 && s.height > 0)
+    const segments = analysisRefs.map(r => normalizeBBoxSegment(r.pageNo, r.bbox)).filter(Boolean)
 
     if (segments.length > 0) {
       insertRegion.run(
@@ -807,14 +845,8 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
   // 3. 映射已有关联的 figures (如果有 bbox 信息的话)
   for (const figure of candidate.figures) {
     if (figure.bbox && figure.pageNo) {
-      const seg = {
-        page: figure.pageNo,
-        x: figure.bbox[0],
-        y: figure.bbox[1],
-        width: figure.bbox[2] - figure.bbox[0],
-        height: figure.bbox[3] - figure.bbox[1]
-      }
-      if (seg.width > 0 && seg.height > 0) {
+      const seg = normalizeBBoxSegment(figure.pageNo, figure.bbox)
+      if (seg) {
         insertRegion.run(
           createId('reg'),
           sessionId,
@@ -846,3 +878,87 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
   }
 }
 
+export function deleteSourceDocument(id: string) {
+  const sourceDocument = sourceRepo.getSourceDocument(id)
+  if (!sourceDocument) {
+    throw new RouteError(404, '资料不存在。')
+  }
+
+  if (activeSourceDocumentOcrTasks.has(id)) {
+    throw new RouteError(409, '该资料的 OCR 任务正在运行，无法删除。')
+  }
+
+  // 1. 获取关联的 OCR 文件列表
+  const ocrDocs = ocrRepo.listOcrDocuments({ sourceDocumentId: id })
+
+  // 2. 清理磁盘文件
+  try {
+    // 删除 OCR 文件目录
+    for (const ocrDoc of ocrDocs) {
+      const ocrDir = storedOcrDocumentDir(ocrDoc.id)
+      if (fs.existsSync(ocrDir)) {
+        fs.rmSync(ocrDir, { recursive: true, force: true })
+      }
+    }
+
+    // 删除源资料目录
+    const srcDir = sourceDocumentDir(id)
+    if (fs.existsSync(srcDir)) {
+      fs.rmSync(srcDir, { recursive: true, force: true })
+    }
+  } catch (err) {
+    console.error('Failed to delete source document directories from disk:', err)
+  }
+
+  // 3. 删除数据库记录
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    // 删除相关标注区域
+    db.prepare('DELETE FROM pdf_slicer_annotation_regions WHERE source_run_id = ?').run(id)
+    // 删除相关标注会话
+    db.prepare('DELETE FROM pdf_slicer_annotation_sessions WHERE batch_id IN (SELECT id FROM question_candidates WHERE source_document_id = ?)').run(id)
+    // 删除源资料（通过级联删除级联删除 ocr_documents 和 question_candidates）
+    db.prepare('DELETE FROM source_documents WHERE id = ?').run(id)
+    db.exec('COMMIT')
+  } catch (error) {
+    try {
+      db.exec('ROLLBACK')
+    } catch {
+      // ignore
+    }
+    throw error
+  }
+
+  return { success: true }
+}
+
+export function deleteQuestionCandidate(id: string) {
+  const candidate = candidateRepo.getQuestionCandidate(id)
+  if (!candidate) {
+    throw new RouteError(404, '候选题不存在。')
+  }
+
+  const sessionId = `sess_candidate_${id}`
+  const sourceDocumentId = candidate.sourceDocumentId
+
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    // 删除该候选题关联的手动修正标注选区与会话
+    db.prepare('DELETE FROM pdf_slicer_annotation_regions WHERE session_id = ?').run(sessionId)
+    db.prepare('DELETE FROM pdf_slicer_annotation_sessions WHERE id = ?').run(sessionId)
+    // 删除候选题本身
+    candidateRepo.deleteQuestionCandidate(id)
+    db.exec('COMMIT')
+  } catch (error) {
+    try {
+      db.exec('ROLLBACK')
+    } catch {
+      // ignore
+    }
+    throw error
+  }
+
+  revalidateAllCandidatesForSourceDocument(sourceDocumentId)
+
+  return { success: true }
+}
