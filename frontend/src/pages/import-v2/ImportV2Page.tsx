@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
   BadgeAlert,
@@ -62,6 +62,9 @@ function issueLabel(code?: string) {
 
 export default function ImportV2Page() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const sourceDocumentIdFromQuery = searchParams.get('sourceDocumentId') || ''
+
   const [sourceDocuments, setSourceDocuments] = useState<ImportV2SourceDocument[]>([])
   const [ocrDocuments, setOcrDocuments] = useState<ImportV2OcrDocument[]>([])
   const [selectedOcrId, setSelectedOcrId] = useState('')
@@ -69,6 +72,10 @@ export default function ImportV2Page() {
   const [committedIds, setCommittedIds] = useState<Set<string>>(new Set())
 
   // UI 交互状态
+  const [selectedSourceDocId, setSelectedSourceDocId] = useState<string | null>(null)
+  const [showCheckArea, setShowCheckArea] = useState(false)
+  const [showDebug, setShowDebug] = useState(false)
+
   const [uploading, setUploading] = useState(false)
   const [runningSourceDocumentId, setRunningSourceDocumentId] = useState('')
   const [sourceOcrErrors, setSourceOcrErrors] = useState<Record<string, string>>({})
@@ -83,10 +90,94 @@ export default function ImportV2Page() {
   const [error, setError] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const checkAreaRef = useRef<HTMLDivElement>(null)
   const [dragOver, setDragOver] = useState(false)
 
   // JSON 模式下的已选择 OCR
   const selectedOcr = useMemo(() => ocrDocuments.find((item) => item.id === selectedOcrId) || null, [ocrDocuments, selectedOcrId])
+
+  // 当前选中的资料
+  const selectedDoc = useMemo(() => {
+    if (selectedSourceDocId) {
+      return sourceDocuments.find(d => d.id === selectedSourceDocId) || null
+    }
+    const docs = sourceDocuments.filter((item) => item.fileType === 'pdf' || item.fileType === 'image')
+    return docs[0] || null
+  }, [sourceDocuments, selectedSourceDocId])
+
+  // 状态解析
+  function getDocStatus(item: ImportV2SourceDocument) {
+    if (item.status === 'ocr_running') return { label: '识别中', variant: 'warning' as const }
+    if (item.status === 'ocr_failed') return { label: '识别失败', variant: 'danger' as const }
+    if (item.importStats?.allCommitted) return { label: '导入完成', variant: 'success' as const }
+    if (item.status === 'uploaded') return { label: '等待识别', variant: 'outline' as const }
+    if (item.status === 'ocr_succeeded') return { label: '已识别', variant: 'default' as const }
+    
+    if (item.status === 'parsed' || item.status === 'partially_parsed') {
+      const committed = item.importStats?.committedCount || 0
+      if (committed > 0) {
+        return { label: '部分入库', variant: 'warning' as const }
+      }
+      return { label: '待核对', variant: 'default' as const }
+    }
+    
+    return { label: '等待识别', variant: 'outline' as const }
+  }
+
+  // 步骤进度计算
+  const steps = useMemo(() => {
+    if (!selectedDoc) return []
+    
+    let step1: 'todo' | 'current' | 'done' = 'done'
+    let step2: 'todo' | 'current' | 'done' = 'todo'
+    let step3: 'todo' | 'current' | 'done' = 'todo'
+    const isAllCommitted = selectedDoc.importStats?.allCommitted || false
+    const status = selectedDoc.status
+    
+    if (status === 'uploaded' || status === 'ocr_failed') {
+      step1 = 'done'
+      step2 = 'todo'
+      step3 = 'todo'
+    } else if (status === 'ocr_running') {
+      step1 = 'done'
+      step2 = 'current'
+      step3 = 'todo'
+    } else if (status === 'ocr_succeeded') {
+      step1 = 'done'
+      step2 = 'done'
+      step3 = 'todo'
+    } else if (status === 'parsed' || status === 'partially_parsed') {
+      step1 = 'done'
+      step2 = 'done'
+      if (isAllCommitted) {
+        step3 = 'done'
+      } else {
+        step3 = 'current'
+      }
+    }
+    
+    return [
+      { title: '上传资料', state: step1 },
+      { title: '自动识别', state: step2 },
+      { title: '核对入库', state: step3 },
+    ]
+  }, [selectedDoc])
+
+  // 当选择不同资料时，重置核对区
+  useEffect(() => {
+    setQuestions([])
+    setShowCheckArea(false)
+    setDiagnostics(null)
+  }, [selectedDoc?.id])
+
+  // 自动滚动到核对区
+  useEffect(() => {
+    if (showCheckArea) {
+      setTimeout(() => {
+        checkAreaRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 100)
+    }
+  }, [showCheckArea])
 
   async function loadLists() {
     const [sourceResult, ocrResult] = await Promise.all([
@@ -114,6 +205,19 @@ export default function ImportV2Page() {
     loadLists().catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }, [])
 
+  // 从查询参数自动选择和加载候选题目
+  useEffect(() => {
+    if (sourceDocumentIdFromQuery && sourceDocuments.length > 0) {
+      const targetDoc = sourceDocuments.find(d => d.id === sourceDocumentIdFromQuery)
+      if (targetDoc) {
+        setSelectedSourceDocId(targetDoc.id)
+        if (targetDoc.status === 'parsed' || targetDoc.status === 'partially_parsed') {
+          void handleContinueCheck(targetDoc)
+        }
+      }
+    }
+  }, [sourceDocumentIdFromQuery, sourceDocuments.length])
+
   useEffect(() => {
     if (!runningSourceDocumentId) return undefined
     let active = true
@@ -126,9 +230,9 @@ export default function ImportV2Page() {
           await loadLists()
           if (!active) return
           if (result.ocrDocument) setSelectedOcrId(result.ocrDocument.id)
-          setIsJSONMode(true)
+          setIsJSONMode(false)
           setRunningSourceDocumentId('')
-          showNotice('识别完成。请点击“生成待确认题目”继续。')
+          showNotice('识别完成。请在右侧点击“生成待确认题目”继续。')
         } else if (result.task.status === 'ocr_failed') {
           setRunningSourceDocumentId('')
           const message = result.task.error || 'OCR 识别失败。'
@@ -163,6 +267,7 @@ export default function ImportV2Page() {
     // 如果是 JSON 文件，则自动转换到高级 JSON 模拟模式
     if (file.name.endsWith('.json')) {
       setIsJSONMode(true)
+      setShowDebug(true)
       await handleJsonFile(file)
       return
     }
@@ -175,8 +280,9 @@ export default function ImportV2Page() {
     setSelectedIds(new Set())
 
     try {
-      await importV2Api.uploadSourceDocument(file)
+      const res = await importV2Api.uploadSourceDocument(file)
       await loadLists()
+      setSelectedSourceDocId(res.sourceDocument.id)
       showNotice('资料已保存，可启动 GLM-OCR 识别。')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -205,54 +311,56 @@ export default function ImportV2Page() {
     }
   }
 
-  async function handleSourceDocumentAction(item: ImportV2SourceDocument) {
+  async function handleGenerateCandidates(item: ImportV2SourceDocument) {
     setBusy(`action-${item.id}`)
     setError('')
     try {
-      if (item.status === 'uploaded' || item.status === 'ocr_failed') {
-        await startGlmOcr(item.id)
-      } else if (item.status === 'ocr_succeeded') {
-        // 1. 获取该资料关联的第一个 OCRDocument
-        const ocrRes = await importV2Api.listOcrDocuments(item.id)
-        const ocrDoc = ocrRes.items[0]
-        if (!ocrDoc) {
-          throw new Error('未找到该资料对应的 OCR 结果文件。')
-        }
-        setSelectedOcrId(ocrDoc.id)
-        // 2. 生成待确认题目
-        const result = await importV2Api.parseCandidates(ocrDoc.id)
-        const unified = (result.items || []).map(fromCandidate)
-        setQuestions(unified)
-        setDiagnostics(result.diagnostics || null)
-        setCommittedIds(new Set(unified.filter((q) => q.status === 'committed').map((q) => q.id)))
-        setSelectedIds(new Set())
-        if (unified.length > 0) {
-          setActiveQuestionId(unified[0].id)
-        }
-        await loadLists()
-        showNotice('已自动提取并生成待核对题目')
-      } else if (item.status === 'parsed' || item.status === 'partially_parsed') {
-        if (item.importStats?.allCommitted) {
-          navigate('/questions')
-          return
-        }
-        const ocrRes = await importV2Api.listOcrDocuments(item.id)
-        const ocrDoc = ocrRes.items[0]
-        if (ocrDoc) {
-          setSelectedOcrId(ocrDoc.id)
-        }
-        const result = await importV2Api.listCandidates(item.id)
-        const unified = (result.items || []).map(fromCandidate)
-        setQuestions(unified)
-        setDiagnostics(result.diagnostics || null)
-        setCommittedIds(new Set(unified.filter((q) => q.status === 'committed').map((q) => q.id)))
-        setSelectedIds(new Set())
-        if (unified.length > 0) {
-          setActiveQuestionId(unified[0].id)
-        }
-        await loadLists()
-        showNotice('已加载当前识别记录的待确认题目')
+      const ocrRes = await importV2Api.listOcrDocuments(item.id)
+      const ocrDoc = ocrRes.items[0]
+      if (!ocrDoc) {
+        throw new Error('未找到该资料对应的 OCR 结果文件。')
       }
+      setSelectedOcrId(ocrDoc.id)
+      const result = await importV2Api.parseCandidates(ocrDoc.id)
+      const unified = (result.items || []).map(fromCandidate)
+      setQuestions(unified)
+      setDiagnostics(result.diagnostics || null)
+      setCommittedIds(new Set(unified.filter((q) => q.status === 'committed').map((q) => q.id)))
+      setSelectedIds(new Set())
+      if (unified.length > 0) {
+        setActiveQuestionId(unified[0].id)
+      }
+      await loadLists()
+      setShowCheckArea(true)
+      showNotice('已自动提取并生成待核对题目')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function handleContinueCheck(item: ImportV2SourceDocument) {
+    setBusy(`action-${item.id}`)
+    setError('')
+    try {
+      const ocrRes = await importV2Api.listOcrDocuments(item.id)
+      const ocrDoc = ocrRes.items[0]
+      if (ocrDoc) {
+        setSelectedOcrId(ocrDoc.id)
+      }
+      const result = await importV2Api.listCandidates(item.id)
+      const unified = (result.items || []).map(fromCandidate)
+      setQuestions(unified)
+      setDiagnostics(result.diagnostics || null)
+      setCommittedIds(new Set(unified.filter((q) => q.status === 'committed').map((q) => q.id)))
+      setSelectedIds(new Set())
+      if (unified.length > 0) {
+        setActiveQuestionId(unified[0].id)
+      }
+      await loadLists()
+      setShowCheckArea(true)
+      showNotice('已加载当前识别记录的待确认题目')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -303,6 +411,7 @@ export default function ImportV2Page() {
         setActiveQuestionId(unified[0].id)
       }
       await loadLists()
+      setShowCheckArea(true)
       showNotice('已自动提取并生成待核对题目')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -326,6 +435,7 @@ export default function ImportV2Page() {
       if (unified.length > 0) {
         setActiveQuestionId(unified[0].id)
       }
+      setShowCheckArea(true)
       showNotice('已加载当前识别记录的历史题目')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -344,6 +454,7 @@ export default function ImportV2Page() {
       setQuestions((items) => items.map((item) => item.id === q.id ? committed : item))
       setCommittedIds((prev) => new Set([...prev, q.id]))
       showNotice('该题目已成功确认入库')
+      await loadLists()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -382,6 +493,7 @@ export default function ImportV2Page() {
         return next
       })
       setSelectedIds(new Set())
+      await loadLists()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -402,6 +514,7 @@ export default function ImportV2Page() {
       })
       setSelectedIds(new Set())
       showNotice('已跳过选中的题目')
+      await loadLists()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -459,7 +572,7 @@ export default function ImportV2Page() {
     <div className="space-y-6">
       <PageTitle
         title="资料导入"
-        desc="上传资料后可使用 GLM-OCR 自动识别；识别完成后生成待确认题目。资料导入不会直接进入题库，请在确认入库前进行核对。"
+        desc="上传试卷或讲义，系统会自动识别题目。请核对题干、答案、解析和题图后再入库。"
         path="/tools/import"
       />
 
@@ -483,185 +596,386 @@ export default function ImportV2Page() {
         </div>
       ) : null}
 
-      <div className="grid gap-6 md:grid-cols-12">
-        <div className="md:col-span-8">
-          <Panel title="上传资料">
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={async (e) => {
-                  e.preventDefault()
-                  setDragOver(false)
-                  if (e.dataTransfer.files) {
-                    await handlePdfUpload(e.dataTransfer.files)
+      {/* 核心工作流区域 */}
+      <div className="grid gap-6 lg:grid-cols-12 items-start">
+        {/* 左栏：上传与列表 */}
+        <div className="lg:col-span-4 space-y-4 flex flex-col">
+          {/* 上传卡片 */}
+          <Panel title="上传新资料">
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={async (e) => {
+                e.preventDefault()
+                setDragOver(false)
+                if (e.dataTransfer.files) {
+                  await handlePdfUpload(e.dataTransfer.files)
+                }
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center ${
+                dragOver
+                  ? 'border-zinc-900 bg-zinc-50/30 dark:border-zinc-100 dark:bg-zinc-900/30'
+                  : 'border-zinc-200 bg-white hover:bg-zinc-50/10 dark:border-zinc-800 dark:bg-zinc-955'
+              }`}
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept="application/json,.json,application/pdf,.pdf,image/png,image/jpeg,image/jpg"
+                onChange={async (e) => {
+                  if (e.target.files) {
+                    await handlePdfUpload(e.target.files)
                   }
                 }}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center ${
-                  dragOver
-                    ? 'border-zinc-900 bg-zinc-50/30 dark:border-zinc-100 dark:bg-zinc-900/30'
-                    : 'border-zinc-200 bg-white hover:bg-zinc-50/10 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900/20'
-                }`}
-              >
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  className="hidden"
-                  accept="application/json,.json,application/pdf,.pdf,image/png,image/jpeg,image/jpg"
-                  onChange={async (e) => {
-                    if (e.target.files) {
-                      await handlePdfUpload(e.target.files)
-                    }
-                  }}
-                />
-                {uploading ? (
-                  <LoaderCircle className="size-8 animate-spin text-zinc-500 mb-3" />
-                ) : (
-                  <Upload className="size-8 text-zinc-400 dark:text-zinc-500 mb-3" />
-                )}
-                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                  {uploading ? '文件正保存中...' : '点击选择或拖拽资料文件至此处'}
-                </p>
-                <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">
-                  支持 PDF、PNG/JPG；上传后先保存原始资料，再点击“开始自动识别”。
-                </p>
-              </div>
-              {sourceDocuments.filter((item) => item.fileType === 'pdf' || item.fileType === 'image').length > 0 && (
-                <div className="mt-4 space-y-2">
-                  <p className="text-[11px] font-semibold text-zinc-500">已保存资料</p>
-                  {sourceDocuments.filter((item) => item.fileType === 'pdf' || item.fileType === 'image').slice(0, 5).map((item) => {
-                    const isRunning = item.id === runningSourceDocumentId || item.status === 'ocr_running'
-                    const statusLabel = item.status === 'ocr_running'
-                      ? '识别中'
-                      : item.status === 'ocr_succeeded' || item.status === 'parsed' || item.status === 'partially_parsed'
-                        ? '已识别'
-                        : item.status === 'ocr_failed'
-                          ? '识别失败'
-                          : '等待识别'
-                    return (
-                      <div key={item.id} className="flex items-center gap-3 rounded-lg border border-zinc-100 px-3 py-2 dark:border-zinc-800">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-medium text-zinc-800 dark:text-zinc-200">{item.originalFileName || item.title}</p>
-                          <p className="text-[10px] text-zinc-500">{statusLabel}</p>
-                          {item.importStats && item.importStats.candidateCount > 0 ? (
-                            <p className="text-[10px] text-zinc-400 mt-0.5 leading-normal">
-                              已生成 {item.importStats.candidateCount} 道待确认题目 · 已入库 {item.importStats.committedCount} / {item.importStats.candidateCount} · 需要修正 {item.importStats.needsManualFixCount}
-                            </p>
-                          ) : null}
-                          {item.status === 'ocr_failed' && sourceOcrErrors[item.id] ? (
-                            <p className="mt-0.5 truncate text-[10px] text-red-600 dark:text-red-400" title={sourceOcrErrors[item.id]}>
-                              {sourceOcrErrors[item.id]}
-                            </p>
-                          ) : null}
-                        </div>
-                        {isRunning ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500"><LoaderCircle className="size-3 animate-spin" /> 识别中</span>
+              />
+              {uploading ? (
+                <LoaderCircle className="size-7 animate-spin text-zinc-500 mb-2" />
+              ) : (
+                <Upload className="size-7 text-zinc-400 dark:text-zinc-500 mb-2" />
+              )}
+              <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">
+                {uploading ? '文件保存中...' : '点击选择或拖拽资料至此处'}
+              </p>
+              <p className="text-[10px] text-zinc-400 mt-1">
+                支持 PDF、PNG/JPG
+              </p>
+            </div>
+          </Panel>
+
+          {/* 资料列表 */}
+          <Panel title="资料列表">
+            <div className="space-y-2.5 max-h-[450px] overflow-y-auto pr-1">
+              {sourceDocuments.filter((item) => item.fileType === 'pdf' || item.fileType === 'image').length === 0 ? (
+                <Empty text="暂无资料，请先上传" />
+              ) : (
+                sourceDocuments.filter((item) => item.fileType === 'pdf' || item.fileType === 'image').map((item) => {
+                  const statusInfo = getDocStatus(item)
+                  const isSelected = selectedDoc?.id === item.id
+                  
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => setSelectedSourceDocId(item.id)}
+                      className={`group border rounded-xl p-3 cursor-pointer transition-all ${
+                        isSelected
+                          ? 'border-zinc-900 bg-zinc-50/40 dark:border-zinc-100 dark:bg-zinc-900/40'
+                          : 'border-zinc-200 bg-white hover:bg-zinc-50/10 dark:border-zinc-800 dark:bg-zinc-950'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="truncate text-xs font-semibold text-zinc-800 dark:text-zinc-200 max-w-[70%]" title={item.originalFileName || item.title}>
+                          {item.originalFileName || item.title}
+                        </p>
+                        <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                      </div>
+                      
+                      <div className="mt-2 text-[10px] text-zinc-500 dark:text-zinc-400 space-y-0.5">
+                        {item.importStats && item.importStats.candidateCount > 0 ? (
+                          <>
+                            <div>已生成 {item.importStats.candidateCount} 道待确认题目</div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>已入库 {item.importStats.committedCount} / {item.importStats.candidateCount}</span>
+                              {(item.importStats.needsManualFixCount + item.importStats.blockedCount) > 0 && (
+                                <span className="text-red-500 font-medium">需要修正 {(item.importStats.needsManualFixCount + item.importStats.blockedCount)}</span>
+                              )}
+                              {item.importStats.needsReviewCount > 0 && (
+                                <span className="text-amber-600 font-medium">建议核对 {item.importStats.needsReviewCount}</span>
+                              )}
+                            </div>
+                          </>
                         ) : (
-                          <Button
-                            size="sm"
-                            icon={
-                              item.status === 'uploaded' || item.status === 'ocr_failed'
-                                ? Play
-                                : item.importStats?.allCommitted
-                                  ? Database
-                                  : CheckCircle2
-                            }
-                            disabled={Boolean(busy)}
-                            onClick={() => handleSourceDocumentAction(item)}
-                          >
-                            {item.status === 'uploaded'
-                              ? '开始自动识别'
-                              : item.status === 'ocr_failed'
-                                ? '重新识别'
-                                : item.status === 'ocr_succeeded'
-                                  ? '生成待确认题目'
-                                  : item.importStats?.allCommitted
-                                    ? '导入完成 / 查看题库'
-                                    : '继续核对入库'}
-                          </Button>
+                          <div className="italic text-zinc-400">暂无识别题目</div>
+                        )}
+                        
+                        {item.status === 'ocr_failed' && sourceOcrErrors[item.id] && (
+                          <p className="text-red-500 truncate mt-1" title={sourceOcrErrors[item.id]}>
+                            错误: {sourceOcrErrors[item.id]}
+                          </p>
                         )}
                       </div>
-                    )
-                  })}
-                </div>
+                    </div>
+                  )
+                })
               )}
+            </div>
           </Panel>
         </div>
 
-        <div className="md:col-span-4">
-          <Panel title="OCRDocument 候选生成">
-              <div className="space-y-4 text-xs">
-                <p className="text-zinc-500 leading-relaxed">
-                  可导入模拟 JSON，或选择 GLM-OCR 已生成的 OCRDocument；候选生成不会自动执行。
-                </p>
-
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-zinc-800 dark:text-zinc-200">导入模拟 JSON</span>
-                  <input
-                    type="checkbox"
-                    checked={isJSONMode}
-                    onChange={(e) => setIsJSONMode(e.target.checked)}
-                    className="h-4 w-4 rounded border-zinc-300 cursor-pointer text-zinc-950 focus:ring-zinc-950"
-                  />
+        {/* 右栏：导入工作流操作 */}
+        <div className="lg:col-span-8 space-y-4">
+          {selectedDoc ? (
+            <Panel title="导入工作流操作">
+              <div className="space-y-6">
+                {/* 标题 & 状态 */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4 dark:border-zinc-800">
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-50 truncate pr-4" title={selectedDoc.originalFileName || selectedDoc.title}>
+                      {selectedDoc.originalFileName || selectedDoc.title}
+                    </h2>
+                    <p className="text-[10px] text-zinc-400">
+                      创建时间: {new Date(selectedDoc.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="shrink-0">
+                    <Badge variant={getDocStatus(selectedDoc).variant} className="text-xs px-2.5 py-1">
+                      {getDocStatus(selectedDoc).label}
+                    </Badge>
+                  </div>
                 </div>
 
-                {isJSONMode && (
-                  <div className="space-y-3 pt-2 border-t border-zinc-100 dark:border-zinc-800 animate-in slide-in-from-top-1 duration-200">
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-semibold text-zinc-500">后端已有 OCRDocument</label>
-                      <select
-                        className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-xs outline-none focus:ring-1 focus:ring-zinc-950"
-                        value={selectedOcrId}
-                        onChange={(event) => {
-                          setSelectedOcrId(event.target.value)
-                          setQuestions([])
-                        }}
+                {/* 页面主流程 - Stepper */}
+                <div className="bg-zinc-50/30 dark:bg-zinc-900/5 p-4 rounded-xl border border-zinc-150 dark:border-zinc-800">
+                  <div className="flex items-center w-full select-none">
+                    {steps.map((step, idx) => (
+                      <div key={idx} className="flex items-center flex-1 last:flex-initial">
+                        <div className="flex items-center gap-2">
+                          <div className={`flex size-7 items-center justify-center rounded-full border text-xs font-semibold transition-all ${
+                            step.state === 'done'
+                              ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
+                              : step.state === 'current'
+                                ? 'bg-zinc-900 border-zinc-900 text-white dark:bg-zinc-100 dark:border-zinc-100 dark:text-zinc-950 shadow-md ring-2 ring-zinc-500/20'
+                                : 'bg-zinc-100 border-zinc-200 text-zinc-400 dark:bg-zinc-900 dark:border-zinc-800 dark:text-zinc-500'
+                          }`}>
+                            {step.state === 'done' ? <Check className="size-4 stroke-[3]" /> : idx + 1}
+                          </div>
+                          <span className={`text-xs font-semibold whitespace-nowrap ${
+                            step.state === 'done'
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : step.state === 'current'
+                                ? 'text-zinc-900 dark:text-zinc-100'
+                                : 'text-zinc-400 dark:text-zinc-500'
+                          }`}>
+                            {step.title}
+                          </span>
+                        </div>
+                        {idx < steps.length - 1 && (
+                          <div className={`h-[2px] flex-1 mx-4 rounded min-w-[20px] transition-all ${
+                            step.state === 'done' ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-800'
+                          }`} />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 核心操作区域 */}
+                <div className="bg-white dark:bg-zinc-955 p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-4">
+                  {/* uploaded */}
+                  {selectedDoc.status === 'uploaded' && (
+                    <div className="space-y-4">
+                      <p className="text-xs text-zinc-500 leading-relaxed">
+                        资料已成功保存。点击“开始自动识别”将通过 GLM-OCR 自动提取试卷题目、公式及插图。
+                      </p>
+                      <Button
+                        size="default"
+                        icon={Play}
+                        disabled={Boolean(busy)}
+                        onClick={() => startGlmOcr(selectedDoc.id)}
+                        className="w-full sm:w-auto"
                       >
-                        <option value="">请选择 OCR 试卷</option>
-                        {ocrDocuments.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.id.slice(0, 10)} · {item.provider} · {item.createdAt.slice(0, 10)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <Button size="sm" icon={Play} onClick={parseSelectedOcr} disabled={!selectedOcrId || Boolean(busy)}>
-                        生成待确认题目
-                      </Button>
-                      <Button size="sm" icon={Database} variant="outline" onClick={loadCandidatesForSelected} disabled={!selectedOcr || Boolean(busy)}>
-                        查看历史候选
+                        {busy === `ocr-${selectedDoc.id}` ? '正在启动...' : '开始自动识别'}
                       </Button>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {diagnostics && (
-                  <div className="mt-4 space-y-2 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/10">
-                    <h4 className="font-semibold text-zinc-700 dark:text-zinc-300">试卷图源诊断信息</h4>
-                    <div className="grid grid-cols-2 gap-y-1.5 text-[11px] text-zinc-500">
-                      <div>Markdown 占位符数量:</div>
-                      <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.placeholderCount}</div>
-                      <div>Assets 资产数量:</div>
-                      <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.assetsCount}</div>
-                      <div>未匹配 Asset 的占位符:</div>
-                      <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.unmatchedPlaceholderCount}</div>
-                      <div>Candidate 未使用的 Asset:</div>
-                      <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.unusedAssetsCount}</div>
-                      <div>远程图片下载失败数量:</div>
-                      <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.failedDownloadCount}</div>
+                  {/* ocr_failed */}
+                  {selectedDoc.status === 'ocr_failed' && (
+                    <div className="space-y-4">
+                      <div className="rounded-lg bg-red-50/20 border border-red-200/30 p-3 text-xs text-red-700 dark:text-red-400">
+                        <p className="font-semibold mb-1">OCR 识别失败错误信息：</p>
+                        <p className="font-mono">{sourceOcrErrors[selectedDoc.id] || '未知识别错误。'}</p>
+                      </div>
+                      <Button
+                        size="default"
+                        icon={Play}
+                        disabled={Boolean(busy)}
+                        onClick={() => startGlmOcr(selectedDoc.id)}
+                        className="w-full sm:w-auto"
+                      >
+                        重新识别
+                      </Button>
                     </div>
-                  </div>
-                )}
+                  )}
+
+                  {/* ocr_running */}
+                  {selectedDoc.status === 'ocr_running' && (
+                    <div className="flex flex-col items-center justify-center py-6 text-center space-y-3">
+                      <LoaderCircle className="size-8 animate-spin text-zinc-500" />
+                      <p className="text-xs text-zinc-500 font-medium">
+                        识别中，可能需要几十秒到数分钟，系统正在后台轮询...
+                      </p>
+                    </div>
+                  )}
+
+                  {/* ocr_succeeded 且 candidateCount = 0 */}
+                  {selectedDoc.status === 'ocr_succeeded' && (selectedDoc.importStats?.candidateCount || 0) === 0 && (
+                    <div className="space-y-4">
+                      <p className="text-xs text-zinc-500 leading-relaxed">
+                        OCR 智能识别已完成，现在可分析并生成待核对的题目草稿列表。
+                      </p>
+                      <Button
+                        size="default"
+                        icon={Play}
+                        disabled={Boolean(busy)}
+                        onClick={() => handleGenerateCandidates(selectedDoc)}
+                        className="w-full sm:w-auto"
+                      >
+                        {busy === `action-${selectedDoc.id}` ? '生成中...' : '生成待确认题目'}
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* parsed / partially_parsed 且 allCommitted = false */}
+                  {(selectedDoc.status === 'parsed' || selectedDoc.status === 'partially_parsed') && !selectedDoc.importStats?.allCommitted && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <div className="border border-zinc-100 dark:border-zinc-800 rounded-lg p-3 bg-zinc-50/10">
+                          <span className="text-[10px] text-zinc-400 block">已入库</span>
+                          <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
+                            {selectedDoc.importStats?.committedCount || 0} / {selectedDoc.importStats?.candidateCount || 0}
+                          </span>
+                        </div>
+                        <div className="border border-zinc-100 dark:border-zinc-800 rounded-lg p-3 bg-zinc-50/10">
+                          <span className="text-[10px] text-zinc-400 block">剩余待核对</span>
+                          <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
+                            {selectedDoc.importStats?.uncommittedCount || 0} 题
+                          </span>
+                        </div>
+                        <div className="border border-zinc-100 dark:border-zinc-800 rounded-lg p-3 bg-zinc-50/10 col-span-2 sm:col-span-1">
+                          <span className="text-[10px] text-zinc-400 block font-medium">需要修正</span>
+                          <span className="text-sm font-bold text-red-500">
+                            {(selectedDoc.importStats?.needsManualFixCount || 0) + (selectedDoc.importStats?.blockedCount || 0)} 题
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-3 pt-2">
+                        <Button
+                          size="default"
+                          icon={CheckCircle2}
+                          disabled={Boolean(busy)}
+                          onClick={() => handleContinueCheck(selectedDoc)}
+                          className="w-full sm:w-auto"
+                        >
+                          继续核对入库
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* allCommitted = true */}
+                  {selectedDoc.importStats?.allCommitted && (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
+                        <CheckCircle2 className="size-4" />
+                        <span>所有题目均已确认存入题库！</span>
+                      </div>
+                      <Button
+                        size="default"
+                        icon={Database}
+                        onClick={() => navigate('/questions')}
+                        className="w-full sm:w-auto"
+                      >
+                        查看题库
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
-          </Panel>
+            </Panel>
+          ) : (
+            <Panel title="工作流操作">
+              <div className="h-48 flex items-center justify-center text-xs text-zinc-400 bg-zinc-50/10 border border-dashed rounded-xl">
+                请在左侧资料列表中选择一份资料以开始，或上传新文件。
+              </div>
+            </Panel>
+          )}
+
+          {/* 高级调试折叠区 */}
+          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs bg-white dark:bg-zinc-955">
+            <button
+              type="button"
+              onClick={() => setShowDebug(!showDebug)}
+              className="w-full px-5 py-3 bg-zinc-50/50 dark:bg-zinc-900/10 flex items-center justify-between text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300 transition-colors"
+            >
+              <span>⚙️ 高级调试 (开发人员专用)</span>
+              <span>{showDebug ? '收起 ▲' : '展开 ▼'}</span>
+            </button>
+            {showDebug && (
+              <div className="p-5 bg-white dark:bg-zinc-955 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
+                <div className="grid gap-6 md:grid-cols-2">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">导入模拟 JSON</span>
+                      <input
+                        type="checkbox"
+                        checked={isJSONMode}
+                        onChange={(e) => setIsJSONMode(e.target.checked)}
+                        className="h-4 w-4 rounded border-zinc-300 cursor-pointer text-zinc-955 focus:ring-zinc-955"
+                      />
+                    </div>
+                    {isJSONMode && (
+                      <div className="space-y-3 pt-2 border-t border-zinc-100 dark:border-zinc-800 animate-in slide-in-from-top-1 duration-200">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-semibold text-zinc-500">后端已有 OCRDocument</label>
+                          <select
+                            className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-xs outline-none focus:ring-1 focus:ring-zinc-955"
+                            value={selectedOcrId}
+                            onChange={(event) => {
+                              setSelectedOcrId(event.target.value)
+                              setQuestions([])
+                            }}
+                          >
+                            <option value="">请选择 OCR 试卷</option>
+                            {ocrDocuments.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.id.slice(0, 10)} · {item.provider} · {item.createdAt.slice(0, 10)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <Button size="sm" icon={Play} onClick={parseSelectedOcr} disabled={!selectedOcrId || Boolean(busy)}>
+                            生成待确认题目
+                          </Button>
+                          <Button size="sm" icon={Database} variant="outline" onClick={loadCandidatesForSelected} disabled={!selectedOcr || Boolean(busy)}>
+                            查看历史候选
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {diagnostics && (
+                    <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/10">
+                      <h4 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">试卷图源诊断信息</h4>
+                      <div className="grid grid-cols-2 gap-y-1.5 text-[11px] text-zinc-500 mt-2">
+                        <div>Markdown 占位符数量:</div>
+                        <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.placeholderCount}</div>
+                        <div>Assets 资产数量:</div>
+                        <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.assetsCount}</div>
+                        <div>未匹配 Asset 的占位符:</div>
+                        <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.unmatchedPlaceholderCount}</div>
+                        <div>Candidate 未使用的 Asset:</div>
+                        <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.unusedAssetsCount}</div>
+                        <div>远程图片下载失败数量:</div>
+                        <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.failedDownloadCount}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* ── 模块 4-8：题目核对区 (生成完题目后展示) ── */}
-      {questions.length > 0 && (
-        <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-12rem)] min-h-[700px] items-stretch">
+      {questions.length > 0 && showCheckArea && (
+        <div ref={checkAreaRef} className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-12rem)] min-h-[700px] items-stretch">
           {/* 左侧：题目列表卡片栏 (35% 宽度) */}
           <div className="w-full lg:w-[35%] shrink-0 flex flex-col border rounded-xl bg-white dark:bg-zinc-955 overflow-hidden shadow-sm">
             {/* 分类过滤器 */}
@@ -700,7 +1014,7 @@ export default function ImportV2Page() {
             <div className="border-b border-zinc-100 dark:border-zinc-900 px-4 py-2.5 flex items-center justify-between text-xs text-zinc-500">
               <button
                 onClick={handleSelectAll}
-                className="flex items-center gap-2 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors font-medium cursor-pointer"
+                className="flex items-center gap-2 hover:text-zinc-900 dark:hover:text-zinc-55 transition-colors font-medium cursor-pointer"
               >
                 <span className={`flex items-center justify-center size-3.5 rounded border transition-all ${
                   allSelected
@@ -816,53 +1130,60 @@ export default function ImportV2Page() {
             {activeQuestion ? (
               <div className="flex-1 flex flex-col overflow-hidden">
                 {/* 详情头部操作区 */}
-                <div className="border-b border-zinc-100 bg-zinc-50/50 dark:border-zinc-900 dark:bg-zinc-900/10 px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0">
-                  <div className="space-y-0.5">
-                    <h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                      第 {activeQuestion.questionNo || '？'} 题 详细内容核对
-                    </h3>
-                    <p className="text-[11px] text-zinc-500">
-                      检查公式和插图，确认后即可存入主库。
-                    </p>
-                  </div>
+                <div className="border-b border-zinc-100 bg-zinc-50/50 dark:border-zinc-900 dark:bg-zinc-900/10 px-5 py-3 shrink-0 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                        第 {activeQuestion.questionNo || '？'} 题 详细内容核对
+                      </h3>
+                      <p className="text-[11px] text-zinc-500">
+                        检查公式和插图，确认后即可存入主库。
+                      </p>
+                    </div>
 
-                  {/* 核对操作按钮 */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      icon={Layers}
-                      disabled={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) || Boolean(busy)}
-                      onClick={() => startManualFix(activeQuestion.id, 'stem')}
-                    >
-                      修正题目范围
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      icon={Compass}
-                      disabled={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) || Boolean(busy)}
-                      onClick={() => startManualFix(activeQuestion.id, 'analysis')}
-                    >
-                      修正解析范围
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      icon={ImageIcon}
-                      disabled={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) || Boolean(busy)}
-                      onClick={() => startManualFix(activeQuestion.id, 'figure')}
-                    >
-                      补充题图
-                    </Button>
-                    <Button
-                      size="sm"
-                      icon={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) ? CheckCircle2 : busy === activeQuestion.id ? LoaderCircle : CheckCircle2}
-                      disabled={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) || busy === activeQuestion.id || !activeQuestion.stemMarkdown.trim()}
-                      onClick={() => commitSingleQuestion(activeQuestion)}
-                    >
-                      {activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) ? '已入库' : '确认入库'}
-                    </Button>
+                    {/* 核对操作按钮 */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        icon={Layers}
+                        disabled={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) || Boolean(busy)}
+                        onClick={() => startManualFix(activeQuestion.id, 'stem')}
+                      >
+                        标记题干区域
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        icon={Compass}
+                        disabled={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) || Boolean(busy)}
+                        onClick={() => startManualFix(activeQuestion.id, 'analysis')}
+                      >
+                        标记解析区域
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        icon={ImageIcon}
+                        disabled={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) || Boolean(busy)}
+                        onClick={() => startManualFix(activeQuestion.id, 'figure')}
+                      >
+                        补充题图
+                      </Button>
+                      <Button
+                        size="sm"
+                        icon={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) ? CheckCircle2 : busy === activeQuestion.id ? LoaderCircle : CheckCircle2}
+                        disabled={activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) || busy === activeQuestion.id || !activeQuestion.stemMarkdown.trim()}
+                        onClick={() => commitSingleQuestion(activeQuestion)}
+                      >
+                        {activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id) ? '已入库' : '确认入库'}
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  {/* 提示文案 */}
+                  <div className="text-[10px] text-zinc-500 bg-zinc-100/50 dark:bg-zinc-900/50 px-3 py-1.5 rounded-md border border-zinc-200/50 dark:border-zinc-800/50 leading-relaxed">
+                    💡 <strong>说明：</strong>当前框选主要用于补充题图和记录原文区域；题干、解析文字请在修正页中手动编辑。后续可接入局部 OCR。
                   </div>
                 </div>
 
