@@ -111,8 +111,15 @@ function markdownImage(url: string) {
 
 /** Convert provider HTML image tags without enabling arbitrary HTML rendering. */
 export function normalizeHtmlImageTags(value: string) {
+  // Pass 1: Unwrap <div> that only contains an <img> tag
   const withoutImageOnlyDivs = String(value || '').replace(/<div\b[^>]*>\s*(<img\b[\s\S]*?>)\s*<\/div>/gi, '$1')
-  return withoutImageOnlyDivs.replace(/<img\b[\s\S]*?>/gi, (tag) => {
+  // Pass 2: Unwrap <div align="center"> around any content (text captions, titles, etc.)
+  const withoutAlignCenterDivs = withoutImageOnlyDivs.replace(
+    /<div\s+align\s*=\s*["']?center["']?\s*>\s*([\s\S]*?)\s*<\/div>/gi,
+    '$1',
+  )
+  // Pass 3: Convert <img> tags to markdown image syntax
+  return withoutAlignCenterDivs.replace(/<img\b[\s\S]*?>/gi, (tag) => {
     const quoted = /\bsrc\s*=\s*(["'])([\s\S]*?)\1/i.exec(tag)
     const unquoted = /\bsrc\s*=\s*([^\s>]+)/i.exec(tag)
     const src = quoted?.[2] || unquoted?.[1] || ''

@@ -29,6 +29,25 @@ function sourceTitle(sourceDocumentId: string) {
   return source?.paperTitle || source?.title || source?.originalFileName || '资料导入 v2'
 }
 
+function importJobContextForSource(sourceDocumentId: string) {
+  const row = db.prepare(`
+    SELECT j.id, j.title, j.paper_title
+    FROM import_jobs j
+    JOIN import_job_documents d ON d.job_id = j.id
+    WHERE d.source_document_id = ?
+      AND j.status IN ('parsed', 'partially_parsed')
+    ORDER BY j.updated_at DESC, j.created_at DESC
+    LIMIT 1
+  `).get(sourceDocumentId) as { id: string; title: string; paper_title: string } | undefined
+  if (!row) return null
+  const sourceId = `ifv2-job:${row.id}`
+  return {
+    importSourceId: sourceId,
+    sourceRunId: sourceId,
+    sourceTitle: row.paper_title || row.title || sourceTitle(sourceDocumentId),
+  }
+}
+
 function sourceMetadata(sourceDocumentId: string) {
   const source = sourceRepo.getSourceDocument(sourceDocumentId)
   return source ? {
@@ -97,6 +116,7 @@ export function commitQuestionCandidate(id: string) {
   }
   if (!candidate.stemMarkdown.trim()) throw new RouteError(400, '题干为空，不能入库。')
   const difficultyScore10 = normalizeDifficultyScore10(candidate.difficultyScore10)
+  const importJobContext = importJobContextForSource(candidate.sourceDocumentId)
   const item = createQuestion({
     questionNo: candidate.questionNo,
     questionType: normalizeQuestionType(candidate.questionType || inferQuestionType(candidate.stemMarkdown, candidate.answerText), candidate.stemMarkdown, candidate.answerText),
@@ -106,7 +126,7 @@ export function commitQuestionCandidate(id: string) {
     chapter: candidate.knowledgePoints[0] || '待整理',
     knowledgePoints: normalizeTags(candidate.knowledgePoints),
     solutionMethods: normalizeTags(candidate.solutionMethods),
-    sourceTitle: sourceTitle(candidate.sourceDocumentId),
+    sourceTitle: importJobContext?.sourceTitle || sourceTitle(candidate.sourceDocumentId),
     province: candidate.province,
     city: candidate.city,
     paperTitle: candidate.paperTitle,
@@ -116,13 +136,13 @@ export function commitQuestionCandidate(id: string) {
     paperKind: candidate.paperKind,
     examYear: candidate.examYear,
     sourceOrg: candidate.sourceOrg,
-    importSourceId: candidate.sourceDocumentId,
+    importSourceId: importJobContext?.importSourceId || candidate.sourceDocumentId,
     bankStatus: 'ready',
     stemMarkdown: candidate.stemMarkdown,
     answerText: candidate.answerText,
     analysisMarkdown: candidate.analysisMarkdown,
     figures: figuresForQuestionBank(candidate.figures),
-    sourceRunId: `ifv2:${candidate.sourceDocumentId}`,
+    sourceRunId: importJobContext?.sourceRunId || `ifv2:${candidate.sourceDocumentId}`,
   })
   if (!item) throw new RouteError(500, '入库失败。')
   const committedCandidate = candidateRepo.updateQuestionCandidate(id, {

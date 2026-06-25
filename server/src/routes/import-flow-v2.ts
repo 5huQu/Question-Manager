@@ -21,6 +21,10 @@ import {
   createOrRestoreCandidateManualFixSession,
   deleteSourceDocument,
   deleteQuestionCandidate,
+  createImportJob,
+  getImportJob,
+  addSourceDocumentToImportJob,
+  parseCandidatesForImportJob,
 } from '../services/import-flow-v2/import-flow-v2.service.js'
 import { getParserConfigForApi, resetParserConfig, saveParserConfig } from '../services/question-parser/parser-config.js'
 
@@ -60,6 +64,38 @@ export function mountImportFlowV2Routes(app: Express) {
   app.post('/api/import-flow-v2/parser-config/reset', (_req, res) => {
     try {
       res.json({ config: resetParserConfig() })
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/import-jobs', (req, res) => {
+    try {
+      res.status(201).json(createImportJob(req.body || {}))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.get('/api/import-jobs/:id', (req, res) => {
+    try {
+      res.json(getImportJob(decodeURIComponent(String(req.params.id || ''))))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/import-jobs/:id/documents', (req, res) => {
+    try {
+      res.status(201).json(addSourceDocumentToImportJob(decodeURIComponent(String(req.params.id || '')), req.body || {}))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/import-jobs/:id/parse-candidates', (req, res) => {
+    try {
+      res.json(parseCandidatesForImportJob(decodeURIComponent(String(req.params.id || ''))))
     } catch (error) {
       sendRouteError(res, error)
     }
