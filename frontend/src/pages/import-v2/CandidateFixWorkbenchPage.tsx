@@ -99,15 +99,15 @@ export default function CandidateFixWorkbenchPage() {
   // Load candidate and restore manual-fix session
   useEffect(() => {
     if (!candidateId || !sourceDocumentId) return
-    loadCandidateAndSession()
+    loadCandidateAndSession(sourceDocumentId, candidateId)
   }, [candidateId, sourceDocumentId])
 
-  async function loadCandidateAndSession() {
+  async function loadCandidateAndSession(nextSourceDocumentId: string, nextCandidateId: string) {
     try {
       setLoading(true)
       // 1. 获取 Candidate 信息
-      const data = await importV2Api.listCandidates(sourceDocumentId)
-      const currentCandidate = data.items.find(item => item.id === candidateId)
+      const data = await importV2Api.listCandidates(nextSourceDocumentId)
+      const currentCandidate = data.items.find(item => item.id === nextCandidateId)
       if (!currentCandidate) {
         throw new Error('未找到当前候选题目。')
       }
@@ -118,7 +118,7 @@ export default function CandidateFixWorkbenchPage() {
       setFigures(currentCandidate.figures || [])
 
       // 2. 创建或恢复修正 Session
-      const sess = await importV2Api.createManualFixSession(candidateId)
+      const sess = await importV2Api.createManualFixSession(nextCandidateId)
       setSession(sess)
       setRegions(sess.regions || [])
 
@@ -365,7 +365,7 @@ export default function CandidateFixWorkbenchPage() {
 
   function segmentForFigure(figure: any): Segment | null {
     const page = Number(figure.pageNo || 0)
-    const bbox = Array.isArray(figure.bbox) ? figure.bbox.map(Number) : null
+    const bbox: number[] | null = Array.isArray(figure.bbox) ? figure.bbox.map(Number) : null
     if (!page || !bbox || bbox.length < 4 || !bbox.every(Number.isFinite)) return null
     const [left, top, right, bottom] = bbox
     if (right <= left || bottom <= top) return null
@@ -416,7 +416,7 @@ export default function CandidateFixWorkbenchPage() {
   function figureInHeaderFooterBand(figure: any) {
     const region = figureRegion(figure)
     if (region?.segments.some(isHeaderFooterSegment)) return true
-    const bbox = Array.isArray(figure.bbox) ? figure.bbox.map(Number) : null
+    const bbox: number[] | null = Array.isArray(figure.bbox) ? figure.bbox.map(Number) : null
     if (!bbox || !bbox.every(Number.isFinite)) return false
     if (bbox.every((value) => value >= 0 && value <= 1)) {
       const height = bbox[3] - bbox[1]

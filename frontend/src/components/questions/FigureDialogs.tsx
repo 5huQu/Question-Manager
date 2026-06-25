@@ -81,6 +81,11 @@ export function FigureCropDialog({ question, onClose, onDelete, onSave, onUpdate
     }
   }
 
+  function imageSize() {
+    const bounds = imageRef.current?.getBoundingClientRect()
+    return bounds ? { width: bounds.width, height: bounds.height } : { width: 0, height: 0 }
+  }
+
   const canvasBoxes = localCropFigures.map((fig, idx) => {
     const bbox = parseBBox(fig.bbox)
     const normalized = bbox && bbox.x >= 0 && bbox.y >= 0 && bbox.width > 0 && bbox.height > 0 &&

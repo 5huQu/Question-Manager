@@ -7,6 +7,8 @@ import {
   CheckCircle2,
   Compass,
   Database,
+  FileCheck2,
+  FileText,
   ImageIcon,
   Layers,
   LoaderCircle,
@@ -16,11 +18,14 @@ import {
   Trash2,
   PencilLine,
 } from 'lucide-react'
-import { importV2Api, type ImportV2Candidate, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics } from '@/api/importV2'
+import { importV2Api, type ImportV2Candidate, type ImportV2ImportJob, type ImportV2ImportJobDocument, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics, type ParseCandidatesResult } from '@/api/importV2'
+import { settingsApi } from '@/api/settings'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import { PageTitle, Panel, Badge, Button, Empty } from '@/components/ui'
+import { useAsync } from '@/hooks/useAsync'
 import { assetUrl } from '@/utils/questionDisplay'
+import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
 
 // ── 统一数据适配层 (Unified Model Adapter) ─────────────────────────────
 
@@ -40,6 +45,7 @@ type UnifiedQuestion = {
 }
 
 type PaperKind = ImportV2SourceDocument['paperKind']
+type UploadDocumentMode = 'single_document' | 'separated_documents'
 
 type SourceMetadataDraft = {
   paperTitle: string
@@ -63,6 +69,28 @@ const paperKindOptions: Array<{ value: PaperKind; label: string }> = [
   { value: 'unknown', label: '未分类' },
 ]
 
+const subjectOptions = ['语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理']
+
+const gaokaoRegionOptions = [
+  {
+    value: '全国一卷 / 新课标全国 I 卷',
+    label: '全国一卷 / 新课标全国 I 卷',
+    provinces: '浙江、山东、江苏、河北、福建、湖北、湖南、广东、江西、安徽、河南',
+  },
+  {
+    value: '全国二卷 / 新课标全国 II 卷',
+    label: '全国二卷 / 新课标全国 II 卷',
+    provinces: '海南、重庆、贵州、广西、甘肃、四川、云南、辽宁、吉林、黑龙江、内蒙古、陕西、青海、宁夏、山西、新疆、西藏',
+  },
+  { value: '北京', label: '北京', provinces: '' },
+  { value: '上海', label: '上海', provinces: '' },
+  { value: '天津', label: '天津', provinces: '' },
+]
+
+function isGaokaoRegion(value: string) {
+  return gaokaoRegionOptions.some((item) => item.value === value)
+}
+
 function metadataDraftFromDoc(doc?: Partial<ImportV2SourceDocument> | null): SourceMetadataDraft {
   return {
     paperTitle: doc?.paperTitle || '',
@@ -78,16 +106,19 @@ function metadataDraftFromDoc(doc?: Partial<ImportV2SourceDocument> | null): Sou
 }
 
 function metadataPayload(draft: SourceMetadataDraft) {
+  const isGaokaoReal = draft.paperKind === 'gaokao_real'
+  const gaokaoProvince = isGaokaoReal && isGaokaoRegion(draft.province) ? draft.province.trim() : ''
+  const paperTitle = draft.paperTitle.trim()
   return {
-    paperTitle: draft.paperTitle.trim(),
-    batchName: draft.batchName.trim(),
+    paperTitle,
+    batchName: draft.batchName.trim() || paperTitle,
     stage: draft.stage.trim() || '高三',
     subject: draft.subject.trim() || '数学',
-    province: draft.province.trim(),
-    city: draft.city.trim(),
+    province: isGaokaoReal ? gaokaoProvince : draft.province.trim(),
+    city: isGaokaoReal ? '' : draft.city.trim(),
     paperKind: draft.paperKind || 'unknown',
     examYear: Number(draft.examYear || 0) || 0,
-    sourceOrg: draft.sourceOrg.trim(),
+    sourceOrg: isGaokaoReal ? '' : draft.sourceOrg.trim(),
   }
 }
 
@@ -130,7 +161,18 @@ function issueLabel(code?: string) {
     unplaced_figure: '图片待核对',
     missing_answer: '缺少答案',
     missing_analysis: '缺少解析',
+    missing_solution: '缺少解析文档匹配',
+    solution_conflict: '解析冲突',
+    unmatched_solution: '多余解析',
   } as Record<string, string>)[code || '']
+}
+
+function importJobDocumentRoleLabel(role?: ImportV2ImportJobDocument['role']) {
+  return ({
+    full: '完整文档',
+    questions: '原卷',
+    solutions: '答案解析',
+  } as Record<string, string>)[role || ''] || ''
 }
 
 function reviewTabFromQuery(value: string | null): 'all' | 'ready' | 'warning' | 'error' {
@@ -143,6 +185,7 @@ export default function ImportV2Page() {
   const { sourceDocumentId: sourceDocumentIdFromPath, candidateId: candidateIdFromPath } = useParams<{ sourceDocumentId: string; candidateId: string }>()
   const [searchParams] = useSearchParams()
   const sourceDocumentIdFromQuery = searchParams.get('sourceDocumentId') || ''
+  const importJobIdFromQuery = searchParams.get('importJobId') || ''
   const isCandidatesRoute = Boolean(sourceDocumentIdFromPath && location.pathname.includes('/candidates'))
   const routeSyncKey = `${sourceDocumentIdFromPath || ''}:${candidateIdFromPath || ''}:${isCandidatesRoute ? 'candidates' : 'document'}`
 
@@ -156,16 +199,20 @@ export default function ImportV2Page() {
   const [activeStepTab, setActiveStepTab] = useState<'upload' | 'review'>('upload')
   const [selectedSourceDocId, setSelectedSourceDocId] = useState<string | null>(null)
   const [showCheckArea, setShowCheckArea] = useState(false)
-  const [showDebug, setShowDebug] = useState(false)
   const [editingQuestionNo, setEditingQuestionNo] = useState('')
   const [savingQuestionType, setSavingQuestionType] = useState('')
   const [metadataDraft, setMetadataDraft] = useState<SourceMetadataDraft>(() => metadataDraftFromDoc())
   const [showMetadataEditor, setShowMetadataEditor] = useState(false)
+  const [uploadDocumentMode, setUploadDocumentMode] = useState<UploadDocumentMode>('single_document')
+  const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null)
+  const [questionUploadFile, setQuestionUploadFile] = useState<File | null>(null)
+  const [solutionUploadFile, setSolutionUploadFile] = useState<File | null>(null)
+  const [activeImportJob, setActiveImportJob] = useState<ImportV2ImportJob | null>(null)
+  const [activeImportJobDocuments, setActiveImportJobDocuments] = useState<ImportV2ImportJobDocument[]>([])
 
   const [uploading, setUploading] = useState(false)
   const [runningSourceDocumentId, setRunningSourceDocumentId] = useState('')
   const [sourceOcrErrors, setSourceOcrErrors] = useState<Record<string, string>>({})
-  const [isJSONMode, setIsJSONMode] = useState(false)
   const [activeTab, setActiveTab] = useState<'all' | 'ready' | 'warning' | 'error'>(() => reviewTabFromQuery(searchParams.get('tab')))
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -176,9 +223,19 @@ export default function ImportV2Page() {
   const [error, setError] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const questionFileInputRef = useRef<HTMLInputElement>(null)
+  const solutionFileInputRef = useRef<HTMLInputElement>(null)
   const checkAreaRef = useRef<HTMLDivElement>(null)
   const lastRouteSyncKeyRef = useRef('')
   const [dragOver, setDragOver] = useState(false)
+  const ocrSettings = useAsync(() => settingsApi.getOcrSettings(), [])
+  const configuredStageOptions = gradeOptionsForTeachingStages(ocrSettings.data?.teachingStages)
+  const stageOptions = metadataDraft.stage && !configuredStageOptions.includes(metadataDraft.stage)
+    ? [metadataDraft.stage, ...configuredStageOptions]
+    : configuredStageOptions
+  const selectedStage = ensureStageValue(metadataDraft.stage, stageOptions)
+  const metadataSubject = metadataDraft.subject || '数学'
+  const visibleSubjectOptions = subjectOptions.includes(metadataSubject) ? subjectOptions : [metadataSubject, ...subjectOptions]
 
   // JSON 模式下的已选择 OCR
   const selectedOcr = useMemo(() => ocrDocuments.find((item) => item.id === selectedOcrId) || null, [ocrDocuments, selectedOcrId])
@@ -187,6 +244,31 @@ export default function ImportV2Page() {
   const selectedDoc = useMemo(() => {
     return selectedSourceDocId ? sourceDocuments.find(d => d.id === selectedSourceDocId) || null : null
   }, [sourceDocuments, selectedSourceDocId])
+
+  const selectedImportJobDocument = useMemo(() => {
+    if (!selectedDoc) return null
+    return activeImportJobDocuments.find((item) => item.sourceDocumentId === selectedDoc.id) || null
+  }, [activeImportJobDocuments, selectedDoc?.id])
+
+  const activeImportJobQuestionDocument = useMemo(() => {
+    return activeImportJobDocuments.find((item) => item.role === 'questions') || null
+  }, [activeImportJobDocuments])
+
+  const activeImportJobSolutionDocument = useMemo(() => {
+    return activeImportJobDocuments.find((item) => item.role === 'solutions') || null
+  }, [activeImportJobDocuments])
+
+  const activeImportJobQuestionSource = useMemo(() => {
+    return activeImportJobQuestionDocument ? sourceDocuments.find((item) => item.id === activeImportJobQuestionDocument.sourceDocumentId) || null : null
+  }, [activeImportJobQuestionDocument?.sourceDocumentId, sourceDocuments])
+
+  const activeImportJobSolutionSource = useMemo(() => {
+    return activeImportJobSolutionDocument ? sourceDocuments.find((item) => item.id === activeImportJobSolutionDocument.sourceDocumentId) || null : null
+  }, [activeImportJobSolutionDocument?.sourceDocumentId, sourceDocuments])
+
+  const selectedDocIsImportJobQuestion = activeImportJob?.mode === 'separated_documents' && selectedImportJobDocument?.role === 'questions'
+  const selectedDocIsImportJobSolution = activeImportJob?.mode === 'separated_documents' && selectedImportJobDocument?.role === 'solutions'
+  const activeImportJobSolutionReady = !activeImportJobSolutionSource || ['ocr_succeeded', 'parsed', 'partially_parsed'].includes(activeImportJobSolutionSource.status)
 
   useEffect(() => {
     if (selectedDoc) {
@@ -331,6 +413,24 @@ export default function ImportV2Page() {
     loadLists().catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }, [])
 
+  useEffect(() => {
+    if (!importJobIdFromQuery) return undefined
+    let active = true
+    importV2Api.getImportJob(importJobIdFromQuery)
+      .then((result) => {
+        if (!active) return
+        setActiveImportJob(result.importJob)
+        setActiveImportJobDocuments(result.documents || [])
+      })
+      .catch((err) => {
+        if (!active) return
+        setError(err instanceof Error ? err.message : String(err))
+      })
+    return () => {
+      active = false
+    }
+  }, [importJobIdFromQuery])
+
   // 兼容旧链接：/tools/import?sourceDocumentId=xxx
   useEffect(() => {
     if (sourceDocumentIdFromQuery && !sourceDocumentIdFromPath) {
@@ -394,7 +494,6 @@ export default function ImportV2Page() {
           await loadLists()
           if (!active) return
           if (result.ocrDocument) setSelectedOcrId(result.ocrDocument.id)
-          setIsJSONMode(false)
           setRunningSourceDocumentId('')
           showNotice('识别完成。请在右侧点击“生成待确认题目”继续。')
         } else if (result.task.status === 'ocr_failed') {
@@ -423,16 +522,68 @@ export default function ImportV2Page() {
     window.setTimeout(() => setNotice(''), 3000)
   }
 
-  // 1. 上传真实 PDF/图片到 v2 专属资料区。
-  async function handlePdfUpload(files: FileList | null) {
+  function baseNameFromFile(file: File | null) {
+    return file?.name.replace(/\.[^.]+$/i, '') || ''
+  }
+
+  function uploadMetadataForFile(file: File, roleLabel = '') {
+    const metadata = metadataPayload(metadataDraft)
+    const titleBase = metadata.paperTitle || baseNameFromFile(file)
+    return {
+      ...metadata,
+      title: roleLabel ? `${titleBase}（${roleLabel}）` : titleBase,
+    }
+  }
+
+  function handleUploadFileSelection(files: FileList | null) {
     if (!files || files.length === 0) return
     const file = files[0]
+    setPendingUploadFile(file)
+    setError('')
+    setNotice('')
+    setQuestions([])
+    setActiveQuestionId(null)
+    setSelectedIds(new Set())
+    const titleFromFile = file.name.replace(/\.[^.]+$/i, '')
+    setMetadataDraft((draft) => ({
+      ...draft,
+      paperTitle: draft.paperTitle.trim() ? draft.paperTitle : titleFromFile,
+    }))
+    showNotice('文件已选择，请填写资料信息后点击“开始上传”。')
+  }
 
-    // 如果是 JSON 文件，则自动转换到高级 JSON 模拟模式
+  function handleSeparatedFileSelection(role: 'questions' | 'solutions', files: FileList | null) {
+    if (!files || files.length === 0) return
+    const file = files[0]
     if (file.name.endsWith('.json')) {
-      setIsJSONMode(true)
-      setShowDebug(true)
+      setError('双文档导入请上传 PDF 或 PNG/JPG 文件。JSON 模拟导入仍使用单文档模式。')
+      return
+    }
+    if (role === 'questions') setQuestionUploadFile(file)
+    else setSolutionUploadFile(file)
+    setError('')
+    setNotice('')
+    setQuestions([])
+    setActiveQuestionId(null)
+    setSelectedIds(new Set())
+    const titleFromFile = file.name.replace(/\.[^.]+$/i, '')
+    setMetadataDraft((draft) => ({
+      ...draft,
+      paperTitle: draft.paperTitle.trim() ? draft.paperTitle : titleFromFile,
+    }))
+  }
+
+  // 1. 上传真实 PDF/图片到 v2 专属资料区。
+  async function handleStartUpload() {
+    const file = pendingUploadFile
+    if (!file) {
+      setError('请先选择要上传的资料文件。')
+      return
+    }
+
+    if (file.name.endsWith('.json')) {
       await handleJsonFile(file)
+      setPendingUploadFile(null)
       return
     }
 
@@ -447,12 +598,71 @@ export default function ImportV2Page() {
       const res = await importV2Api.uploadSourceDocument(file, metadataPayload(metadataDraft))
       await loadLists()
       setSelectedSourceDocId(res.sourceDocument.id)
+      setPendingUploadFile(null)
+      setActiveImportJob(null)
+      setActiveImportJobDocuments([])
       navigateToDocument(res.sourceDocument.id)
       showNotice('资料已保存，可启动 GLM-OCR 识别。')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  async function handleStartSeparatedUpload() {
+    if (!questionUploadFile || !solutionUploadFile) {
+      setError('请分别选择原卷文件和答案解析文件。')
+      return
+    }
+
+    setUploading(true)
+    setError('')
+    setNotice('')
+    setQuestions([])
+    setActiveQuestionId(null)
+    setSelectedIds(new Set())
+
+    try {
+      const metadata = metadataPayload(metadataDraft)
+      const [questionRes, solutionRes] = await Promise.all([
+        importV2Api.uploadSourceDocument(questionUploadFile, uploadMetadataForFile(questionUploadFile, '原卷')),
+        importV2Api.uploadSourceDocument(solutionUploadFile, uploadMetadataForFile(solutionUploadFile, '答案解析')),
+      ])
+      const jobTitle = metadata.paperTitle || `${baseNameFromFile(questionUploadFile)} + ${baseNameFromFile(solutionUploadFile)}`
+      const jobRes = await importV2Api.createImportJob({
+        title: jobTitle,
+        mode: 'separated_documents',
+        ...metadata,
+      })
+      await Promise.all([
+        importV2Api.addSourceDocumentToImportJob(jobRes.importJob.id, {
+          sourceDocumentId: questionRes.sourceDocument.id,
+          role: 'questions',
+          sortOrder: 0,
+        }),
+        importV2Api.addSourceDocumentToImportJob(jobRes.importJob.id, {
+          sourceDocumentId: solutionRes.sourceDocument.id,
+          role: 'solutions',
+          sortOrder: 1,
+        }),
+      ])
+      const hydratedJob = await importV2Api.getImportJob(jobRes.importJob.id)
+      await loadLists()
+      setSelectedSourceDocId(questionRes.sourceDocument.id)
+      setActiveImportJob(hydratedJob.importJob)
+      setActiveImportJobDocuments(hydratedJob.documents || [])
+      setQuestionUploadFile(null)
+      setSolutionUploadFile(null)
+      navigate(`${documentUrl(questionRes.sourceDocument.id)}?importJobId=${encodeURIComponent(jobRes.importJob.id)}`)
+      showNotice('双文档导入任务已创建。请分别完成原卷和答案解析的 OCR 识别。')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setUploading(false)
+      if (questionFileInputRef.current) questionFileInputRef.current.value = ''
+      if (solutionFileInputRef.current) solutionFileInputRef.current.value = ''
     }
   }
 
@@ -480,14 +690,29 @@ export default function ImportV2Page() {
     setBusy(`action-${item.id}`)
     setError('')
     try {
-      const ocrRes = await importV2Api.listOcrDocuments(item.id)
-      const ocrDoc = ocrRes.items[0]
-      if (!ocrDoc) {
-        throw new Error('未找到该资料对应的 OCR 结果文件。')
+      const jobDocument = activeImportJobDocuments.find((document) => document.sourceDocumentId === item.id)
+      const shouldParseImportJob = activeImportJob?.mode === 'separated_documents' && jobDocument?.role === 'questions'
+      let result: ParseCandidatesResult & { importJob?: ImportV2ImportJob }
+      if (shouldParseImportJob) {
+        if (!activeImportJobSolutionReady) {
+          throw new Error('答案解析文档尚未完成 OCR 识别，请先识别答案解析文档。')
+        }
+        result = await importV2Api.parseImportJobCandidates(activeImportJob.id)
+      } else if (activeImportJob?.mode === 'separated_documents' && jobDocument?.role === 'solutions') {
+        throw new Error('答案解析文档只用于合并解析，请切换到原卷文档生成待确认题目。')
+      } else {
+        const ocrRes = await importV2Api.listOcrDocuments(item.id)
+        const ocrDoc = ocrRes.items[0]
+        if (!ocrDoc) {
+          throw new Error('未找到该资料对应的 OCR 结果文件。')
+        }
+        setSelectedOcrId(ocrDoc.id)
+        result = await importV2Api.parseCandidates(ocrDoc.id)
       }
-      setSelectedOcrId(ocrDoc.id)
-      const result = await importV2Api.parseCandidates(ocrDoc.id)
       const unified = (result.items || []).map(fromCandidate)
+      if ('importJob' in result && result.importJob) {
+        setActiveImportJob(result.importJob)
+      }
       setQuestions(unified)
       setDiagnostics(result.diagnostics || null)
       setCommittedIds(new Set(unified.filter((q) => q.status === 'committed').map((q) => q.id)))
@@ -498,8 +723,9 @@ export default function ImportV2Page() {
       await loadLists()
       setShowCheckArea(true)
       setActiveStepTab('review')
-      navigateToCandidates(item.id)
-      showNotice('已自动提取并生成待核对题目')
+      const targetSourceDocumentId = shouldParseImportJob ? activeImportJobQuestionDocument?.sourceDocumentId || item.id : item.id
+      navigateToCandidates(targetSourceDocumentId)
+      showNotice(shouldParseImportJob ? '已合并原卷与答案解析，生成待核对题目' : '已自动提取并生成待核对题目')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -956,45 +1182,157 @@ export default function ImportV2Page() {
           <div className="lg:col-span-4 space-y-4 flex flex-col">
             {/* 上传卡片 */}
             <Panel title="上传新资料">
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={async (e) => {
-                  e.preventDefault()
-                  setDragOver(false)
-                  if (e.dataTransfer.files) {
-                    await handlePdfUpload(e.dataTransfer.files)
-                  }
-                }}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center ${
-                  dragOver
-                    ? 'border-zinc-900 bg-zinc-50/30 dark:border-zinc-100 dark:bg-zinc-900/30'
-                    : 'border-zinc-200 bg-white hover:bg-zinc-50/10 dark:border-zinc-800 dark:bg-zinc-955'
-                }`}
-              >
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  className="hidden"
-                  accept="application/json,.json,application/pdf,.pdf,image/png,image/jpeg,image/jpg"
-                  onChange={async (e) => {
-                    if (e.target.files) {
-                      await handlePdfUpload(e.target.files)
-                    }
-                  }}
-                />
-                {uploading ? (
-                  <LoaderCircle className="size-7 animate-spin text-zinc-500 mb-2" />
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 rounded-lg border border-zinc-200 bg-zinc-100/70 p-0.5 dark:border-zinc-800 dark:bg-zinc-900/70">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUploadDocumentMode('single_document')
+                      setQuestionUploadFile(null)
+                      setSolutionUploadFile(null)
+                    }}
+                    className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-semibold transition-all ${
+                      uploadDocumentMode === 'single_document'
+                        ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-950 dark:text-zinc-50'
+                        : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+                    }`}
+                  >
+                    <FileText className="size-3.5" />
+                    单文档
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUploadDocumentMode('separated_documents')
+                      setPendingUploadFile(null)
+                      if (fileInputRef.current) fileInputRef.current.value = ''
+                    }}
+                    className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-semibold transition-all ${
+                      uploadDocumentMode === 'separated_documents'
+                        ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-950 dark:text-zinc-50'
+                        : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+                    }`}
+                  >
+                    <Layers className="size-3.5" />
+                    双文档
+                  </button>
+                </div>
+
+                {uploadDocumentMode === 'single_document' ? (
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      setDragOver(false)
+                      if (e.dataTransfer.files) {
+                        handleUploadFileSelection(e.dataTransfer.files)
+                      }
+                    }}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center ${
+                      dragOver
+                        ? 'border-zinc-900 bg-zinc-50/30 dark:border-zinc-100 dark:bg-zinc-900/30'
+                        : 'border-zinc-200 bg-white hover:bg-zinc-50/10 dark:border-zinc-800 dark:bg-zinc-955'
+                    }`}
+                  >
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      accept="application/json,.json,application/pdf,.pdf,image/png,image/jpeg,image/jpg"
+                      onChange={(e) => {
+                        if (e.target.files) {
+                          handleUploadFileSelection(e.target.files)
+                        }
+                      }}
+                    />
+                    {uploading ? (
+                      <LoaderCircle className="size-7 animate-spin text-zinc-500 mb-2" />
+                    ) : (
+                      <Upload className="size-7 text-zinc-400 dark:text-zinc-500 mb-2" />
+                    )}
+                    <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">
+                      {uploading ? '文件保存中...' : pendingUploadFile ? pendingUploadFile.name : '点击选择或拖拽资料至此处'}
+                    </p>
+                    <p className="text-[10px] text-zinc-400 mt-1">
+                      {pendingUploadFile ? '已选择文件，填写资料信息后开始上传' : '支持 PDF、PNG/JPG'}
+                    </p>
+                  </div>
                 ) : (
-                  <Upload className="size-7 text-zinc-400 dark:text-zinc-500 mb-2" />
+                  <div className="space-y-2">
+                    <input
+                      type="file"
+                      ref={questionFileInputRef}
+                      className="hidden"
+                      accept="application/pdf,.pdf,image/png,image/jpeg,image/jpg"
+                      onChange={(event) => handleSeparatedFileSelection('questions', event.target.files)}
+                    />
+                    <input
+                      type="file"
+                      ref={solutionFileInputRef}
+                      className="hidden"
+                      accept="application/pdf,.pdf,image/png,image/jpeg,image/jpg"
+                      onChange={(event) => handleSeparatedFileSelection('solutions', event.target.files)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => questionFileInputRef.current?.click()}
+                      className="flex w-full items-center gap-3 rounded-lg border border-zinc-200 bg-white p-3 text-left transition-colors hover:bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-955 dark:hover:bg-zinc-900/40"
+                    >
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+                        <FileText className="size-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-xs font-semibold text-zinc-900 dark:text-zinc-50">原卷文件</span>
+                        <span className="block truncate text-[10px] text-zinc-400">{questionUploadFile?.name || '题干文档、学生版或原卷 PDF/图片'}</span>
+                      </span>
+                      {questionUploadFile ? (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setQuestionUploadFile(null)
+                            if (questionFileInputRef.current) questionFileInputRef.current.value = ''
+                          }}
+                          className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-900"
+                          title="清除原卷文件"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </span>
+                      ) : null}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => solutionFileInputRef.current?.click()}
+                      className="flex w-full items-center gap-3 rounded-lg border border-zinc-200 bg-white p-3 text-left transition-colors hover:bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-955 dark:hover:bg-zinc-900/40"
+                    >
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+                        <FileCheck2 className="size-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-xs font-semibold text-zinc-900 dark:text-zinc-50">答案解析文件</span>
+                        <span className="block truncate text-[10px] text-zinc-400">{solutionUploadFile?.name || '答案、详解或教师版 PDF/图片'}</span>
+                      </span>
+                      {solutionUploadFile ? (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setSolutionUploadFile(null)
+                            if (solutionFileInputRef.current) solutionFileInputRef.current.value = ''
+                          }}
+                          className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-900"
+                          title="清除答案解析文件"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </span>
+                      ) : null}
+                    </button>
+                  </div>
                 )}
-                <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">
-                  {uploading ? '文件保存中...' : '点击选择或拖拽资料至此处'}
-                </p>
-                <p className="text-[10px] text-zinc-400 mt-1">
-                  支持 PDF、PNG/JPG
-                </p>
               </div>
             </Panel>
 
@@ -1038,23 +1376,37 @@ export default function ImportV2Page() {
                     </label>
                     <label className="space-y-1">
                       <span className="text-[10px] font-medium text-zinc-500">学段/年级</span>
-                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.stage} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, stage: event.target.value }))} />
+                      <select
+                        className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
+                        value={selectedStage}
+                        onChange={(event) => setMetadataDraft((draft) => ({ ...draft, stage: event.target.value }))}
+                      >
+                        {stageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                      </select>
                     </label>
                     <label className="space-y-1">
                       <span className="text-[10px] font-medium text-zinc-500">学科</span>
-                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.subject} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, subject: event.target.value }))} />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-[10px] font-medium text-zinc-500">省份</span>
-                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.province} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, province: event.target.value }))} />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-[10px] font-medium text-zinc-500">城市</span>
-                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.city} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, city: event.target.value }))} />
+                      <select
+                        className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
+                        value={metadataSubject}
+                        onChange={(event) => setMetadataDraft((draft) => ({ ...draft, subject: event.target.value }))}
+                      >
+                        {visibleSubjectOptions.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
+                      </select>
                     </label>
                     <label className="space-y-1">
                       <span className="text-[10px] font-medium text-zinc-500">资料类型</span>
-                      <select className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.paperKind} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, paperKind: event.target.value as PaperKind }))}>
+                      <select
+                        className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
+                        value={metadataDraft.paperKind}
+                        onChange={(event) => setMetadataDraft((draft) => {
+                          const paperKind = event.target.value as PaperKind
+                          if (paperKind === 'gaokao_real') {
+                            return { ...draft, paperKind, province: isGaokaoRegion(draft.province) ? draft.province : '', city: '', sourceOrg: '' }
+                          }
+                          return { ...draft, paperKind }
+                        })}
+                      >
                         {paperKindOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                       </select>
                     </label>
@@ -1062,16 +1414,54 @@ export default function ImportV2Page() {
                       <span className="text-[10px] font-medium text-zinc-500">年份</span>
                       <input type="number" min="0" className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.examYear} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, examYear: event.target.value }))} />
                     </label>
-                    <label className="col-span-2 space-y-1">
-                      <span className="text-[10px] font-medium text-zinc-500">来源机构</span>
-                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.sourceOrg} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, sourceOrg: event.target.value }))} />
-                    </label>
+                    {metadataDraft.paperKind === 'gaokao_real' ? (
+                      <label className="col-span-2 space-y-1">
+                        <span className="text-[10px] font-medium text-zinc-500">试卷适用地区</span>
+                        <select
+                          className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
+                          value={isGaokaoRegion(metadataDraft.province) ? metadataDraft.province : ''}
+                          onChange={(event) => setMetadataDraft((draft) => ({ ...draft, province: event.target.value, city: '', sourceOrg: '' }))}
+                        >
+                          <option value="">请选择全国卷或直辖市</option>
+                          {gaokaoRegionOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                        </select>
+                        {gaokaoRegionOptions.find((item) => item.value === metadataDraft.province)?.provinces ? (
+                          <p className="text-[10px] leading-4 text-zinc-400">
+                            {gaokaoRegionOptions.find((item) => item.value === metadataDraft.province)?.provinces}
+                          </p>
+                        ) : null}
+                      </label>
+                    ) : (
+                      <>
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-medium text-zinc-500">省份</span>
+                          <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.province} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, province: event.target.value }))} />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[10px] font-medium text-zinc-500">城市</span>
+                          <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.city} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, city: event.target.value }))} />
+                        </label>
+                        <label className="col-span-2 space-y-1">
+                          <span className="text-[10px] font-medium text-zinc-500">来源机构</span>
+                          <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.sourceOrg} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, sourceOrg: event.target.value }))} />
+                        </label>
+                      </>
+                    )}
                   </div>
-                  {selectedDoc ? (
-                    <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={handleSaveSourceMetadata}>
-                      {busy === `metadata-${selectedDoc.id}` ? '保存中...' : '保存资料信息'}
+                  <div className="flex flex-wrap gap-2">
+                    {selectedDoc ? (
+                      <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={handleSaveSourceMetadata}>
+                        {busy === `metadata-${selectedDoc.id}` ? '保存中...' : '保存资料信息'}
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      disabled={uploading || Boolean(busy) || (uploadDocumentMode === 'single_document' ? !pendingUploadFile : !questionUploadFile || !solutionUploadFile)}
+                      onClick={uploadDocumentMode === 'single_document' ? handleStartUpload : handleStartSeparatedUpload}
+                    >
+                      {uploading ? '上传中...' : uploadDocumentMode === 'single_document' ? '开始上传' : '创建双文档任务'}
                     </Button>
-                  ) : null}
+                  </div>
                 </div>
               )}
             </Panel>
@@ -1085,6 +1475,7 @@ export default function ImportV2Page() {
                   sourceDocuments.filter((item) => item.fileType === 'pdf' || item.fileType === 'image').map((item) => {
                     const statusInfo = getDocStatus(item)
                     const isSelected = selectedDoc?.id === item.id
+                    const importJobDocument = activeImportJobDocuments.find((document) => document.sourceDocumentId === item.id)
                     
                     return (
                       <div
@@ -1101,6 +1492,9 @@ export default function ImportV2Page() {
                             {item.originalFileName || item.title}
                           </p>
                           <div className="flex items-center gap-1.5 shrink-0">
+                            {importJobDocument ? (
+                              <Badge variant={importJobDocument.role === 'solutions' ? 'warning' : 'outline'}>{importJobDocumentRoleLabel(importJobDocument.role)}</Badge>
+                            ) : null}
                             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
                             <button
                               disabled={busy === `delete-${item.id}`}
@@ -1257,18 +1651,48 @@ export default function ImportV2Page() {
                     {/* ocr_succeeded 且 candidateCount = 0 */}
                     {selectedDoc.status === 'ocr_succeeded' && (selectedDoc.importStats?.candidateCount || 0) === 0 && (
                       <div className="space-y-4">
-                        <p className="text-xs text-zinc-500 leading-relaxed">
-                          OCR 智能识别已完成，现在可分析并生成待核对的题目草稿列表。
-                        </p>
-                        <Button
-                          size="default"
-                          icon={Play}
-                          disabled={Boolean(busy)}
-                          onClick={() => handleGenerateCandidates(selectedDoc)}
-                          className="w-full sm:w-auto"
-                        >
-                          {busy === `action-${selectedDoc.id}` ? '生成中...' : '生成待确认题目'}
-                        </Button>
+                        {selectedDocIsImportJobSolution ? (
+                          <>
+                            <p className="text-xs text-zinc-500 leading-relaxed">
+                              答案解析文档已识别完成。它会在原卷生成候选题时自动参与合并。
+                            </p>
+                            {activeImportJobQuestionSource ? (
+                              <Button
+                                size="default"
+                                icon={FileText}
+                                variant="outline"
+                                onClick={() => navigateToDocument(activeImportJobQuestionSource.id)}
+                                className="w-full sm:w-auto"
+                              >
+                                切换到原卷
+                              </Button>
+                            ) : null}
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-xs text-zinc-500 leading-relaxed">
+                              {selectedDocIsImportJobQuestion
+                                ? activeImportJobSolutionReady
+                                  ? '原卷与答案解析均已准备好。现在可合并生成待核对的题目草稿列表。'
+                                  : '原卷已识别完成。请先完成答案解析文档 OCR，再合并生成待核对题目。'
+                                : 'OCR 智能识别已完成，现在可分析并生成待核对的题目草稿列表。'}
+                            </p>
+                            {selectedDocIsImportJobQuestion && activeImportJobSolutionSource ? (
+                              <div className="rounded-lg border border-zinc-200 bg-zinc-50/40 px-3 py-2 text-[11px] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/30">
+                                答案解析：{activeImportJobSolutionSource.originalFileName || activeImportJobSolutionSource.title} · {getDocStatus(activeImportJobSolutionSource).label}
+                              </div>
+                            ) : null}
+                            <Button
+                              size="default"
+                              icon={Play}
+                              disabled={Boolean(busy) || (selectedDocIsImportJobQuestion && !activeImportJobSolutionReady)}
+                              onClick={() => handleGenerateCandidates(selectedDoc)}
+                              className="w-full sm:w-auto"
+                            >
+                              {busy === `action-${selectedDoc.id}` ? '生成中...' : selectedDocIsImportJobQuestion ? '合并生成待确认题目' : '生成待确认题目'}
+                            </Button>
+                          </>
+                        )}
                       </div>
                     )}
 
@@ -1338,83 +1762,6 @@ export default function ImportV2Page() {
               </Panel>
             )}
 
-            {/* 高级调试折叠区 */}
-            <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs bg-white dark:bg-zinc-955">
-              <button
-                type="button"
-                onClick={() => setShowDebug(!showDebug)}
-                className="w-full px-5 py-3 bg-zinc-50/50 dark:bg-zinc-900/10 flex items-center justify-between text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300 transition-colors cursor-pointer"
-              >
-                <span>⚙️ 高级调试 (开发人员专用)</span>
-                <span>{showDebug ? '收起 ▲' : '展开 ▼'}</span>
-              </button>
-              {showDebug && (
-                <div className="p-5 bg-white dark:bg-zinc-955 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">导入模拟 JSON</span>
-                        <input
-                          type="checkbox"
-                          checked={isJSONMode}
-                          onChange={(e) => setIsJSONMode(e.target.checked)}
-                          className="h-4 w-4 rounded border-zinc-300 cursor-pointer text-zinc-955 focus:ring-zinc-955"
-                        />
-                      </div>
-                      {isJSONMode && (
-                        <div className="space-y-3 pt-2 border-t border-zinc-100 dark:border-zinc-800 animate-in slide-in-from-top-1 duration-200">
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-semibold text-zinc-500">后端已有 OCRDocument</label>
-                            <select
-                              className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-xs outline-none focus:ring-1 focus:ring-zinc-955"
-                              value={selectedOcrId}
-                              onChange={(event) => {
-                                setSelectedOcrId(event.target.value)
-                                setQuestions([])
-                              }}
-                            >
-                              <option value="">请选择 OCR 试卷</option>
-                              {ocrDocuments.map((item) => (
-                                <option key={item.id} value={item.id}>
-                                  {item.id.slice(0, 10)} · {item.provider} · {item.createdAt.slice(0, 10)}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <Button size="sm" icon={Play} onClick={parseSelectedOcr} disabled={!selectedOcrId || Boolean(busy)}>
-                              生成待确认题目
-                            </Button>
-                            <Button size="sm" icon={Database} variant="outline" onClick={loadCandidatesForSelected} disabled={!selectedOcr || Boolean(busy)}>
-                              查看历史候选
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {diagnostics && (
-                      <div className="rounded-lg border border-zinc-150 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/10">
-                        <h4 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">试卷图源诊断信息</h4>
-                        <div className="grid grid-cols-2 gap-y-1.5 text-[11px] text-zinc-500 mt-2">
-                          <div>Markdown 占位符数量:</div>
-                          <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.placeholderCount}</div>
-                          <div>Assets 资产数量:</div>
-                          <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.assetsCount}</div>
-                          <div>未匹配 Asset 的占位符:</div>
-                          <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.unmatchedPlaceholderCount}</div>
-                          <div>Candidate 未使用的 Asset:</div>
-                          <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.unusedAssetsCount}</div>
-                          <div>远程图片下载失败数量:</div>
-                          <div className="font-medium text-zinc-800 dark:text-zinc-200">{diagnostics.failedDownloadCount}</div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       )}

@@ -35,13 +35,14 @@ export function SummaryGrid({ items }: { items: Array<[string, unknown]> }) {
   return <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">{items.map(([labelText, value]) => <div key={labelText} className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm"><p className="text-xs font-medium text-muted-foreground">{labelText}</p><p className="mt-1 text-2xl font-bold">{displayValue(value)}</p></div>)}</div>
 }
 
-export function Button({ children, icon: Icon, variant = 'default', size = 'default', className = '', asLink, to = '', disabled, onClick, type = 'button', title }: { children: ReactNode; icon?: LucideIcon; variant?: 'default' | 'outline' | 'danger'; size?: 'default' | 'sm'; className?: string; asLink?: boolean; to?: string; disabled?: boolean; onClick?: ButtonClickHandler; type?: 'button' | 'submit' | 'reset'; title?: string }) {
+export function Button({ children, icon: Icon, variant = 'default', size = 'default', className = '', asLink, to = '', disabled, onClick, type = 'button', title }: { children: ReactNode; icon?: LucideIcon; variant?: 'default' | 'outline' | 'danger'; size?: 'default' | 'sm' | 'xs'; className?: string; asLink?: boolean; to?: string; disabled?: boolean; onClick?: ButtonClickHandler; type?: 'button' | 'submit' | 'reset'; title?: string }) {
   const variantClass = variant === 'danger'
     ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground border border-transparent'
     : variant === 'default'
       ? 'bg-primary hover:bg-primary/90 text-primary-foreground border border-transparent shadow-sm'
       : 'border border-input bg-background hover:bg-accent hover:text-accent-foreground text-foreground shadow-sm'
-  const classes = `inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap ${size === 'sm' ? 'h-8 px-3 text-xs' : 'h-9 px-3.5 text-sm'} ${variantClass} ${className}`
+  const sizeClass = size === 'xs' ? 'h-7 px-2 text-[11px]' : size === 'sm' ? 'h-8 px-3 text-xs' : 'h-9 px-3.5 text-sm'
+  const classes = `inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap ${sizeClass} ${variantClass} ${className}`
   const content = <>{Icon ? <Icon className={`size-4 ${Icon === LoaderCircle ? 'animate-spin' : ''}`} /> : null}{children}</>
   const handleClick: MouseEventHandler<HTMLButtonElement> | undefined = onClick
     ? (event) => {

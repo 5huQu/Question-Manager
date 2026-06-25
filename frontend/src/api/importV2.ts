@@ -124,6 +124,34 @@ export type ParseCandidatesResult = {
   diagnostics?: OcrFigureDiagnostics
 }
 
+export type ImportV2ImportJob = {
+  id: string
+  title: string
+  mode: 'single_document' | 'separated_documents'
+  status: 'draft' | 'parsing' | 'parsed' | 'partially_parsed' | 'failed'
+  province: string
+  city: string
+  paperTitle: string
+  batchName: string
+  stage: string
+  subject: string
+  paperKind: ImportV2SourceDocument['paperKind']
+  examYear: number
+  sourceOrg: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type ImportV2ImportJobDocument = {
+  id: string
+  jobId: string
+  sourceDocumentId: string
+  role: 'full' | 'questions' | 'solutions'
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
 export const importV2Api = {
   getParserConfig() {
     return api<{ config: ImportFlowV2ParserConfig }>('/api/import-flow-v2/parser-config')
@@ -146,6 +174,28 @@ export const importV2Api = {
     return api<{ sourceDocument: ImportV2SourceDocument }>('/api/source-documents/upload', {
       method: 'POST',
       body,
+    })
+  },
+  createImportJob(importJob: Partial<ImportV2ImportJob>) {
+    return api<{ importJob: ImportV2ImportJob; documents: ImportV2ImportJobDocument[] }>('/api/import-jobs', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(importJob),
+    })
+  },
+  getImportJob(importJobId: string) {
+    return api<{ importJob: ImportV2ImportJob; documents: ImportV2ImportJobDocument[] }>('/api/import-jobs/' + encodeURIComponent(importJobId))
+  },
+  addSourceDocumentToImportJob(importJobId: string, payload: { sourceDocumentId: string; role: ImportV2ImportJobDocument['role']; sortOrder?: number }) {
+    return api<{ importJob: ImportV2ImportJob; document: ImportV2ImportJobDocument; sourceDocument: ImportV2SourceDocument; documents: ImportV2ImportJobDocument[] }>('/api/import-jobs/' + encodeURIComponent(importJobId) + '/documents', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    })
+  },
+  parseImportJobCandidates(importJobId: string) {
+    return api<ParseCandidatesResult & { importJob?: ImportV2ImportJob; mode?: ImportV2ImportJob['mode']; status?: ImportV2ImportJob['status'] }>('/api/import-jobs/' + encodeURIComponent(importJobId) + '/parse-candidates', {
+      method: 'POST',
     })
   },
   updateSourceDocument(sourceDocumentId: string, sourceDocument: Partial<ImportV2SourceDocument>) {

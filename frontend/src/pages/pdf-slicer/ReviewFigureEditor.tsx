@@ -113,18 +113,6 @@ export function ReviewFigureEditor({
     selectFigure(index)
     window.requestAnimationFrame(() => scrollToFigure(index))
   }
-  function startMove(event: PointerEvent<HTMLDivElement>) {
-    event.preventDefault()
-    event.stopPropagation()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    setInteraction({ mode: 'move', start: point(event), rect })
-  }
-  function startResize(corner: CropCorner, event: PointerEvent<HTMLButtonElement>) {
-    event.preventDefault()
-    event.stopPropagation()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    setInteraction({ mode: 'resize', corner, start: point(event), rect })
-  }
   async function saveRect() {
     const nextFigure = reviewFigureFromDisplayRect(item, rect, imageSize(), selectedIndex >= 0 ? figures[selectedIndex] : undefined)
     if (!nextFigure) {
