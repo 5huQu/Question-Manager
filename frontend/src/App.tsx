@@ -1,5 +1,5 @@
 import { useEffect, useState, lazy, Suspense } from 'react'
-import { Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { FilterX, Plus, ShoppingBag } from 'lucide-react'
 import { settingsApi } from '@/api/settings'
 import { collectionsApi } from '@/api/collections'
@@ -33,6 +33,26 @@ function NavigateToWorkbench() {
   useEffect(() => {
     navigate('/workbench', { replace: true })
   }, [navigate])
+  return null
+}
+
+function LegacyCandidateFixRedirect() {
+  const navigate = useNavigate()
+  const { candidateId } = useParams<{ candidateId: string }>()
+  const [searchParams] = useSearchParams()
+
+  useEffect(() => {
+    const sourceDocumentId = searchParams.get('sourceDocumentId') || ''
+    if (!candidateId || !sourceDocumentId) {
+      navigate('/tools/import', { replace: true })
+      return
+    }
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('sourceDocumentId')
+    const suffix = nextParams.toString() ? `?${nextParams.toString()}` : ''
+    navigate(`/tools/import/documents/${encodeURIComponent(sourceDocumentId)}/candidates/${encodeURIComponent(candidateId)}/manual-fix${suffix}`, { replace: true })
+  }, [candidateId, navigate, searchParams])
+
   return null
 }
 
@@ -123,6 +143,10 @@ export default function App() {
                 <Route path="/" element={<NavigateToWorkbench />} />
                 <Route path="/workbench" element={<TraditionalWorkbenchPage />} />
                 <Route path="/tools/import" element={<ImportV2Page />} />
+                <Route path="/tools/import/documents/:sourceDocumentId" element={<ImportV2Page />} />
+                <Route path="/tools/import/documents/:sourceDocumentId/candidates" element={<ImportV2Page />} />
+                <Route path="/tools/import/documents/:sourceDocumentId/candidates/:candidateId" element={<ImportV2Page />} />
+                <Route path="/tools/import/documents/:sourceDocumentId/candidates/:candidateId/manual-fix" element={<CandidateFixWorkbenchPage />} />
                 <Route path="/tools/pdf-slicer" element={<PdfSlicerPage />} />
                 <Route path="/tools/pdf-slicer/ocr-jobs" element={<OcrQueuePage />} />
                 <Route path="/questions" element={<QuestionBankPage />} />
@@ -136,7 +160,7 @@ export default function App() {
                 <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<RunQuestionsPage />} />
                 <Route path="/tools/pdf-slicer/runs/:runId/pending-bank" element={<PendingBankPage />} />
                 <Route path="/tools/pdf-slicer/batches/:batchId/annotate" element={<AnnotationWorkbenchPage />} />
-                <Route path="/tools/import/candidates/:candidateId/manual-fix" element={<CandidateFixWorkbenchPage />} />
+                <Route path="/tools/import/candidates/:candidateId/manual-fix" element={<LegacyCandidateFixRedirect />} />
 
               </Routes>
             </Suspense>
