@@ -12,7 +12,7 @@ export type ImportFlowV2ParserConfig = {
 export const defaultParserConfig: ImportFlowV2ParserConfig = {
   version: 1,
   sectionHeadings: ['一、选择题', '二、填空题', '三、解答题', '四、选做题', '选择题', '填空题', '解答题', '单项选择题', '多项选择题', '非选择题'],
-  documentNoteKeywords: ['注意事项', '参考公式', '本卷共', '考试时间', '满分', '请在答题卡', '请用黑色签字笔', '答案写在', '本试卷', '温馨提示', '答卷前', '作答选择题时', '非选择题必须', '考生必须保持'],
+  documentNoteKeywords: ['注意事项', '参考公式', '本卷共', '考试时间', '满分', '请在答题卡', '请用黑色签字笔', '答案写在', '本试卷', '温馨提示', '答卷前', '作答选择题时', '回答选择题时', '回答非选择题时', '考试结束', '非选择题必须', '考生必须保持'],
   solutionSectionKeywords: ['参考答案', '答案', '解析', '答案与解析', '详解', '解答', '试题解析', '评分标准'],
   primaryQuestionPatterns: ['第\\s*([0-9０-９]{1,3})\\s*题', '^\\s*([0-9０-９]{1,3})\\s*[.．、]'],
   subQuestionPatterns: ['[（(]\\s*([0-9０-９]{1,3})\\s*[)）]', '[①②③④⑤⑥⑦⑧⑨⑩]'],

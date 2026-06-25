@@ -48,8 +48,12 @@ function firstMarker(pattern: RegExp, source: string) {
   return match ? { index: match.index, end: match.index + match[0].length } : null
 }
 
-function rangeFor(offset: number, start: number, end: number): MarkdownRange | undefined {
-  return end > start ? { start: offset + start, end: offset + end } : undefined
+function rangeFor(source: string, offset: number, start: number, end: number): MarkdownRange | undefined {
+  let rangeStart = Math.max(0, start)
+  let rangeEnd = Math.min(source.length, end)
+  while (rangeStart < rangeEnd && /\s/.test(source[rangeStart])) rangeStart += 1
+  while (rangeEnd > rangeStart && /\s/.test(source[rangeEnd - 1])) rangeEnd -= 1
+  return rangeEnd > rangeStart ? { start: offset + rangeStart, end: offset + rangeEnd } : undefined
 }
 
 export function splitQuestionFields(body: string, offset = 0): ParsedQuestionFields {
@@ -62,9 +66,9 @@ export function splitQuestionFields(body: string, offset = 0): ParsedQuestionFie
       stemMarkdown: cleanField(source.slice(0, answer.index)),
       answerText: cleanField(source.slice(answer.end, analysis.index)),
       analysisMarkdown: cleanField(source.slice(analysis.end)),
-      stemRange: rangeFor(offset, 0, answer.index),
-      answerRange: rangeFor(offset, answer.end, analysis.index),
-      analysisRange: rangeFor(offset, analysis.end, source.length),
+      stemRange: rangeFor(source, offset, 0, answer.index),
+      answerRange: rangeFor(source, offset, answer.end, analysis.index),
+      analysisRange: rangeFor(source, offset, analysis.end, source.length),
       hasFieldMarkers: true,
     }
   }
@@ -74,9 +78,9 @@ export function splitQuestionFields(body: string, offset = 0): ParsedQuestionFie
       stemMarkdown: cleanField(source.slice(0, analysis.index)),
       answerText: cleanField(source.slice(answer.end)),
       analysisMarkdown: cleanField(source.slice(analysis.end, answer.index)),
-      stemRange: rangeFor(offset, 0, analysis.index),
-      answerRange: rangeFor(offset, answer.end, source.length),
-      analysisRange: rangeFor(offset, analysis.end, answer.index),
+      stemRange: rangeFor(source, offset, 0, analysis.index),
+      answerRange: rangeFor(source, offset, answer.end, source.length),
+      analysisRange: rangeFor(source, offset, analysis.end, answer.index),
       hasFieldMarkers: true,
     }
   }
@@ -86,8 +90,8 @@ export function splitQuestionFields(body: string, offset = 0): ParsedQuestionFie
       stemMarkdown: cleanField(source.slice(0, answer.index)),
       answerText: cleanField(source.slice(answer.end)),
       analysisMarkdown: '',
-      stemRange: rangeFor(offset, 0, answer.index),
-      answerRange: rangeFor(offset, answer.end, source.length),
+      stemRange: rangeFor(source, offset, 0, answer.index),
+      answerRange: rangeFor(source, offset, answer.end, source.length),
       hasFieldMarkers: true,
     }
   }
@@ -97,8 +101,8 @@ export function splitQuestionFields(body: string, offset = 0): ParsedQuestionFie
       stemMarkdown: cleanField(source.slice(0, analysis.index)),
       answerText: '',
       analysisMarkdown: cleanField(source.slice(analysis.end)),
-      stemRange: rangeFor(offset, 0, analysis.index),
-      analysisRange: rangeFor(offset, analysis.end, source.length),
+      stemRange: rangeFor(source, offset, 0, analysis.index),
+      analysisRange: rangeFor(source, offset, analysis.end, source.length),
       hasFieldMarkers: true,
     }
   }
@@ -107,7 +111,7 @@ export function splitQuestionFields(body: string, offset = 0): ParsedQuestionFie
     stemMarkdown: cleanField(source),
     answerText: '',
     analysisMarkdown: '',
-    stemRange: rangeFor(offset, 0, source.length),
+    stemRange: rangeFor(source, offset, 0, source.length),
     hasFieldMarkers: false,
   }
 }

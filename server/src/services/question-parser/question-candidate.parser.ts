@@ -11,11 +11,12 @@ import {
   type SolutionMatch,
   type SolutionSection,
 } from './solution-matcher.js'
-import { figureForBlock, figuresForRange, sourceRefsForRange } from './figure-linker.js'
+import { figureForBlock, figuresForRange, isLikelyPageChromeBlock, isLikelyPageChromeFigureId, sourceRefsForRange } from './figure-linker.js'
 import { statusForIssues, validateQuestionCandidate } from './candidate-validator.js'
 import { normalizeHtmlImageTags } from '../ocr-providers/ocr-document.normalizer.js'
 import { getParserConfig } from './parser-config.js'
 import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
+import { normalizeQuestionType } from '../../utils/question-type.js'
 
 export type ParseQuestionCandidatesOptions = {
   now?: string
@@ -34,12 +35,18 @@ function isStructuralLine(line: string, config: ImportFlowV2ParserConfig) {
   const normalized = normalizedStructuralLine(line)
   if (!normalized) return false
   if (isSectionHeading(line, config)) return true
-  return config.documentNoteKeywords.some((item) => normalized.startsWith(normalizedLine(item)))
+  return config.documentNoteKeywords.some((item) => {
+    const keyword = normalizedLine(item)
+    return normalized.startsWith(keyword) || normalized.includes(keyword)
+  })
 }
 
 function isSectionHeading(line: string, config: ImportFlowV2ParserConfig) {
   const normalized = normalizedStructuralLine(line)
-  return config.sectionHeadings.some((item) => normalized === normalizedLine(item))
+  return config.sectionHeadings.some((item) => {
+    const heading = normalizedLine(item)
+    return normalized === heading || normalized.startsWith(heading)
+  })
 }
 
 function hasPrimaryQuestionMarker(line: string, config: ImportFlowV2ParserConfig) {
@@ -49,8 +56,8 @@ function hasPrimaryQuestionMarker(line: string, config: ImportFlowV2ParserConfig
   })
 }
 
-function stripStructuralText(value: string, config: ImportFlowV2ParserConfig) {
-  return String(value || '').split('\n').filter((line) => !isStructuralLine(line, config)).join('\n').trim()
+function maskStructuralText(value: string, config: ImportFlowV2ParserConfig) {
+  return maskStructuralMarkdown(value, config)
 }
 
 function isReferenceFormulaHeading(line: string, config: ImportFlowV2ParserConfig) {
@@ -64,6 +71,29 @@ function isAnswerOrAnalysisMarker(line: string) {
 
 function blankPreservingNewlines(value: string) {
   return value.replace(/[^\n]/g, ' ')
+}
+
+function alignDocumentBlockOffsets(document: OCRDocument, markdown: string): OCRDocument {
+  let cursor = 0
+  return {
+    ...document,
+    markdown,
+    pages: document.pages.map((page) => ({
+      ...page,
+      blocks: page.blocks.map((block) => {
+        const content = String(block.content || '')
+        if (!content.trim()) return block
+        const index = markdown.indexOf(content, cursor)
+        if (index < 0) return block
+        cursor = index + content.length
+        return {
+          ...block,
+          markdownStart: index,
+          markdownEnd: cursor,
+        }
+      }),
+    })),
+  }
 }
 
 /**
@@ -151,11 +181,39 @@ function figureBelongsToRef(block: OCRDocument['pages'][number]['blocks'][number
   return centerY >= ref.bbox[1] && centerY <= ref.bbox[3]
 }
 
+function bboxSize(bbox?: [number, number, number, number]) {
+  if (!bbox) return { width: 0, height: 0, area: 0 }
+  const width = Math.max(0, bbox[2] - bbox[0])
+  const height = Math.max(0, bbox[3] - bbox[1])
+  return { width, height, area: width * height }
+}
+
+function isLikelyStandaloneFigureBlock(document: OCRDocument, block: OCRDocument['pages'][number]['blocks'][number]) {
+  if (isLikelyPageChromeBlock(document, block)) return false
+  if (block.type === 'image' && !block.assetId) return true
+  if (!block.assetId) return false
+  const asset = document.assets.find((item) => item.id === block.assetId)
+  if (asset?.type === 'table_image' || block.type === 'table') return true
+  const box = bboxSize(asset?.bbox || block.bbox)
+  const page = document.pages.find((item) => item.pageNo === block.pageNo)
+  const pageHeight = page?.height || 0
+  const top = (asset?.bbox || block.bbox)?.[1] || 0
+  const bottom = (asset?.bbox || block.bbox)?.[3] || 0
+  const content = `${block.content || ''}\n${asset?.path || ''}`
+  if (/学科网|组卷网|zxxk|zujuan/i.test(content)) return false
+  if (pageHeight > 0 && (top < pageHeight * 0.08 || bottom > pageHeight * 0.94) && box.height < 160) return false
+  if (!box.area) return block.type === 'image'
+  if (box.height < 96) return false
+  if (box.width / Math.max(box.height, 1) > 8) return false
+  return block.type === 'image' || box.area >= 80_000
+}
+
 function attachImageBlocks(document: OCRDocument, chunks: QuestionMarkdownChunk[], candidates: QuestionCandidate[], config: ImportFlowV2ParserConfig) {
   const imageBlocks = document.pages.flatMap((page) => page.blocks)
     .filter((block) => block.type === 'image' || block.assetId)
   const attached = new Set(candidates.flatMap((candidate) => candidate.figures.map((figure) => figure.sourceBlockId).filter(Boolean)))
   for (const block of imageBlocks) {
+    if (!isLikelyStandaloneFigureBlock(document, block)) continue
     if (attached.has(block.id)) continue
     let index = candidates.findIndex((candidate) => candidate.sourceRefs.some((ref) => figureBelongsToRef(block, ref)))
     if (index < 0 && block.markdownStart !== undefined) {
@@ -223,7 +281,7 @@ function candidateFromChunk(
   timestamp: string,
   config: ImportFlowV2ParserConfig,
 ): QuestionCandidate {
-  const fields = splitQuestionFields(stripStructuralText(chunk.body, config), chunk.contentStart)
+  const fields = splitQuestionFields(maskStructuralText(chunk.body, config), chunk.contentStart)
   const answerText = solutionValue(fields.answerText, solution?.answerText)
   const analysisMarkdown = solutionValue(fields.analysisMarkdown, solution?.analysisMarkdown)
   const stemRange = fields.stemRange || { start: chunk.contentStart, end: chunk.end }
@@ -241,13 +299,14 @@ function candidateFromChunk(
     ...sourceRefsForRange(document, analysisRange, 'analysis'),
   ])
   const candidate: QuestionCandidate = {
-    id: createId('candidate', document.sourceDocumentId + '_' + (chunk.questionNo || 'unknown')),
+    id: createId('candidate', chunk.questionNo || 'unknown'),
     sourceDocumentId: document.sourceDocumentId,
     ocrDocumentId: document.id,
     questionNo: chunk.questionNo,
     stemMarkdown: fields.stemMarkdown,
     answerText,
     analysisMarkdown,
+    questionType: normalizeQuestionType('', fields.stemMarkdown, answerText),
     knowledgePoints: [],
     solutionMethods: [],
     figures,
@@ -263,16 +322,17 @@ function candidateFromChunk(
 }
 
 function fallbackCandidate(document: OCRDocument, timestamp: string, config: ImportFlowV2ParserConfig): QuestionCandidate {
-  const fields = splitQuestionFields(stripStructuralText(document.markdown || '', config), 0)
+  const fields = splitQuestionFields(maskStructuralText(document.markdown || '', config), 0)
   const fullRange = document.markdown ? { start: 0, end: document.markdown.length } : undefined
   const candidate: QuestionCandidate = {
-    id: createId('candidate', document.sourceDocumentId + '_unknown'),
+    id: createId('candidate', 'unknown'),
     sourceDocumentId: document.sourceDocumentId,
     ocrDocumentId: document.id,
     questionNo: '',
     stemMarkdown: fields.stemMarkdown,
     answerText: fields.answerText,
     analysisMarkdown: fields.analysisMarkdown,
+    questionType: normalizeQuestionType('', fields.stemMarkdown, fields.answerText),
     knowledgePoints: [],
     solutionMethods: [],
     figures: dedupeFigures([
@@ -296,8 +356,9 @@ function fillDoc2xFigures(
   stemMarkdown: string,
   analysisMarkdown: string,
   existingFigures: CandidateFigure[],
-): { figures: CandidateFigure[]; warnings: string[] } {
+): { figures: CandidateFigure[]; ignoredFigureIds: string[]; warnings: string[] } {
   const figures = [...existingFigures]
+  const ignoredFigureIds = new Set<string>()
   const warnings: string[] = []
   
   const DOC2X_FIGURE_MARKER_RE = /<!--\s*DOC2X_FIGURE:([^\s>]+)\s*-->/g
@@ -307,6 +368,10 @@ function fillDoc2xFigures(
     const matches = Array.from(markdown.matchAll(DOC2X_FIGURE_MARKER_RE))
     for (const match of matches) {
       const figureId = match[1]
+      if (isLikelyPageChromeFigureId(document, figureId)) {
+        ignoredFigureIds.add(figureId)
+        continue
+      }
       
       const exists = figures.find((f) => f.id === figureId || f.blockId === figureId)
       if (exists) {
@@ -341,13 +406,27 @@ function fillDoc2xFigures(
   scan(stemMarkdown, 'stem')
   scan(analysisMarkdown, 'analysis')
   
-  return { figures: dedupeFigures(figures), warnings }
+  const finalFigures = figures.filter((figure) => {
+    const ids = [figure.id, figure.blockId, figure.sourceBlockId].filter(Boolean).map(String)
+    return !ids.some((id) => ignoredFigureIds.has(id))
+  })
+  return { figures: dedupeFigures(finalFigures), ignoredFigureIds: Array.from(ignoredFigureIds), warnings }
+}
+
+function removeDoc2xFigureMarkers(markdown: string, figureIds: string[]) {
+  let next = String(markdown || '')
+  for (const id of figureIds) {
+    const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    next = next.replace(new RegExp(`\\n?\\s*<!--\\s*DOC2X_FIGURE:${escaped}\\s*-->\\s*\\n?`, 'g'), '\n')
+  }
+  return next.replace(/\n{3,}/g, '\n\n').trim()
 }
 
 export function parseQuestionCandidates(document: OCRDocument, options: ParseQuestionCandidatesOptions = {}): QuestionCandidate[] {
   const timestamp = options.now || nowIso()
   const config = options.config || getParserConfig()
   const markdown = normalizeHtmlImageTags(String(document.markdown || ''))
+  const alignedDocument = alignDocumentBlockOffsets(document, markdown)
   const solutionSections = findSolutionSections(markdown, config)
   const useSolutionSections = shouldUseSolutionSections(markdown, solutionSections, config)
   const maskedMarkdown = maskStructuralMarkdown(markdown, config)
@@ -357,22 +436,27 @@ export function parseQuestionCandidates(document: OCRDocument, options: ParseQue
 
   let candidates: QuestionCandidate[] = []
   if (!chunks.length) {
-    candidates = [fallbackCandidate(document, timestamp, config)]
+    candidates = [fallbackCandidate(alignedDocument, timestamp, config)]
   } else {
     const solutions = useSolutionSections ? extractSolutionMatches(markdown, solutionSections, config) : new Map<string, SolutionMatch>()
     const duplicateNos = duplicateQuestionNos(chunks)
-    candidates = chunks.map((chunk) => candidateFromChunk(document, chunk, solutions.get(chunk.questionNo), duplicateNos, timestamp, config))
-    attachImageBlocks(document, chunks, candidates, config)
+    candidates = chunks.map((chunk) => candidateFromChunk(alignedDocument, chunk, solutions.get(chunk.questionNo), duplicateNos, timestamp, config))
+    attachImageBlocks(alignedDocument, chunks, candidates, config)
   }
 
   for (const candidate of candidates) {
-    const { figures: finalFigures, warnings } = fillDoc2xFigures(
-      document,
+    const { figures: finalFigures, ignoredFigureIds, warnings } = fillDoc2xFigures(
+      alignedDocument,
       candidate.stemMarkdown,
       candidate.analysisMarkdown,
       candidate.figures
     )
     candidate.figures = finalFigures
+    if (ignoredFigureIds.length) {
+      candidate.stemMarkdown = removeDoc2xFigureMarkers(candidate.stemMarkdown, ignoredFigureIds)
+      candidate.answerText = removeDoc2xFigureMarkers(candidate.answerText, ignoredFigureIds)
+      candidate.analysisMarkdown = removeDoc2xFigureMarkers(candidate.analysisMarkdown, ignoredFigureIds)
+    }
 
     if (warnings.length > 0) {
       for (const w of warnings) {
