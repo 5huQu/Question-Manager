@@ -1,4 +1,5 @@
 import type { OCRBBox } from './ocr-document.js'
+import type { PaperKind } from '../utils/import-metadata.js'
 
 export type QuestionCandidateStatus = 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked' | 'committed'
 
@@ -63,6 +64,15 @@ export type QuestionCandidate = {
   figures: CandidateFigure[]
   sourceRefs: CandidateSourceRef[]
   status: QuestionCandidateStatus
+  province: string
+  city: string
+  paperTitle: string
+  batchName: string
+  stage: string
+  subject: string
+  paperKind: PaperKind
+  examYear: number
+  sourceOrg: string
   committedQuestionId?: string
   committedAt?: string
   issues: CandidateIssue[]
@@ -86,6 +96,15 @@ export type QuestionCandidateRow = {
   figures_json: string
   source_refs_json: string
   status: QuestionCandidateStatus
+  province?: string
+  city?: string
+  paper_title?: string
+  batch_name?: string
+  stage?: string
+  subject?: string
+  paper_kind?: string
+  exam_year?: number
+  source_org?: string
   committed_question_id: string
   committed_at: string
   issues_json: string
@@ -109,6 +128,15 @@ export type CreateQuestionCandidateInput = {
   figures?: CandidateFigure[]
   sourceRefs?: CandidateSourceRef[]
   status?: QuestionCandidateStatus
+  province?: string
+  city?: string
+  paperTitle?: string
+  batchName?: string
+  stage?: string
+  subject?: string
+  paperKind?: PaperKind
+  examYear?: number
+  sourceOrg?: string
   committedQuestionId?: string
   committedAt?: string
   issues?: CandidateIssue[]
@@ -128,6 +156,15 @@ export type UpdateQuestionCandidateInput = Partial<{
   figures: CandidateFigure[]
   sourceRefs: CandidateSourceRef[]
   status: QuestionCandidateStatus
+  province: string
+  city: string
+  paperTitle: string
+  batchName: string
+  stage: string
+  subject: string
+  paperKind: PaperKind
+  examYear: number
+  sourceOrg: string
   committedQuestionId: string
   committedAt: string
   issues: CandidateIssue[]

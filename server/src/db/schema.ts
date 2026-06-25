@@ -103,6 +103,15 @@ export function ensureSchema() {
       knowledge_points_json TEXT NOT NULL DEFAULT '[]',
       solution_methods_json TEXT NOT NULL DEFAULT '[]',
       source_title TEXT NOT NULL DEFAULT '',
+      province TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      paper_title TEXT NOT NULL DEFAULT '',
+      batch_name TEXT NOT NULL DEFAULT '',
+      subject TEXT NOT NULL DEFAULT '数学',
+      paper_kind TEXT NOT NULL DEFAULT 'unknown',
+      exam_year INTEGER NOT NULL DEFAULT 0,
+      source_org TEXT NOT NULL DEFAULT '',
+      import_source_id TEXT NOT NULL DEFAULT '',
       bank_status TEXT NOT NULL DEFAULT 'ready',
       stem_markdown TEXT NOT NULL DEFAULT '',
       answer_text TEXT NOT NULL DEFAULT '',
@@ -173,6 +182,15 @@ export function ensureSchema() {
       page_count INTEGER NOT NULL DEFAULT 0,
       provider TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'uploaded',
+      province TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      paper_title TEXT NOT NULL DEFAULT '',
+      batch_name TEXT NOT NULL DEFAULT '',
+      stage TEXT NOT NULL DEFAULT '高三',
+      subject TEXT NOT NULL DEFAULT '数学',
+      paper_kind TEXT NOT NULL DEFAULT 'unknown',
+      exam_year INTEGER NOT NULL DEFAULT 0,
+      source_org TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -206,6 +224,15 @@ export function ensureSchema() {
       figures_json TEXT NOT NULL DEFAULT '[]',
       source_refs_json TEXT NOT NULL DEFAULT '[]',
       status TEXT NOT NULL DEFAULT 'needs_review',
+      province TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      paper_title TEXT NOT NULL DEFAULT '',
+      batch_name TEXT NOT NULL DEFAULT '',
+      stage TEXT NOT NULL DEFAULT '高三',
+      subject TEXT NOT NULL DEFAULT '数学',
+      paper_kind TEXT NOT NULL DEFAULT 'unknown',
+      exam_year INTEGER NOT NULL DEFAULT 0,
+      source_org TEXT NOT NULL DEFAULT '',
       committed_question_id TEXT NOT NULL DEFAULT '',
       committed_at TEXT NOT NULL DEFAULT '',
       issues_json TEXT NOT NULL DEFAULT '[]',
@@ -320,6 +347,33 @@ export function ensureSchema() {
   ensureColumn('question_bank_items', 'stem_markdown', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_bank_items', 'answer_text', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_bank_items', 'analysis_markdown', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('source_documents', 'province', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('source_documents', 'city', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('source_documents', 'paper_title', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('source_documents', 'batch_name', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('source_documents', 'stage', "TEXT NOT NULL DEFAULT '高三'")
+  ensureColumn('source_documents', 'subject', "TEXT NOT NULL DEFAULT '数学'")
+  ensureColumn('source_documents', 'paper_kind', "TEXT NOT NULL DEFAULT 'unknown'")
+  ensureColumn('source_documents', 'exam_year', "INTEGER NOT NULL DEFAULT 0")
+  ensureColumn('source_documents', 'source_org', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_candidates', 'province', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_candidates', 'city', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_candidates', 'paper_title', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_candidates', 'batch_name', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_candidates', 'stage', "TEXT NOT NULL DEFAULT '高三'")
+  ensureColumn('question_candidates', 'subject', "TEXT NOT NULL DEFAULT '数学'")
+  ensureColumn('question_candidates', 'paper_kind', "TEXT NOT NULL DEFAULT 'unknown'")
+  ensureColumn('question_candidates', 'exam_year', "INTEGER NOT NULL DEFAULT 0")
+  ensureColumn('question_candidates', 'source_org', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_bank_items', 'province', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_bank_items', 'city', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_bank_items', 'paper_title', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_bank_items', 'batch_name', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_bank_items', 'subject', "TEXT NOT NULL DEFAULT '数学'")
+  ensureColumn('question_bank_items', 'paper_kind', "TEXT NOT NULL DEFAULT 'unknown'")
+  ensureColumn('question_bank_items', 'exam_year', "INTEGER NOT NULL DEFAULT 0")
+  ensureColumn('question_bank_items', 'source_org', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_bank_items', 'import_source_id', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_candidates', 'committed_question_id', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_candidates', 'committed_at', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_bank_items', 'search_text', "TEXT NOT NULL DEFAULT ''")

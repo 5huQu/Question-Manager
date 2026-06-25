@@ -1,3 +1,5 @@
+import type { PaperKind } from '../utils/import-metadata.js'
+
 export type SourceDocumentFileType = 'pdf' | 'image' | 'markdown' | 'json'
 
 export type SourceDocumentProvider = 'doc2x' | 'glm' | 'manual' | 'json'
@@ -31,6 +33,15 @@ export type SourceDocument = {
   pageCount: number
   provider?: SourceDocumentProvider
   status: SourceDocumentStatus
+  province: string
+  city: string
+  paperTitle: string
+  batchName: string
+  stage: string
+  subject: string
+  paperKind: PaperKind
+  examYear: number
+  sourceOrg: string
   importStats?: SourceDocumentImportStats
   createdAt: string
   updatedAt: string
@@ -45,6 +56,15 @@ export type SourceDocumentRow = {
   page_count: number
   provider: SourceDocumentProvider | ''
   status: SourceDocumentStatus
+  province?: string
+  city?: string
+  paper_title?: string
+  batch_name?: string
+  stage?: string
+  subject?: string
+  paper_kind?: string
+  exam_year?: number
+  source_org?: string
   created_at: string
   updated_at: string
 }
@@ -58,6 +78,16 @@ export type CreateSourceDocumentInput = {
   pageCount?: number
   provider?: SourceDocumentProvider
   status?: SourceDocumentStatus
+  metadata?: Record<string, unknown>
+  province?: string
+  city?: string
+  paperTitle?: string
+  batchName?: string
+  stage?: string
+  subject?: string
+  paperKind?: PaperKind
+  examYear?: number
+  sourceOrg?: string
 }
 
 export type UpdateSourceDocumentInput = Partial<{
@@ -68,4 +98,14 @@ export type UpdateSourceDocumentInput = Partial<{
   pageCount: number
   provider: SourceDocumentProvider | ''
   status: SourceDocumentStatus
+  metadata: Record<string, unknown>
+  province: string
+  city: string
+  paperTitle: string
+  batchName: string
+  stage: string
+  subject: string
+  paperKind: PaperKind
+  examYear: number
+  sourceOrg: string
 }>

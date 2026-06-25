@@ -1,4 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+import type { PaperKind } from '../utils/import-metadata.js'
 
 export type * from './source-document.js'
 export type * from './ocr-document.js'
@@ -91,6 +92,15 @@ export type QuestionRow = {
   knowledge_points_json: string
   solution_methods_json: string
   source_title: string
+  province?: string
+  city?: string
+  paper_title?: string
+  batch_name?: string
+  subject?: string
+  paper_kind?: PaperKind
+  exam_year?: number
+  source_org?: string
+  import_source_id?: string
   bank_status: BankStatus
   stem_markdown: string
   answer_text: string

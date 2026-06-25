@@ -70,6 +70,15 @@ export type QuestionItem = {
   knowledgePoints: string[]
   solutionMethods: string[]
   sourceTitle: string
+  province?: string
+  city?: string
+  paperTitle?: string
+  batchName?: string
+  subject?: string
+  paperKind?: 'gaokao_real' | 'local_real' | 'mock' | 'school_exam' | 'lecture' | 'daily_practice' | 'unknown'
+  examYear?: number
+  sourceOrg?: string
+  importSourceId?: string
   bankStatus: string
   stemMarkdown: string
   answerText: string
