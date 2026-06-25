@@ -18,6 +18,7 @@ import { normalizeHtmlImageTags } from '../ocr-providers/ocr-document.normalizer
 import { getParserConfig } from './parser-config.js'
 import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
 import { normalizeQuestionType } from '../../utils/question-type.js'
+import { cleanOcrPresentationMarkdown } from './presentation-cleanup.js'
 
 export type ParseQuestionCandidatesOptions = {
   now?: string
@@ -29,7 +30,7 @@ function normalizedLine(value: string) {
 }
 
 function normalizedStructuralLine(value: string) {
-  return normalizedLine(value).replace(/^(?:第[0-9０-９]{1,3}题|[0-9０-９]{1,3}[.．、])/, '')
+  return normalizedLine(value).replace(/^(?:第[0-9０-９]{1,3}题|[0-9０-９]{1,3}[.．、]|[一二三四五六七八九十百]+、)/, '')
 }
 
 function isStructuralLine(line: string, config: ImportFlowV2ParserConfig) {
@@ -38,7 +39,7 @@ function isStructuralLine(line: string, config: ImportFlowV2ParserConfig) {
   if (isSectionHeading(line, config)) return true
   return config.documentNoteKeywords.some((item) => {
     const keyword = normalizedLine(item)
-    return normalized.startsWith(keyword) || normalized.includes(keyword)
+    return normalized.startsWith(keyword)
   })
 }
 
@@ -283,15 +284,16 @@ function candidateFromChunk(
   config: ImportFlowV2ParserConfig,
 ): QuestionCandidate {
   const fields = splitQuestionFields(maskStructuralText(chunk.body, config), chunk.contentStart)
-  const answerText = solutionValue(fields.answerText, solution?.answerText)
-  const analysisMarkdown = solutionValue(fields.analysisMarkdown, solution?.analysisMarkdown)
+  const stemMarkdown = cleanOcrPresentationMarkdown(fields.stemMarkdown, config)
+  const answerText = cleanOcrPresentationMarkdown(solutionValue(fields.answerText, solution?.answerText), config)
+  const analysisMarkdown = cleanOcrPresentationMarkdown(solutionValue(fields.analysisMarkdown, solution?.analysisMarkdown), config)
   const stemRange = fields.stemRange || { start: chunk.contentStart, end: chunk.end }
   const answerRange = solutionRange(fields.answerRange, solution?.answerRange)
   const analysisRange = solutionRange(fields.analysisRange, solution?.analysisRange)
   const figures = dedupeFigures([
     ...figuresForRange(document, stemRange, 'stem'),
     ...figuresForRange(document, analysisRange, 'analysis'),
-    ...figuresForMarkdown(fields.stemMarkdown, 'stem'),
+    ...figuresForMarkdown(stemMarkdown, 'stem'),
     ...figuresForMarkdown(analysisMarkdown, 'analysis'),
   ])
   const sourceRefs = dedupeSourceRefs([
@@ -304,10 +306,10 @@ function candidateFromChunk(
     sourceDocumentId: document.sourceDocumentId,
     ocrDocumentId: document.id,
     questionNo: chunk.questionNo,
-    stemMarkdown: fields.stemMarkdown,
+    stemMarkdown,
     answerText,
     analysisMarkdown,
-    questionType: normalizeQuestionType('', fields.stemMarkdown, answerText),
+    questionType: normalizeQuestionType('', stemMarkdown, answerText),
     knowledgePoints: [],
     solutionMethods: [],
     figures,
@@ -325,22 +327,25 @@ function candidateFromChunk(
 
 function fallbackCandidate(document: OCRDocument, timestamp: string, config: ImportFlowV2ParserConfig): QuestionCandidate {
   const fields = splitQuestionFields(maskStructuralText(document.markdown || '', config), 0)
+  const stemMarkdown = cleanOcrPresentationMarkdown(fields.stemMarkdown, config)
+  const answerText = cleanOcrPresentationMarkdown(fields.answerText, config)
+  const analysisMarkdown = cleanOcrPresentationMarkdown(fields.analysisMarkdown, config)
   const fullRange = document.markdown ? { start: 0, end: document.markdown.length } : undefined
   const candidate: QuestionCandidate = {
     id: createId('candidate', 'unknown'),
     sourceDocumentId: document.sourceDocumentId,
     ocrDocumentId: document.id,
     questionNo: '',
-    stemMarkdown: fields.stemMarkdown,
-    answerText: fields.answerText,
-    analysisMarkdown: fields.analysisMarkdown,
-    questionType: normalizeQuestionType('', fields.stemMarkdown, fields.answerText),
+    stemMarkdown,
+    answerText,
+    analysisMarkdown,
+    questionType: normalizeQuestionType('', stemMarkdown, answerText),
     knowledgePoints: [],
     solutionMethods: [],
     figures: dedupeFigures([
       ...figuresForRange(document, fields.stemRange || fullRange, 'stem'),
-      ...figuresForMarkdown(fields.stemMarkdown, 'stem'),
-      ...figuresForMarkdown(fields.analysisMarkdown, 'analysis'),
+      ...figuresForMarkdown(stemMarkdown, 'stem'),
+      ...figuresForMarkdown(analysisMarkdown, 'analysis'),
     ]),
     sourceRefs: sourceRefsForRange(document, fields.stemRange || fullRange, 'stem'),
     status: 'needs_review',

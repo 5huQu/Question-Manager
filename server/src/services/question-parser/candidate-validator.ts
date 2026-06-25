@@ -15,7 +15,7 @@ export function validateQuestionCandidate(candidate: QuestionCandidate, duplicat
   if (!candidate.stemMarkdown.trim()) {
     issues.push(issue('missing_stem', 'error', '题干为空，需要人工修正。'))
   }
-  if (!candidate.answerText.trim()) {
+  if (!candidate.answerText.trim() && !candidate.analysisMarkdown.trim()) {
     issues.push(issue('missing_answer', 'warning', '未匹配到答案。'))
   }
   if (!candidate.analysisMarkdown.trim()) {

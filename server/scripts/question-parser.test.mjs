@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { defaultParserConfig, parseQuestionCandidates } from '../dist/services/question-parser/index.js'
+import { defaultParserConfig, parseQuestionCandidates, parseSolutionDocument } from '../dist/services/question-parser/index.js'
 
 function block(markdown, content, pageNo, id, type = 'text', assetId = '') {
   const markdownStart = markdown.indexOf(content)
@@ -78,6 +78,42 @@ assert.equal(candidates[0].sourceRefs.some((ref) => ref.kind === 'stem' && ref.b
 assert.equal(candidates[1].questionNo, '2')
 assert.equal(candidates[1].answerText, '4')
 assert.match(candidates[1].analysisMarkdown, /3\+1=4/)
+
+const solutionWithoutHeadingDocument = {
+  ...ocrDocument,
+  id: 'ocr_solution_no_heading_test',
+  markdown: [
+    '1. 答案：A',
+    '解析：由题意可得。',
+    '',
+    '2. 直接计算得到 4。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const noHeadingSolutions = parseSolutionDocument(solutionWithoutHeadingDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.equal(noHeadingSolutions.size, 2)
+assert.equal(noHeadingSolutions.get('1')?.answerText, 'A')
+assert.match(noHeadingSolutions.get('1')?.analysisMarkdown || '', /由题意/)
+assert.match(noHeadingSolutions.get('2')?.analysisMarkdown || '', /直接计算/)
+assert.ok(noHeadingSolutions.get('2')?.analysisRange)
+
+const analysisOnlyCandidateDocument = {
+  ...ocrDocument,
+  id: 'ocr_analysis_only_candidate_test',
+  markdown: [
+    '1. 已知函数，求单调区间。',
+    '【解析】',
+    '求导后讨论符号即可。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const analysisOnlyCandidates = parseQuestionCandidates(analysisOnlyCandidateDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.equal(analysisOnlyCandidates.length, 1)
+assert.equal(analysisOnlyCandidates[0].answerText, '')
+assert.match(analysisOnlyCandidates[0].analysisMarkdown, /求导后讨论/)
+assert.equal(analysisOnlyCandidates[0].issues.some((issue) => issue.code === 'missing_answer'), false)
 
 const duplicateDocument = {
   ...ocrDocument,
@@ -199,6 +235,100 @@ assert.doesNotMatch(notesAndFormulaCandidates[0].stemMarkdown, /答卷前|作答
 assert.doesNotMatch(notesAndFormulaCandidates[1].stemMarkdown, /参考公式|q\^n|E\(X\+Y\)/)
 assert.match(notesAndFormulaCandidates[1].answerText, /第十九题答案/)
 assert.match(notesAndFormulaCandidates[1].analysisMarkdown, /第十九题解析/)
+
+const numberedNotesAndHeadingNumbersDocument = {
+  ...ocrDocument,
+  id: 'ocr_numbered_notes_heading_numbers_test',
+  markdown: [
+    '注意事项：',
+    '1. 答题前，考生务必将姓名填写清楚。',
+    '2. 每小题选出答案后，用2B铅笔把答题卡上对应题目的答案标号涂黑。',
+    '## 一、单选题',
+    '1. 正常的第一题。',
+    '## 四、解答题',
+    '15. （本小题满分13分）',
+    '第十五题题干。',
+    '## 16. （本小题满分15分）',
+    '第十六题题干。',
+    '## 17. （本小题满分15分）',
+    '第十七题题干。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const numberedNotesAndHeadingNumbersCandidates = parseQuestionCandidates(numberedNotesAndHeadingNumbersDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.deepEqual(numberedNotesAndHeadingNumbersCandidates.map((candidate) => candidate.questionNo), ['1', '15', '16', '17'])
+assert.doesNotMatch(numberedNotesAndHeadingNumbersCandidates[0].stemMarkdown, /答题前|每小题选出答案/)
+assert.match(numberedNotesAndHeadingNumbersCandidates[1].stemMarkdown, /第十五题题干/)
+assert.doesNotMatch(numberedNotesAndHeadingNumbersCandidates[1].stemMarkdown, /第十六题题干|第十七题题干/)
+assert.match(numberedNotesAndHeadingNumbersCandidates[2].stemMarkdown, /第十六题题干/)
+assert.match(numberedNotesAndHeadingNumbersCandidates[3].stemMarkdown, /第十七题题干/)
+
+const tableAnswersAndHeadingSolutionsDocument = {
+  ...ocrDocument,
+  id: 'ocr_table_answers_heading_solutions_test',
+  markdown: [
+    '# 数学参考答案',
+    '<table border="1"><tr><td>题号</td><td>15</td><td>16</td><td>19</td></tr><tr><td>答案</td><td>A</td><td>B</td><td>C</td></tr></table>',
+    '## 【解析】',
+    '15. 第十五题解析。',
+    '## 16. 第十六题解析。',
+    '## 19. 第十九题解析。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const tableAnswersAndHeadingSolutions = parseSolutionDocument(tableAnswersAndHeadingSolutionsDocument)
+assert.equal(tableAnswersAndHeadingSolutions.get('15')?.answerText, 'A')
+assert.match(tableAnswersAndHeadingSolutions.get('16')?.analysisMarkdown || '', /第十六题解析/)
+assert.equal(tableAnswersAndHeadingSolutions.get('19')?.answerText, 'C')
+assert.match(tableAnswersAndHeadingSolutions.get('19')?.analysisMarkdown || '', /第十九题解析/)
+
+const presentationNoiseDocument = {
+  ...ocrDocument,
+  id: 'ocr_presentation_noise_test',
+  markdown: [
+    '1. 如图求值。',
+    '<!-- DOC2X_FIGURE:fig_noise_stem -->',
+    '<div align="center">',
+    '图1',
+    '</div>',
+    '【解析】',
+    '由图可得。',
+    '<!-- DOC2X_FIGURE:fig_noise_analysis -->',
+    '<div align="center">',
+    '室2',
+    '</div>',
+    '## 四、解答题（本大题共5小题）',
+  ].join('\n'),
+  pages: [],
+  assets: [
+    { id: 'fig_noise_stem', type: 'image', path: 'stem-noise.png', pageNo: 1 },
+    { id: 'fig_noise_analysis', type: 'image', path: 'analysis-noise.png', pageNo: 1 },
+  ],
+}
+const presentationNoiseCandidates = parseQuestionCandidates(presentationNoiseDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.equal(presentationNoiseCandidates.length, 1)
+assert.match(presentationNoiseCandidates[0].stemMarkdown, /DOC2X_FIGURE:fig_noise_stem/)
+assert.match(presentationNoiseCandidates[0].analysisMarkdown, /DOC2X_FIGURE:fig_noise_analysis/)
+assert.doesNotMatch(presentationNoiseCandidates[0].stemMarkdown, /<div|<\/div>|图1/)
+assert.doesNotMatch(presentationNoiseCandidates[0].analysisMarkdown, /<div|<\/div>|室2|四、解答题/)
+
+const ocrSpacedFormulaDocument = {
+  ...ocrDocument,
+  id: 'ocr_spaced_formula_test',
+  markdown: [
+    '18. 先证明对数均值不等式： $ \\sqrt{a b}<\\frac{a-b}{\\ln a-\\ln b}<\\frac{a+b}{2} $ $ (a,b>0 $ ，且 $ a\\neq b $ )：',
+    '$$',
+    'x _ {1} + x _ {2} < 3 \\mathrm {e} ^ {a - 1} - 1',
+    '$$',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const ocrSpacedFormulaCandidates = parseQuestionCandidates(ocrSpacedFormulaDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.match(ocrSpacedFormulaCandidates[0].stemMarkdown, /\$ \(a,b>0 \$ ，且 \$ a\\neq b \$ \)/)
+assert.match(ocrSpacedFormulaCandidates[0].stemMarkdown, /x _ \{1\} \+ x _ \{2\} < 3 \\mathrm \{e\} \^ \{a - 1\} - 1/)
 
 // Test D: candidate 中 DOC2X_FIGURE 能补出 figures
 {
