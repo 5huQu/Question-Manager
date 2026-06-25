@@ -39,6 +39,58 @@ type UnifiedQuestion = {
   rawItem: any
 }
 
+type PaperKind = ImportV2SourceDocument['paperKind']
+
+type SourceMetadataDraft = {
+  paperTitle: string
+  batchName: string
+  stage: string
+  subject: string
+  province: string
+  city: string
+  paperKind: PaperKind
+  examYear: string
+  sourceOrg: string
+}
+
+const paperKindOptions: Array<{ value: PaperKind; label: string }> = [
+  { value: 'gaokao_real', label: '高考真题' },
+  { value: 'local_real', label: '地方真题' },
+  { value: 'mock', label: '模拟题' },
+  { value: 'school_exam', label: '校内考试' },
+  { value: 'lecture', label: '讲义' },
+  { value: 'daily_practice', label: '日常练习' },
+  { value: 'unknown', label: '未分类' },
+]
+
+function metadataDraftFromDoc(doc?: Partial<ImportV2SourceDocument> | null): SourceMetadataDraft {
+  return {
+    paperTitle: doc?.paperTitle || '',
+    batchName: doc?.batchName || '',
+    stage: doc?.stage || '高三',
+    subject: doc?.subject || '数学',
+    province: doc?.province || '',
+    city: doc?.city || '',
+    paperKind: doc?.paperKind || 'unknown',
+    examYear: doc?.examYear ? String(doc.examYear) : '',
+    sourceOrg: doc?.sourceOrg || '',
+  }
+}
+
+function metadataPayload(draft: SourceMetadataDraft) {
+  return {
+    paperTitle: draft.paperTitle.trim(),
+    batchName: draft.batchName.trim(),
+    stage: draft.stage.trim() || '高三',
+    subject: draft.subject.trim() || '数学',
+    province: draft.province.trim(),
+    city: draft.city.trim(),
+    paperKind: draft.paperKind || 'unknown',
+    examYear: Number(draft.examYear || 0) || 0,
+    sourceOrg: draft.sourceOrg.trim(),
+  }
+}
+
 function hasVisibleFigureMarkup(...contents: string[]) {
   return contents.some((content) =>
     /!\[[^\]]*]\(\s*(?:<([^>\n]+)>|([^\s)\n]+))\s*\)/.test(String(content || '')) ||
@@ -107,6 +159,8 @@ export default function ImportV2Page() {
   const [showDebug, setShowDebug] = useState(false)
   const [editingQuestionNo, setEditingQuestionNo] = useState('')
   const [savingQuestionType, setSavingQuestionType] = useState('')
+  const [metadataDraft, setMetadataDraft] = useState<SourceMetadataDraft>(() => metadataDraftFromDoc())
+  const [showMetadataEditor, setShowMetadataEditor] = useState(false)
 
   const [uploading, setUploading] = useState(false)
   const [runningSourceDocumentId, setRunningSourceDocumentId] = useState('')
@@ -133,6 +187,12 @@ export default function ImportV2Page() {
   const selectedDoc = useMemo(() => {
     return selectedSourceDocId ? sourceDocuments.find(d => d.id === selectedSourceDocId) || null : null
   }, [sourceDocuments, selectedSourceDocId])
+
+  useEffect(() => {
+    if (selectedDoc) {
+      setMetadataDraft(metadataDraftFromDoc(selectedDoc))
+    }
+  }, [selectedDoc?.id, selectedDoc?.updatedAt])
 
   // 状态解析
   function getDocStatus(item: ImportV2SourceDocument) {
@@ -384,7 +444,7 @@ export default function ImportV2Page() {
     setSelectedIds(new Set())
 
     try {
-      const res = await importV2Api.uploadSourceDocument(file)
+      const res = await importV2Api.uploadSourceDocument(file, metadataPayload(metadataDraft))
       await loadLists()
       setSelectedSourceDocId(res.sourceDocument.id)
       navigateToDocument(res.sourceDocument.id)
@@ -507,6 +567,22 @@ export default function ImportV2Page() {
       if (sourceDocumentIdFromPath === id) {
         navigate('/tools/import', { replace: true })
       }
+      await loadLists()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function handleSaveSourceMetadata() {
+    if (!selectedDoc) return
+    setBusy(`metadata-${selectedDoc.id}`)
+    setError('')
+    try {
+      const res = await importV2Api.updateSourceDocument(selectedDoc.id, metadataPayload(metadataDraft))
+      setSourceDocuments((items) => items.map((item) => item.id === selectedDoc.id ? res.sourceDocument : item))
+      showNotice('资料信息已保存。')
       await loadLists()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -920,6 +996,84 @@ export default function ImportV2Page() {
                   支持 PDF、PNG/JPG
                 </p>
               </div>
+            </Panel>
+
+            <Panel
+              title="资料信息"
+              actions={selectedDoc ? (
+                <button
+                  type="button"
+                  onClick={() => setShowMetadataEditor((value) => !value)}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                >
+                  <PencilLine className="size-3.5" />
+                  {showMetadataEditor ? '收起' : '编辑'}
+                </button>
+              ) : null}
+            >
+              {selectedDoc && !showMetadataEditor ? (
+                <div className="space-y-2 text-[11px] text-zinc-500">
+                  <div className="font-semibold text-zinc-800 dark:text-zinc-200 truncate">
+                    {selectedDoc.paperTitle || selectedDoc.title || selectedDoc.originalFileName || '未命名资料'}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="outline">{paperKindOptions.find((item) => item.value === selectedDoc.paperKind)?.label || '未分类'}</Badge>
+                    <Badge variant="outline">{selectedDoc.stage || '高三'}</Badge>
+                    <Badge variant="outline">{selectedDoc.subject || '数学'}</Badge>
+                  </div>
+                  <div className="truncate">
+                    {[selectedDoc.province, selectedDoc.city, selectedDoc.examYear || '', selectedDoc.sourceOrg].filter(Boolean).join(' · ') || '未填写地区、年份和来源机构'}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-medium text-zinc-500">试卷名称</span>
+                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.paperTitle} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, paperTitle: event.target.value }))} />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-medium text-zinc-500">批次名称</span>
+                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.batchName} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, batchName: event.target.value }))} />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-medium text-zinc-500">学段/年级</span>
+                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.stage} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, stage: event.target.value }))} />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-medium text-zinc-500">学科</span>
+                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.subject} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, subject: event.target.value }))} />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-medium text-zinc-500">省份</span>
+                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.province} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, province: event.target.value }))} />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-medium text-zinc-500">城市</span>
+                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.city} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, city: event.target.value }))} />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-medium text-zinc-500">资料类型</span>
+                      <select className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.paperKind} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, paperKind: event.target.value as PaperKind }))}>
+                        {paperKindOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] font-medium text-zinc-500">年份</span>
+                      <input type="number" min="0" className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.examYear} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, examYear: event.target.value }))} />
+                    </label>
+                    <label className="col-span-2 space-y-1">
+                      <span className="text-[10px] font-medium text-zinc-500">来源机构</span>
+                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.sourceOrg} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, sourceOrg: event.target.value }))} />
+                    </label>
+                  </div>
+                  {selectedDoc ? (
+                    <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={handleSaveSourceMetadata}>
+                      {busy === `metadata-${selectedDoc.id}` ? '保存中...' : '保存资料信息'}
+                    </Button>
+                  ) : null}
+                </div>
+              )}
             </Panel>
 
             {/* 资料列表 */}
