@@ -1,4 +1,4 @@
-import { detectQuestionNumbers } from './question-number-detector.js'
+import { detectSolutionQuestionNumbers } from './question-number-detector.js'
 import { splitMarkdownByQuestionNumbers } from './markdown-question-splitter.js'
 import { getParserConfig } from './parser-config.js'
 import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
@@ -33,6 +33,7 @@ export type SolutionMatch = {
   analysisMarkdown?: string
   answerRange?: MarkdownRange
   analysisRange?: MarkdownRange
+  warnings?: string[]
 }
 
 const PAGE_MARKER_RE = /<!--\s*(?:GLM|DOC2X)_PAGE:\d+\s*-->/g
@@ -173,10 +174,11 @@ function solutionPatchForSection(section: SolutionSection, fields: ParsedQuestio
       analysisRange: fields.analysisRange || fields.stemRange || fallbackRange,
     }
   }
+  const inferredLeadingAnswer = !fields.answerText && fields.analysisMarkdown ? fields.stemMarkdown : ''
   return {
-    answerText: fields.answerText,
+    answerText: fields.answerText || inferredLeadingAnswer,
     analysisMarkdown: fields.analysisMarkdown || (!fields.answerText ? fields.stemMarkdown : ''),
-    answerRange: fields.answerRange,
+    answerRange: fields.answerRange || (inferredLeadingAnswer ? fields.stemRange : undefined),
     analysisRange: fields.analysisRange || (!fields.answerText ? fields.stemRange : undefined),
   }
 }
@@ -187,7 +189,7 @@ export function extractSolutionMatches(markdown: string, sections: SolutionSecti
   for (const section of sections) {
     const content = source.slice(section.contentStart, section.end)
     const offset = section.contentStart
-    const starts = detectQuestionNumbers(content, config)
+    const starts = detectSolutionQuestionNumbers(content, config)
     const chunks = splitMarkdownByQuestionNumbers(content, starts)
     for (const chunk of chunks) {
       const fields = splitQuestionFields(chunk.body, offset + chunk.contentStart)

@@ -14,8 +14,10 @@ const {
   addSourceDocumentToImportJob,
   parseCandidatesForImportJob,
   parseCandidatesForOcrDocument,
+  listQuestionCandidatesForSource,
   commitQuestionCandidate,
 } = await import('../dist/services/import-flow-v2/import-flow-v2.service.js')
+const { updateQuestionCandidate: persistQuestionCandidate } = await import('../dist/repositories/question-candidates.repo.js')
 const { assetPathFor } = await import('../dist/utils/paths.js')
 
 function block(markdown, content, id, pageNo = 1, type = 'text', cursorHint = 0) {
@@ -200,6 +202,33 @@ try {
   const directCommit = commitQuestionCandidate(directResult.items[0].id)
   assert.equal(directCommit.item.sourceRunId, `ifv2:${directSource.id}`)
   assert.equal(directCommit.item.importSourceId, directSource.id)
+
+  console.log('5. Listing candidates recalculates stale persisted validation issues...')
+  const staleSource = makeSourceDocument('src_live_validation', 'Live Validation Source')
+  const staleMarkdown = [
+    '1. 已知 $c=5$，求 $c$。',
+    '解析：由题意直接得到 $c=5$。',
+  ].join('\n')
+  const staleOcr = makeOcrDocument('ocr_live_validation', staleSource.id, staleMarkdown, blocks(staleMarkdown, [
+    ['1. 已知 $c=5$，求 $c$。', 'b_live_stem'],
+    ['解析：由题意直接得到 $c=5$。', 'b_live_analysis'],
+  ]))
+  const staleResult = parseCandidatesForOcrDocument(staleOcr.id)
+  assert.equal(staleResult.items.length, 1)
+  assert.equal(staleResult.items[0].answerText, '')
+  assert.match(staleResult.items[0].analysisMarkdown, /c=5/)
+  persistQuestionCandidate(staleResult.items[0].id, {
+    issues: [{ code: 'missing_answer', severity: 'warning', message: '未匹配到答案。' }],
+    status: 'needs_review',
+  })
+  const liveResult = listQuestionCandidatesForSource(staleSource.id, {})
+  assert.equal(liveResult.items.length, 1)
+  assert.equal(liveResult.items[0].issues.some((issue) => issue.code === 'missing_answer'), false)
+  assert.equal(liveResult.items[0].status, 'ready')
+  const readyResult = listQuestionCandidatesForSource(staleSource.id, { status: 'ready' })
+  assert.equal(readyResult.items.some((item) => item.id === staleResult.items[0].id), true)
+  const reviewResult = listQuestionCandidatesForSource(staleSource.id, { status: 'needs_review' })
+  assert.equal(reviewResult.items.some((item) => item.id === staleResult.items[0].id), false)
 
   console.log('import job service ok')
 } catch (error) {

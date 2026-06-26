@@ -1,8 +1,8 @@
 import type { OCRDocument } from '../../types/ocr-document.js'
-import type { CandidateFigure, CandidateSourceRef, QuestionCandidate } from '../../types/question-candidate.js'
+import type { CandidateFigure, CandidateIssue, CandidateSourceRef, QuestionCandidate } from '../../types/question-candidate.js'
 import { createId, nowIso } from '../../utils/ids.js'
 import { DEFAULT_IMPORT_METADATA } from '../../utils/import-metadata.js'
-import { detectQuestionNumbers } from './question-number-detector.js'
+import { detectQuestionNumbers, detectSolutionQuestionNumbers, type QuestionNumberMatch } from './question-number-detector.js'
 import { splitMarkdownByQuestionNumbers, type QuestionMarkdownChunk } from './markdown-question-splitter.js'
 import {
   extractSolutionMatches,
@@ -19,6 +19,11 @@ import { getParserConfig } from './parser-config.js'
 import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
 import { normalizeQuestionType } from '../../utils/question-type.js'
 import { cleanOcrPresentationMarkdown } from './presentation-cleanup.js'
+import {
+  classifyQuestionDocumentLayout,
+  type QuestionDocumentLayoutClassification,
+} from './document-layout.classifier.js'
+import { extractAnswerTable } from './solution-document.parser.js'
 
 export type ParseQuestionCandidatesOptions = {
   now?: string
@@ -30,7 +35,26 @@ function normalizedLine(value: string) {
 }
 
 function normalizedStructuralLine(value: string) {
-  return normalizedLine(value).replace(/^(?:第[0-9０-９]{1,3}题|[0-9０-９]{1,3}[.．、]|[一二三四五六七八九十百]+、)/, '')
+  return normalizedLine(value).replace(/^(?:第[0-9０-９]{1,3}题|[0-9０-９]{1,3}[.．、·•]|[一二三四五六七八九十百]+、)/, '')
+}
+
+const CHINESE_SECTION_PREFIX_RE = /^[一二三四五六七八九十百千万]+[、.．]/
+
+function normalizedSectionHeadingTitle(value: string) {
+  const normalized = normalizedLine(value)
+  if (!CHINESE_SECTION_PREFIX_RE.test(normalized)) return ''
+  return normalized.replace(CHINESE_SECTION_PREFIX_RE, '')
+}
+
+function normalizedConfiguredSectionHeading(value: string) {
+  return normalizedLine(value).replace(CHINESE_SECTION_PREFIX_RE, '')
+}
+
+function sectionHeadingMatches(lineTitle: string, configuredHeading: string) {
+  if (!lineTitle || !configuredHeading) return false
+  if (lineTitle === configuredHeading) return true
+  if (!lineTitle.startsWith(configuredHeading)) return false
+  return /^[:：（(本]/.test(lineTitle.slice(configuredHeading.length))
 }
 
 function isStructuralLine(line: string, config: ImportFlowV2ParserConfig) {
@@ -44,11 +68,24 @@ function isStructuralLine(line: string, config: ImportFlowV2ParserConfig) {
 }
 
 function isSectionHeading(line: string, config: ImportFlowV2ParserConfig) {
-  const normalized = normalizedStructuralLine(line)
+  const normalized = normalizedSectionHeadingTitle(line)
+  if (!normalized) return false
   return config.sectionHeadings.some((item) => {
-    const heading = normalizedLine(item)
-    return normalized === heading || normalized.startsWith(heading)
+    const heading = normalizedConfiguredSectionHeading(item)
+    return sectionHeadingMatches(normalized, heading)
   })
+}
+
+function findFirstSectionHeadingStart(value: string, config: ImportFlowV2ParserConfig) {
+  const source = String(value || '')
+  const lines = source.split(/(?<=\n)/)
+  let offset = 0
+  for (const lineWithNewline of lines) {
+    const line = lineWithNewline.replace(/\n$/, '')
+    if (isSectionHeading(line, config)) return offset
+    offset += lineWithNewline.length
+  }
+  return -1
 }
 
 function hasPrimaryQuestionMarker(line: string, config: ImportFlowV2ParserConfig) {
@@ -73,6 +110,15 @@ function isAnswerOrAnalysisMarker(line: string) {
 
 function blankPreservingNewlines(value: string) {
   return value.replace(/[^\n]/g, ' ')
+}
+
+function maskPreludeBeforeFirstSectionHeading(value: string, config: ImportFlowV2ParserConfig) {
+  const headingStart = findFirstSectionHeadingStart(value, config)
+  if (headingStart <= 0) return value
+  const beforeHeading = value.slice(0, headingStart)
+  const afterHeading = value.slice(headingStart)
+  if (!detectQuestionNumbers(afterHeading, config).length) return value
+  return blankPreservingNewlines(beforeHeading) + afterHeading
 }
 
 function alignDocumentBlockOffsets(document: OCRDocument, markdown: string): OCRDocument {
@@ -104,9 +150,10 @@ function alignDocumentBlockOffsets(document: OCRDocument, markdown: string): OCR
  * items from becoming artificial questions or cutting the preceding real one.
  */
 function maskStructuralMarkdown(value: string, config: ImportFlowV2ParserConfig) {
+  const markdown = maskPreludeBeforeFirstSectionHeading(String(value || ''), config)
   let inReferenceFormula = false
   let sawQuestion = false
-  return String(value || '').split(/(?<=\n)/).map((lineWithNewline) => {
+  return markdown.split(/(?<=\n)/).map((lineWithNewline) => {
     const line = lineWithNewline.replace(/\n$/, '')
     if (inReferenceFormula && isAnswerOrAnalysisMarker(line)) {
       inReferenceFormula = false
@@ -256,23 +303,229 @@ function attachImageBlocks(document: OCRDocument, chunks: QuestionMarkdownChunk[
   }
 }
 
-function shouldUseSolutionSections(markdown: string, sections: SolutionSection[], config: ImportFlowV2ParserConfig) {
-  if (!sections.length) return false
-  const first = sections[0]
-  const before = detectQuestionNumbers(markdown.slice(0, first.start), config)
-  if (!before.length) return false
-  if (/参考|答案与解析|答案解析/.test(first.title)) return true
-  const beforeNos = new Set(before.map((item) => item.questionNo).filter(Boolean))
-  const afterNos = detectQuestionNumbers(markdown.slice(first.contentStart), config).map((item) => item.questionNo)
-  return afterNos.some((questionNo) => beforeNos.has(questionNo))
-}
-
 function solutionValue(fieldsValue: string, matchValue: string | undefined) {
   return fieldsValue.trim() || String(matchValue || '').trim()
 }
 
 function solutionRange(fieldsRange: MarkdownRange | undefined, matchRange: MarkdownRange | undefined) {
   return fieldsRange || matchRange
+}
+
+function hasAnswerOrAnalysisMarkerText(value: string) {
+  return /【\s*(?:答案|解析|分析|详解)\s*】|(?:答案|解析|分析|详解)\s*[:：]/.test(value)
+}
+
+function containsSectionHeading(value: string, config: ImportFlowV2ParserConfig) {
+  return String(value || '').split(/\n/).some((line) => isSectionHeading(line, config))
+}
+
+function numberValue(value: string | undefined) {
+  const parsed = Number.parseInt(String(value || '').replace(/[^\d]/g, ''), 10)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function cleanQuestionMatchesForLayout(
+  markdown: string,
+  matches: QuestionNumberMatch[],
+  classification: QuestionDocumentLayoutClassification,
+  config: ImportFlowV2ParserConfig,
+) {
+  if (classification.cleaningRule !== 'same_document_inline') return matches
+  const chunks = splitMarkdownByQuestionNumbers(markdown, matches)
+  const result: QuestionNumberMatch[] = []
+  let skippedAnalysisNumbering = false
+
+  for (let index = 0; index < matches.length; index += 1) {
+    const match = matches[index]
+    const chunk = chunks[index]
+    const previous = result[result.length - 1]
+    if (!previous || !chunk) {
+      result.push(match)
+      skippedAnalysisNumbering = false
+      continue
+    }
+
+    const currentNo = numberValue(match.questionNo)
+    const previousNo = numberValue(previous.questionNo)
+    const textSincePreviousQuestion = markdown.slice(previous.contentStart, match.start)
+    const afterAnswerOrAnalysis = hasAnswerOrAnalysisMarkerText(textSincePreviousQuestion)
+    const bodyHasAnswerOrAnalysis = hasAnswerOrAnalysisMarkerText(chunk.body)
+    const crossedSectionHeading = containsSectionHeading(textSincePreviousQuestion, config)
+    const resetOrDuplicate = currentNo !== undefined && previousNo !== undefined && currentNo <= previousNo
+    const looksLikeContinuedAnalysisSteps = skippedAnalysisNumbering
+      && currentNo !== undefined
+      && previousNo !== undefined
+      && currentNo <= Math.max(5, previousNo + 1)
+
+    if (
+      afterAnswerOrAnalysis
+      && !bodyHasAnswerOrAnalysis
+      && !crossedSectionHeading
+      && (resetOrDuplicate || looksLikeContinuedAnalysisSteps)
+    ) {
+      skippedAnalysisNumbering = true
+      continue
+    }
+
+    result.push(match)
+    skippedAnalysisNumbering = false
+  }
+
+  return result
+}
+
+function nonEmpty(value: string | undefined) {
+  const text = String(value || '').trim()
+  return text || undefined
+}
+
+function mergeSolutionMatch(target: SolutionMatch | undefined, patch: SolutionMatch): SolutionMatch {
+  return {
+    ...(target || {}),
+    ...Object.fromEntries(Object.entries(patch).filter(([key, value]) => key !== 'warnings' && value !== undefined && value !== '')),
+    warnings: [
+      ...(target?.warnings || []),
+      ...(patch.warnings || []),
+    ],
+  }
+}
+
+function solutionMatchFromWholeDocumentChunk(body: string, offset: number, fallbackRange: MarkdownRange): SolutionMatch {
+  const fields = splitQuestionFields(body, offset)
+  const inferredLeadingAnswer = !fields.answerText && fields.analysisMarkdown ? nonEmpty(fields.stemMarkdown) : undefined
+  const answerText = nonEmpty(fields.answerText) || inferredLeadingAnswer
+  const analysisMarkdown = nonEmpty(fields.analysisMarkdown) || (!answerText ? nonEmpty(fields.stemMarkdown) : undefined)
+  return {
+    answerText,
+    analysisMarkdown,
+    answerRange: fields.answerRange || (inferredLeadingAnswer ? fields.stemRange : undefined),
+    analysisRange: fields.analysisRange || (!answerText ? fields.stemRange : undefined) || fallbackRange,
+  }
+}
+
+function compactForCheck(value: string) {
+  return String(value || '').replace(/\s+/g, '').replace(/[，。；、,.:：]/g, '')
+}
+
+function simpleChoiceAnswer(value: string) {
+  const compact = compactForCheck(value).replace(/[;；]$/g, '').toUpperCase()
+  return /^[A-D]{1,4}$/.test(compact) ? compact : ''
+}
+
+function hasConclusionForAnswer(value: string, answerText: string | undefined) {
+  const answer = simpleChoiceAnswer(answerText || '')
+  if (!answer) return true
+  const compact = compactForCheck(value).toUpperCase()
+  return compact.includes(`故选${answer}`) || compact.includes(`选${answer}`)
+}
+
+function hasCompletedSolutionBeforeOrphan(value: string) {
+  return /(?:故选|故答案|故填|故答案为|答案为|综上|证毕|得证)/.test(value.slice(-800))
+}
+
+function findTrailingUnnumberedSolutionBlock(body: string, answerText: string | undefined) {
+  const source = String(body || '')
+  const marker = /(?:\n\s*(?:<!--\s*(?:GLM|DOC2X)_PAGE:\d+\s*-->\s*)*)\n?\s*(?:【\s*(?:分析|解析)\s*】|(?:分析|解析)\s*[:：])/g
+  const matches = Array.from(source.matchAll(marker))
+  for (let index = 1; index < matches.length; index += 1) {
+    const start = matches[index].index || 0
+    const before = source.slice(0, start).trim()
+    const orphan = source.slice(start).trim()
+    if (before.length < 20 || orphan.length < 30) continue
+    if (!hasCompletedSolutionBeforeOrphan(before)) continue
+    if (!hasConclusionForAnswer(orphan, answerText)) continue
+    return { splitIndex: start, before, orphan }
+  }
+  return null
+}
+
+function shouldInferMissingSolutionNo(currentNo: number | undefined, nextNo: number | undefined, expectedNos: Set<string>, tableAnswers: Map<string, string>) {
+  if (currentNo === undefined || nextNo === undefined) return ''
+  if (nextNo !== currentNo + 2) return ''
+  const missingNo = String(currentNo + 1)
+  if (!expectedNos.has(missingNo)) return ''
+  if (!tableAnswers.has(missingNo)) return ''
+  return missingNo
+}
+
+function extractWholeDocumentSolutionMatches(markdown: string, start: number, config: ImportFlowV2ParserConfig, expectedQuestionNos: string[] = []) {
+  const source = markdown.slice(start)
+  const starts = detectSolutionQuestionNumbers(source, config)
+  const chunks = splitMarkdownByQuestionNumbers(source, starts)
+  const matches = new Map<string, SolutionMatch>()
+  let chunksWithFieldMarkers = 0
+  const expectedNos = new Set(expectedQuestionNos)
+  const tableAnswers = extractAnswerTable(source)
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index]
+    const nextChunk = chunks[index + 1]
+    const currentNo = numberValue(chunk.questionNo)
+    const nextNo = numberValue(nextChunk?.questionNo)
+    const missingNo = shouldInferMissingSolutionNo(currentNo, nextNo, expectedNos, tableAnswers)
+    const inferred = missingNo ? findTrailingUnnumberedSolutionBlock(chunk.body, tableAnswers.get(missingNo)) : null
+    const currentBody = inferred?.before || chunk.body
+    const fields = splitQuestionFields(currentBody, start + chunk.contentStart)
+    if (fields.hasFieldMarkers) chunksWithFieldMarkers += 1
+    matches.set(chunk.questionNo, mergeSolutionMatch(matches.get(chunk.questionNo), solutionMatchFromWholeDocumentChunk(
+      currentBody,
+      start + chunk.contentStart,
+      { start: start + chunk.contentStart, end: start + chunk.contentStart + currentBody.length },
+    )))
+
+    if (inferred && missingNo) {
+      const orphanStart = start + chunk.contentStart + inferred.splitIndex
+      const orphanPatch = solutionMatchFromWholeDocumentChunk(
+        inferred.orphan,
+        orphanStart,
+        { start: orphanStart, end: start + chunk.end },
+      )
+      matches.set(missingNo, mergeSolutionMatch(matches.get(missingNo), {
+        ...orphanPatch,
+        answerText: orphanPatch.answerText || tableAnswers.get(missingNo),
+        warnings: [`第 ${missingNo} 题解析区缺失题号，已按前后题号和答案表自动归位，请核对。`],
+      }))
+    }
+  }
+
+  return { matches, chunkCount: chunks.length, chunksWithFieldMarkers }
+}
+
+function mergeTableAnswers(matches: Map<string, SolutionMatch>, markdown: string) {
+  for (const [questionNo, answerText] of extractAnswerTable(markdown)) {
+    const existing = matches.get(questionNo)
+    if (!existing || !existing.answerText) {
+      matches.set(questionNo, { ...(existing || {}), answerText })
+    }
+  }
+  return matches
+}
+
+function extractAppendixSolutionMatches(
+  markdown: string,
+  start: number,
+  sections: SolutionSection[],
+  config: ImportFlowV2ParserConfig,
+  expectedQuestionNos: string[] = [],
+) {
+  const scopedSections = sections.filter((section) => section.start >= start)
+  const wholeDocument = extractWholeDocumentSolutionMatches(markdown, start, config, expectedQuestionNos)
+  if (
+    wholeDocument.chunkCount > 0
+    && wholeDocument.chunksWithFieldMarkers >= Math.ceil(wholeDocument.chunkCount / 2)
+  ) {
+    return mergeTableAnswers(wholeDocument.matches, markdown.slice(start))
+  }
+  if (scopedSections.length) return mergeTableAnswers(extractSolutionMatches(markdown, scopedSections, config), markdown.slice(start))
+  return mergeTableAnswers(wholeDocument.matches, markdown.slice(start))
+}
+
+function candidateIssuesForSolutionWarnings(solution: SolutionMatch | undefined): CandidateIssue[] {
+  return (solution?.warnings || []).map((message) => ({
+    code: 'manual_review_required',
+    severity: 'warning',
+    message,
+  }))
 }
 
 function candidateFromChunk(
@@ -321,6 +574,11 @@ function candidateFromChunk(
     updatedAt: timestamp,
   }
   candidate.issues = validateQuestionCandidate(candidate, duplicateNos)
+  for (const issue of candidateIssuesForSolutionWarnings(solution)) {
+    if (!candidate.issues.some((item) => item.code === issue.code && item.message === issue.message)) {
+      candidate.issues.push(issue)
+    }
+  }
   candidate.status = statusForIssues(candidate.issues)
   return candidate
 }
@@ -435,18 +693,30 @@ export function parseQuestionCandidates(document: OCRDocument, options: ParseQue
   const config = options.config || getParserConfig()
   const markdown = normalizeHtmlImageTags(String(document.markdown || ''))
   const alignedDocument = alignDocumentBlockOffsets(document, markdown)
-  const solutionSections = findSolutionSections(markdown, config)
-  const useSolutionSections = shouldUseSolutionSections(markdown, solutionSections, config)
   const maskedMarkdown = maskStructuralMarkdown(markdown, config)
-  const questionMarkdown = useSolutionSections ? maskedMarkdown.slice(0, solutionSections[0].start) : maskedMarkdown
-  const questionMatches = detectQuestionNumbers(questionMarkdown, config)
+  const classification = classifyQuestionDocumentLayout(markdown, config, { detectionMarkdown: maskedMarkdown })
+  const solutionSections = findSolutionSections(markdown, config)
+  const useAppendixSolutions = classification.cleaningRule === 'same_document_appendix' && classification.solutionStart !== undefined
+  const questionMarkdown = classification.cleaningRule === 'solution_document_only'
+    ? ''
+    : useAppendixSolutions
+      ? maskedMarkdown.slice(0, classification.solutionStart)
+      : maskedMarkdown
+  const questionMatches = cleanQuestionMatchesForLayout(
+    questionMarkdown,
+    detectQuestionNumbers(questionMarkdown, config),
+    classification,
+    config,
+  )
   const chunks = splitMarkdownByQuestionNumbers(questionMarkdown, questionMatches)
 
   let candidates: QuestionCandidate[] = []
   if (!chunks.length) {
     candidates = [fallbackCandidate(alignedDocument, timestamp, config)]
   } else {
-    const solutions = useSolutionSections ? extractSolutionMatches(markdown, solutionSections, config) : new Map<string, SolutionMatch>()
+    const solutions = useAppendixSolutions
+      ? extractAppendixSolutionMatches(markdown, classification.solutionStart!, solutionSections, config, chunks.map((chunk) => chunk.questionNo))
+      : new Map<string, SolutionMatch>()
     const duplicateNos = duplicateQuestionNos(chunks)
     candidates = chunks.map((chunk) => candidateFromChunk(alignedDocument, chunk, solutions.get(chunk.questionNo), duplicateNos, timestamp, config))
     attachImageBlocks(alignedDocument, chunks, candidates, config)

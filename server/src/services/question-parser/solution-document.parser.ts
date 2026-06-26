@@ -1,5 +1,5 @@
 import type { OCRDocument } from '../../types/ocr-document.js'
-import { detectQuestionNumbers } from './question-number-detector.js'
+import { detectSolutionQuestionNumbers } from './question-number-detector.js'
 import { splitMarkdownByQuestionNumbers } from './markdown-question-splitter.js'
 import { getParserConfig } from './parser-config.js'
 import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
@@ -22,14 +22,41 @@ function nonEmpty(value: string | undefined) {
 
 function solutionMatchFromWholeDocumentChunk(body: string, offset: number, fallbackRange: MarkdownRange): SolutionMatch {
   const fields = splitQuestionFields(body, offset)
-  const answerText = nonEmpty(fields.answerText)
+  const inferredLeadingAnswer = !fields.answerText && fields.analysisMarkdown ? nonEmpty(fields.stemMarkdown) : undefined
+  const answerText = nonEmpty(fields.answerText) || inferredLeadingAnswer
   const analysisMarkdown = nonEmpty(fields.analysisMarkdown) || (!answerText ? nonEmpty(fields.stemMarkdown) : undefined)
   return {
     answerText,
     analysisMarkdown,
-    answerRange: fields.answerRange,
+    answerRange: fields.answerRange || (inferredLeadingAnswer ? fields.stemRange : undefined),
     analysisRange: fields.analysisRange || (!answerText ? fields.stemRange : undefined) || fallbackRange,
   }
+}
+
+function mergeSolutionMatch(target: SolutionMatch | undefined, patch: SolutionMatch): SolutionMatch {
+  return {
+    ...(target || {}),
+    ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined && value !== '')),
+  }
+}
+
+function extractWholeDocumentSolutionMatches(markdown: string, config: ImportFlowV2ParserConfig) {
+  const questionMatches = detectSolutionQuestionNumbers(markdown, config)
+  const chunks = splitMarkdownByQuestionNumbers(markdown, questionMatches)
+  const matches = new Map<string, SolutionMatch>()
+  let chunksWithFieldMarkers = 0
+
+  for (const chunk of chunks) {
+    const fields = splitQuestionFields(chunk.body, chunk.contentStart)
+    if (fields.hasFieldMarkers) chunksWithFieldMarkers += 1
+    matches.set(chunk.questionNo, mergeSolutionMatch(matches.get(chunk.questionNo), solutionMatchFromWholeDocumentChunk(
+      chunk.body,
+      chunk.contentStart,
+      { start: chunk.contentStart, end: chunk.end },
+    )))
+  }
+
+  return { matches, chunkCount: chunks.length, chunksWithFieldMarkers }
 }
 
 /**
@@ -97,21 +124,18 @@ export function parseSolutionDocument(
 
   // Step 2: Run normal section-based or fallback extraction
   const solutionSections = findSolutionSections(markdown, config)
+  const wholeDocumentMatches = extractWholeDocumentSolutionMatches(markdown, config)
   let matches: Map<string, SolutionMatch>
 
-  if (solutionSections.length) {
+  if (
+    wholeDocumentMatches.chunkCount > 0
+    && wholeDocumentMatches.chunksWithFieldMarkers >= Math.ceil(wholeDocumentMatches.chunkCount / 2)
+  ) {
+    matches = wholeDocumentMatches.matches
+  } else if (solutionSections.length) {
     matches = extractSolutionMatches(markdown, solutionSections, config)
   } else {
-    const questionMatches = detectQuestionNumbers(markdown, config)
-    const chunks = splitMarkdownByQuestionNumbers(markdown, questionMatches)
-    matches = new Map<string, SolutionMatch>()
-    for (const chunk of chunks) {
-      matches.set(chunk.questionNo, solutionMatchFromWholeDocumentChunk(
-        chunk.body,
-        chunk.contentStart,
-        { start: chunk.contentStart, end: chunk.end },
-      ))
-    }
+    matches = wholeDocumentMatches.matches
   }
 
   // Step 3: Merge table-based answers — they fill gaps but never overwrite existing answers

@@ -1,4 +1,4 @@
-import { normalizeHtmlImageTags } from '../ocr-providers/ocr-document.normalizer.js'
+import { normalizeHtmlImageTags, stripDoc2xMediaComments } from '../ocr-providers/ocr-document.normalizer.js'
 import { getParserConfig } from './parser-config.js'
 import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
 
@@ -13,12 +13,31 @@ function normalizedStructuralLine(value: string) {
   return normalizedLine(value).replace(/^(?:第[0-9０-９]{1,3}题|[0-9０-９]{1,3}[.．、]|[一二三四五六七八九十百]+[、.．])/, '')
 }
 
+const CHINESE_SECTION_PREFIX_RE = /^[一二三四五六七八九十百千万]+[、.．]/
+
+function normalizedSectionHeadingTitle(value: string) {
+  const normalized = normalizedLine(value)
+  if (!CHINESE_SECTION_PREFIX_RE.test(normalized)) return ''
+  return normalized.replace(CHINESE_SECTION_PREFIX_RE, '')
+}
+
+function normalizedConfiguredSectionHeading(value: string) {
+  return normalizedLine(value).replace(CHINESE_SECTION_PREFIX_RE, '')
+}
+
+function sectionHeadingMatches(lineTitle: string, configuredHeading: string) {
+  if (!lineTitle || !configuredHeading) return false
+  if (lineTitle === configuredHeading) return true
+  if (!lineTitle.startsWith(configuredHeading)) return false
+  return /^[:：（(本]/.test(lineTitle.slice(configuredHeading.length))
+}
+
 function isCarryoverSectionHeading(line: string, config: ImportFlowV2ParserConfig) {
-  const normalized = normalizedStructuralLine(line)
+  const normalized = normalizedSectionHeadingTitle(line)
   if (!normalized) return false
   return config.sectionHeadings.some((item) => {
-    const heading = normalizedLine(item)
-    return normalized === heading || normalized.startsWith(heading)
+    const heading = normalizedConfiguredSectionHeading(item)
+    return sectionHeadingMatches(normalized, heading)
   })
 }
 
@@ -31,7 +50,7 @@ function stripCarryoverStructuralLines(value: string, config: ImportFlowV2Parser
 
 export function cleanOcrPresentationMarkdown(value: string, config: ImportFlowV2ParserConfig = getParserConfig()) {
   const markerPattern = DOC2X_FIGURE_MARKER_RE.source
-  const normalized = normalizeHtmlImageTags(String(value || ''))
+  const normalized = stripDoc2xMediaComments(normalizeHtmlImageTags(String(value || '')))
   return stripCarryoverStructuralLines(normalized, config)
     .replace(PAGE_MARKER_RE, '\n')
     .replace(new RegExp(`(${markerPattern})\\s*(?:[图室]|figure)\\s*\\d+\\s*`, 'gi'), '$1\n')
