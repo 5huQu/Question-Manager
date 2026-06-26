@@ -66,9 +66,10 @@ try {
   assert.equal(doc.stage, '高三')
   assert.equal(doc.subject, '数学')
   assert.equal(doc.paperKind, 'unknown')
-  assert.equal(doc.examYear, 2025)
-  assert.equal(doc.sourceOrg, '杭州教研室')
-  assert.ok(doc.importStats)
+	  assert.equal(doc.examYear, 2025)
+	  assert.equal(doc.sourceOrg, '杭州教研室')
+	  assert.deepEqual(doc.metadata.watermark, undefined)
+	  assert.ok(doc.importStats)
   assert.equal(doc.importStats.ocrDocumentCount, 0)
   assert.equal(doc.importStats.candidateCount, 0)
   assert.equal(doc.importStats.readyCount, 0)
@@ -79,15 +80,17 @@ try {
   assert.equal(doc.importStats.uncommittedCount, 0)
   assert.equal(doc.importStats.allCommitted, false)
 
-  const updatedDoc = updateSourceDocument(doc.id, {
-    paperKind: 'mock',
-    batchName: '更新批次',
-  })
-  assert.ok(updatedDoc)
-  assert.equal(updatedDoc.paperKind, 'mock')
-  assert.equal(updatedDoc.batchName, '更新批次')
+	  const updatedDoc = updateSourceDocument(doc.id, {
+	    paperKind: 'mock',
+	    batchName: '更新批次',
+	    metadata: { watermark: { enabled: true, terms: ['鼎尖教育'] } },
+	  })
+	  assert.ok(updatedDoc)
+	  assert.equal(updatedDoc.paperKind, 'mock')
+	  assert.equal(updatedDoc.batchName, '更新批次')
+	  assert.deepEqual(updatedDoc.metadata.watermark, { enabled: true, terms: ['鼎尖教育'] })
 
-  assert.equal(mapSourceDocument({
+	  assert.equal(mapSourceDocument({
     id: 'legacy_source',
     title: 'Legacy Source',
     original_file_name: '',
@@ -96,9 +99,21 @@ try {
     page_count: 0,
     provider: '',
     status: 'uploaded',
-    created_at: '',
-    updated_at: '',
-  }).paperKind, 'unknown')
+	    created_at: '',
+	    updated_at: '',
+	  }).paperKind, 'unknown')
+	  assert.deepEqual(mapSourceDocument({
+	    id: 'legacy_source',
+	    title: 'Legacy Source',
+	    original_file_name: '',
+	    file_path: '',
+	    file_type: 'pdf',
+	    page_count: 0,
+	    provider: '',
+	    status: 'uploaded',
+	    created_at: '',
+	    updated_at: '',
+	  }).metadata, {})
 
   console.log('2. Mocking OCR result files on disk...')
   const localAssetsDir = path.join(tempRoot, 'data', 'import-flow-v2', 'source-documents', doc.id)

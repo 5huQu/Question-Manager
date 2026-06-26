@@ -58,6 +58,10 @@ export function numberFrom(value: unknown, fallback = 0) {
   return Number.isFinite(numeric) ? numeric : fallback
 }
 
+export function stripDoc2xMediaComments(value: string) {
+  return String(value || '').replace(/<!--\s*Media\s*-->/gi, '')
+}
+
 export function normalizeBBox(value: unknown): OCRBBox | undefined {
   if (Array.isArray(value) && value.length >= 4) {
     const values = value.slice(0, 4).map((item) => Number(item))
@@ -111,8 +115,9 @@ function markdownImage(url: string) {
 
 /** Convert provider HTML image tags without enabling arbitrary HTML rendering. */
 export function normalizeHtmlImageTags(value: string) {
+  const withoutMediaComments = stripDoc2xMediaComments(value)
   // Pass 1: Unwrap <div> that only contains an <img> tag
-  const withoutImageOnlyDivs = String(value || '').replace(/<div\b[^>]*>\s*(<img\b[\s\S]*?>)\s*<\/div>/gi, '$1')
+  const withoutImageOnlyDivs = withoutMediaComments.replace(/<div\b[^>]*>\s*(<img\b[\s\S]*?>)\s*<\/div>/gi, '$1')
   // Pass 2: Unwrap <div align="center"> around any content (text captions, titles, etc.)
   const withoutAlignCenterDivs = withoutImageOnlyDivs.replace(
     /<div\s+align\s*=\s*["']?center["']?\s*>\s*([\s\S]*?)\s*<\/div>/gi,
@@ -227,7 +232,7 @@ export function ensureOcrDocumentFiguresAndPlaceholders(doc: {
     newMarkdown = newMarkdown.split(item.matchedText).join(`<!-- DOC2X_FIGURE:${asset.id} -->`)
   }
   
-  doc.markdown = newMarkdown
+  doc.markdown = stripDoc2xMediaComments(newMarkdown)
   doc.assets = assets
 }
 

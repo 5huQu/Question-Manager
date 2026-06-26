@@ -42,6 +42,7 @@ export type SourceDocument = {
   paperKind: PaperKind
   examYear: number
   sourceOrg: string
+  metadata: Record<string, unknown>
   importStats?: SourceDocumentImportStats
   createdAt: string
   updatedAt: string
@@ -65,6 +66,7 @@ export type SourceDocumentRow = {
   paper_kind?: string
   exam_year?: number
   source_org?: string
+  metadata_json?: string
   created_at: string
   updated_at: string
 }

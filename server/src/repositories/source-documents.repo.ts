@@ -12,6 +12,7 @@ import type {
 import { createId, nowIso } from '../utils/ids.js'
 import { normalizeImportMetadata, importMetadataPatch } from '../utils/import-metadata.js'
 import { normalizeUploadName } from '../utils/ocr-helpers.js'
+import { parseJson } from '../utils/json.js'
 
 type SqlValue = string | number | bigint | null | Buffer
 
@@ -41,6 +42,14 @@ function normalizePageCount(value: number | undefined) {
   return Math.max(0, Math.floor(numeric))
 }
 
+function normalizeMetadata(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function stringifyMetadata(value: unknown) {
+  return JSON.stringify(normalizeMetadata(value))
+}
+
 export function mapSourceDocument(row: SourceDocumentRow): SourceDocument {
   const metadata = normalizeImportMetadata({
     province: row.province,
@@ -53,7 +62,7 @@ export function mapSourceDocument(row: SourceDocumentRow): SourceDocument {
     exam_year: row.exam_year,
     source_org: row.source_org,
   })
-  return {
+	  return {
     id: row.id,
     title: normalizeUploadName(row.title),
     originalFileName: normalizeUploadName(row.original_file_name),
@@ -61,11 +70,12 @@ export function mapSourceDocument(row: SourceDocumentRow): SourceDocument {
     fileType: row.file_type,
     pageCount: Number(row.page_count || 0),
     provider: row.provider || undefined,
-    status: row.status,
-    ...metadata,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }
+	    status: row.status,
+	    ...metadata,
+	    metadata: parseJson<Record<string, unknown>>(row.metadata_json || '{}', {}),
+	    createdAt: row.created_at,
+	    updatedAt: row.updated_at,
+	  }
 }
 
 export function createSourceDocument(input: CreateSourceDocumentInput) {
@@ -74,13 +84,13 @@ export function createSourceDocument(input: CreateSourceDocumentInput) {
   const originalFileName = String(input.originalFileName ?? '')
   const id = input.id || createId('docimport')
   const metadata = normalizeImportMetadata(input as Record<string, unknown>)
-  db.prepare(`
-    INSERT INTO source_documents (
-      id, title, original_file_name, file_path, file_type, page_count, provider, status,
-      province, city, paper_title, batch_name, stage, subject, paper_kind, exam_year, source_org,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+	  db.prepare(`
+	    INSERT INTO source_documents (
+	      id, title, original_file_name, file_path, file_type, page_count, provider, status,
+	      province, city, paper_title, batch_name, stage, subject, paper_kind, exam_year, source_org,
+	      metadata_json, created_at, updated_at
+	    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	  `).run(
     id,
     title,
     originalFileName,
@@ -96,11 +106,12 @@ export function createSourceDocument(input: CreateSourceDocumentInput) {
     metadata.stage,
     metadata.subject,
     metadata.paperKind,
-    metadata.examYear,
-    metadata.sourceOrg,
-    now,
-    now,
-  )
+	    metadata.examYear,
+	    metadata.sourceOrg,
+	    stringifyMetadata(input.metadata),
+	    now,
+	    now,
+	  )
   return getSourceDocument(id)
 }
 
@@ -168,7 +179,8 @@ export function updateSourceDocument(id: string, input: UpdateSourceDocumentInpu
   add('subject', metadata.subject)
   add('paper_kind', metadata.paperKind)
   add('exam_year', metadata.examYear)
-  add('source_org', metadata.sourceOrg)
+	  add('source_org', metadata.sourceOrg)
+	  add('metadata_json', input.metadata === undefined ? undefined : stringifyMetadata(input.metadata))
 
   if (!assignments.length) return getSourceDocument(id)
   add('updated_at', nowIso())

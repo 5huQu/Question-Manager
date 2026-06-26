@@ -153,7 +153,10 @@ export function listQuestionCandidates(filters: ListQuestionCandidatesFilters = 
   const rows = db.prepare(`
     SELECT * FROM question_candidates
     ${whereSql}
-    ORDER BY created_at ASC, question_no ASC
+    ORDER BY
+      CASE WHEN question_no GLOB '[0-9]*' THEN CAST(question_no AS INTEGER) ELSE 999999 END ASC,
+      question_no ASC,
+      created_at ASC
     LIMIT ? OFFSET ?
   `).all(...values, limit, offset) as QuestionCandidateRow[]
   return rows.map(mapQuestionCandidate)
@@ -203,6 +206,14 @@ export function updateQuestionCandidate(id: string, input: UpdateQuestionCandida
 
 export function deleteQuestionCandidatesForOcrDocument(ocrDocumentId: string) {
   db.prepare('DELETE FROM question_candidates WHERE ocr_document_id = ?').run(ocrDocumentId)
+}
+
+export function deleteUncommittedQuestionCandidatesForSourceDocument(sourceDocumentId: string) {
+  db.prepare(`
+    DELETE FROM question_candidates
+    WHERE source_document_id = ?
+      AND status != 'committed'
+  `).run(sourceDocumentId)
 }
 
 export function deleteQuestionCandidate(id: string) {

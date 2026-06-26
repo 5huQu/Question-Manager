@@ -56,6 +56,7 @@ export function normalizeMarkdownForRender(value: string) {
 export function stripDoc2xNoiseComments(value: string) {
   return String(value || '')
     .replace(/<!--\s*DOC2X_PAGE\s*:\s*\d+\s*-->/gi, '')
+    .replace(/<!--\s*Media\s*-->/gi, '')
     .replace(/<!--\s*figureText\s*:[\s\S]*?-->/gi, '')
 }
 

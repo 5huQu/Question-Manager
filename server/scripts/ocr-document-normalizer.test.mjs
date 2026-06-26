@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { normalizeGlmOCRDocument } from '../dist/services/ocr-providers/glm.normalizer.js'
 import { normalizeDoc2xOCRDocument } from '../dist/services/ocr-providers/doc2x.normalizer.js'
+import { applyWatermarkCleanup, cleanWatermarkText } from '../dist/services/import-flow-v2/watermark-cleanup.js'
 
 const glmPayload = {
   model: 'glm-ocr',
@@ -22,6 +23,8 @@ const glmPayload = {
   ],
 }
 
+const doc2xFormulaMarkdown = String.raw`\(\alpha _ {1}+\beta ^ {2}\) 与 \[ y = \frac {1}{2} \]`
+
 const doc2xPayload = {
   code: 'success',
   data: {
@@ -32,10 +35,10 @@ const doc2xPayload = {
           page_idx: 0,
           width: 800,
           height: 1100,
-          md: '1. 如图，求三角形面积。\n\n<img src="https://example.test/doc2x-figure-1.png">',
+          md: `1. 如图，求三角形面积。${doc2xFormulaMarkdown}\n\n<!-- Media -->\n<img src="https://example.test/doc2x-figure-1.png">\n<!-- Media -->`,
           layout: {
             blocks: [
-              { id: 'doc2x_text_1', type: 'Text', text: '1. 如图，求三角形面积。', bbox: [12, 20, 520, 70], score: 0.99 },
+              { id: 'doc2x_text_1', type: 'Text', text: `1. 如图，求三角形面积。${doc2xFormulaMarkdown}`, bbox: [12, 20, 520, 70], score: 0.99 },
               { id: 'doc2x_fig_1', type: 'Figure', src: 'https://example.test/doc2x-figure-1.png', bbox: [90, 120, 430, 390] },
             ],
           },
@@ -80,8 +83,38 @@ assert.equal(doc2xDocument.pages[0].blocks.length, 2)
 assert.equal(doc2xDocument.assets.length, 1)
 assert.match(doc2xDocument.markdown, /DOC2X_PAGE:1/)
 assert.match(doc2xDocument.markdown, /三角形面积/)
+assert.ok(doc2xDocument.markdown.includes(doc2xFormulaMarkdown), 'Doc2X formula markdown must stay byte-for-byte unchanged')
+assert.equal(doc2xDocument.pages[0].blocks[0].content.includes(doc2xFormulaMarkdown), true)
 assert.match(doc2xDocument.markdown, /<!--\s*DOC2X_FIGURE:doc2x_asset_[a-f0-9]{12}\s*-->/)
+assert.doesNotMatch(doc2xDocument.markdown, /<!--\s*Media\s*-->/i)
 assert.equal(doc2xDocument.metadata.taskId, 'doc2x-task-1')
+
+const watermarkText = cleanWatermarkText([
+  '# 鼎尖教育',
+  '1. 正常题干 鼎尖教育',
+  '保持原文。',
+].join('\n'), ['鼎尖教育'])
+assert.doesNotMatch(watermarkText.text, /鼎尖教育/)
+assert.match(watermarkText.text, /1\. 正常题干/)
+assert.doesNotMatch(watermarkText.text, /^#\s*$/m)
+
+const watermarkedDocument = applyWatermarkCleanup({
+  ...glmDocument,
+  markdown: '# 鼎尖教育\n1. 已知函数。',
+  pages: [{
+    pageNo: 1,
+    width: 800,
+    height: 1200,
+    blocks: [
+      { id: 'wm', pageNo: 1, type: 'text', content: '鼎尖教育', markdownStart: 0, markdownEnd: 4 },
+      { id: 'stem', pageNo: 1, type: 'text', content: '1. 已知函数。鼎尖教育', markdownStart: 5, markdownEnd: 18 },
+    ],
+  }],
+}, { watermark: { enabled: true, terms: ['鼎尖教育'] } }).document
+assert.doesNotMatch(watermarkedDocument.markdown, /鼎尖教育/)
+assert.equal(watermarkedDocument.pages[0].blocks[0].content, '')
+assert.equal(watermarkedDocument.pages[0].blocks[1].content, '1. 已知函数。')
+assert.equal(watermarkedDocument.metadata.watermarkCleanup.enabled, true)
 
 import { localizeRemoteImages, figuresForQuestionBank } from '../dist/services/import-flow-v2/import-flow-v2.service.js'
 

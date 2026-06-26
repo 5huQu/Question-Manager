@@ -190,12 +190,13 @@ export function ensureSchema() {
       batch_name TEXT NOT NULL DEFAULT '',
       stage TEXT NOT NULL DEFAULT '高三',
       subject TEXT NOT NULL DEFAULT '数学',
-      paper_kind TEXT NOT NULL DEFAULT 'unknown',
-      exam_year INTEGER NOT NULL DEFAULT 0,
-      source_org TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
+	      paper_kind TEXT NOT NULL DEFAULT 'unknown',
+	      exam_year INTEGER NOT NULL DEFAULT 0,
+	      source_org TEXT NOT NULL DEFAULT '',
+	      metadata_json TEXT NOT NULL DEFAULT '{}',
+	      created_at TEXT NOT NULL,
+	      updated_at TEXT NOT NULL
+	    );
 
     CREATE TABLE IF NOT EXISTS import_jobs (
       id TEXT PRIMARY KEY,
@@ -348,7 +349,7 @@ export function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_question_candidates_source ON question_candidates(source_document_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_question_candidates_ocr ON question_candidates(ocr_document_id, question_no);
     CREATE INDEX IF NOT EXISTS idx_question_candidates_status ON question_candidates(status, updated_at DESC);
-  `)
+		  `)
 
   // -- Migration columns for pdf_slicer_runs --
   ensureColumn('pdf_slicer_runs', 'paper_title', "TEXT NOT NULL DEFAULT ''")
@@ -389,9 +390,10 @@ export function ensureSchema() {
   ensureColumn('source_documents', 'batch_name', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('source_documents', 'stage', "TEXT NOT NULL DEFAULT '高三'")
   ensureColumn('source_documents', 'subject', "TEXT NOT NULL DEFAULT '数学'")
-  ensureColumn('source_documents', 'paper_kind', "TEXT NOT NULL DEFAULT 'unknown'")
-  ensureColumn('source_documents', 'exam_year', "INTEGER NOT NULL DEFAULT 0")
-  ensureColumn('source_documents', 'source_org', "TEXT NOT NULL DEFAULT ''")
+	  ensureColumn('source_documents', 'paper_kind', "TEXT NOT NULL DEFAULT 'unknown'")
+	  ensureColumn('source_documents', 'exam_year', "INTEGER NOT NULL DEFAULT 0")
+	  ensureColumn('source_documents', 'source_org', "TEXT NOT NULL DEFAULT ''")
+	  ensureColumn('source_documents', 'metadata_json', "TEXT NOT NULL DEFAULT '{}'")
   ensureColumn('question_candidates', 'province', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_candidates', 'city', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_candidates', 'paper_title', "TEXT NOT NULL DEFAULT ''")

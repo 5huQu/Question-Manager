@@ -7,6 +7,7 @@ import { assetPathFor } from '../../utils/paths.js'
 import { ensureOcrDocumentFiguresAndPlaceholders } from '../ocr-providers/ocr-document.normalizer.js'
 import { ensureDir, readJsonFile, readText, storedOcrDocumentDir, writeJson, writeText } from './import-flow-v2.paths.js'
 import { localizeRemoteImages } from './figure-mapping.js'
+import { applyWatermarkCleanup } from './watermark-cleanup.js'
 
 export function normalizeProvider(value: unknown): 'doc2x' | 'glm' {
   return String(value || '').toLowerCase() === 'glm' ? 'glm' : 'doc2x'
@@ -53,10 +54,11 @@ export async function importOCRDocumentJson(body: Record<string, unknown>) {
   }
   if (!source) throw new RouteError(500, '资料创建失败。')
 
-  const normalized = normalizeOCRDocumentPayload(rawOCRDocument, source.id)
+  let normalized = normalizeOCRDocumentPayload(rawOCRDocument, source.id)
   
   ensureOcrDocumentFiguresAndPlaceholders(normalized)
   await localizeRemoteImages(normalized)
+  normalized = applyWatermarkCleanup(normalized, source.metadata).document
 
   const ocrId = normalized.id || ''
   const finalId = ocrId && !ocrRepo.getOcrDocument(ocrId) ? ocrId : ''
@@ -116,7 +118,7 @@ export function loadOcrDocument(id: string): OCRDocument {
   const pagesValue = readJsonFile<OCRPage[] | { pages?: OCRPage[] }>(record.blocksJsonPath, [])
   const pages = Array.isArray(pagesValue) ? pagesValue : Array.isArray(pagesValue.pages) ? pagesValue.pages : []
   const assets = readJsonFile<OCRAsset[]>(record.assetsJsonPath, [])
-  return {
+  const document = {
     id: record.id,
     sourceDocumentId: record.sourceDocumentId,
     provider: record.provider,
@@ -127,4 +129,5 @@ export function loadOcrDocument(id: string): OCRDocument {
     metadata: record.metadata,
     createdAt: record.createdAt,
   }
+  return applyWatermarkCleanup(document, sourceRepo.getSourceDocument(record.sourceDocumentId)?.metadata).document
 }
