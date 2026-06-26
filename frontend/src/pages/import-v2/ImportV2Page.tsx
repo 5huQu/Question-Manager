@@ -13,6 +13,7 @@ import {
   Layers,
   LoaderCircle,
   Play,
+  RefreshCcw,
   SkipForward,
   Upload,
   Trash2,
@@ -46,6 +47,7 @@ type UnifiedQuestion = {
 
 type PaperKind = ImportV2SourceDocument['paperKind']
 type UploadDocumentMode = 'single_document' | 'separated_documents'
+type SourceOcrProvider = 'doc2x' | 'glm'
 
 type SourceMetadataDraft = {
   paperTitle: string
@@ -57,6 +59,8 @@ type SourceMetadataDraft = {
   paperKind: PaperKind
   examYear: string
   sourceOrg: string
+  hasWatermark: boolean
+  watermarkTerms: string
 }
 
 const paperKindOptions: Array<{ value: PaperKind; label: string }> = [
@@ -92,6 +96,12 @@ function isGaokaoRegion(value: string) {
 }
 
 function metadataDraftFromDoc(doc?: Partial<ImportV2SourceDocument> | null): SourceMetadataDraft {
+  const watermark = doc?.metadata && typeof doc.metadata.watermark === 'object' && !Array.isArray(doc.metadata.watermark)
+    ? doc.metadata.watermark as { enabled?: unknown; terms?: unknown }
+    : {}
+  const watermarkTerms = Array.isArray(watermark.terms)
+    ? watermark.terms.map((item) => String(item || '')).filter(Boolean).join('\n')
+    : ''
   return {
     paperTitle: doc?.paperTitle || '',
     batchName: doc?.batchName || '',
@@ -102,6 +112,8 @@ function metadataDraftFromDoc(doc?: Partial<ImportV2SourceDocument> | null): Sou
     paperKind: doc?.paperKind || 'unknown',
     examYear: doc?.examYear ? String(doc.examYear) : '',
     sourceOrg: doc?.sourceOrg || '',
+    hasWatermark: Boolean(watermark.enabled),
+    watermarkTerms,
   }
 }
 
@@ -119,6 +131,12 @@ function metadataPayload(draft: SourceMetadataDraft) {
     paperKind: draft.paperKind || 'unknown',
     examYear: Number(draft.examYear || 0) || 0,
     sourceOrg: isGaokaoReal ? '' : draft.sourceOrg.trim(),
+    metadata: {
+      watermark: {
+        enabled: draft.hasWatermark,
+        terms: draft.watermarkTerms.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+      },
+    },
   }
 }
 
@@ -175,6 +193,14 @@ function importJobDocumentRoleLabel(role?: ImportV2ImportJobDocument['role']) {
   } as Record<string, string>)[role || ''] || ''
 }
 
+function normalizeSourceOcrProvider(value: unknown): SourceOcrProvider {
+  return String(value || '').toLowerCase() === 'glm' ? 'glm' : 'doc2x'
+}
+
+function sourceOcrProviderLabel(provider: SourceOcrProvider) {
+  return provider === 'glm' ? 'GLM-OCR' : 'Doc2X'
+}
+
 function reviewTabFromQuery(value: string | null): 'all' | 'ready' | 'warning' | 'error' {
   return value === 'ready' || value === 'warning' || value === 'error' ? value : 'all'
 }
@@ -229,6 +255,8 @@ export default function ImportV2Page() {
   const lastRouteSyncKeyRef = useRef('')
   const [dragOver, setDragOver] = useState(false)
   const ocrSettings = useAsync(() => settingsApi.getOcrSettings(), [])
+  const currentOcrProvider = normalizeSourceOcrProvider(ocrSettings.data?.ocrProvider)
+  const currentOcrProviderLabel = sourceOcrProviderLabel(currentOcrProvider)
   const configuredStageOptions = gradeOptionsForTeachingStages(ocrSettings.data?.teachingStages)
   const stageOptions = metadataDraft.stage && !configuredStageOptions.includes(metadataDraft.stage)
     ? [metadataDraft.stage, ...configuredStageOptions]
@@ -269,6 +297,20 @@ export default function ImportV2Page() {
   const selectedDocIsImportJobQuestion = activeImportJob?.mode === 'separated_documents' && selectedImportJobDocument?.role === 'questions'
   const selectedDocIsImportJobSolution = activeImportJob?.mode === 'separated_documents' && selectedImportJobDocument?.role === 'solutions'
   const activeImportJobSolutionReady = !activeImportJobSolutionSource || ['ocr_succeeded', 'parsed', 'partially_parsed'].includes(activeImportJobSolutionSource.status)
+  const selectedDocCommittedCount = selectedDoc?.importStats?.committedCount || 0
+  const canReidentifySelectedDoc = Boolean(
+    selectedDoc &&
+    ['pdf', 'image'].includes(selectedDoc.fileType) &&
+    selectedDocCommittedCount === 0 &&
+    !['uploaded', 'ocr_running'].includes(selectedDoc.status)
+  )
+  const canRecleanSelectedDoc = Boolean(
+    selectedDoc &&
+    !selectedDocIsImportJobSolution &&
+    selectedDocCommittedCount === 0 &&
+    (selectedDoc.importStats?.candidateCount || questions.length) > 0 &&
+    ['parsed', 'partially_parsed', 'ocr_succeeded'].includes(selectedDoc.status)
+  )
 
   useEffect(() => {
     if (selectedDoc) {
@@ -602,7 +644,7 @@ export default function ImportV2Page() {
       setActiveImportJob(null)
       setActiveImportJobDocuments([])
       navigateToDocument(res.sourceDocument.id)
-      showNotice('资料已保存，可启动 GLM-OCR 识别。')
+      showNotice(`资料已保存，可启动 ${currentOcrProviderLabel} 识别。`)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -666,7 +708,7 @@ export default function ImportV2Page() {
     }
   }
 
-  async function startGlmOcr(sourceDocumentId: string) {
+  async function startSourceOcr(sourceDocumentId: string, options: { force?: boolean } = {}) {
     setBusy(`ocr-${sourceDocumentId}`)
     setError('')
     setSourceOcrErrors((current) => {
@@ -675,15 +717,32 @@ export default function ImportV2Page() {
       return next
     })
     try {
-      await importV2Api.startSourceDocumentOcr(sourceDocumentId)
+      const result = await importV2Api.startSourceDocumentOcr(sourceDocumentId, options)
       await loadLists()
       setRunningSourceDocumentId(sourceDocumentId)
-      showNotice('GLM-OCR 已启动，正在识别资料。')
+      showNotice(`${sourceOcrProviderLabel(normalizeSourceOcrProvider(result.task.provider))} 已启动，正在识别资料。`)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy('')
     }
+  }
+
+  async function handleReidentifySource(item: ImportV2SourceDocument) {
+    if ((item.importStats?.committedCount || 0) > 0) {
+      setError('该批次已有题目入库。为避免候选记录与题库记录不一致，暂不支持重新识别。')
+      return
+    }
+    const ok = window.confirm('重新识别会重新调用 OCR，并清空本批次现有未入库候选题和手动修正草稿。确定继续吗？')
+    if (!ok) return
+    setQuestions([])
+    setDiagnostics(null)
+    setSelectedIds(new Set())
+    setActiveQuestionId(null)
+    setShowCheckArea(false)
+    setActiveStepTab('upload')
+    navigateToDocument(item.id)
+    await startSourceOcr(item.id, { force: true })
   }
 
   async function handleGenerateCandidates(item: ImportV2SourceDocument) {
@@ -726,6 +785,57 @@ export default function ImportV2Page() {
       const targetSourceDocumentId = shouldParseImportJob ? activeImportJobQuestionDocument?.sourceDocumentId || item.id : item.id
       navigateToCandidates(targetSourceDocumentId)
       showNotice(shouldParseImportJob ? '已合并原卷与答案解析，生成待核对题目' : '已自动提取并生成待核对题目')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function handleRecleanCandidates(item: ImportV2SourceDocument) {
+    if ((item.importStats?.committedCount || 0) > 0) {
+      setError('该批次已有题目入库。为避免候选记录与题库记录不一致，暂不支持重新清洗。')
+      return
+    }
+    const ok = window.confirm('重新清洗会使用当前清洗脚本重新生成本批次待核对题目，并替换现有未入库候选题。确定继续吗？')
+    if (!ok) return
+
+    setBusy(`reclean-${item.id}`)
+    setError('')
+    try {
+      const jobDocument = activeImportJobDocuments.find((document) => document.sourceDocumentId === item.id)
+      const shouldParseImportJob = activeImportJob?.mode === 'separated_documents' && jobDocument?.role === 'questions'
+      let result: ParseCandidatesResult & { importJob?: ImportV2ImportJob }
+
+      if (shouldParseImportJob) {
+        if (!activeImportJobSolutionReady) {
+          throw new Error('答案解析文档尚未完成 OCR 识别，请先识别答案解析文档。')
+        }
+        result = await importV2Api.parseImportJobCandidates(activeImportJob.id)
+      } else {
+        const ocrRes = await importV2Api.listOcrDocuments(item.id)
+        const ocrDoc = ocrRes.items[0]
+        if (!ocrDoc) {
+          throw new Error('未找到该资料对应的 OCR 结果文件。')
+        }
+        setSelectedOcrId(ocrDoc.id)
+        result = await importV2Api.parseCandidates(ocrDoc.id)
+      }
+
+      const unified = (result.items || []).map(fromCandidate)
+      if ('importJob' in result && result.importJob) {
+        setActiveImportJob(result.importJob)
+      }
+      setQuestions(unified)
+      setDiagnostics(result.diagnostics || null)
+      setCommittedIds(new Set(unified.filter((q) => q.status === 'committed').map((q) => q.id)))
+      setSelectedIds(new Set())
+      setActiveQuestionId(unified[0]?.id || null)
+      await loadLists()
+      setShowCheckArea(true)
+      setActiveStepTab('review')
+      navigateToCandidates(shouldParseImportJob ? activeImportJobQuestionDocument?.sourceDocumentId || item.id : item.id)
+      showNotice('已使用当前清洗脚本重新生成待核对题目')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -1141,38 +1251,65 @@ export default function ImportV2Page() {
       ) : null}
 
       {/* 步骤分标签工作台导航 */}
-      <div className="flex bg-zinc-100/80 dark:bg-zinc-900/80 p-0.5 rounded-lg border border-zinc-200/50 dark:border-zinc-800/50 w-full sm:w-80 select-none">
-        <button
-          onClick={() => {
-            if (selectedDoc) navigateToDocument(selectedDoc.id)
-            else setActiveStepTab('upload')
-          }}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-            activeStepTab === 'upload'
-              ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-xs border border-zinc-200/20'
-              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
-          }`}
-        >
-          1. 资料上传与识别
-        </button>
-        <button
-          onClick={() => {
-            if (selectedDoc) navigateToCandidates(selectedDoc.id)
-            else setActiveStepTab('review')
-          }}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-            activeStepTab === 'review'
-              ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-xs border border-zinc-200/20'
-              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
-          }`}
-        >
-          2. 题目核对区
-          {questions.length > 0 && (
-            <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[9px] bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-950 font-bold ml-1">
-              {questions.filter(q => q.status !== 'committed' && !committedIds.has(q.id)).length}
-            </span>
-          )}
-        </button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex bg-zinc-100/80 dark:bg-zinc-900/80 p-0.5 rounded-lg border border-zinc-200/50 dark:border-zinc-800/50 w-full sm:w-80 select-none">
+          <button
+            onClick={() => {
+              if (selectedDoc) navigateToDocument(selectedDoc.id)
+              else setActiveStepTab('upload')
+            }}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              activeStepTab === 'upload'
+                ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-xs border border-zinc-200/20'
+                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
+            }`}
+          >
+            1. 资料上传与识别
+          </button>
+          <button
+            onClick={() => {
+              if (selectedDoc) navigateToCandidates(selectedDoc.id)
+              else setActiveStepTab('review')
+            }}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              activeStepTab === 'review'
+                ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-xs border border-zinc-200/20'
+                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
+            }`}
+          >
+            2. 题目核对区
+            {questions.length > 0 && (
+              <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[9px] bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-950 font-bold ml-1">
+                {questions.filter(q => q.status !== 'committed' && !committedIds.has(q.id)).length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {activeStepTab === 'review' && selectedDoc ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              icon={busy === `ocr-${selectedDoc.id}` ? LoaderCircle : RefreshCcw}
+              disabled={Boolean(busy) || !canReidentifySelectedDoc}
+              title={selectedDocCommittedCount > 0 ? '该批次已有题目入库，暂不支持重新识别。' : '重新调用 OCR，并清空未入库候选题。'}
+              onClick={() => handleReidentifySource(selectedDoc)}
+            >
+              {busy === `ocr-${selectedDoc.id}` ? '识别中...' : '重新识别'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              icon={busy === `reclean-${selectedDoc.id}` ? LoaderCircle : RefreshCcw}
+              disabled={Boolean(busy) || !canRecleanSelectedDoc}
+              title={selectedDocCommittedCount > 0 ? '该批次已有题目入库，暂不支持重新清洗。' : '使用当前清洗脚本重新生成本批次候选题。'}
+              onClick={() => handleRecleanCandidates(selectedDoc)}
+            >
+              {busy === `reclean-${selectedDoc.id}` ? '清洗中...' : '重新清洗'}
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       {/* 第一步：上传与识别 */}
@@ -1353,12 +1490,15 @@ export default function ImportV2Page() {
                 <div className="space-y-2 text-[11px] text-zinc-500">
                   <div className="font-semibold text-zinc-800 dark:text-zinc-200 truncate">
                     {selectedDoc.paperTitle || selectedDoc.title || selectedDoc.originalFileName || '未命名资料'}
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    <Badge variant="outline">{paperKindOptions.find((item) => item.value === selectedDoc.paperKind)?.label || '未分类'}</Badge>
-                    <Badge variant="outline">{selectedDoc.stage || '高三'}</Badge>
-                    <Badge variant="outline">{selectedDoc.subject || '数学'}</Badge>
-                  </div>
+	                  </div>
+	                  <div className="flex flex-wrap gap-1.5">
+	                    <Badge variant="outline">{paperKindOptions.find((item) => item.value === selectedDoc.paperKind)?.label || '未分类'}</Badge>
+	                    <Badge variant="outline">{selectedDoc.stage || '高三'}</Badge>
+	                    <Badge variant="outline">{selectedDoc.subject || '数学'}</Badge>
+	                    {selectedDoc.metadata?.watermark && typeof selectedDoc.metadata.watermark === 'object' && (selectedDoc.metadata.watermark as any).enabled ? (
+	                      <Badge variant="warning">有水印</Badge>
+	                    ) : null}
+	                  </div>
                   <div className="truncate">
                     {[selectedDoc.province, selectedDoc.city, selectedDoc.examYear || '', selectedDoc.sourceOrg].filter(Boolean).join(' · ') || '未填写地区、年份和来源机构'}
                   </div>
@@ -1441,14 +1581,36 @@ export default function ImportV2Page() {
                           <span className="text-[10px] font-medium text-zinc-500">城市</span>
                           <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.city} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, city: event.target.value }))} />
                         </label>
-                        <label className="col-span-2 space-y-1">
-                          <span className="text-[10px] font-medium text-zinc-500">来源机构</span>
-                          <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.sourceOrg} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, sourceOrg: event.target.value }))} />
-                        </label>
-                      </>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
+	                        <label className="col-span-2 space-y-1">
+	                          <span className="text-[10px] font-medium text-zinc-500">来源机构</span>
+	                          <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.sourceOrg} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, sourceOrg: event.target.value }))} />
+	                        </label>
+	                      </>
+	                    )}
+	                  </div>
+	                  <div className="rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+	                    <label className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-200">
+	                      <input
+	                        type="checkbox"
+	                        className="size-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 dark:border-zinc-700"
+	                        checked={metadataDraft.hasWatermark}
+	                        onChange={(event) => setMetadataDraft((draft) => ({ ...draft, hasWatermark: event.target.checked }))}
+	                      />
+	                      有水印
+	                    </label>
+	                    {metadataDraft.hasWatermark ? (
+	                      <label className="mt-2 block space-y-1">
+	                        <span className="text-[10px] font-medium text-zinc-500">水印词典</span>
+	                        <textarea
+	                          className="min-h-20 w-full resize-y rounded-md border border-zinc-200 bg-background px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
+	                          value={metadataDraft.watermarkTerms}
+	                          onChange={(event) => setMetadataDraft((draft) => ({ ...draft, watermarkTerms: event.target.value }))}
+	                          placeholder="一行一个水印词，例如：鼎尖教育"
+	                        />
+	                      </label>
+	                    ) : null}
+	                  </div>
+	                  <div className="flex flex-wrap gap-2">
                     {selectedDoc ? (
                       <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={handleSaveSourceMetadata}>
                         {busy === `metadata-${selectedDoc.id}` ? '保存中...' : '保存资料信息'}
@@ -1605,13 +1767,13 @@ export default function ImportV2Page() {
                     {selectedDoc.status === 'uploaded' && (
                       <div className="space-y-4">
                         <p className="text-xs text-zinc-500 leading-relaxed">
-                          资料已成功保存。点击“开始自动识别”将通过 GLM-OCR 自动提取试卷题目、公式及插图。
+                          资料已成功保存。点击“开始自动识别”将通过 {currentOcrProviderLabel} 自动提取试卷题目、公式及插图。
                         </p>
                         <Button
                           size="default"
                           icon={Play}
                           disabled={Boolean(busy)}
-                          onClick={() => startGlmOcr(selectedDoc.id)}
+                          onClick={() => startSourceOcr(selectedDoc.id)}
                           className="w-full sm:w-auto"
                         >
                           {busy === `ocr-${selectedDoc.id}` ? '正在启动...' : '开始自动识别'}
@@ -1630,7 +1792,7 @@ export default function ImportV2Page() {
                           size="default"
                           icon={Play}
                           disabled={Boolean(busy)}
-                          onClick={() => startGlmOcr(selectedDoc.id)}
+                          onClick={() => startSourceOcr(selectedDoc.id)}
                           className="w-full sm:w-auto"
                         >
                           重新识别
@@ -1657,15 +1819,28 @@ export default function ImportV2Page() {
                               答案解析文档已识别完成。它会在原卷生成候选题时自动参与合并。
                             </p>
                             {activeImportJobQuestionSource ? (
-                              <Button
-                                size="default"
-                                icon={FileText}
-                                variant="outline"
-                                onClick={() => navigateToDocument(activeImportJobQuestionSource.id)}
-                                className="w-full sm:w-auto"
-                              >
-                                切换到原卷
-                              </Button>
+                              <div className="flex flex-wrap gap-3">
+                                <Button
+                                  size="default"
+                                  icon={FileText}
+                                  variant="outline"
+                                  onClick={() => navigateToDocument(activeImportJobQuestionSource.id)}
+                                  className="w-full sm:w-auto"
+                                >
+                                  切换到原卷
+                                </Button>
+                                <Button
+                                  size="default"
+                                  variant="outline"
+                                  icon={busy === `ocr-${selectedDoc.id}` ? LoaderCircle : RefreshCcw}
+                                  disabled={Boolean(busy) || !canReidentifySelectedDoc}
+                                  title={selectedDocCommittedCount > 0 ? '该批次已有题目入库，暂不支持重新识别。' : '重新调用 OCR，并清空未入库候选题。'}
+                                  onClick={() => handleReidentifySource(selectedDoc)}
+                                  className="w-full sm:w-auto"
+                                >
+                                  {busy === `ocr-${selectedDoc.id}` ? '识别中...' : '重新识别'}
+                                </Button>
+                              </div>
                             ) : null}
                           </>
                         ) : (
@@ -1682,15 +1857,28 @@ export default function ImportV2Page() {
                                 答案解析：{activeImportJobSolutionSource.originalFileName || activeImportJobSolutionSource.title} · {getDocStatus(activeImportJobSolutionSource).label}
                               </div>
                             ) : null}
-                            <Button
-                              size="default"
-                              icon={Play}
-                              disabled={Boolean(busy) || (selectedDocIsImportJobQuestion && !activeImportJobSolutionReady)}
-                              onClick={() => handleGenerateCandidates(selectedDoc)}
-                              className="w-full sm:w-auto"
-                            >
-                              {busy === `action-${selectedDoc.id}` ? '生成中...' : selectedDocIsImportJobQuestion ? '合并生成待确认题目' : '生成待确认题目'}
-                            </Button>
+                            <div className="flex flex-wrap gap-3">
+                              <Button
+                                size="default"
+                                icon={Play}
+                                disabled={Boolean(busy) || (selectedDocIsImportJobQuestion && !activeImportJobSolutionReady)}
+                                onClick={() => handleGenerateCandidates(selectedDoc)}
+                                className="w-full sm:w-auto"
+                              >
+                                {busy === `action-${selectedDoc.id}` ? '生成中...' : selectedDocIsImportJobQuestion ? '合并生成待确认题目' : '生成待确认题目'}
+                              </Button>
+                              <Button
+                                size="default"
+                                variant="outline"
+                                icon={busy === `ocr-${selectedDoc.id}` ? LoaderCircle : RefreshCcw}
+                                disabled={Boolean(busy) || !canReidentifySelectedDoc}
+                                title={selectedDocCommittedCount > 0 ? '该批次已有题目入库，暂不支持重新识别。' : '重新调用 OCR，并清空未入库候选题。'}
+                                onClick={() => handleReidentifySource(selectedDoc)}
+                                className="w-full sm:w-auto"
+                              >
+                                {busy === `ocr-${selectedDoc.id}` ? '识别中...' : '重新识别'}
+                              </Button>
+                            </div>
                           </>
                         )}
                       </div>
@@ -1729,6 +1917,17 @@ export default function ImportV2Page() {
                             className="w-full sm:w-auto"
                           >
                             进入题目核对区
+                          </Button>
+                          <Button
+                            size="default"
+                            variant="outline"
+                            icon={busy === `ocr-${selectedDoc.id}` ? LoaderCircle : RefreshCcw}
+                            disabled={Boolean(busy) || !canReidentifySelectedDoc}
+                            title={selectedDocCommittedCount > 0 ? '该批次已有题目入库，暂不支持重新识别。' : '重新调用 OCR，并清空未入库候选题。'}
+                            onClick={() => handleReidentifySource(selectedDoc)}
+                            className="w-full sm:w-auto"
+                          >
+                            {busy === `ocr-${selectedDoc.id}` ? '识别中...' : '重新识别'}
                           </Button>
                         </div>
                       </div>

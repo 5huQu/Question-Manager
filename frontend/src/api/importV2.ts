@@ -30,6 +30,7 @@ export type ImportV2SourceDocument = {
   paperKind: 'gaokao_real' | 'local_real' | 'mock' | 'school_exam' | 'lecture' | 'daily_practice' | 'unknown'
   examYear: number
   sourceOrg: string
+  metadata: Record<string, unknown>
   importStats?: SourceDocumentImportStats
   createdAt: string
   updatedAt: string
@@ -49,7 +50,7 @@ export type ImportV2OcrDocument = {
 
 export type ImportV2OcrTask = {
   sourceDocumentId?: string
-  provider?: 'glm'
+  provider?: 'doc2x' | 'glm'
   status: 'uploaded' | 'ocr_running' | 'ocr_succeeded' | 'ocr_failed' | 'parsed' | 'partially_parsed'
   ocrDocumentId?: string
   startedAt?: string
@@ -205,11 +206,12 @@ export const importV2Api = {
       body: JSON.stringify({ sourceDocument }),
     })
   },
-  startSourceDocumentOcr(sourceDocumentId: string) {
+  startSourceDocumentOcr(sourceDocumentId: string, options?: { provider?: 'doc2x' | 'glm'; force?: boolean } | 'doc2x' | 'glm') {
+    const payload = typeof options === 'string' ? { provider: options } : options || {}
     return api<{ sourceDocument: ImportV2SourceDocument; task: ImportV2OcrTask }>('/api/source-documents/' + encodeURIComponent(sourceDocumentId) + '/ocr', {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ provider: 'glm' }),
+      body: JSON.stringify(payload),
     })
   },
   getSourceDocumentOcrStatus(sourceDocumentId: string) {

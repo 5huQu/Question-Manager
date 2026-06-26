@@ -31,6 +31,21 @@ type SettingsDraft = Partial<OcrSettings & {
   cleanupApiKey: string
 }>
 
+type ParserListKey = keyof Pick<ImportFlowV2ParserConfig, 'sectionHeadings' | 'documentNoteKeywords' | 'solutionSectionKeywords' | 'primaryQuestionPatterns' | 'subQuestionPatterns' | 'figureKeywords'>
+type ParserTextDraft = Record<ParserListKey, string>
+const parserListKeys: ParserListKey[] = ['sectionHeadings', 'documentNoteKeywords', 'solutionSectionKeywords', 'primaryQuestionPatterns', 'subQuestionPatterns', 'figureKeywords']
+
+function parserConfigToTextDraft(config: ImportFlowV2ParserConfig): ParserTextDraft {
+  return Object.fromEntries(parserListKeys.map((key) => [key, config[key].join('\n')])) as ParserTextDraft
+}
+
+function parserTextDraftToConfig(config: ImportFlowV2ParserConfig, draft: ParserTextDraft): ImportFlowV2ParserConfig {
+  return {
+    ...config,
+    ...Object.fromEntries(parserListKeys.map((key) => [key, draft[key].split('\n').map((item) => item.trim()).filter(Boolean)])),
+  }
+}
+
 export function SettingsPage() {
   const { data, error, loading, reload } = useAsync<OcrSettings>(() => settingsApi.getOcrSettings(), [])
   const [draft, setDraft] = useState<SettingsDraft>({})
@@ -47,6 +62,7 @@ export function SettingsPage() {
   const [showSlicerGuide, setShowSlicerGuide] = useState(false)
   const parserConfigApi = useAsync<{ config: ImportFlowV2ParserConfig }>(() => importV2Api.getParserConfig(), [])
   const [parserConfig, setParserConfig] = useState<ImportFlowV2ParserConfig | null>(null)
+  const [parserTextDraft, setParserTextDraft] = useState<ParserTextDraft | null>(null)
   const [isParserSaving, setIsParserSaving] = useState(false)
   const [parserSaveStatus, setParserSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
@@ -65,21 +81,27 @@ export function SettingsPage() {
   }, [rulesApi.data])
 
   useEffect(() => {
-    if (parserConfigApi.data?.config) setParserConfig(parserConfigApi.data.config)
+    if (parserConfigApi.data?.config) {
+      setParserConfig(parserConfigApi.data.config)
+      setParserTextDraft(parserConfigToTextDraft(parserConfigApi.data.config))
+    }
   }, [parserConfigApi.data])
 
-  function updateParserList(key: keyof Pick<ImportFlowV2ParserConfig, 'sectionHeadings' | 'documentNoteKeywords' | 'solutionSectionKeywords' | 'primaryQuestionPatterns' | 'subQuestionPatterns' | 'figureKeywords'>, value: string) {
-    if (!parserConfig) return
-    setParserConfig({ ...parserConfig, [key]: value.split('\n').map((item) => item.trim()).filter(Boolean) })
+  function updateParserList(key: ParserListKey, value: string) {
+    setParserTextDraft((draft) => {
+      const base = draft || (parserConfig ? parserConfigToTextDraft(parserConfig) : null)
+      return base ? { ...base, [key]: value } : draft
+    })
   }
 
   async function saveParserConfig() {
-    if (!parserConfig) return
+    if (!parserConfig || !parserTextDraft) return
     setIsParserSaving(true)
     setParserSaveStatus(null)
     try {
-      const saved = await importV2Api.updateParserConfig(parserConfig)
+      const saved = await importV2Api.updateParserConfig(parserTextDraftToConfig(parserConfig, parserTextDraft))
       setParserConfig(saved.config)
+      setParserTextDraft(parserConfigToTextDraft(saved.config))
       parserConfigApi.setData(saved)
       setParserSaveStatus({ type: 'success', message: '导入识别规则已保存，下一次生成待确认题目时生效。' })
     } catch (err) {
@@ -95,6 +117,7 @@ export function SettingsPage() {
     try {
       const saved = await importV2Api.resetParserConfig()
       setParserConfig(saved.config)
+      setParserTextDraft(parserConfigToTextDraft(saved.config))
       parserConfigApi.setData(saved)
       setParserSaveStatus({ type: 'success', message: '已恢复默认导入识别规则。' })
     } catch (err) {
@@ -387,27 +410,27 @@ export function SettingsPage() {
               {parserSaveStatus ? <StatusBanner status={parserSaveStatus} /> : null}
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Field label="大题标题">
-                  <TextArea rows={5} value={parserConfig.sectionHeadings.join('\n')} onChange={(value) => updateParserList('sectionHeadings', value)} />
+                  <TextArea rows={5} value={parserTextDraft?.sectionHeadings ?? parserConfig.sectionHeadings.join('\n')} onChange={(value) => updateParserList('sectionHeadings', value)} />
                   <p className="text-[11px] text-zinc-400">用于识别“一、选择题”“二、填空题”等卷面栏目，不会作为题目入库。</p>
                 </Field>
                 <Field label="说明文字">
-                  <TextArea rows={5} value={parserConfig.documentNoteKeywords.join('\n')} onChange={(value) => updateParserList('documentNoteKeywords', value)} />
+                  <TextArea rows={5} value={parserTextDraft?.documentNoteKeywords ?? parserConfig.documentNoteKeywords.join('\n')} onChange={(value) => updateParserList('documentNoteKeywords', value)} />
                   <p className="text-[11px] text-zinc-400">用于识别“注意事项”“参考公式”等非题目内容。</p>
                 </Field>
                 <Field label="答案解析标记">
-                  <TextArea rows={5} value={parserConfig.solutionSectionKeywords.join('\n')} onChange={(value) => updateParserList('solutionSectionKeywords', value)} />
+                  <TextArea rows={5} value={parserTextDraft?.solutionSectionKeywords ?? parserConfig.solutionSectionKeywords.join('\n')} onChange={(value) => updateParserList('solutionSectionKeywords', value)} />
                   <p className="text-[11px] text-zinc-400">用于判断后半部分是否进入答案或解析区。</p>
                 </Field>
                 <Field label="图形提示词">
-                  <TextArea rows={5} value={parserConfig.figureKeywords.join('\n')} onChange={(value) => updateParserList('figureKeywords', value)} />
+                  <TextArea rows={5} value={parserTextDraft?.figureKeywords ?? parserConfig.figureKeywords.join('\n')} onChange={(value) => updateParserList('figureKeywords', value)} />
                   <p className="text-[11px] text-zinc-400">帮助系统在题目附近优先关注可能相关的图形。</p>
                 </Field>
                 <Field label="一级题号规则">
-                  <TextArea mono rows={4} value={parserConfig.primaryQuestionPatterns.join('\n')} onChange={(value) => updateParserList('primaryQuestionPatterns', value)} />
+                  <TextArea mono rows={4} value={parserTextDraft?.primaryQuestionPatterns ?? parserConfig.primaryQuestionPatterns.join('\n')} onChange={(value) => updateParserList('primaryQuestionPatterns', value)} />
                   <p className="text-[11px] text-zinc-400">每行一条。用于“第 1 题”“1.”、“1、”等题号。</p>
                 </Field>
                 <Field label="小问编号">
-                  <TextArea mono rows={4} value={parserConfig.subQuestionPatterns.join('\n')} onChange={(value) => updateParserList('subQuestionPatterns', value)} />
+                  <TextArea mono rows={4} value={parserTextDraft?.subQuestionPatterns ?? parserConfig.subQuestionPatterns.join('\n')} onChange={(value) => updateParserList('subQuestionPatterns', value)} />
                   <p className="text-[11px] text-zinc-400">用于避免把“（1）（2）”误识别成新题。</p>
                 </Field>
               </div>
