@@ -9,6 +9,12 @@ type RouteMeta = {
 
 function routeMeta(pathname: string): RouteMeta {
   if (pathname === '/' || pathname === '/workbench') return { section: '工作空间', title: '概览' }
+  if (pathname === '/tools/import') return { section: '工具', title: '资料导入' }
+  if (pathname.startsWith('/tools/import/') && pathname.includes('/manual-fix')) return { section: '资料导入', title: '手动修正' }
+  if (pathname.startsWith('/tools/import/jobs/') && pathname.endsWith('/questions')) return { section: '资料导入', title: '批次题目' }
+  if (pathname.startsWith('/tools/import/jobs/') && pathname.endsWith('/exports')) return { section: '资料导入', title: '批次导出' }
+  if (pathname.startsWith('/tools/import/') && pathname.includes('/candidates')) return { section: '资料导入', title: '题目核对' }
+  if (pathname.startsWith('/tools/import/jobs/') || pathname.startsWith('/tools/import/documents/')) return { section: '资料导入', title: '批次工作流' }
   if (pathname === '/tools/pdf-slicer') return { section: '工具', title: 'PDF 切分中心' }
   if (pathname.endsWith('/ocr-jobs')) return { section: '工具', title: 'OCR 识别队列' }
   if (pathname.includes('/pending-bank')) return { section: 'PDF 切分', title: '入库确认' }

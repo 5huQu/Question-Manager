@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { settingsApi } from '@/api/settings'
-import { importV2Api, type ImportFlowV2ParserConfig } from '@/api/importV2'
+import { importV2Api, type AnswerTablePolicy, type ImportFlowV2ParserConfig, type ImportParserPreset, type MetadataBlockPolicy, type SolutionBindingStrategy } from '@/api/importV2'
 import { Button } from '@/components/ui'
 import { UpdateCard } from '@/components/UpdateCard'
 import { Modal } from '@/components/dialogs/Modal'
@@ -31,9 +31,9 @@ type SettingsDraft = Partial<OcrSettings & {
   cleanupApiKey: string
 }>
 
-type ParserListKey = keyof Pick<ImportFlowV2ParserConfig, 'sectionHeadings' | 'documentNoteKeywords' | 'solutionSectionKeywords' | 'primaryQuestionPatterns' | 'subQuestionPatterns' | 'figureKeywords'>
+type ParserListKey = keyof Pick<ImportFlowV2ParserConfig, 'sectionHeadings' | 'documentNoteKeywords' | 'solutionSectionKeywords' | 'primaryQuestionPatterns' | 'subQuestionPatterns' | 'figureKeywords' | 'metadataBlockKeywords'>
 type ParserTextDraft = Record<ParserListKey, string>
-const parserListKeys: ParserListKey[] = ['sectionHeadings', 'documentNoteKeywords', 'solutionSectionKeywords', 'primaryQuestionPatterns', 'subQuestionPatterns', 'figureKeywords']
+const parserListKeys: ParserListKey[] = ['sectionHeadings', 'documentNoteKeywords', 'solutionSectionKeywords', 'primaryQuestionPatterns', 'subQuestionPatterns', 'figureKeywords', 'metadataBlockKeywords']
 
 function parserConfigToTextDraft(config: ImportFlowV2ParserConfig): ParserTextDraft {
   return Object.fromEntries(parserListKeys.map((key) => [key, config[key].join('\n')])) as ParserTextDraft
@@ -61,8 +61,11 @@ export function SettingsPage() {
   const [rulesSaveStatus, setRulesSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [showSlicerGuide, setShowSlicerGuide] = useState(false)
   const parserConfigApi = useAsync<{ config: ImportFlowV2ParserConfig }>(() => importV2Api.getParserConfig(), [])
+  const parserPresetsApi = useAsync<{ items: ImportParserPreset[] }>(() => importV2Api.listParserPresets(), [])
   const [parserConfig, setParserConfig] = useState<ImportFlowV2ParserConfig | null>(null)
   const [parserTextDraft, setParserTextDraft] = useState<ParserTextDraft | null>(null)
+  const [parserPresets, setParserPresets] = useState<ImportParserPreset[]>([])
+  const [selectedParserPresetId, setSelectedParserPresetId] = useState('')
   const [isParserSaving, setIsParserSaving] = useState(false)
   const [parserSaveStatus, setParserSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
@@ -86,6 +89,13 @@ export function SettingsPage() {
       setParserTextDraft(parserConfigToTextDraft(parserConfigApi.data.config))
     }
   }, [parserConfigApi.data])
+
+  useEffect(() => {
+    if (parserPresetsApi.data?.items) {
+      setParserPresets(parserPresetsApi.data.items)
+      if (!selectedParserPresetId && parserPresetsApi.data.items[0]) setSelectedParserPresetId(parserPresetsApi.data.items[0].id)
+    }
+  }, [parserPresetsApi.data, selectedParserPresetId])
 
   function updateParserList(key: ParserListKey, value: string) {
     setParserTextDraft((draft) => {
@@ -122,6 +132,57 @@ export function SettingsPage() {
       setParserSaveStatus({ type: 'success', message: '已恢复默认导入识别规则。' })
     } catch (err) {
       setParserSaveStatus({ type: 'error', message: err instanceof Error ? err.message : '恢复默认失败' })
+    } finally {
+      setIsParserSaving(false)
+    }
+  }
+
+  function applyParserPreset() {
+    const preset = parserPresets.find((item) => item.id === selectedParserPresetId)
+    if (!preset) return
+    setParserConfig(preset.config)
+    setParserTextDraft(parserConfigToTextDraft(preset.config))
+    setParserSaveStatus({ type: 'success', message: `已载入预设「${preset.name}」，保存规则后生效。` })
+  }
+
+  async function saveCurrentParserPreset() {
+    if (!parserConfig || !parserTextDraft) return
+    const name = window.prompt('预设名称', '深圳调研卷答案格式')
+    if (!name?.trim()) return
+    setIsParserSaving(true)
+    setParserSaveStatus(null)
+    try {
+      const config = parserTextDraftToConfig(parserConfig, parserTextDraft)
+      const saved = await importV2Api.createParserPreset({
+        name: name.trim(),
+        description: '从设置页保存的导入识别规则预设',
+        config,
+      })
+      setParserPresets(saved.items)
+      setSelectedParserPresetId(saved.preset.id)
+      parserPresetsApi.setData({ items: saved.items })
+      setParserSaveStatus({ type: 'success', message: `已保存预设「${saved.preset.name}」。` })
+    } catch (err) {
+      setParserSaveStatus({ type: 'error', message: err instanceof Error ? err.message : '保存预设失败' })
+    } finally {
+      setIsParserSaving(false)
+    }
+  }
+
+  async function deleteSelectedParserPreset() {
+    const preset = parserPresets.find((item) => item.id === selectedParserPresetId)
+    if (!preset || preset.builtIn) return
+    if (!window.confirm(`确定删除预设「${preset.name}」吗？`)) return
+    setIsParserSaving(true)
+    setParserSaveStatus(null)
+    try {
+      const result = await importV2Api.deleteParserPreset(preset.id)
+      setParserPresets(result.items)
+      setSelectedParserPresetId(result.items[0]?.id || '')
+      parserPresetsApi.setData({ items: result.items })
+      setParserSaveStatus({ type: 'success', message: '预设已删除。' })
+    } catch (err) {
+      setParserSaveStatus({ type: 'error', message: err instanceof Error ? err.message : '删除预设失败' })
     } finally {
       setIsParserSaving(false)
     }
@@ -408,6 +469,69 @@ export function SettingsPage() {
             {parserConfigApi.error ? <p className="text-xs text-red-500">{parserConfigApi.error}</p> : null}
             {parserConfig ? <>
               {parserSaveStatus ? <StatusBanner status={parserSaveStatus} /> : null}
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50/40 p-3 dark:border-zinc-800 dark:bg-zinc-900/20">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto_auto] md:items-end">
+                  <Field label="规则预设">
+                    <select
+                      value={selectedParserPresetId}
+                      onChange={(event) => setSelectedParserPresetId(event.target.value)}
+                      className="w-full cursor-pointer rounded border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+                    >
+                      {parserPresets.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.name}{preset.builtIn ? '（内置）' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Button size="sm" variant="outline" onClick={applyParserPreset} disabled={isParserSaving || !selectedParserPresetId}>应用预设</Button>
+                  <Button size="sm" variant="outline" onClick={saveCurrentParserPreset} disabled={isParserSaving}>保存为预设</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    icon={Trash2}
+                    onClick={deleteSelectedParserPreset}
+                    disabled={isParserSaving || Boolean(parserPresets.find((item) => item.id === selectedParserPresetId)?.builtIn)}
+                  >
+                    删除预设
+                  </Button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <Field label="答案绑定策略">
+                  <select
+                    value={parserConfig.solutionBindingStrategy}
+                    onChange={(event) => setParserConfig({ ...parserConfig, solutionBindingStrategy: event.target.value as SolutionBindingStrategy })}
+                    className="w-full cursor-pointer rounded border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+                  >
+                    <option value="heading_then_question">题号在参考答案后</option>
+                    <option value="question_then_heading">题号在参考答案前</option>
+                    <option value="auto">自动推荐</option>
+                  </select>
+                </Field>
+                <Field label="说明块策略">
+                  <select
+                    value={parserConfig.metadataBlockPolicy}
+                    onChange={(event) => setParserConfig({ ...parserConfig, metadataBlockPolicy: event.target.value as MetadataBlockPolicy })}
+                    className="w-full cursor-pointer rounded border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+                  >
+                    <option value="ignore">不进入答案/解析</option>
+                    <option value="append_to_analysis">追加到解析</option>
+                    <option value="store_as_note">存为备注</option>
+                  </select>
+                </Field>
+                <Field label="答案表策略">
+                  <select
+                    value={parserConfig.answerTablePolicy}
+                    onChange={(event) => setParserConfig({ ...parserConfig, answerTablePolicy: event.target.value as AnswerTablePolicy })}
+                    className="w-full cursor-pointer rounded border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+                  >
+                    <option value="fill_empty_only">只填空缺</option>
+                    <option value="override_metadata_like_answer">覆盖说明块答案</option>
+                    <option value="prefer_table_for_choice_questions">小题优先答案表</option>
+                  </select>
+                </Field>
+              </div>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Field label="大题标题">
                   <TextArea rows={5} value={parserTextDraft?.sectionHeadings ?? parserConfig.sectionHeadings.join('\n')} onChange={(value) => updateParserList('sectionHeadings', value)} />
@@ -420,6 +544,10 @@ export function SettingsPage() {
                 <Field label="答案解析标记">
                   <TextArea rows={5} value={parserTextDraft?.solutionSectionKeywords ?? parserConfig.solutionSectionKeywords.join('\n')} onChange={(value) => updateParserList('solutionSectionKeywords', value)} />
                   <p className="text-[11px] text-zinc-400">用于判断后半部分是否进入答案或解析区。</p>
+                </Field>
+                <Field label="说明块关键词">
+                  <TextArea rows={5} value={parserTextDraft?.metadataBlockKeywords ?? parserConfig.metadataBlockKeywords.join('\n')} onChange={(value) => updateParserList('metadataBlockKeywords', value)} />
+                  <p className="text-[11px] text-zinc-400">例如“命题说明”“教材题源”“课标要求”，默认不进入答案/解析。</p>
                 </Field>
                 <Field label="图形提示词">
                   <TextArea rows={5} value={parserTextDraft?.figureKeywords ?? parserConfig.figureKeywords.join('\n')} onChange={(value) => updateParserList('figureKeywords', value)} />

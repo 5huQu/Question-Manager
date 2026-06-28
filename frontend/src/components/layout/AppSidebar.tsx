@@ -10,8 +10,6 @@ import {
   LayoutDashboard,
   Moon,
   PanelLeft,
-  ScanSearch,
-  Scissors,
   Settings2,
   ShoppingBag,
   Sun,
@@ -65,13 +63,6 @@ export function AppSidebar({
       label: '资料导入 v2',
       to: '/tools/import',
     },
-    {
-      active: (pathname) => pathname.startsWith('/tools/pdf-slicer') && !pathname.endsWith('ocr-jobs') && !pathname.includes('pending-bank'),
-      icon: Scissors,
-      label: 'PDF 切分中心',
-      to: '/tools/pdf-slicer',
-    },
-    { active: (pathname) => pathname.endsWith('ocr-jobs'), icon: ScanSearch, label: 'OCR 识别队列', to: '/tools/pdf-slicer/ocr-jobs' },
   ]
   const questionItems: NavItem[] = [
     { active: (pathname) => pathname.startsWith('/questions') && pathname !== '/questions/new' && pathname !== '/questions/basket', icon: Database, label: '题库主库', to: '/questions' },

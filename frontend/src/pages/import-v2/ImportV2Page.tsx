@@ -9,6 +9,7 @@ import {
   Database,
   FileCheck2,
   FileText,
+  HelpCircle,
   ImageIcon,
   Layers,
   LoaderCircle,
@@ -18,13 +19,17 @@ import {
   Upload,
   Trash2,
   PencilLine,
+  ChevronLeft,
 } from 'lucide-react'
-import { importV2Api, type ImportV2Candidate, type ImportV2ImportJob, type ImportV2ImportJobDocument, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics, type ParseCandidatesResult } from '@/api/importV2'
+import { importV2Api, type ImportFlowV2ParserConfig, type ImportParserPreset, type ImportV2Candidate, type ImportV2ImportJob, type ImportV2ImportJobDocument, type ImportV2ImportJobDocumentDetail, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics, type ParseCandidatesRequest, type ParseCandidatesResult } from '@/api/importV2'
 import { settingsApi } from '@/api/settings'
 import { MarkdownContent } from '@/components/MarkdownContent'
+import { MarkdownStructurePreviewDialog, type MarkdownPreviewDocumentOption } from '@/components/import-v2/MarkdownStructurePreviewDialog'
 import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import { PageTitle, Panel, Badge, Button, Empty } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
+import { Modal } from '@/components/dialogs/Modal'
+import { importIssueLabel, parserDiagnosticLabel } from '@/utils/importDiagnostics'
 import { assetUrl } from '@/utils/questionDisplay'
 import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
 
@@ -42,6 +47,7 @@ type UnifiedQuestion = {
   figures: Array<{ id: string; usage: string; path: string; pageNo?: number; blockId?: string; sourceBlockId?: string; bbox?: any; inlineMarker?: string; optionLabel?: string }>
   hasFigures: boolean
   similarQuestions?: any[]
+  parseDiagnostics: Array<{ code: string; severity: 'info' | 'warning' | 'error'; message: string; questionNo?: string }>
   rawItem: any
 }
 
@@ -169,20 +175,18 @@ function fromCandidate(c: ImportV2Candidate): UnifiedQuestion {
       optionLabel: fig.optionLabel,
     })),
     hasFigures: hasVisibleFigureMarkup(c.stemMarkdown, c.answerText, c.analysisMarkdown),
+    parseDiagnostics: (c.parseDiagnostics || []).map((diagnostic) => ({
+      code: diagnostic.code,
+      severity: diagnostic.severity,
+      message: diagnostic.message,
+      questionNo: diagnostic.questionNo,
+    })),
     rawItem: c
   }
 }
 
 function issueLabel(code?: string) {
-  return ({
-    duplicate_question_no: '重复题号',
-    unplaced_figure: '图片待核对',
-    missing_answer: '缺少答案',
-    missing_analysis: '缺少解析',
-    missing_solution: '缺少解析文档匹配',
-    solution_conflict: '解析冲突',
-    unmatched_solution: '多余解析',
-  } as Record<string, string>)[code || '']
+  return importIssueLabel(code)
 }
 
 function importJobDocumentRoleLabel(role?: ImportV2ImportJobDocument['role']) {
@@ -208,12 +212,13 @@ function reviewTabFromQuery(value: string | null): 'all' | 'ready' | 'warning' |
 export default function ImportV2Page() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { sourceDocumentId: sourceDocumentIdFromPath, candidateId: candidateIdFromPath } = useParams<{ sourceDocumentId: string; candidateId: string }>()
+  const { jobId: importJobIdFromPath, sourceDocumentId: sourceDocumentIdFromPath, candidateId: candidateIdFromPath } = useParams<{ jobId: string; sourceDocumentId: string; candidateId: string }>()
   const [searchParams] = useSearchParams()
   const sourceDocumentIdFromQuery = searchParams.get('sourceDocumentId') || ''
   const importJobIdFromQuery = searchParams.get('importJobId') || ''
-  const isCandidatesRoute = Boolean(sourceDocumentIdFromPath && location.pathname.includes('/candidates'))
-  const routeSyncKey = `${sourceDocumentIdFromPath || ''}:${candidateIdFromPath || ''}:${isCandidatesRoute ? 'candidates' : 'document'}`
+  const currentImportJobId = importJobIdFromPath || importJobIdFromQuery
+  const isCandidatesRoute = Boolean(location.pathname.includes('/candidates'))
+  const routeSyncKey = `${currentImportJobId || ''}:${sourceDocumentIdFromPath || ''}:${candidateIdFromPath || ''}:${isCandidatesRoute ? 'candidates' : 'document'}`
 
   const [sourceDocuments, setSourceDocuments] = useState<ImportV2SourceDocument[]>([])
   const [ocrDocuments, setOcrDocuments] = useState<ImportV2OcrDocument[]>([])
@@ -234,12 +239,23 @@ export default function ImportV2Page() {
   const [questionUploadFile, setQuestionUploadFile] = useState<File | null>(null)
   const [solutionUploadFile, setSolutionUploadFile] = useState<File | null>(null)
   const [activeImportJob, setActiveImportJob] = useState<ImportV2ImportJob | null>(null)
-  const [activeImportJobDocuments, setActiveImportJobDocuments] = useState<ImportV2ImportJobDocument[]>([])
+  const [activeImportJobDocuments, setActiveImportJobDocuments] = useState<ImportV2ImportJobDocumentDetail[]>([])
+  const [parserPresets, setParserPresets] = useState<ImportParserPreset[]>([])
+  const [selectedParserPresetId, setSelectedParserPresetId] = useState('')
+  const [markdownPreviewTarget, setMarkdownPreviewTarget] = useState<{
+    ocrDocumentId: string
+    documentOptions?: MarkdownPreviewDocumentOption[]
+    candidateId?: string
+    questionNo?: string
+    focusKind?: 'stem' | 'answer' | 'analysis'
+    title?: string
+  } | null>(null)
 
   const [uploading, setUploading] = useState(false)
   const [runningSourceDocumentId, setRunningSourceDocumentId] = useState('')
   const [sourceOcrErrors, setSourceOcrErrors] = useState<Record<string, string>>({})
   const [activeTab, setActiveTab] = useState<'all' | 'ready' | 'warning' | 'error'>(() => reviewTabFromQuery(searchParams.get('tab')))
+  const [activeDiagnosticCode, setActiveDiagnosticCode] = useState('')
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [diagnostics, setDiagnostics] = useState<OcrFigureDiagnostics | null>(null)
@@ -278,6 +294,10 @@ export default function ImportV2Page() {
     return activeImportJobDocuments.find((item) => item.sourceDocumentId === selectedDoc.id) || null
   }, [activeImportJobDocuments, selectedDoc?.id])
 
+  const selectedDocOcr = useMemo(() => {
+    return selectedDoc ? ocrDocuments.find((item) => item.sourceDocumentId === selectedDoc.id) || null : null
+  }, [ocrDocuments, selectedDoc?.id])
+
   const activeImportJobQuestionDocument = useMemo(() => {
     return activeImportJobDocuments.find((item) => item.role === 'questions') || null
   }, [activeImportJobDocuments])
@@ -293,6 +313,14 @@ export default function ImportV2Page() {
   const activeImportJobSolutionSource = useMemo(() => {
     return activeImportJobSolutionDocument ? sourceDocuments.find((item) => item.id === activeImportJobSolutionDocument.sourceDocumentId) || null : null
   }, [activeImportJobSolutionDocument?.sourceDocumentId, sourceDocuments])
+
+  const activeImportJobQuestionOcr = useMemo(() => {
+    return activeImportJobQuestionDocument ? ocrDocuments.find((item) => item.sourceDocumentId === activeImportJobQuestionDocument.sourceDocumentId) || null : null
+  }, [activeImportJobQuestionDocument?.sourceDocumentId, ocrDocuments])
+
+  const activeImportJobSolutionOcr = useMemo(() => {
+    return activeImportJobSolutionDocument ? ocrDocuments.find((item) => item.sourceDocumentId === activeImportJobSolutionDocument.sourceDocumentId) || null : null
+  }, [activeImportJobSolutionDocument?.sourceDocumentId, ocrDocuments])
 
   const selectedDocIsImportJobQuestion = activeImportJob?.mode === 'separated_documents' && selectedImportJobDocument?.role === 'questions'
   const selectedDocIsImportJobSolution = activeImportJob?.mode === 'separated_documents' && selectedImportJobDocument?.role === 'solutions'
@@ -376,8 +404,20 @@ export default function ImportV2Page() {
     ]
   }, [selectedDoc])
 
+  function jobDocumentUrl(importJobId: string, sourceDocumentId: string) {
+    return `/tools/import/jobs/${encodeURIComponent(importJobId)}/documents/${encodeURIComponent(sourceDocumentId)}`
+  }
+
+  function currentImportJobIdForSourceDocument(sourceDocumentId: string) {
+    const jobDocument = activeImportJobDocuments.find((item) => item.sourceDocumentId === sourceDocumentId)
+    return jobDocument?.jobId || ''
+  }
+
   function documentUrl(sourceDocumentId: string) {
-    return `/tools/import/documents/${encodeURIComponent(sourceDocumentId)}`
+    const importJobId = currentImportJobIdForSourceDocument(sourceDocumentId)
+    return importJobId
+      ? jobDocumentUrl(importJobId, sourceDocumentId)
+      : `/tools/import/documents/${encodeURIComponent(sourceDocumentId)}`
   }
 
   function candidatesUrl(sourceDocumentId: string) {
@@ -391,15 +431,15 @@ export default function ImportV2Page() {
   }
 
   function navigateToDocument(sourceDocumentId: string, options?: { replace?: boolean }) {
-    navigate(documentUrl(sourceDocumentId), { replace: options?.replace })
+    navigate(documentUrl(sourceDocumentId), { replace: options?.replace ?? true })
   }
 
   function navigateToCandidates(sourceDocumentId: string, options?: { replace?: boolean }) {
-    navigate(candidatesUrl(sourceDocumentId), { replace: options?.replace })
+    navigate(candidatesUrl(sourceDocumentId), { replace: options?.replace ?? true })
   }
 
   function navigateToCandidate(sourceDocumentId: string, candidateId: string, options?: { replace?: boolean }) {
-    navigate(candidateUrl(sourceDocumentId, candidateId), { replace: options?.replace })
+    navigate(candidateUrl(sourceDocumentId, candidateId), { replace: options?.replace ?? true })
   }
 
   function setReviewTab(nextTab: 'all' | 'ready' | 'warning' | 'error') {
@@ -456,9 +496,26 @@ export default function ImportV2Page() {
   }, [])
 
   useEffect(() => {
-    if (!importJobIdFromQuery) return undefined
     let active = true
-    importV2Api.getImportJob(importJobIdFromQuery)
+    importV2Api.listParserPresets()
+      .then((result) => {
+        if (!active) return
+        setParserPresets(result.items || [])
+        if (!selectedParserPresetId && result.items?.[0]) setSelectedParserPresetId(result.items[0].id)
+      })
+      .catch((err) => {
+        if (!active) return
+        setError(err instanceof Error ? err.message : String(err))
+      })
+    return () => {
+      active = false
+    }
+  }, [selectedParserPresetId])
+
+  useEffect(() => {
+    if (!currentImportJobId) return undefined
+    let active = true
+    importV2Api.getImportJob(currentImportJobId)
       .then((result) => {
         if (!active) return
         setActiveImportJob(result.importJob)
@@ -471,7 +528,46 @@ export default function ImportV2Page() {
     return () => {
       active = false
     }
-  }, [importJobIdFromQuery])
+  }, [currentImportJobId])
+
+  useEffect(() => {
+    if (!importJobIdFromPath || sourceDocumentIdFromPath || !activeImportJobDocuments.length) return
+    const primary = activeImportJobDocuments.find((item) => item.role === 'full')
+      || activeImportJobDocuments.find((item) => item.role === 'questions')
+      || activeImportJobDocuments[0]
+    if (primary?.sourceDocumentId) {
+      const baseUrl = jobDocumentUrl(importJobIdFromPath, primary.sourceDocumentId)
+      const nextUrl = isCandidatesRoute
+        ? `${baseUrl}/candidates${candidateIdFromPath ? `/${encodeURIComponent(candidateIdFromPath)}` : ''}`
+        : baseUrl
+      navigate(nextUrl, { replace: true })
+    }
+  }, [activeImportJobDocuments, candidateIdFromPath, importJobIdFromPath, isCandidatesRoute, navigate, sourceDocumentIdFromPath])
+
+  useEffect(() => {
+    if (!currentImportJobId || !sourceDocumentIdFromPath || !activeImportJobDocuments.length) return undefined
+    if (activeImportJobDocuments.some((item) => item.sourceDocumentId === sourceDocumentIdFromPath)) return undefined
+    let active = true
+    importV2Api.resolveImportJobForSourceDocument(sourceDocumentIdFromPath, false)
+      .then((detail) => {
+        if (!active) return
+        setActiveImportJob(detail.importJob)
+        setActiveImportJobDocuments(detail.documents || [])
+        const baseUrl = jobDocumentUrl(detail.importJob.id, sourceDocumentIdFromPath)
+        const candidatesPath = isCandidatesRoute
+          ? `/candidates${candidateIdFromPath ? `/${encodeURIComponent(candidateIdFromPath)}` : ''}`
+          : ''
+        const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
+        navigate(`${baseUrl}${candidatesPath}${suffix}`, { replace: true })
+      })
+      .catch((err) => {
+        if (!active) return
+        setError(err instanceof Error ? err.message : String(err))
+      })
+    return () => {
+      active = false
+    }
+  }, [activeImportJobDocuments, candidateIdFromPath, currentImportJobId, isCandidatesRoute, navigate, searchParams, sourceDocumentIdFromPath])
 
   // 兼容旧链接：/tools/import?sourceDocumentId=xxx
   useEffect(() => {
@@ -479,6 +575,26 @@ export default function ImportV2Page() {
       navigateToDocument(sourceDocumentIdFromQuery, { replace: true })
     }
   }, [sourceDocumentIdFromPath, sourceDocumentIdFromQuery])
+
+  // 兼容旧链接：/tools/import/documents/:sourceDocumentId
+  useEffect(() => {
+    if (!sourceDocumentIdFromPath || currentImportJobId || sourceDocumentIdFromQuery) return undefined
+    let active = true
+    importV2Api.resolveImportJobForSourceDocument(sourceDocumentIdFromPath, true)
+      .then((detail) => {
+        if (!active) return
+        setActiveImportJob(detail.importJob)
+        setActiveImportJobDocuments(detail.documents || [])
+        navigate(jobDocumentUrl(detail.importJob.id, sourceDocumentIdFromPath), { replace: true })
+      })
+      .catch((err) => {
+        if (!active) return
+        setError(err instanceof Error ? err.message : String(err))
+      })
+    return () => {
+      active = false
+    }
+  }, [currentImportJobId, navigate, sourceDocumentIdFromPath, sourceDocumentIdFromQuery])
 
   useEffect(() => {
     setActiveTab(reviewTabFromQuery(searchParams.get('tab')))
@@ -638,12 +754,24 @@ export default function ImportV2Page() {
 
     try {
       const res = await importV2Api.uploadSourceDocument(file, metadataPayload(metadataDraft))
+      const metadata = metadataPayload(metadataDraft)
+      const jobRes = await importV2Api.createImportJob({
+        title: metadata.paperTitle || res.sourceDocument.title || baseNameFromFile(file),
+        mode: 'single_document',
+        ...metadata,
+      })
+      await importV2Api.addSourceDocumentToImportJob(jobRes.importJob.id, {
+        sourceDocumentId: res.sourceDocument.id,
+        role: 'full',
+        sortOrder: 0,
+      })
+      const hydratedJob = await importV2Api.getImportJob(jobRes.importJob.id)
       await loadLists()
       setSelectedSourceDocId(res.sourceDocument.id)
       setPendingUploadFile(null)
-      setActiveImportJob(null)
-      setActiveImportJobDocuments([])
-      navigateToDocument(res.sourceDocument.id)
+      setActiveImportJob(hydratedJob.importJob)
+      setActiveImportJobDocuments(hydratedJob.documents || [])
+      navigate(jobDocumentUrl(hydratedJob.importJob.id, res.sourceDocument.id))
       showNotice(`资料已保存，可启动 ${currentOcrProviderLabel} 识别。`)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -697,7 +825,7 @@ export default function ImportV2Page() {
       setActiveImportJobDocuments(hydratedJob.documents || [])
       setQuestionUploadFile(null)
       setSolutionUploadFile(null)
-      navigate(`${documentUrl(questionRes.sourceDocument.id)}?importJobId=${encodeURIComponent(jobRes.importJob.id)}`)
+      navigate(jobDocumentUrl(jobRes.importJob.id, questionRes.sourceDocument.id))
       showNotice('双文档导入任务已创建。请分别完成原卷和答案解析的 OCR 识别。')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -750,13 +878,17 @@ export default function ImportV2Page() {
     setError('')
     try {
       const jobDocument = activeImportJobDocuments.find((document) => document.sourceDocumentId === item.id)
-      const shouldParseImportJob = activeImportJob?.mode === 'separated_documents' && jobDocument?.role === 'questions'
+      const parserPayload: ParseCandidatesRequest = selectedParserPresetId ? { presetId: selectedParserPresetId } : {}
+      const shouldParseImportJob = Boolean(activeImportJob && (
+        (activeImportJob.mode === 'single_document' && jobDocument?.role === 'full')
+        || (activeImportJob.mode === 'separated_documents' && jobDocument?.role === 'questions')
+      ))
       let result: ParseCandidatesResult & { importJob?: ImportV2ImportJob }
       if (shouldParseImportJob) {
-        if (!activeImportJobSolutionReady) {
+        if (activeImportJob?.mode === 'separated_documents' && !activeImportJobSolutionReady) {
           throw new Error('答案解析文档尚未完成 OCR 识别，请先识别答案解析文档。')
         }
-        result = await importV2Api.parseImportJobCandidates(activeImportJob.id)
+        result = await importV2Api.parseImportJobCandidates(activeImportJob!.id, parserPayload)
       } else if (activeImportJob?.mode === 'separated_documents' && jobDocument?.role === 'solutions') {
         throw new Error('答案解析文档只用于合并解析，请切换到原卷文档生成待确认题目。')
       } else {
@@ -766,7 +898,7 @@ export default function ImportV2Page() {
           throw new Error('未找到该资料对应的 OCR 结果文件。')
         }
         setSelectedOcrId(ocrDoc.id)
-        result = await importV2Api.parseCandidates(ocrDoc.id)
+        result = await importV2Api.parseCandidates(ocrDoc.id, parserPayload)
       }
       const unified = (result.items || []).map(fromCandidate)
       if ('importJob' in result && result.importJob) {
@@ -792,26 +924,31 @@ export default function ImportV2Page() {
     }
   }
 
-  async function handleRecleanCandidates(item: ImportV2SourceDocument) {
+  async function handleRecleanCandidates(item: ImportV2SourceDocument, payload: ParseCandidatesRequest = {}, options: { skipConfirm?: boolean; label?: string } = {}) {
     if ((item.importStats?.committedCount || 0) > 0) {
       setError('该批次已有题目入库。为避免候选记录与题库记录不一致，暂不支持重新清洗。')
       return
     }
-    const ok = window.confirm('重新清洗会使用当前清洗脚本重新生成本批次待核对题目，并替换现有未入库候选题。确定继续吗？')
-    if (!ok) return
+    if (!options.skipConfirm) {
+      const ok = window.confirm('重新清洗会使用当前导入规则重新生成本批次待核对题目，并替换现有未入库候选题。确定继续吗？')
+      if (!ok) return
+    }
 
     setBusy(`reclean-${item.id}`)
     setError('')
     try {
       const jobDocument = activeImportJobDocuments.find((document) => document.sourceDocumentId === item.id)
-      const shouldParseImportJob = activeImportJob?.mode === 'separated_documents' && jobDocument?.role === 'questions'
+      const shouldParseImportJob = Boolean(activeImportJob && (
+        (activeImportJob.mode === 'single_document' && jobDocument?.role === 'full')
+        || (activeImportJob.mode === 'separated_documents' && jobDocument?.role === 'questions')
+      ))
       let result: ParseCandidatesResult & { importJob?: ImportV2ImportJob }
 
       if (shouldParseImportJob) {
-        if (!activeImportJobSolutionReady) {
+        if (activeImportJob?.mode === 'separated_documents' && !activeImportJobSolutionReady) {
           throw new Error('答案解析文档尚未完成 OCR 识别，请先识别答案解析文档。')
         }
-        result = await importV2Api.parseImportJobCandidates(activeImportJob.id)
+        result = await importV2Api.parseImportJobCandidates(activeImportJob!.id, payload)
       } else {
         const ocrRes = await importV2Api.listOcrDocuments(item.id)
         const ocrDoc = ocrRes.items[0]
@@ -819,7 +956,7 @@ export default function ImportV2Page() {
           throw new Error('未找到该资料对应的 OCR 结果文件。')
         }
         setSelectedOcrId(ocrDoc.id)
-        result = await importV2Api.parseCandidates(ocrDoc.id)
+        result = await importV2Api.parseCandidates(ocrDoc.id, payload)
       }
 
       const unified = (result.items || []).map(fromCandidate)
@@ -835,7 +972,7 @@ export default function ImportV2Page() {
       setShowCheckArea(true)
       setActiveStepTab('review')
       navigateToCandidates(shouldParseImportJob ? activeImportJobQuestionDocument?.sourceDocumentId || item.id : item.id)
-      showNotice('已使用当前清洗脚本重新生成待核对题目')
+      showNotice(options.label || '已使用当前导入规则重新生成待核对题目')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -911,14 +1048,48 @@ export default function ImportV2Page() {
     }
   }
 
+  function openEditModal() {
+    if (!activeImportJob) return
+    setMetadataDraft({
+      paperTitle: activeImportJob.paperTitle || activeImportJob.title || '',
+      batchName: activeImportJob.batchName || '',
+      stage: activeImportJob.stage || '高中',
+      subject: activeImportJob.subject || '数学',
+      province: activeImportJob.province || '',
+      city: activeImportJob.city || '',
+      paperKind: activeImportJob.paperKind || 'unknown',
+      examYear: activeImportJob.examYear ? String(activeImportJob.examYear) : '',
+      sourceOrg: activeImportJob.sourceOrg || '',
+      hasWatermark: false,
+      watermarkTerms: '',
+    })
+    setShowMetadataEditor(true)
+  }
+
   async function handleSaveSourceMetadata() {
-    if (!selectedDoc) return
-    setBusy(`metadata-${selectedDoc.id}`)
+    if (!activeImportJob) return
+    setBusy(`metadata-${activeImportJob.id}`)
     setError('')
     try {
-      const res = await importV2Api.updateSourceDocument(selectedDoc.id, metadataPayload(metadataDraft))
-      setSourceDocuments((items) => items.map((item) => item.id === selectedDoc.id ? res.sourceDocument : item))
-      showNotice('资料信息已保存。')
+      await importV2Api.updateImportJob(activeImportJob.id, {
+        title: metadataDraft.paperTitle,
+        paperTitle: metadataDraft.paperTitle,
+        batchName: metadataDraft.batchName,
+        stage: metadataDraft.stage,
+        subject: metadataDraft.subject,
+        province: metadataDraft.province,
+        city: metadataDraft.city,
+        paperKind: metadataDraft.paperKind,
+        examYear: Number(metadataDraft.examYear) || 0,
+        sourceOrg: metadataDraft.sourceOrg,
+      } as any)
+      showNotice('资料与试卷批次信息已保存，已同步到子文档和候选试题。')
+      setShowMetadataEditor(false)
+      if (currentImportJobId) {
+        const result = await importV2Api.getImportJob(currentImportJobId)
+        setActiveImportJob(result.importJob)
+        setActiveImportJobDocuments(result.documents || [])
+      }
       await loadLists()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -960,7 +1131,7 @@ export default function ImportV2Page() {
     setBusy('parse')
     setError('')
     try {
-      const result = await importV2Api.parseCandidates(selectedOcrId)
+      const result = await importV2Api.parseCandidates(selectedOcrId, selectedParserPresetId ? { presetId: selectedParserPresetId } : {})
       const unified = (result.items || []).map(fromCandidate)
       setQuestions(unified)
       setDiagnostics(result.diagnostics || null)
@@ -1121,6 +1292,162 @@ export default function ImportV2Page() {
     }
   }
 
+  function markdownPreviewDocumentOption(
+    role: ImportV2ImportJobDocument['role'],
+    ocrDocumentId: string,
+    source?: ImportV2SourceDocument | null,
+  ): MarkdownPreviewDocumentOption {
+    return {
+      role,
+      ocrDocumentId,
+      label: importJobDocumentRoleLabel(role) || '识别稿',
+      description: source?.originalFileName || source?.title || '',
+    }
+  }
+
+  function appendMarkdownPreviewDocumentOption(options: MarkdownPreviewDocumentOption[], option: MarkdownPreviewDocumentOption) {
+    if (!option.ocrDocumentId || options.some((item) => item.ocrDocumentId === option.ocrDocumentId)) return
+    options.push(option)
+  }
+
+  async function resolveOcrDocumentForSource(sourceDocumentId?: string, cached?: ImportV2OcrDocument | null) {
+    if (!sourceDocumentId) return null
+    if (cached?.sourceDocumentId === sourceDocumentId) return cached
+    const local = ocrDocuments.find((item) => item.sourceDocumentId === sourceDocumentId)
+    if (local) return local
+    const result = await importV2Api.listOcrDocuments(sourceDocumentId)
+    const items = result.items || []
+    if (items.length) {
+      setOcrDocuments((current) => {
+        const next = [...current]
+        for (const item of items) {
+          if (!next.some((existing) => existing.id === item.id)) next.push(item)
+        }
+        return next
+      })
+    }
+    return items[0] || null
+  }
+
+  async function markdownPreviewDocumentsForSelectedDoc() {
+    const options: MarkdownPreviewDocumentOption[] = []
+
+    if (activeImportJob?.mode === 'separated_documents') {
+      const questionOcr = await resolveOcrDocumentForSource(activeImportJobQuestionDocument?.sourceDocumentId, activeImportJobQuestionOcr)
+      const solutionOcr = await resolveOcrDocumentForSource(activeImportJobSolutionDocument?.sourceDocumentId, activeImportJobSolutionOcr)
+      if (questionOcr) appendMarkdownPreviewDocumentOption(options, markdownPreviewDocumentOption('questions', questionOcr.id, activeImportJobQuestionSource))
+      if (solutionOcr) appendMarkdownPreviewDocumentOption(options, markdownPreviewDocumentOption('solutions', solutionOcr.id, activeImportJobSolutionSource))
+
+      const preferredOcrDocumentId = selectedImportJobDocument?.role === 'solutions'
+        ? solutionOcr?.id
+        : selectedImportJobDocument?.role === 'questions'
+          ? questionOcr?.id
+          : selectedDocOcr?.id
+      const fallbackOcrDocumentId = selectedDocOcr?.id || selectedOcrId || options[0]?.ocrDocumentId || ''
+      if (!options.length && fallbackOcrDocumentId) {
+        appendMarkdownPreviewDocumentOption(options, markdownPreviewDocumentOption(selectedImportJobDocument?.role || 'full', fallbackOcrDocumentId, selectedDoc))
+      }
+      return {
+        ocrDocumentId: preferredOcrDocumentId || fallbackOcrDocumentId,
+        documentOptions: options,
+      }
+    }
+
+    const ocrDocumentId = selectedDocOcr?.id || selectedOcrId || ''
+    if (ocrDocumentId) {
+      appendMarkdownPreviewDocumentOption(options, markdownPreviewDocumentOption(selectedImportJobDocument?.role || 'full', ocrDocumentId, selectedDoc))
+    }
+    return { ocrDocumentId, documentOptions: options }
+  }
+
+  async function markdownPreviewDocumentsForActiveQuestion(focusKind: 'stem' | 'answer' | 'analysis') {
+    const options: MarkdownPreviewDocumentOption[] = []
+
+    if (activeImportJob?.mode === 'separated_documents') {
+      const questionSourceDocumentId = activeImportJobQuestionDocument?.sourceDocumentId || activeQuestion?.rawItem?.sourceDocumentId || ''
+      const solutionSourceDocumentId = activeImportJobSolutionDocument?.sourceDocumentId || ''
+      const questionOcr = await resolveOcrDocumentForSource(questionSourceDocumentId, activeImportJobQuestionOcr)
+      const solutionOcr = await resolveOcrDocumentForSource(solutionSourceDocumentId, activeImportJobSolutionOcr)
+      const questionOcrDocumentId = questionOcr?.id || activeQuestion?.rawItem?.ocrDocumentId || (selectedDocIsImportJobQuestion ? selectedDocOcr?.id : '') || ''
+      const solutionOcrDocumentId = solutionOcr?.id || ''
+
+      if (questionOcrDocumentId) {
+        appendMarkdownPreviewDocumentOption(options, markdownPreviewDocumentOption('questions', questionOcrDocumentId, activeImportJobQuestionSource))
+      }
+      if (solutionOcrDocumentId) {
+        appendMarkdownPreviewDocumentOption(options, markdownPreviewDocumentOption('solutions', solutionOcrDocumentId, activeImportJobSolutionSource))
+      }
+
+      return {
+        ocrDocumentId: focusKind === 'stem'
+          ? questionOcrDocumentId || solutionOcrDocumentId
+          : solutionOcrDocumentId || questionOcrDocumentId,
+        documentOptions: options,
+      }
+    }
+
+    const sourceDocumentId = activeQuestion?.rawItem?.sourceDocumentId || selectedDoc?.id || ''
+    const source = sourceDocumentId ? sourceDocuments.find((item) => item.id === sourceDocumentId) || selectedDoc : selectedDoc
+    const ocrDocumentId = activeQuestion?.rawItem?.ocrDocumentId || selectedDocOcr?.id || selectedOcrId || ''
+    if (ocrDocumentId) {
+      appendMarkdownPreviewDocumentOption(options, markdownPreviewDocumentOption(selectedImportJobDocument?.role || 'full', ocrDocumentId, source))
+    }
+    return { ocrDocumentId, documentOptions: options }
+  }
+
+  async function openSelectedDocMarkdownPreview() {
+    const { ocrDocumentId, documentOptions } = await markdownPreviewDocumentsForSelectedDoc()
+    if (!ocrDocumentId) {
+      setError('当前资料尚未生成 OCR 识别稿。')
+      return
+    }
+    setMarkdownPreviewTarget({
+      ocrDocumentId,
+      documentOptions,
+      title: selectedDoc?.originalFileName ? `模型识别稿：${selectedDoc.originalFileName}` : '模型识别稿',
+    })
+  }
+
+  async function handleApplySelectedParserPreset() {
+    if (!selectedDoc) return
+    const preset = parserPresets.find((item) => item.id === selectedParserPresetId)
+    if (!preset) {
+      setError('请先选择导入规则预设。')
+      return
+    }
+    const ok = window.confirm(`将使用预设「${preset.name}」重新生成本批次未入库候选题。确定继续吗？`)
+    if (!ok) return
+    await handleRecleanCandidates(selectedDoc, { presetId: preset.id }, { skipConfirm: true, label: `已使用预设「${preset.name}」重新生成待核对题目` })
+  }
+
+  async function handleApplyPreviewParserConfig(config: ImportFlowV2ParserConfig) {
+    if (!selectedDoc) {
+      setError('请先选择要重解析的资料。')
+      return
+    }
+    const ok = window.confirm('将使用预览窗口中的当前策略重新生成本批次未入库候选题。确定继续吗？')
+    if (!ok) return
+    setMarkdownPreviewTarget(null)
+    await handleRecleanCandidates(selectedDoc, { configOverride: config }, { skipConfirm: true, label: '已使用预览策略重新生成待核对题目' })
+  }
+
+  async function openActiveQuestionMarkdownPreview(focusKind: 'stem' | 'answer' | 'analysis') {
+    if (!activeQuestion) return
+    const { ocrDocumentId, documentOptions } = await markdownPreviewDocumentsForActiveQuestion(focusKind)
+    if (!ocrDocumentId) {
+      setError(focusKind === 'stem' ? '当前题目尚未关联 OCR 识别稿。' : '当前批次尚未找到答案解析 OCR 识别稿。')
+      return
+    }
+    setMarkdownPreviewTarget({
+      ocrDocumentId,
+      documentOptions,
+      candidateId: activeQuestion.id,
+      questionNo: activeQuestion.questionNo,
+      focusKind,
+      title: `第 ${activeQuestion.questionNo || '？'} 题${focusKind === 'stem' ? '题干' : focusKind === 'answer' ? '答案' : '解析'}来源诊断`,
+    })
+  }
+
   // 7. 多选/批量确认存入题库
   async function handleBulkConfirm() {
     if (selectedIds.size === 0) return
@@ -1181,8 +1508,17 @@ export default function ImportV2Page() {
     }
   }, [activeQuestion?.id, activeQuestion?.questionNo])
 
+  const visibleActiveParseDiagnostics = useMemo(() => {
+    if (!activeQuestion) return []
+    const issueCodes = new Set((activeQuestion.issues || []).map((issue) => issue.code).filter(Boolean))
+    return (activeQuestion.parseDiagnostics || []).filter((diagnostic) => !issueCodes.has(diagnostic.code))
+  }, [activeQuestion])
+
   const filteredQuestions = useMemo(() => {
     return questions.filter(q => {
+      if (activeDiagnosticCode && !q.parseDiagnostics.some((diagnostic) => diagnostic.code === activeDiagnosticCode)) {
+        return false
+      }
       if (activeTab === 'ready') {
         return q.status === 'ready' && q.issues.length === 0
       }
@@ -1194,7 +1530,26 @@ export default function ImportV2Page() {
       }
       return true
     })
-  }, [questions, activeTab])
+  }, [questions, activeTab, activeDiagnosticCode])
+
+  const parseDiagnosticCounts = useMemo(() => {
+    const counts = new Map<string, { code: string; count: number; severity: 'info' | 'warning' | 'error' }>()
+    for (const question of questions) {
+      const seen = new Set<string>()
+      for (const diagnostic of question.parseDiagnostics || []) {
+        if (!diagnostic.code || seen.has(diagnostic.code)) continue
+        seen.add(diagnostic.code)
+        const current = counts.get(diagnostic.code) || { code: diagnostic.code, count: 0, severity: diagnostic.severity }
+        current.count += 1
+        if (diagnostic.severity === 'error' || (diagnostic.severity === 'warning' && current.severity === 'info')) current.severity = diagnostic.severity
+        counts.set(diagnostic.code, current)
+      }
+    }
+    return Array.from(counts.values()).sort((left, right) => {
+      const severityOrder = { error: 0, warning: 1, info: 2 }
+      return severityOrder[left.severity] - severityOrder[right.severity] || right.count - left.count || left.code.localeCompare(right.code)
+    })
+  }, [questions])
 
   // 批量全选判断
   const selectableList = useMemo(() => {
@@ -1224,11 +1579,16 @@ export default function ImportV2Page() {
 
   return (
     <div className="space-y-6">
-      <PageTitle
-        title="资料导入"
-        desc="上传试卷或讲义，系统会自动识别题目。请核对题干、答案、解析和题图后再入库。"
-        path="/tools/import"
-      />
+      <div className="flex items-center gap-3">
+        <Button variant="outline" size="sm" icon={ChevronLeft} onClick={() => navigate('/tools/import')}>
+          返回列表
+        </Button>
+        <PageTitle
+          title="资料导入工作台"
+          desc="核对题干、答案、解析和题图后，确认入库。"
+          path="/tools/import"
+        />
+      </div>
 
       {/* 明确提示文案 */}
       <div className="rounded-lg border border-amber-200 bg-amber-50/20 p-3.5 text-xs text-amber-800 dark:border-amber-900/30 dark:bg-amber-95/10 dark:text-amber-400 flex items-center gap-2.5 shadow-sm animate-in fade-in duration-200">
@@ -1288,6 +1648,35 @@ export default function ImportV2Page() {
 
         {activeStepTab === 'review' && selectedDoc ? (
           <div className="flex flex-wrap items-center gap-2">
+            <select
+              className="h-8 max-w-56 rounded-md border border-zinc-200 bg-white px-2 text-xs font-medium text-zinc-700 outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
+              value={selectedParserPresetId}
+              onChange={(event) => setSelectedParserPresetId(event.target.value)}
+              disabled={Boolean(busy)}
+              title="导入规则预设"
+            >
+              {parserPresets.map((preset) => (
+                <option key={preset.id} value={preset.id}>{preset.name}</option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              variant="outline"
+              icon={RefreshCcw}
+              disabled={Boolean(busy) || !selectedParserPresetId || !canRecleanSelectedDoc}
+              onClick={handleApplySelectedParserPreset}
+            >
+              按预设重解析
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              icon={FileText}
+              disabled={!selectedDocOcr && !selectedOcrId}
+              onClick={openSelectedDocMarkdownPreview}
+            >
+              查看模型识别稿
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -1317,327 +1706,46 @@ export default function ImportV2Page() {
         <div className="grid gap-6 lg:grid-cols-12 items-start">
           {/* 左栏：上传与列表 */}
           <div className="lg:col-span-4 space-y-4 flex flex-col">
-            {/* 上传卡片 */}
-            <Panel title="上传新资料">
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 rounded-lg border border-zinc-200 bg-zinc-100/70 p-0.5 dark:border-zinc-800 dark:bg-zinc-900/70">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUploadDocumentMode('single_document')
-                      setQuestionUploadFile(null)
-                      setSolutionUploadFile(null)
-                    }}
-                    className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-semibold transition-all ${
-                      uploadDocumentMode === 'single_document'
-                        ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-950 dark:text-zinc-50'
-                        : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
-                    }`}
-                  >
-                    <FileText className="size-3.5" />
-                    单文档
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUploadDocumentMode('separated_documents')
-                      setPendingUploadFile(null)
-                      if (fileInputRef.current) fileInputRef.current.value = ''
-                    }}
-                    className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-semibold transition-all ${
-                      uploadDocumentMode === 'separated_documents'
-                        ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-950 dark:text-zinc-50'
-                        : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
-                    }`}
-                  >
-                    <Layers className="size-3.5" />
-                    双文档
-                  </button>
-                </div>
-
-                {uploadDocumentMode === 'single_document' ? (
-                  <div
-                    onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-                    onDragLeave={() => setDragOver(false)}
-                    onDrop={(e) => {
-                      e.preventDefault()
-                      setDragOver(false)
-                      if (e.dataTransfer.files) {
-                        handleUploadFileSelection(e.dataTransfer.files)
-                      }
-                    }}
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center ${
-                      dragOver
-                        ? 'border-zinc-900 bg-zinc-50/30 dark:border-zinc-100 dark:bg-zinc-900/30'
-                        : 'border-zinc-200 bg-white hover:bg-zinc-50/10 dark:border-zinc-800 dark:bg-zinc-955'
-                    }`}
-                  >
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      className="hidden"
-                      accept="application/json,.json,application/pdf,.pdf,image/png,image/jpeg,image/jpg"
-                      onChange={(e) => {
-                        if (e.target.files) {
-                          handleUploadFileSelection(e.target.files)
-                        }
-                      }}
-                    />
-                    {uploading ? (
-                      <LoaderCircle className="size-7 animate-spin text-zinc-500 mb-2" />
-                    ) : (
-                      <Upload className="size-7 text-zinc-400 dark:text-zinc-500 mb-2" />
-                    )}
-                    <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">
-                      {uploading ? '文件保存中...' : pendingUploadFile ? pendingUploadFile.name : '点击选择或拖拽资料至此处'}
-                    </p>
-                    <p className="text-[10px] text-zinc-400 mt-1">
-                      {pendingUploadFile ? '已选择文件，填写资料信息后开始上传' : '支持 PDF、PNG/JPG'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <input
-                      type="file"
-                      ref={questionFileInputRef}
-                      className="hidden"
-                      accept="application/pdf,.pdf,image/png,image/jpeg,image/jpg"
-                      onChange={(event) => handleSeparatedFileSelection('questions', event.target.files)}
-                    />
-                    <input
-                      type="file"
-                      ref={solutionFileInputRef}
-                      className="hidden"
-                      accept="application/pdf,.pdf,image/png,image/jpeg,image/jpg"
-                      onChange={(event) => handleSeparatedFileSelection('solutions', event.target.files)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => questionFileInputRef.current?.click()}
-                      className="flex w-full items-center gap-3 rounded-lg border border-zinc-200 bg-white p-3 text-left transition-colors hover:bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-955 dark:hover:bg-zinc-900/40"
-                    >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-                        <FileText className="size-4" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-xs font-semibold text-zinc-900 dark:text-zinc-50">原卷文件</span>
-                        <span className="block truncate text-[10px] text-zinc-400">{questionUploadFile?.name || '题干文档、学生版或原卷 PDF/图片'}</span>
-                      </span>
-                      {questionUploadFile ? (
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setQuestionUploadFile(null)
-                            if (questionFileInputRef.current) questionFileInputRef.current.value = ''
-                          }}
-                          className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-900"
-                          title="清除原卷文件"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </span>
-                      ) : null}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => solutionFileInputRef.current?.click()}
-                      className="flex w-full items-center gap-3 rounded-lg border border-zinc-200 bg-white p-3 text-left transition-colors hover:bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-955 dark:hover:bg-zinc-900/40"
-                    >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-                        <FileCheck2 className="size-4" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-xs font-semibold text-zinc-900 dark:text-zinc-50">答案解析文件</span>
-                        <span className="block truncate text-[10px] text-zinc-400">{solutionUploadFile?.name || '答案、详解或教师版 PDF/图片'}</span>
-                      </span>
-                      {solutionUploadFile ? (
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setSolutionUploadFile(null)
-                            if (solutionFileInputRef.current) solutionFileInputRef.current.value = ''
-                          }}
-                          className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-900"
-                          title="清除答案解析文件"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </span>
-                      ) : null}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </Panel>
-
             <Panel
-              title="资料信息"
+              title="试卷与批次信息"
               actions={selectedDoc ? (
                 <button
                   type="button"
-                  onClick={() => setShowMetadataEditor((value) => !value)}
+                  onClick={openEditModal}
                   className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
                 >
                   <PencilLine className="size-3.5" />
-                  {showMetadataEditor ? '收起' : '编辑'}
+                  编辑
                 </button>
               ) : null}
             >
-              {selectedDoc && !showMetadataEditor ? (
+              {selectedDoc && (
                 <div className="space-y-2 text-[11px] text-zinc-500">
                   <div className="font-semibold text-zinc-800 dark:text-zinc-200 truncate">
-                    {selectedDoc.paperTitle || selectedDoc.title || selectedDoc.originalFileName || '未命名资料'}
-	                  </div>
-	                  <div className="flex flex-wrap gap-1.5">
-	                    <Badge variant="outline">{paperKindOptions.find((item) => item.value === selectedDoc.paperKind)?.label || '未分类'}</Badge>
-	                    <Badge variant="outline">{selectedDoc.stage || '高三'}</Badge>
-	                    <Badge variant="outline">{selectedDoc.subject || '数学'}</Badge>
-	                    {selectedDoc.metadata?.watermark && typeof selectedDoc.metadata.watermark === 'object' && (selectedDoc.metadata.watermark as any).enabled ? (
-	                      <Badge variant="warning">有水印</Badge>
-	                    ) : null}
-	                  </div>
-                  <div className="truncate">
-                    {[selectedDoc.province, selectedDoc.city, selectedDoc.examYear || '', selectedDoc.sourceOrg].filter(Boolean).join(' · ') || '未填写地区、年份和来源机构'}
+                    {activeImportJob?.paperTitle || activeImportJob?.title || selectedDoc.paperTitle || '未命名资料'}
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="space-y-1">
-                      <span className="text-[10px] font-medium text-zinc-500">试卷名称</span>
-                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.paperTitle} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, paperTitle: event.target.value }))} />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-[10px] font-medium text-zinc-500">批次名称</span>
-                      <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.batchName} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, batchName: event.target.value }))} />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-[10px] font-medium text-zinc-500">学段/年级</span>
-                      <select
-                        className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
-                        value={selectedStage}
-                        onChange={(event) => setMetadataDraft((draft) => ({ ...draft, stage: event.target.value }))}
-                      >
-                        {stageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </select>
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-[10px] font-medium text-zinc-500">学科</span>
-                      <select
-                        className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
-                        value={metadataSubject}
-                        onChange={(event) => setMetadataDraft((draft) => ({ ...draft, subject: event.target.value }))}
-                      >
-                        {visibleSubjectOptions.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
-                      </select>
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-[10px] font-medium text-zinc-500">资料类型</span>
-                      <select
-                        className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
-                        value={metadataDraft.paperKind}
-                        onChange={(event) => setMetadataDraft((draft) => {
-                          const paperKind = event.target.value as PaperKind
-                          if (paperKind === 'gaokao_real') {
-                            return { ...draft, paperKind, province: isGaokaoRegion(draft.province) ? draft.province : '', city: '', sourceOrg: '' }
-                          }
-                          return { ...draft, paperKind }
-                        })}
-                      >
-                        {paperKindOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                      </select>
-                    </label>
-                    <label className="space-y-1">
-                      <span className="text-[10px] font-medium text-zinc-500">年份</span>
-                      <input type="number" min="0" className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.examYear} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, examYear: event.target.value }))} />
-                    </label>
-                    {metadataDraft.paperKind === 'gaokao_real' ? (
-                      <label className="col-span-2 space-y-1">
-                        <span className="text-[10px] font-medium text-zinc-500">试卷适用地区</span>
-                        <select
-                          className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
-                          value={isGaokaoRegion(metadataDraft.province) ? metadataDraft.province : ''}
-                          onChange={(event) => setMetadataDraft((draft) => ({ ...draft, province: event.target.value, city: '', sourceOrg: '' }))}
-                        >
-                          <option value="">请选择全国卷或直辖市</option>
-                          {gaokaoRegionOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                        </select>
-                        {gaokaoRegionOptions.find((item) => item.value === metadataDraft.province)?.provinces ? (
-                          <p className="text-[10px] leading-4 text-zinc-400">
-                            {gaokaoRegionOptions.find((item) => item.value === metadataDraft.province)?.provinces}
-                          </p>
-                        ) : null}
-                      </label>
-                    ) : (
-                      <>
-                        <label className="space-y-1">
-                          <span className="text-[10px] font-medium text-zinc-500">省份</span>
-                          <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.province} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, province: event.target.value }))} />
-                        </label>
-                        <label className="space-y-1">
-                          <span className="text-[10px] font-medium text-zinc-500">城市</span>
-                          <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.city} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, city: event.target.value }))} />
-                        </label>
-	                        <label className="col-span-2 space-y-1">
-	                          <span className="text-[10px] font-medium text-zinc-500">来源机构</span>
-	                          <input className="h-8 w-full rounded-md border border-zinc-200 bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800" value={metadataDraft.sourceOrg} onChange={(event) => setMetadataDraft((draft) => ({ ...draft, sourceOrg: event.target.value }))} />
-	                        </label>
-	                      </>
-	                    )}
-	                  </div>
-	                  <div className="rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
-	                    <label className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-200">
-	                      <input
-	                        type="checkbox"
-	                        className="size-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 dark:border-zinc-700"
-	                        checked={metadataDraft.hasWatermark}
-	                        onChange={(event) => setMetadataDraft((draft) => ({ ...draft, hasWatermark: event.target.checked }))}
-	                      />
-	                      有水印
-	                    </label>
-	                    {metadataDraft.hasWatermark ? (
-	                      <label className="mt-2 block space-y-1">
-	                        <span className="text-[10px] font-medium text-zinc-500">水印词典</span>
-	                        <textarea
-	                          className="min-h-20 w-full resize-y rounded-md border border-zinc-200 bg-background px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
-	                          value={metadataDraft.watermarkTerms}
-	                          onChange={(event) => setMetadataDraft((draft) => ({ ...draft, watermarkTerms: event.target.value }))}
-	                          placeholder="一行一个水印词，例如：鼎尖教育"
-	                        />
-	                      </label>
-	                    ) : null}
-	                  </div>
-	                  <div className="flex flex-wrap gap-2">
-                    {selectedDoc ? (
-                      <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={handleSaveSourceMetadata}>
-                        {busy === `metadata-${selectedDoc.id}` ? '保存中...' : '保存资料信息'}
-                      </Button>
-                    ) : null}
-                    <Button
-                      size="sm"
-                      disabled={uploading || Boolean(busy) || (uploadDocumentMode === 'single_document' ? !pendingUploadFile : !questionUploadFile || !solutionUploadFile)}
-                      onClick={uploadDocumentMode === 'single_document' ? handleStartUpload : handleStartSeparatedUpload}
-                    >
-                      {uploading ? '上传中...' : uploadDocumentMode === 'single_document' ? '开始上传' : '创建双文档任务'}
-                    </Button>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="outline">{paperKindOptions.find((item) => item.value === (activeImportJob?.paperKind || selectedDoc.paperKind))?.label || '未分类'}</Badge>
+                    <Badge variant="outline">{activeImportJob?.stage || selectedDoc.stage || '高三'}</Badge>
+                    <Badge variant="outline">{activeImportJob?.subject || selectedDoc.subject || '数学'}</Badge>
+                  </div>
+                  <div className="truncate">
+                    {[activeImportJob?.province || selectedDoc.province, activeImportJob?.city || selectedDoc.city, activeImportJob?.examYear || selectedDoc.examYear || '', activeImportJob?.sourceOrg || selectedDoc.sourceOrg].filter(Boolean).join(' · ') || '未填写地区、年份和来源机构'}
                   </div>
                 </div>
               )}
             </Panel>
 
             {/* 资料列表 */}
-            <Panel title="资料列表">
+            <Panel title="批次内文档列表">
               <div className="space-y-2.5 max-h-[450px] overflow-y-auto pr-1">
-                {sourceDocuments.filter((item) => item.fileType === 'pdf' || item.fileType === 'image').length === 0 ? (
-                  <Empty text="暂无资料，请先上传" />
+                {activeImportJobDocuments.length === 0 ? (
+                  <Empty text="此批次暂无关联文档" />
                 ) : (
-                  sourceDocuments.filter((item) => item.fileType === 'pdf' || item.fileType === 'image').map((item) => {
+                  activeImportJobDocuments.map((jobDoc) => {
+                    const item = jobDoc.sourceDocument
                     const statusInfo = getDocStatus(item)
                     const isSelected = selectedDoc?.id === item.id
-                    const importJobDocument = activeImportJobDocuments.find((document) => document.sourceDocumentId === item.id)
                     
                     return (
                       <div
@@ -1654,9 +1762,7 @@ export default function ImportV2Page() {
                             {item.originalFileName || item.title}
                           </p>
                           <div className="flex items-center gap-1.5 shrink-0">
-                            {importJobDocument ? (
-                              <Badge variant={importJobDocument.role === 'solutions' ? 'warning' : 'outline'}>{importJobDocumentRoleLabel(importJobDocument.role)}</Badge>
-                            ) : null}
+                            <Badge variant={jobDoc.role === 'solutions' ? 'warning' : 'outline'}>{importJobDocumentRoleLabel(jobDoc.role)}</Badge>
                             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
                             <button
                               disabled={busy === `delete-${item.id}`}
@@ -1683,6 +1789,9 @@ export default function ImportV2Page() {
                                 )}
                                 {item.importStats.needsReviewCount > 0 && (
                                   <span className="text-amber-600 font-medium">建议核对 {item.importStats.needsReviewCount}</span>
+                                )}
+                                {item.importStats.parseDiagnosticCount > 0 && (
+                                  <span className="text-sky-600 font-medium dark:text-sky-400">结构诊断 {item.importStats.parseDiagnosticCount}</span>
                                 )}
                               </div>
                             </>
@@ -1760,6 +1869,25 @@ export default function ImportV2Page() {
                       ))}
                     </div>
                   </div>
+
+                  {!selectedDocIsImportJobSolution && parserPresets.length > 0 ? (
+                    <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 dark:border-zinc-800 dark:bg-zinc-900/20 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">导入规则预设</p>
+                        <p className="mt-0.5 text-[11px] text-zinc-400">生成或重解析候选题时使用。</p>
+                      </div>
+                      <select
+                        className="h-8 min-w-56 rounded-md border border-zinc-200 bg-white px-2 text-xs font-medium text-zinc-700 outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
+                        value={selectedParserPresetId}
+                        onChange={(event) => setSelectedParserPresetId(event.target.value)}
+                        disabled={Boolean(busy)}
+                      >
+                        {parserPresets.map((preset) => (
+                          <option key={preset.id} value={preset.id}>{preset.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
 
                   {/* 核心操作区域 */}
                   <div className="bg-white dark:bg-zinc-955 p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-4">
@@ -1943,7 +2071,14 @@ export default function ImportV2Page() {
                         <Button
                           size="default"
                           icon={Database}
-                          onClick={() => navigate(`/tools/pdf-slicer/runs/${encodeURIComponent(`ifv2:${selectedDoc.id}`)}/questions`)}
+                          disabled={!activeImportJob?.id}
+                          onClick={() => {
+                            if (!activeImportJob?.id) {
+                              setError('当前资料尚未关联导入批次，请刷新页面完成迁移后再查看。')
+                              return
+                            }
+                            navigate(`/tools/import/jobs/${encodeURIComponent(activeImportJob.id)}/questions`)
+                          }}
                           className="w-full sm:w-auto"
                         >
                           在题库中查看
@@ -1984,33 +2119,80 @@ export default function ImportV2Page() {
           {/* 左侧：题目列表卡片栏 (35% 宽度) */}
           <div className="w-full lg:w-[35%] shrink-0 flex flex-col border rounded-xl bg-white dark:bg-zinc-955 overflow-hidden shadow-sm">
             {/* 分类过滤器 */}
-            <div className="border-b border-zinc-100 bg-zinc-50/50 dark:border-zinc-900 dark:bg-zinc-900/10 p-2 flex flex-wrap gap-1">
-              {[
-                { key: 'all', label: '全部', count: questions.length },
-                { key: 'ready', label: '可以入库', count: questions.filter(q => q.status === 'ready' && q.issues.length === 0).length },
-                { key: 'warning', label: '建议核对', count: questions.filter(q => q.issues.some(iss => iss.severity === 'warning') || q.similarQuestions && q.similarQuestions.length > 0).length },
-                { key: 'error', label: '需要修正', count: questions.filter(q => q.status === 'blocked' || q.status === 'needs_manual_fix' || q.issues.some(iss => iss.severity === 'error')).length },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setReviewTab(tab.key as 'all' | 'ready' | 'warning' | 'error')}
-                  className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
-                    activeTab === tab.key
-                      ? 'bg-zinc-900 text-zinc-55 dark:bg-zinc-50 dark:text-zinc-950 font-semibold shadow-xs'
-                      : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
-                  }`}
-                >
-                  {tab.label}
-                  <span className={`ml-1 px-1 rounded-sm text-[9px] ${
-                    activeTab === tab.key
-                      ? 'bg-zinc-800 text-zinc-400 dark:bg-zinc-200 dark:text-zinc-700'
-                      : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
-                  }`}>
-                    {tab.count}
-                  </span>
-                </button>
-              ))}
+            <div className="border-b border-zinc-100 bg-white dark:border-zinc-900 p-3 select-none">
+              <div className="bg-zinc-100/80 dark:bg-zinc-900/80 p-0.5 rounded-lg border border-zinc-200/50 dark:border-zinc-800/50 flex gap-0.5 w-full">
+                {[
+                  { key: 'all', label: '全部', count: questions.length },
+                  { key: 'ready', label: '可以入库', count: questions.filter(q => q.status === 'ready' && q.issues.length === 0).length },
+                  { key: 'warning', label: '建议核对', count: questions.filter(q => q.issues.some(iss => iss.severity === 'warning') || q.similarQuestions && q.similarQuestions.length > 0).length },
+                  { key: 'error', label: '需要修正', count: questions.filter(q => q.status === 'blocked' || q.status === 'needs_manual_fix' || q.issues.some(iss => iss.severity === 'error')).length },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setReviewTab(tab.key as 'all' | 'ready' | 'warning' | 'error')}
+                    className={`flex-1 inline-flex items-center justify-center py-1.5 rounded-md text-[11px] font-medium transition-all cursor-pointer ${
+                      activeTab === tab.key
+                        ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-xs border border-zinc-200/20 font-semibold'
+                        : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span className={`ml-1.5 px-1.5 py-0.25 rounded-full text-[9px] font-mono leading-none ${
+                      activeTab === tab.key
+                        ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-950'
+                        : 'bg-zinc-200/60 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                    }`}>
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {parseDiagnosticCounts.length > 0 ? (
+              <div className="border-b border-zinc-100 bg-white px-3 py-2 dark:border-zinc-900 dark:bg-zinc-955">
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-zinc-500">结构诊断</span>
+                  {activeDiagnosticCode ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveDiagnosticCode('')
+                        setSelectedIds(new Set())
+                      }}
+                      className="text-[10px] font-medium text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                    >
+                      清除诊断过滤
+                    </button>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {parseDiagnosticCounts.slice(0, 8).map((item) => (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => {
+                        setActiveDiagnosticCode(activeDiagnosticCode === item.code ? '' : item.code)
+                        setSelectedIds(new Set())
+                      }}
+                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold transition-colors ${
+                        activeDiagnosticCode === item.code
+                          ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950'
+                          : item.severity === 'warning'
+                            ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300'
+                            : item.severity === 'error'
+                              ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300'
+                              : 'border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300'
+                      }`}
+                    >
+                      <span>{parserDiagnosticLabel(item.code)}</span>
+                      <span>{item.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             {/* 批量多选控制条 */}
             <div className="border-b border-zinc-100 dark:border-zinc-900 px-4 py-2.5 flex items-center justify-between text-xs text-zinc-500">
@@ -2061,9 +2243,9 @@ export default function ImportV2Page() {
                         const sourceDocId = q.rawItem?.sourceDocumentId || selectedDoc?.id || sourceDocumentIdFromPath
                         if (sourceDocId) navigateToCandidate(sourceDocId, q.id)
                       }}
-                      className={`flex items-start gap-3 rounded-lg border p-3 transition-all cursor-pointer shadow-sm relative overflow-hidden ${
+                      className={`flex items-start gap-3 rounded-lg border p-3 transition-all cursor-pointer shadow-sm relative overflow-hidden pl-3.5 ${
                         isActive
-                          ? 'border-zinc-950 bg-zinc-50/40 dark:border-zinc-50 dark:bg-zinc-900/40'
+                          ? 'border-zinc-950 bg-zinc-50/40 dark:border-zinc-50 dark:bg-zinc-900/40 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-zinc-950 dark:before:bg-zinc-50'
                           : 'border-zinc-200 bg-white hover:bg-zinc-50/10 dark:border-zinc-800 dark:bg-zinc-955 dark:hover:bg-zinc-900/20'
                       }`}
                     >
@@ -2242,7 +2424,44 @@ export default function ImportV2Page() {
                         <p className="font-semibold">⚠️ 智能核对提示：</p>
                         <ul className="list-disc pl-4 space-y-1">
                           {activeQuestion.issues.map((issue, idx) => (
-                            <li key={idx} className="leading-relaxed">{issueLabel(issue.code) ? <span className="font-semibold">【{issueLabel(issue.code)}】</span> : null}{issue.message}</li>
+                            <li key={idx} className="leading-relaxed">
+                              {issueLabel(issue.code) ? <span className="font-semibold">【{issueLabel(issue.code)}】</span> : null}
+                              {issue.message}
+                              {['missing_answer', 'missing_analysis', 'missing_solution', 'solution_conflict', 'unmatched_solution'].includes(issue.code || '') ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openActiveQuestionMarkdownPreview(issue.code === 'missing_answer' ? 'answer' : 'analysis')}
+                                  className="ml-2 inline-flex items-center gap-1 rounded border border-red-200/70 bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300"
+                                >
+                                  <HelpCircle className="size-3" />
+                                  查看原因
+                                </button>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+
+                  {visibleActiveParseDiagnostics.length > 0 && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/20 p-3.5 text-xs text-amber-800 dark:border-amber-900/30 dark:bg-amber-950/10 dark:text-amber-300 flex items-start gap-2.5 animate-in slide-in-from-top-1 duration-200">
+                      <HelpCircle className="size-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="font-semibold">结构诊断：</p>
+                        <ul className="list-disc pl-4 space-y-1">
+                          {visibleActiveParseDiagnostics.slice(0, 6).map((diagnostic, idx) => (
+                            <li key={`${diagnostic.code}:${idx}`} className="leading-relaxed">
+                              <span className="font-semibold">【{parserDiagnosticLabel(diagnostic.code)}】</span>{diagnostic.message}
+                              <button
+                                type="button"
+                                onClick={() => openActiveQuestionMarkdownPreview(diagnostic.code.includes('answer') ? 'answer' : 'analysis')}
+                                className="ml-2 inline-flex items-center gap-1 rounded border border-amber-200/70 bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 hover:bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300"
+                              >
+                                <HelpCircle className="size-3" />
+                                查看来源
+                              </button>
+                            </li>
                           ))}
                         </ul>
                       </div>
@@ -2250,37 +2469,53 @@ export default function ImportV2Page() {
                   )}
 
                   {/* 题干排版预览 */}
-                  <section className="space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-500 border-b pb-1 dark:border-zinc-800">
+                  <div className="rounded-xl border border-zinc-150 bg-white dark:border-zinc-800 dark:bg-zinc-955 overflow-hidden shadow-xs">
+                    <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/50 px-4 py-2.5 dark:border-zinc-900 dark:bg-zinc-900/20 text-xs font-semibold text-zinc-700 dark:text-zinc-300 select-none">
                       <Layers className="size-3.5 text-zinc-400" />
                       <span>题干内容</span>
                     </div>
-                    <div className="bg-zinc-50/30 dark:bg-zinc-900/5 p-4 rounded-lg border border-zinc-100 dark:border-zinc-900 min-h-16 leading-relaxed">
+                    <div className="p-5 leading-relaxed bg-white dark:bg-zinc-955">
                       <QuestionMarkdownContent content={activeQuestion.stemMarkdown || '（空）'} figures={activeQuestion.figures} className="text-sm font-normal" />
                     </div>
-                  </section>
+                  </div>
 
                   {/* 自动识别答案 */}
-                  <section className="space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-500 border-b pb-1 dark:border-zinc-800">
-                      <CheckCircle2 className="size-3.5 text-zinc-400" />
+                  <div className="rounded-xl border border-zinc-150 bg-white dark:border-zinc-800 dark:bg-zinc-955 overflow-hidden shadow-xs border-l-2 border-l-emerald-500">
+                    <div className="flex items-center gap-2 border-b border-zinc-100 bg-emerald-50/10 px-4 py-2.5 dark:border-zinc-900 dark:bg-emerald-950/5 text-xs font-semibold text-emerald-800 dark:text-emerald-450 select-none">
+                      <CheckCircle2 className="size-3.5 text-emerald-500" />
                       <span>自动识别答案</span>
+                      <button
+                        type="button"
+                        onClick={() => openActiveQuestionMarkdownPreview('answer')}
+                        className="ml-auto inline-flex size-6 items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-100/50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+                        title="查看答案来源"
+                      >
+                        <HelpCircle className="size-3.5" />
+                      </button>
                     </div>
-                    <div className="bg-zinc-50/30 dark:bg-zinc-900/5 p-4 rounded-lg border border-zinc-100 dark:border-zinc-900 min-h-12 leading-relaxed">
+                    <div className="p-5 leading-relaxed bg-white dark:bg-zinc-955">
                       <MarkdownWithInlineFigures content={activeQuestion.answerText || '（无）'} figures={activeQuestion.figures} className="text-sm font-normal" />
                     </div>
-                  </section>
+                  </div>
 
                   {/* 自动解析步骤 */}
-                  <section className="space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-500 border-b pb-1 dark:border-zinc-800">
+                  <div className="rounded-xl border border-zinc-150 bg-white dark:border-zinc-800 dark:bg-zinc-955 overflow-hidden shadow-xs border-l-2 border-l-zinc-400">
+                    <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/40 px-4 py-2.5 dark:border-zinc-900 dark:bg-zinc-900/10 text-xs font-semibold text-zinc-700 dark:text-zinc-300 select-none">
                       <Compass className="size-3.5 text-zinc-400" />
                       <span>自动解析步骤</span>
+                      <button
+                        type="button"
+                        onClick={() => openActiveQuestionMarkdownPreview('analysis')}
+                        className="ml-auto inline-flex size-6 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
+                        title="查看解析来源"
+                      >
+                        <HelpCircle className="size-3.5" />
+                      </button>
                     </div>
-                    <div className="bg-zinc-50/30 dark:bg-zinc-900/5 p-4 rounded-lg border border-zinc-100 dark:border-zinc-900 min-h-12 leading-relaxed">
+                    <div className="p-5 leading-relaxed bg-white dark:bg-zinc-955">
                       <MarkdownWithInlineFigures content={activeQuestion.analysisMarkdown || '（无）'} figures={activeQuestion.figures} className="text-sm font-normal" />
                     </div>
-                  </section>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -2294,20 +2529,181 @@ export default function ImportV2Page() {
 
       {/* ── 动态悬浮底部批量确认入库条 ── */}
       {activeStepTab === 'review' && selectedIds.size > 0 && (
-        <div className="sticky bottom-0 z-50 w-full border border-zinc-200 bg-white/80 py-4 px-6 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/80 flex items-center justify-between shadow-[0_-4px_20px_rgba(0,0,0,0.03)] rounded-xl mt-4">
-          <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-            已勾选 {selectedIds.size} 道题目，可一键批量确认存库。
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-2xl border border-zinc-200/50 bg-white/45 py-2.5 pl-5 pr-3 backdrop-blur-xl dark:border-zinc-800/60 dark:bg-zinc-950/45 flex items-center justify-between shadow-[0_12px_30px_rgba(0,0,0,0.06)] dark:shadow-[0_12px_30px_rgba(0,0,0,0.25)] rounded-full transition-all duration-300 animate-in fade-in slide-in-from-bottom-4 select-none">
+          <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300 flex items-center gap-2">
+            <span className="flex size-5 items-center justify-center rounded-full bg-zinc-900 text-[10px] font-bold text-white dark:bg-zinc-100 dark:text-zinc-900 font-mono leading-none">
+              {selectedIds.size}
+            </span>
+            <span>已勾选 {selectedIds.size} 道题目，可一键批量确认入库</span>
           </span>
-          <div className="flex items-center gap-2">
-            <Button size="sm" icon={CheckCircle2} disabled={Boolean(busy)} onClick={handleBulkConfirm}>
-              确认入库这 {selectedIds.size} 题
+          <div className="flex items-center gap-1.5">
+            <Button size="xs" icon={CheckCircle2} disabled={Boolean(busy)} onClick={handleBulkConfirm} className="rounded-full px-4 h-8 text-[11px] font-semibold">
+              确认入库
             </Button>
-            <Button size="sm" variant="outline" icon={SkipForward} disabled={Boolean(busy)} onClick={handleBulkSkip}>
+            <Button size="xs" variant="outline" icon={SkipForward} disabled={Boolean(busy)} onClick={handleBulkSkip} className="rounded-full px-4 h-8 text-[11px] font-medium border-zinc-200/80 bg-transparent hover:bg-zinc-50 dark:border-zinc-800">
               跳过所选
             </Button>
           </div>
         </div>
       )}
+
+      {showMetadataEditor && (
+        <Modal
+          title="修改试卷批次属性"
+          desc="修改此批次会将属性同步写入底下的所有关联文档以及所有的待确认题目记录中。"
+          onClose={() => setShowMetadataEditor(false)}
+        >
+          <div className="space-y-4 py-2">
+            <div className="space-y-4">
+              {/* 第一部分：基本档案 */}
+              <div className="space-y-3">
+                <label className="space-y-1.5 block">
+                  <span className="text-[13px] font-medium text-zinc-500">试卷名称</span>
+                  <input
+                    className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                    value={metadataDraft.paperTitle}
+                    onChange={(event) => setMetadataDraft((draft) => ({ ...draft, paperTitle: event.target.value }))}
+                  />
+                </label>
+                <label className="space-y-1.5 block">
+                  <span className="text-[13px] font-medium text-zinc-500">批次名称</span>
+                  <input
+                    className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                    value={metadataDraft.batchName}
+                    onChange={(event) => setMetadataDraft((draft) => ({ ...draft, batchName: event.target.value }))}
+                  />
+                </label>
+              </div>
+
+              {/* 第二部分：分类属性 */}
+              <div className="p-3.5 bg-zinc-50/50 dark:bg-zinc-900/20 border border-zinc-150 dark:border-zinc-800 rounded-xl">
+                <div className="mb-2.5 text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
+                  分类与年份信息
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="space-y-1.5 block">
+                    <span className="text-[13px] font-medium text-zinc-500">学段/年级</span>
+                    <select
+                      className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                      value={selectedStage}
+                      onChange={(event) => setMetadataDraft((draft) => ({ ...draft, stage: event.target.value }))}
+                    >
+                      {stageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </label>
+                  <label className="space-y-1.5 block">
+                    <span className="text-[13px] font-medium text-zinc-500">学科</span>
+                    <select
+                      className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                      value={metadataSubject}
+                      onChange={(event) => setMetadataDraft((draft) => ({ ...draft, subject: event.target.value }))}
+                    >
+                      {visibleSubjectOptions.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
+                    </select>
+                  </label>
+                  <label className="space-y-1.5 block">
+                    <span className="text-[13px] font-medium text-zinc-500">资料类型</span>
+                    <select
+                      className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                      value={metadataDraft.paperKind}
+                      onChange={(event) => setMetadataDraft((draft) => {
+                        const paperKind = event.target.value as PaperKind
+                        if (paperKind === 'gaokao_real') {
+                          return { ...draft, paperKind, province: isGaokaoRegion(draft.province) ? draft.province : '', city: '', sourceOrg: '' }
+                        }
+                        return { ...draft, paperKind }
+                      })}
+                    >
+                      {paperKindOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="space-y-1.5 block">
+                    <span className="text-[13px] font-medium text-zinc-500">年份</span>
+                    <input
+                      type="number"
+                      min="0"
+                      className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                      value={metadataDraft.examYear}
+                      onChange={(event) => setMetadataDraft((draft) => ({ ...draft, examYear: event.target.value }))}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* 第三部分：归属来源 */}
+              <div className="p-3.5 bg-zinc-50/50 dark:bg-zinc-900/20 border border-zinc-150 dark:border-zinc-800 rounded-xl">
+                <div className="mb-2.5 text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
+                  归属与来源机构
+                </div>
+                {metadataDraft.paperKind === 'gaokao_real' ? (
+                  <label className="space-y-1.5 block">
+                    <span className="text-[13px] font-medium text-zinc-500">试卷适用地区</span>
+                    <select
+                      className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                      value={isGaokaoRegion(metadataDraft.province) ? metadataDraft.province : ''}
+                      onChange={(event) => setMetadataDraft((draft) => ({ ...draft, province: event.target.value, city: '', sourceOrg: '' }))}
+                    >
+                      <option value="">请选择全国卷或直辖市</option>
+                      {gaokaoRegionOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </label>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="space-y-1.5 block">
+                        <span className="text-[13px] font-medium text-zinc-500">省份</span>
+                        <input
+                          className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                          value={metadataDraft.province}
+                          onChange={(event) => setMetadataDraft((draft) => ({ ...draft, province: event.target.value }))}
+                        />
+                      </label>
+                      <label className="space-y-1.5 block">
+                        <span className="text-[13px] font-medium text-zinc-500">城市</span>
+                        <input
+                          className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                          value={metadataDraft.city}
+                          onChange={(event) => setMetadataDraft((draft) => ({ ...draft, city: event.target.value }))}
+                        />
+                      </label>
+                    </div>
+                    <label className="space-y-1.5 block">
+                      <span className="text-[13px] font-medium text-zinc-500">来源机构</span>
+                      <input
+                        className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                        value={metadataDraft.sourceOrg}
+                        onChange={(event) => setMetadataDraft((draft) => ({ ...draft, sourceOrg: event.target.value }))}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-4 border-t border-zinc-100 dark:border-zinc-900 mt-4">
+              <Button variant="outline" onClick={() => setShowMetadataEditor(false)}>
+                取消
+              </Button>
+              <Button disabled={Boolean(busy)} onClick={handleSaveSourceMetadata}>
+                {busy === `metadata-${activeImportJob?.id}` ? '保存中...' : '保存修改'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      <MarkdownStructurePreviewDialog
+        key={markdownPreviewTarget ? `${markdownPreviewTarget.ocrDocumentId}:${markdownPreviewTarget.candidateId || ''}:${markdownPreviewTarget.focusKind || ''}` : 'closed'}
+        open={Boolean(markdownPreviewTarget)}
+        ocrDocumentId={markdownPreviewTarget?.ocrDocumentId}
+        documentOptions={markdownPreviewTarget?.documentOptions}
+        candidateId={markdownPreviewTarget?.candidateId}
+        questionNo={markdownPreviewTarget?.questionNo}
+        focusKind={markdownPreviewTarget?.focusKind}
+        title={markdownPreviewTarget?.title}
+        applying={busy === `reclean-${selectedDoc?.id || ''}`}
+        onApplyConfig={selectedDoc && canRecleanSelectedDoc ? handleApplyPreviewParserConfig : undefined}
+        onClose={() => setMarkdownPreviewTarget(null)}
+      />
 
     </div>
   )

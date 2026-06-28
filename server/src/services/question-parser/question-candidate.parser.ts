@@ -6,7 +6,9 @@ import { detectQuestionNumbers, detectSolutionQuestionNumbers, type QuestionNumb
 import { splitMarkdownByQuestionNumbers, type QuestionMarkdownChunk } from './markdown-question-splitter.js'
 import {
   extractSolutionMatches,
+  firstAnswerTableStart,
   findSolutionSections,
+  maskNonSolutionBlocks,
   splitQuestionFields,
   type MarkdownRange,
   type SolutionMatch,
@@ -23,7 +25,7 @@ import {
   classifyQuestionDocumentLayout,
   type QuestionDocumentLayoutClassification,
 } from './document-layout.classifier.js'
-import { extractAnswerTable } from './solution-document.parser.js'
+import { extractAnswerTable, extractAnswerTableEntries, extractQuestionThenHeadingSolutionMatches } from './solution-document.parser.js'
 
 export type ParseQuestionCandidatesOptions = {
   now?: string
@@ -407,6 +409,15 @@ function compactForCheck(value: string) {
   return String(value || '').replace(/\s+/g, '').replace(/[，。；、,.:：]/g, '')
 }
 
+function isMetadataLikeAnswer(value: string | undefined, config: ImportFlowV2ParserConfig) {
+  const compact = compactForCheck(String(value || '')).slice(0, 120)
+  if (!compact) return false
+  return config.metadataBlockKeywords.some((keyword) => {
+    const key = compactForCheck(keyword)
+    return compact.startsWith(key) || compact.includes(`【${key}】`)
+  })
+}
+
 function simpleChoiceAnswer(value: string) {
   const compact = compactForCheck(value).replace(/[;；]$/g, '').toUpperCase()
   return /^[A-D]{1,4}$/.test(compact) ? compact : ''
@@ -448,9 +459,14 @@ function shouldInferMissingSolutionNo(currentNo: number | undefined, nextNo: num
   return missingNo
 }
 
+function trimBodyBeforeAnswerTable(body: string) {
+  const tableStart = firstAnswerTableStart(body)
+  return tableStart === undefined ? body : body.slice(0, tableStart).trimEnd()
+}
+
 function extractWholeDocumentSolutionMatches(markdown: string, start: number, config: ImportFlowV2ParserConfig, expectedQuestionNos: string[] = []) {
   const source = markdown.slice(start)
-  const starts = detectSolutionQuestionNumbers(source, config)
+  const starts = detectSolutionQuestionNumbers(maskNonSolutionBlocks(source, config), config)
   const chunks = splitMarkdownByQuestionNumbers(source, starts)
   const matches = new Map<string, SolutionMatch>()
   let chunksWithFieldMarkers = 0
@@ -464,7 +480,7 @@ function extractWholeDocumentSolutionMatches(markdown: string, start: number, co
     const nextNo = numberValue(nextChunk?.questionNo)
     const missingNo = shouldInferMissingSolutionNo(currentNo, nextNo, expectedNos, tableAnswers)
     const inferred = missingNo ? findTrailingUnnumberedSolutionBlock(chunk.body, tableAnswers.get(missingNo)) : null
-    const currentBody = inferred?.before || chunk.body
+    const currentBody = trimBodyBeforeAnswerTable(inferred?.before || chunk.body)
     const fields = splitQuestionFields(currentBody, start + chunk.contentStart)
     if (fields.hasFieldMarkers) chunksWithFieldMarkers += 1
     matches.set(chunk.questionNo, mergeSolutionMatch(matches.get(chunk.questionNo), solutionMatchFromWholeDocumentChunk(
@@ -491,11 +507,25 @@ function extractWholeDocumentSolutionMatches(markdown: string, start: number, co
   return { matches, chunkCount: chunks.length, chunksWithFieldMarkers }
 }
 
-function mergeTableAnswers(matches: Map<string, SolutionMatch>, markdown: string) {
-  for (const [questionNo, answerText] of extractAnswerTable(markdown)) {
+function offsetRange(range: MarkdownRange | undefined, offset: number): MarkdownRange | undefined {
+  return range ? { start: range.start + offset, end: range.end + offset } : undefined
+}
+
+function mergeTableAnswers(matches: Map<string, SolutionMatch>, markdown: string, config: ImportFlowV2ParserConfig, offset = 0) {
+  const entries = new Map<string, { questionNo: string; answerText: string; range?: MarkdownRange }>()
+  for (const entry of extractAnswerTableEntries(markdown)) entries.set(entry.questionNo, entry)
+  for (const [questionNo, entry] of entries) {
     const existing = matches.get(questionNo)
-    if (!existing || !existing.answerText) {
-      matches.set(questionNo, { ...(existing || {}), answerText })
+    const answerText = entry.answerText
+    const answerRange = offsetRange(entry.range, offset)
+    const shouldOverride = Boolean(existing?.answerText) && (
+      (config.answerTablePolicy === 'override_metadata_like_answer' && isMetadataLikeAnswer(existing?.answerText, config))
+      || (config.answerTablePolicy === 'prefer_table_for_choice_questions' && Boolean(simpleChoiceAnswer(answerText)))
+    )
+    if (!existing || !existing.answerText || shouldOverride) {
+      matches.set(questionNo, { ...(existing || {}), answerText, answerRange })
+    } else if (String(existing.answerText || '').trim() === answerText.trim() && answerRange && !existing.answerRange) {
+      matches.set(questionNo, { ...existing, answerRange })
     }
   }
   return matches
@@ -510,14 +540,38 @@ function extractAppendixSolutionMatches(
 ) {
   const scopedSections = sections.filter((section) => section.start >= start)
   const wholeDocument = extractWholeDocumentSolutionMatches(markdown, start, config, expectedQuestionNos)
+  const headingThenQuestionMatches = (
+    wholeDocument.chunkCount > 0
+    && wholeDocument.chunksWithFieldMarkers >= Math.ceil(wholeDocument.chunkCount / 2)
+  )
+    ? wholeDocument.matches
+    : scopedSections.length
+      ? extractSolutionMatches(markdown, scopedSections, config)
+      : wholeDocument.matches
+  const questionThenHeadingMatches = extractQuestionThenHeadingSolutionMatches(markdown, config, start).matches
+
+  if (config.solutionBindingStrategy === 'question_then_heading') {
+    return mergeTableAnswers(questionThenHeadingMatches, markdown.slice(start), config, start)
+  }
+  if (config.solutionBindingStrategy === 'auto') {
+    const score = (matches: Map<string, SolutionMatch>) => Array.from(matches.values()).reduce((total, match) => {
+      return total + (String(match.answerText || '').trim() ? 2 : 0) + (String(match.analysisMarkdown || '').trim() ? 3 : 0)
+    }, 0)
+    return mergeTableAnswers(
+      score(questionThenHeadingMatches) > score(headingThenQuestionMatches) ? questionThenHeadingMatches : headingThenQuestionMatches,
+      markdown.slice(start),
+      config,
+      start,
+    )
+  }
   if (
     wholeDocument.chunkCount > 0
     && wholeDocument.chunksWithFieldMarkers >= Math.ceil(wholeDocument.chunkCount / 2)
   ) {
-    return mergeTableAnswers(wholeDocument.matches, markdown.slice(start))
+    return mergeTableAnswers(wholeDocument.matches, markdown.slice(start), config, start)
   }
-  if (scopedSections.length) return mergeTableAnswers(extractSolutionMatches(markdown, scopedSections, config), markdown.slice(start))
-  return mergeTableAnswers(wholeDocument.matches, markdown.slice(start))
+  if (scopedSections.length) return mergeTableAnswers(extractSolutionMatches(markdown, scopedSections, config), markdown.slice(start), config, start)
+  return mergeTableAnswers(wholeDocument.matches, markdown.slice(start), config, start)
 }
 
 function candidateIssuesForSolutionWarnings(solution: SolutionMatch | undefined): CandidateIssue[] {
@@ -545,8 +599,10 @@ function candidateFromChunk(
   const analysisRange = solutionRange(fields.analysisRange, solution?.analysisRange)
   const figures = dedupeFigures([
     ...figuresForRange(document, stemRange, 'stem'),
+    ...figuresForRange(document, answerRange, 'analysis'),
     ...figuresForRange(document, analysisRange, 'analysis'),
     ...figuresForMarkdown(stemMarkdown, 'stem'),
+    ...figuresForMarkdown(answerText, 'analysis'),
     ...figuresForMarkdown(analysisMarkdown, 'analysis'),
   ])
   const sourceRefs = dedupeSourceRefs([
@@ -570,6 +626,8 @@ function candidateFromChunk(
     status: 'needs_review',
     ...DEFAULT_IMPORT_METADATA,
     issues: [],
+    parseDiagnostics: [],
+    parserConfigSnapshot: {},
     createdAt: timestamp,
     updatedAt: timestamp,
   }
@@ -603,12 +661,15 @@ function fallbackCandidate(document: OCRDocument, timestamp: string, config: Imp
     figures: dedupeFigures([
       ...figuresForRange(document, fields.stemRange || fullRange, 'stem'),
       ...figuresForMarkdown(stemMarkdown, 'stem'),
+      ...figuresForMarkdown(answerText, 'analysis'),
       ...figuresForMarkdown(analysisMarkdown, 'analysis'),
     ]),
     sourceRefs: sourceRefsForRange(document, fields.stemRange || fullRange, 'stem'),
     status: 'needs_review',
     ...DEFAULT_IMPORT_METADATA,
     issues: [],
+    parseDiagnostics: [],
+    parserConfigSnapshot: {},
     createdAt: timestamp,
     updatedAt: timestamp,
   }
@@ -620,6 +681,7 @@ function fallbackCandidate(document: OCRDocument, timestamp: string, config: Imp
 function fillDoc2xFigures(
   document: OCRDocument,
   stemMarkdown: string,
+  answerMarkdown: string,
   analysisMarkdown: string,
   existingFigures: CandidateFigure[],
 ): { figures: CandidateFigure[]; ignoredFigureIds: string[]; warnings: string[] } {
@@ -670,6 +732,7 @@ function fillDoc2xFigures(
   }
   
   scan(stemMarkdown, 'stem')
+  scan(answerMarkdown, 'analysis')
   scan(analysisMarkdown, 'analysis')
   
   const finalFigures = figures.filter((figure) => {
@@ -726,6 +789,7 @@ export function parseQuestionCandidates(document: OCRDocument, options: ParseQue
     const { figures: finalFigures, ignoredFigureIds, warnings } = fillDoc2xFigures(
       alignedDocument,
       candidate.stemMarkdown,
+      candidate.answerText,
       candidate.analysisMarkdown,
       candidate.figures
     )

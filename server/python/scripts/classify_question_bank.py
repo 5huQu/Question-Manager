@@ -50,7 +50,10 @@ USER_PROMPT = """请对以下题目进行分类。
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="对当前题库题目批量生成知识点与解题方法标签")
-    parser.add_argument("--run-id", default="", help="只处理指定 OCR 批次导入的题目")
+    parser.add_argument("--run-id", default="", help="兼容参数：只处理指定 OCR 批次导入的题目")
+    parser.add_argument("--import-job-id", default="", help="兼容参数：只处理指定资料导入批次的题目")
+    parser.add_argument("--scope-type", choices=["all", "pdf_slicer_run", "import_job"], default="", help="题目批次范围类型")
+    parser.add_argument("--scope-id", default="", help="题目批次范围 ID")
     parser.add_argument("--limit", type=int, default=0, help="限制处理题目数量；0 表示全量")
     parser.add_argument("--only-missing", action="store_true", help="只处理还没有标签的题目")
     parser.add_argument("--concurrency", type=int, default=4, help="并发数，最大 10")
@@ -219,6 +222,38 @@ def classify(row: sqlite3.Row, libraries: dict[str, list[str]], cfg: dict[str, s
     raise RuntimeError(last_error or "分类模型调用失败")
 
 
+def classification_scope(args: argparse.Namespace) -> tuple[str, str]:
+    if args.scope_type:
+        return args.scope_type, str(args.scope_id or "")
+    if args.import_job_id:
+        return "import_job", str(args.import_job_id)
+    if args.run_id:
+        return "pdf_slicer_run", str(args.run_id)
+    return "all", ""
+
+
+def import_job_source_ids(conn: sqlite3.Connection, job_id: str) -> list[str]:
+    rows = conn.execute(
+        "SELECT source_document_id FROM import_job_documents WHERE job_id = ? ORDER BY sort_order ASC, created_at ASC",
+        [job_id],
+    ).fetchall()
+    return [str(row["source_document_id"]) for row in rows if str(row["source_document_id"] or "").strip()]
+
+
+def scoped_where(conn: sqlite3.Connection, scope_type: str, scope_id: str) -> tuple[list[str], list[object]]:
+    if scope_type == "all":
+        return [], []
+    if not scope_id:
+        raise RuntimeError("题目分类缺少批次范围 ID")
+    if scope_type == "pdf_slicer_run":
+        return ["source_run_id = ?"], [scope_id]
+    if scope_type == "import_job":
+        import_source_ids = [scope_id, f"ifv2-job:{scope_id}", *import_job_source_ids(conn, scope_id)]
+        placeholders = ", ".join("?" for _ in import_source_ids)
+        return [f"import_source_id IN ({placeholders})"], import_source_ids
+    raise RuntimeError(f"不支持的题目分类范围：{scope_type}")
+
+
 def main() -> int:
     args = parse_args()
     conn = sqlite3.connect(DB_PATH)
@@ -229,11 +264,8 @@ def main() -> int:
     if "difficulty_label" not in columns:
         conn.execute("ALTER TABLE question_bank_items ADD COLUMN difficulty_label TEXT NOT NULL DEFAULT ''")
     conn.commit()
-    where_clauses: list[str] = []
-    params: list[object] = []
-    if args.run_id:
-        where_clauses.append("source_run_id = ?")
-        params.append(args.run_id)
+    scope_type, scope_id = classification_scope(args)
+    where_clauses, params = scoped_where(conn, scope_type, scope_id)
     if args.only_missing:
         where_clauses.append("(knowledge_points_json = '[]' OR solution_methods_json = '[]' OR difficulty_score_10 = 0 OR difficulty_label = '')")
     where = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
@@ -272,7 +304,10 @@ def main() -> int:
             except Exception as exc:
                 failures.append({"id": qid, "error": str(exc)})
     report = {
-        "runId": args.run_id,
+        "scopeType": scope_type,
+        "scopeId": scope_id,
+        "runId": scope_id if scope_type == "pdf_slicer_run" else "",
+        "importJobId": scope_id if scope_type == "import_job" else "",
         "total": len(rows),
         "updated": len(results),
         "failed": len(failures),

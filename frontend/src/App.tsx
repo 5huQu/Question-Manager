@@ -3,6 +3,7 @@ import { Route, Routes, useLocation, useNavigate, useParams, useSearchParams } f
 import { FilterX, Plus, ShoppingBag } from 'lucide-react'
 import { settingsApi } from '@/api/settings'
 import { collectionsApi } from '@/api/collections'
+import { importV2Api } from '@/api/importV2'
 import { UpdateCard } from '@/components/UpdateCard'
 import { AppPageHeader } from '@/components/layout/AppPageHeader'
 import { AppSidebar } from '@/components/layout/AppSidebar'
@@ -12,6 +13,9 @@ import type { UpdateCheckResult } from '@/api/client'
 
 const TraditionalWorkbenchPage = lazy(() => import('@/pages/workbench/TraditionalWorkbenchPage'))
 const ImportV2Page = lazy(() => import('@/pages/import-v2/ImportV2Page'))
+const ImportJobsListPage = lazy(() => import('@/pages/import-v2/ImportJobsListPage'))
+const ImportUploadPage = lazy(() => import('@/pages/import-v2/ImportUploadPage'))
+const ImportJobQuestionsPage = lazy(() => import('@/pages/import-v2/ImportJobQuestionsPage'))
 const PdfSlicerPage = lazy(() => import('@/pages/pdf-slicer/PdfSlicerPage'))
 const OcrQueuePage = lazy(() => import('@/pages/ocr/OcrQueuePage'))
 const QuestionBankPage = lazy(() => import('@/pages/questions/QuestionBankPage'))
@@ -54,6 +58,38 @@ function LegacyCandidateFixRedirect() {
   }, [candidateId, navigate, searchParams])
 
   return null
+}
+
+function RunQuestionsRoute() {
+  const { runId = '' } = useParams()
+  const decodedRunId = decodeURIComponent(runId)
+  if (!decodedRunId.startsWith('ifv2:') && !decodedRunId.startsWith('ifv2-job:')) {
+    return <RunQuestionsPage />
+  }
+  return <LegacyImportV2RunQuestionsRedirect runId={decodedRunId} />
+}
+
+function LegacyImportV2RunQuestionsRedirect({ runId }: { runId: string }) {
+  const navigate = useNavigate()
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    importV2Api.resolveImportJobForRunId(runId)
+      .then((detail) => {
+        if (!active) return
+        navigate(`/tools/import/jobs/${encodeURIComponent(detail.importJob.id)}/questions`, { replace: true })
+      })
+      .catch((err) => {
+        if (!active) return
+        setError(err instanceof Error ? err.message : String(err))
+      })
+    return () => {
+      active = false
+    }
+  }, [navigate, runId])
+
+  return <div className="p-6 text-sm text-zinc-500">{error || '正在跳转到导入批次题目页...'}</div>
 }
 
 export default function App() {
@@ -142,7 +178,17 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<NavigateToWorkbench />} />
                 <Route path="/workbench" element={<TraditionalWorkbenchPage />} />
-                <Route path="/tools/import" element={<ImportV2Page />} />
+                <Route path="/tools/import" element={<ImportJobsListPage />} />
+                <Route path="/tools/import/upload" element={<ImportUploadPage />} />
+                <Route path="/tools/import/jobs/:jobId" element={<ImportV2Page />} />
+                <Route path="/tools/import/jobs/:jobId/candidates" element={<ImportV2Page />} />
+                <Route path="/tools/import/jobs/:jobId/candidates/:candidateId" element={<ImportV2Page />} />
+                <Route path="/tools/import/jobs/:jobId/documents/:sourceDocumentId" element={<ImportV2Page />} />
+                <Route path="/tools/import/jobs/:jobId/documents/:sourceDocumentId/candidates" element={<ImportV2Page />} />
+                <Route path="/tools/import/jobs/:jobId/documents/:sourceDocumentId/candidates/:candidateId" element={<ImportV2Page />} />
+                <Route path="/tools/import/jobs/:jobId/documents/:sourceDocumentId/candidates/:candidateId/manual-fix" element={<CandidateFixWorkbenchPage />} />
+                <Route path="/tools/import/jobs/:jobId/questions" element={<ImportJobQuestionsPage />} />
+                <Route path="/tools/import/jobs/:jobId/exports" element={<ExportRecordsPage />} />
                 <Route path="/tools/import/documents/:sourceDocumentId" element={<ImportV2Page />} />
                 <Route path="/tools/import/documents/:sourceDocumentId/candidates" element={<ImportV2Page />} />
                 <Route path="/tools/import/documents/:sourceDocumentId/candidates/:candidateId" element={<ImportV2Page />} />
@@ -157,7 +203,7 @@ export default function App() {
                 <Route path="/learning-tags" element={<LearningTagsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/exports" element={<ExportRecordsPage />} />
-                <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<RunQuestionsPage />} />
+                <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<RunQuestionsRoute />} />
                 <Route path="/tools/pdf-slicer/runs/:runId/pending-bank" element={<PendingBankPage />} />
                 <Route path="/tools/pdf-slicer/batches/:batchId/annotate" element={<AnnotationWorkbenchPage />} />
                 <Route path="/tools/import/candidates/:candidateId/manual-fix" element={<LegacyCandidateFixRedirect />} />

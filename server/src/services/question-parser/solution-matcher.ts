@@ -36,9 +36,23 @@ export type SolutionMatch = {
   warnings?: string[]
 }
 
+export type InlineAnswerTableEntry = {
+  questionNo: string
+  answerText: string
+  range: MarkdownRange
+}
+
+export type InlineAnswerTableBlock = {
+  start: number
+  end: number
+  entries: InlineAnswerTableEntry[]
+}
+
 const PAGE_MARKER_RE = /<!--\s*(?:GLM|DOC2X)_PAGE:\d+\s*-->/g
 const ANSWER_MARKER_RE = /【\s*答案\s*】|答案\s*[:：]/
 const ANALYSIS_MARKER_RE = /【\s*(?:解析|分析|详解)\s*】|(?:解析|分析|详解)\s*[:：]/
+const ANSWER_TABLE_RE = /<table\b[^>]*>[\s\S]*?<\/table>/gi
+const INLINE_ANSWER_MARKER_RE = /(?:^|\s)([0-9０-９]{1,3})\s*(?:\\cdot|[、:：]|[.．](?![0-9０-９]))\s*/g
 
 function cleanField(value: string) {
   return String(value || '').replace(PAGE_MARKER_RE, '').trim()
@@ -55,6 +69,278 @@ function rangeFor(source: string, offset: number, start: number, end: number): M
   while (rangeStart < rangeEnd && /\s/.test(source[rangeStart])) rangeStart += 1
   while (rangeEnd > rangeStart && /\s/.test(source[rangeEnd - 1])) rangeEnd -= 1
   return rangeEnd > rangeStart ? { start: offset + rangeStart, end: offset + rangeEnd } : undefined
+}
+
+function normalizeDigits(value: string) {
+  return value.replace(/[０-９]/g, (char) => String(char.charCodeAt(0) - '０'.charCodeAt(0)))
+}
+
+function unwrapLatexCommand(value: string, command: string) {
+  const source = String(value || '')
+  const pattern = new RegExp(`\\\\${command}\\s*\\{`, 'g')
+  let result = ''
+  let cursor = 0
+
+  while (cursor < source.length) {
+    pattern.lastIndex = cursor
+    const match = pattern.exec(source)
+    if (!match) break
+
+    const contentStart = pattern.lastIndex
+    let depth = 1
+    let index = contentStart
+    while (index < source.length && depth > 0) {
+      if (source[index] === '{') depth += 1
+      else if (source[index] === '}') depth -= 1
+      index += 1
+    }
+    if (depth !== 0) break
+
+    result += source.slice(cursor, match.index)
+    result += source.slice(contentStart, index - 1)
+    cursor = index
+  }
+
+  return result + source.slice(cursor)
+}
+
+function normalizeInlineAnswer(value: string) {
+  let text = String(value || '')
+    .replace(PAGE_MARKER_RE, '')
+    .replace(/[;；,，、]\s*$/g, '')
+    .trim()
+  text = unwrapLatexCommand(text, 'underline')
+  text = text.replace(/\$\s+/g, '$').replace(/\s+\$/g, '$')
+  text = text.replace(/\$([^$]+)\$/g, (_match, inner: string) => {
+    const clean = inner.trim()
+    const compact = /^[0-9０-９\s+\-*/=.]+$/.test(clean) ? clean.replace(/\s+/g, '') : clean
+    return `$${normalizeDigits(compact)}$`
+  })
+  return text
+}
+
+function normalizeInlineQuestionNo(value: string) {
+  const normalized = normalizeDigits(value).trim()
+  const parsed = Number.parseInt(normalized, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? String(parsed) : ''
+}
+
+function trimmedRange(offset: number, source: string, start: number, end: number): MarkdownRange {
+  let rangeStart = Math.max(0, start)
+  let rangeEnd = Math.min(source.length, end)
+  while (rangeStart < rangeEnd && /\s/.test(source[rangeStart])) rangeStart += 1
+  while (rangeEnd > rangeStart && /\s/.test(source[rangeEnd - 1])) rangeEnd -= 1
+  return { start: offset + rangeStart, end: offset + rangeEnd }
+}
+
+function inlineAnswerLooksShort(value: string) {
+  const compact = String(value || '')
+    .replace(/\$[^$]*\$/g, 'M')
+    .replace(/\\[a-zA-Z]+/g, 'M')
+    .replace(/\s+/g, '')
+  if (!compact || compact.length > 40) return false
+  return !/(教材题源|高考题源|课标要求|命题说明|本小题|解析|分析|证明|详解|答案为|故选|解[:：])/.test(compact)
+}
+
+export function extractInlineAnswerTableBlocks(markdown: string): InlineAnswerTableBlock[] {
+  const source = String(markdown || '')
+  const blocks: InlineAnswerTableBlock[] = []
+  const lines = source.split(/(?<=\n)/)
+  let offset = 0
+
+  for (const lineWithNewline of lines) {
+    const line = lineWithNewline.replace(/\r?\n$/, '')
+    const matches = Array.from(line.matchAll(INLINE_ANSWER_MARKER_RE))
+    if (matches.length < 2) {
+      offset += lineWithNewline.length
+      continue
+    }
+
+    const entries: InlineAnswerTableEntry[] = []
+    for (let index = 0; index < matches.length; index += 1) {
+      const match = matches[index]
+      const questionNo = normalizeInlineQuestionNo(match[1] || '')
+      if (!questionNo) continue
+      const next = matches[index + 1]
+      const answerStart = (match.index || 0) + match[0].length
+      const answerEnd = next ? (next.index || 0) : line.length
+      const answerText = normalizeInlineAnswer(line.slice(answerStart, answerEnd))
+      if (!answerText || !inlineAnswerLooksShort(answerText)) continue
+      entries.push({
+        questionNo,
+        answerText,
+        range: trimmedRange(offset, line, answerStart, answerEnd),
+      })
+    }
+
+    if (entries.length >= 2) {
+      blocks.push({
+        start: offset,
+        end: offset + line.length,
+        entries,
+      })
+    }
+    offset += lineWithNewline.length
+  }
+
+  return blocks
+}
+
+export function extractInlineAnswerTableEntries(markdown: string) {
+  return extractInlineAnswerTableBlocks(markdown).flatMap((block) => block.entries)
+}
+
+export function firstAnswerTableStart(source: string) {
+  const text = String(source || '')
+  let first: number | undefined
+  for (const match of text.matchAll(ANSWER_TABLE_RE)) {
+    if (!/题号|序号/.test(match[0]) || !/答案/.test(match[0])) continue
+    first = Math.min(first ?? Number.POSITIVE_INFINITY, match.index || 0)
+  }
+  for (const block of extractInlineAnswerTableBlocks(text)) {
+    first = Math.min(first ?? Number.POSITIVE_INFINITY, block.start)
+  }
+  return first === undefined || !Number.isFinite(first) ? undefined : first
+}
+
+function answerTableRanges(source: string): MarkdownRange[] {
+  const ranges: MarkdownRange[] = []
+  for (const match of source.matchAll(ANSWER_TABLE_RE)) {
+    if (!/题号|序号/.test(match[0]) || !/答案/.test(match[0])) continue
+    const start = match.index || 0
+    ranges.push({ start, end: start + match[0].length })
+  }
+  for (const block of extractInlineAnswerTableBlocks(source)) {
+    ranges.push({ start: block.start, end: block.end })
+  }
+  return ranges
+}
+
+function maskRanges(source: string, ranges: MarkdownRange[]) {
+  if (!ranges.length) return source
+  const chars = source.split('')
+  for (const range of ranges) {
+    for (let index = range.start; index < range.end && index < chars.length; index += 1) {
+      if (chars[index] !== '\n' && chars[index] !== '\r') chars[index] = ' '
+    }
+  }
+  return chars.join('')
+}
+
+export function maskAnswerTableBlocks(markdown: string) {
+  const source = String(markdown || '')
+  return maskRanges(source, answerTableRanges(source))
+}
+
+const CHINESE_SECTION_PREFIX_RE = /^[一二三四五六七八九十百千万]+[、.．]/
+
+function normalizedConfigTitle(value: string) {
+  return cleanHeadingLine(value).replace(CHINESE_SECTION_PREFIX_RE, '')
+}
+
+function sectionHeadingForLine(line: string, config: ImportFlowV2ParserConfig) {
+  const title = cleanHeadingLine(line)
+  const strippedTitle = title.replace(CHINESE_SECTION_PREFIX_RE, '')
+  return config.sectionHeadings.find((heading) => {
+    const normalized = normalizedConfigTitle(heading)
+    return Boolean(normalized) && (title === normalized || title.startsWith(normalized) || strippedTitle === normalized || strippedTitle.startsWith(normalized))
+  })
+}
+
+function solutionHeadingForLine(line: string, config: ImportFlowV2ParserConfig) {
+  const title = cleanHeadingLine(line)
+  return config.solutionSectionKeywords.find((keyword) => {
+    const normalized = keyword.replace(/\s+/g, '')
+    return title === normalized || title.endsWith(normalized)
+  })
+}
+
+function isMetadataBlockBoundaryLine(line: string, config: ImportFlowV2ParserConfig) {
+  const trimmed = String(line || '').trim()
+  if (!trimmed) return false
+  if (metadataKeywordForLine(line, config)) return false
+  if (/^<table\b/i.test(trimmed)) return true
+  return Boolean(sectionHeadingForLine(line, config) || solutionHeadingForLine(line, config))
+}
+
+export function metadataBlockRanges(markdown: string, config: ImportFlowV2ParserConfig = getParserConfig()): MarkdownRange[] {
+  const source = String(markdown || '')
+  const lines = source.split(/(?<=\n)/)
+  const ranges: MarkdownRange[] = []
+  let offset = 0
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const lineWithNewline = lines[index]
+    const line = lineWithNewline.replace(/\r?\n$/, '')
+    if (!metadataKeywordForLine(line, config)) {
+      offset += lineWithNewline.length
+      continue
+    }
+
+    const start = offset
+    const headingEnd = offset + lineWithNewline.length
+    let cursor = headingEnd
+    let boundaryFound = false
+    for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex += 1) {
+      const nextLineWithNewline = lines[nextIndex]
+      const nextLine = nextLineWithNewline.replace(/\r?\n$/, '')
+      if (isMetadataBlockBoundaryLine(nextLine, config)) {
+        boundaryFound = true
+        break
+      }
+      cursor += nextLineWithNewline.length
+    }
+
+    ranges.push({ start, end: boundaryFound ? cursor : headingEnd })
+    offset = headingEnd
+  }
+  return ranges
+}
+
+export function maskNonSolutionBlocks(markdown: string, config: ImportFlowV2ParserConfig = getParserConfig()) {
+  const source = String(markdown || '')
+  return maskRanges(source, [
+    ...answerTableRanges(source),
+    ...metadataBlockRanges(source, config),
+  ])
+}
+
+function cleanHeadingLine(line: string) {
+  return String(line || '')
+    .replace(/^\s*(?:#{1,6}\s*)?/, '')
+    .replace(/^\s*【\s*/, '')
+    .replace(/\s*】\s*$/, '')
+    .replace(/\s*[:：]?\s*$/, '')
+    .replace(/\s+/g, '')
+}
+
+function metadataKeywordForLine(line: string, config: ImportFlowV2ParserConfig) {
+  const title = cleanHeadingLine(line)
+  return config.metadataBlockKeywords.find((keyword) => {
+    const normalizedKeyword = keyword.replace(/\s+/g, '')
+    return title === normalizedKeyword || title.startsWith(normalizedKeyword)
+  })
+}
+
+export function metadataOnlySolutionBlock(value: string, config: ImportFlowV2ParserConfig = getParserConfig()) {
+  const source = String(value || '')
+    .replace(PAGE_MARKER_RE, '')
+    .replace(ANSWER_TABLE_RE, '')
+    .replace(/^(?:.*(?:^|\s)[0-9０-９]{1,3}\s*(?:\\cdot|[.．、:：])\s*){2,}.*$/gm, '')
+    .replace(/^\s*#{1,6}\s*(?:[一二三四五六七八九十]+[、.．]\s*)?(?:选择题|填空题|解答题|选做题).*$/gm, '')
+    .trim()
+  if (!source) return true
+  const lines = source.split(/\n+/).map((line) => line.trim()).filter(Boolean)
+  if (!lines.length) return true
+  return lines.every((line) => {
+    if (metadataKeywordForLine(line, config)) return true
+    return /^(?:[（(]\s*\d+\s*[)）]\s*)?(?:教材题源|高考题源|课标要求)\s*[:：]/.test(line)
+  })
+}
+
+function trimBodyBeforeAnswerTable(body: string) {
+  const tableStart = firstAnswerTableStart(body)
+  return tableStart === undefined ? body : body.slice(0, tableStart).trimEnd()
 }
 
 export function splitQuestionFields(body: string, offset = 0): ParsedQuestionFields {
@@ -188,12 +474,15 @@ export function extractSolutionMatches(markdown: string, sections: SolutionSecti
   const matches = new Map<string, SolutionMatch>()
   for (const section of sections) {
     const content = source.slice(section.contentStart, section.end)
+    const matchingContent = maskNonSolutionBlocks(content, config)
     const offset = section.contentStart
-    const starts = detectSolutionQuestionNumbers(content, config)
+    const starts = detectSolutionQuestionNumbers(matchingContent, config)
     const chunks = splitMarkdownByQuestionNumbers(content, starts)
     for (const chunk of chunks) {
-      const fields = splitQuestionFields(chunk.body, offset + chunk.contentStart)
-      const fallbackRange = { start: offset + chunk.contentStart, end: offset + chunk.end }
+      const body = trimBodyBeforeAnswerTable(chunk.body)
+      if (config.metadataBlockPolicy === 'ignore' && metadataOnlySolutionBlock(body, config)) continue
+      const fields = splitQuestionFields(body, offset + chunk.contentStart)
+      const fallbackRange = { start: offset + chunk.contentStart, end: offset + chunk.contentStart + body.length }
       const patch = solutionPatchForSection(section, fields, fallbackRange)
       matches.set(chunk.questionNo, mergeSolutionMatch(matches.get(chunk.questionNo), patch))
     }

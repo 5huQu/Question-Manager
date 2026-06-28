@@ -20,6 +20,7 @@ export function WorkbenchQuestionCard({
   onReload,
   onQuestionSaved,
   isInBasket = false,
+  showFigureAction = true,
 }: {
   item: QuestionItem
   onAddToBasket: (id: string) => void
@@ -27,6 +28,7 @@ export function WorkbenchQuestionCard({
   onReload: () => void
   onQuestionSaved?: (item: QuestionItem) => void
   isInBasket?: boolean
+  showFigureAction?: boolean
 }) {
   const [cropOpen, setCropOpen] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -64,8 +66,8 @@ export function WorkbenchQuestionCard({
   const chapter = item.chapter || item.knowledgePoints?.[0] || '未分类'
   const date = item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : ''
 
-  const btnOutlineClass = "inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 cursor-pointer"
-  const btnDangerClass = "inline-flex items-center gap-1 rounded border border-red-200 bg-white px-2 py-1 text-[10px] font-semibold text-red-650 transition-colors hover:bg-red-50 hover:text-red-700 dark:border-red-900/30 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30 cursor-pointer"
+  const btnOutlineClass = "inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white h-7 px-2.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 cursor-pointer shadow-xs"
+  const btnDangerClass = "inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50/20 h-7 px-2.5 text-xs font-medium text-red-700 hover:bg-red-50 transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-950 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400 dark:hover:bg-red-950/30 cursor-pointer shadow-xs"
 
   return (
     <article
@@ -91,17 +93,19 @@ export function WorkbenchQuestionCard({
             onClick={() => setEditing(true)}
             className={btnOutlineClass}
           >
-            <PencilLine className="size-3" />
+            <PencilLine className="size-3.5" />
             编辑
           </button>
-          <button
-            type="button"
-            onClick={() => setCropOpen(true)}
-            className={btnOutlineClass}
-          >
-            <Crop className="size-3" />
-            框选题图
-          </button>
+          {showFigureAction ? (
+            <button
+              type="button"
+              onClick={() => setCropOpen(true)}
+              className={btnOutlineClass}
+            >
+              <Crop className="size-3.5" />
+              框选题图
+            </button>
+          ) : null}
           <Link
             to={`/questions/${encodeURIComponent(item.id)}`}
             className={btnOutlineClass}
@@ -113,7 +117,7 @@ export function WorkbenchQuestionCard({
             onClick={() => onDelete(item.id)}
             className={btnDangerClass}
           >
-            <Trash2 className="size-3" />
+            <Trash2 className="size-3.5" />
             删除
           </button>
           <span className="shrink-0 font-mono text-[10px] text-zinc-400 dark:text-zinc-500 ml-1">
@@ -170,9 +174,9 @@ export function WorkbenchQuestionCard({
               event.stopPropagation()
               setShowAnalysis((value) => !value)
             }}
-            className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 cursor-pointer"
+            className={btnOutlineClass}
           >
-            {showAnalysis ? <><ChevronUp className="size-3" />收起解析</> : <><ChevronDown className="size-3" />查看解析</>}
+            {showAnalysis ? <><ChevronUp className="size-3.5" />收起解析</> : <><ChevronDown className="size-3.5" />查看解析</>}
           </button>
           <button
             type="button"
@@ -180,13 +184,13 @@ export function WorkbenchQuestionCard({
               event.stopPropagation()
               onAddToBasket(item.id)
             }}
-            className={`inline-flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-bold transition-colors ${
+            className={`inline-flex items-center gap-1.5 rounded-md h-7 px-3 text-xs font-medium transition-all ${
               isInBasket
                 ? 'border border-zinc-200 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100'
                 : 'bg-zinc-900 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200 cursor-pointer'
             }`}
           >
-            {isInBasket ? <><Check className="size-3" />已在试题篮</> : <><ShoppingBag className="size-3" />加入试题篮</>}
+            {isInBasket ? <><Check className="size-3.5" />已在试题篮</> : <><ShoppingBag className="size-3.5" />加入试题篮</>}
           </button>
         </div>
       </div>
@@ -213,6 +217,7 @@ function QuestionBankDraftCard({
   onToggleBasket,
   onSelect,
   onClick,
+  onQuestionSaved,
 }: {
   item: QuestionItem
   isInBasket: boolean
@@ -221,13 +226,29 @@ function QuestionBankDraftCard({
   onToggleBasket: (id: string) => void
   onSelect: (id: string) => void
   onClick: () => void
+  onQuestionSaved?: (item: QuestionItem) => void
 }) {
   const [showAnalysis, setShowAnalysis] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<Partial<QuestionItem>>(item)
   const stem = item.stemMarkdown || richBlocksPlainText(item.problemBlocks)
   const answer = item.answerText || richBlocksPlainText(item.answerBlocks)
   const analysis = item.analysisMarkdown || richBlocksPlainText(item.analysisBlocks)
   const chapter = item.chapter || item.knowledgePoints?.[0] || '未分类'
   const date = item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : ''
+
+  const btnOutlineClass = "inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white h-7 px-2.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 cursor-pointer shadow-xs"
+
+  useEffect(() => {
+    setDraft(item)
+  }, [item])
+
+  async function saveEditedQuestion(nextDraft = draft) {
+    const saved = await questionBankApi.updateItem(item.id, nextDraft)
+    setDraft(saved)
+    setEditing(false)
+    onQuestionSaved?.(saved)
+  }
 
   return (
     <div
@@ -265,7 +286,27 @@ function QuestionBankDraftCard({
             </span>
           </div>
         </div>
-        <span className="shrink-0 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">#{item.serialNo ?? item.questionNo ?? item.id.slice(0, 6)}</span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              setEditing(true)
+            }}
+            className={btnOutlineClass}
+          >
+            <PencilLine className="size-3.5" />
+            编辑
+          </button>
+          <Link
+            to={`/questions/${encodeURIComponent(item.id)}`}
+            onClick={(event) => event.stopPropagation()}
+            className={btnOutlineClass}
+          >
+            详情
+          </Link>
+          <span className="ml-1 shrink-0 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">#{item.serialNo ?? item.questionNo ?? item.id.slice(0, 6)}</span>
+        </div>
       </div>
 
       <div className="select-text font-sans text-xs leading-relaxed text-zinc-900 dark:text-zinc-100">
@@ -316,9 +357,9 @@ function QuestionBankDraftCard({
               event.stopPropagation()
               setShowAnalysis((value) => !value)
             }}
-            className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-2 py-1 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            className={btnOutlineClass}
           >
-            {showAnalysis ? <><ChevronUp className="size-3" />收起解析</> : <><ChevronDown className="size-3" />查看解析</>}
+            {showAnalysis ? <><ChevronUp className="size-3.5" />收起解析</> : <><ChevronDown className="size-3.5" />查看解析</>}
           </button>
           <button
             type="button"
@@ -326,16 +367,17 @@ function QuestionBankDraftCard({
               event.stopPropagation()
               if (!isInBasket) onToggleBasket(item.id)
             }}
-            className={`inline-flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-bold transition-colors ${
+            className={`inline-flex items-center gap-1.5 rounded-md h-7 px-3 text-xs font-medium transition-all ${
               isInBasket
                 ? 'border border-zinc-200 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100'
-                : 'bg-zinc-900 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200'
+                : 'bg-zinc-900 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200 cursor-pointer'
             }`}
           >
-            {isInBasket ? <><Check className="size-3" />已在试题篮</> : <><ShoppingBag className="size-3" />加入试题篮</>}
+            {isInBasket ? <><Check className="size-3.5" />已在试题篮</> : <><ShoppingBag className="size-3.5" />加入试题篮</>}
           </button>
         </div>
       </div>
+      {editing ? <EditDialog draft={draft} setDraft={setDraft} onClose={() => setEditing(false)} onSave={saveEditedQuestion} /> : null}
     </div>
   )
 }
@@ -902,6 +944,7 @@ export function BankTab({
                     setPreviewId(item.id)
                     toggleSelected(item.id)
                   }}
+                  onQuestionSaved={onQuestionSaved}
                 />
               )
             })}

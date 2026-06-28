@@ -3,25 +3,25 @@ import { createQuestion, getQuestion } from '../../db/questions.js'
 import * as sourceRepo from '../../repositories/source-documents.repo.js'
 import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
 import * as candidateRepo from '../../repositories/question-candidates.repo.js'
-import type { CandidateIssue, QuestionCandidate, QuestionCandidateStatus, UpdateQuestionCandidateInput } from '../../types/question-candidate.js'
+import type { CandidateParseDiagnostic, QuestionCandidate, QuestionCandidateStatus, UpdateQuestionCandidateInput } from '../../types/question-candidate.js'
 import { RouteError } from '../../utils/http-error.js'
 import { nowIso } from '../../utils/ids.js'
 import { difficultyLabel10, normalizeDifficultyScore10 } from '../../utils/search.js'
 import { inferQuestionType, normalizeQuestionType } from '../../utils/question-type.js'
 import { normalizeTags } from '../tags/tag-libraries.js'
-import { parseQuestionCandidates } from '../question-parser/index.js'
-import { statusForIssues, validateQuestionCandidate } from '../question-parser/candidate-validator.js'
+import { buildParserPreview, parseQuestionCandidates } from '../question-parser/index.js'
+import { parserConfigForRequest } from '../question-parser/parser-config.js'
+import type { ImportFlowV2ParserConfig } from '../question-parser/default-parser-config.js'
+import {
+  LIVE_VALIDATION_ISSUE_CODES,
+  refreshCandidateParseDiagnostics,
+  statusForIssues,
+  validateQuestionCandidate,
+  validationIssueDiagnostics,
+} from '../question-parser/candidate-validator.js'
 import { revalidateAllCandidatesForSourceDocument } from '../pdf-slicer/annotations.service.js'
 import { figuresForQuestionBank, getOcrFigureDiagnostics } from './figure-mapping.js'
 import { loadOcrDocument } from './ocr-document.service.js'
-
-const LIVE_VALIDATION_ISSUE_CODES = new Set<CandidateIssue['code']>([
-  'missing_question_no',
-  'duplicate_question_no',
-  'missing_stem',
-  'missing_answer',
-  'missing_analysis',
-])
 
 function candidateStatusCounts(candidates: QuestionCandidate[]) {
   return {
@@ -69,7 +69,12 @@ function liveValidateCandidates(candidates: QuestionCandidate[]) {
     if (candidate.status === 'committed') return candidate
     const baseIssues = candidate.issues.filter((issue) => !LIVE_VALIDATION_ISSUE_CODES.has(issue.code))
     const issues = validateQuestionCandidate({ ...candidate, issues: baseIssues }, duplicateQuestionNos)
-    return { ...candidate, issues, status: statusForIssues(issues) }
+    return {
+      ...candidate,
+      issues,
+      parseDiagnostics: refreshCandidateParseDiagnostics(candidate, issues),
+      status: statusForIssues(issues),
+    }
   })
 }
 
@@ -89,10 +94,8 @@ function importJobContextForSource(sourceDocumentId: string) {
     LIMIT 1
   `).get(sourceDocumentId) as { id: string; title: string; paper_title: string } | undefined
   if (!row) return null
-  const sourceId = `ifv2-job:${row.id}`
   return {
-    importSourceId: sourceId,
-    sourceRunId: sourceId,
+    importSourceId: row.id,
     sourceTitle: row.paper_title || row.title || sourceTitle(sourceDocumentId),
   }
 }
@@ -112,9 +115,49 @@ function sourceMetadata(sourceDocumentId: string) {
   } : {}
 }
 
-export function parseCandidatesForOcrDocument(id: string) {
+function attachParserDiagnostics(
+  document: ReturnType<typeof loadOcrDocument>,
+  candidates: QuestionCandidate[],
+  config: ImportFlowV2ParserConfig,
+) {
+  const preview = buildParserPreview(document, { config })
+  const diagnosticsByQuestion = new Map<string, CandidateParseDiagnostic[]>()
+  for (const diagnostic of preview.diagnostics) {
+    if (!diagnostic.questionNo) continue
+    const current = diagnosticsByQuestion.get(diagnostic.questionNo) || []
+    current.push({
+      code: diagnostic.code,
+      severity: diagnostic.severity,
+      questionNo: diagnostic.questionNo,
+      message: diagnostic.message,
+      start: diagnostic.start,
+      end: diagnostic.end,
+    })
+    diagnosticsByQuestion.set(diagnostic.questionNo, current)
+  }
+
+  return candidates.map((candidate) => {
+    const diagnostics = [
+      ...(diagnosticsByQuestion.get(candidate.questionNo) || []),
+      ...validationIssueDiagnostics(candidate, candidate.issues),
+    ]
+    const uniqueDiagnostics = Array.from(new Map(diagnostics.map((diagnostic) => [`${diagnostic.code}:${diagnostic.message}`, diagnostic])).values())
+    const nextCandidate = {
+      ...candidate,
+      parseDiagnostics: uniqueDiagnostics,
+      parserConfigSnapshot: config,
+    }
+    return {
+      ...nextCandidate,
+      parseDiagnostics: refreshCandidateParseDiagnostics(nextCandidate, candidate.issues),
+    }
+  })
+}
+
+export function parseCandidatesForOcrDocument(id: string, body: Record<string, unknown> = {}) {
   const document = loadOcrDocument(id)
-  const candidates = parseQuestionCandidates(document)
+  const config = parserConfigForRequest(body)
+  const candidates = attachParserDiagnostics(document, parseQuestionCandidates(document, { config }), config)
   const metadata = sourceMetadata(document.sourceDocumentId)
   candidateRepo.deleteQuestionCandidatesForOcrDocument(id)
   const saved = candidates.map((candidate) => candidateRepo.createQuestionCandidate({ ...candidate, ...metadata })).filter(Boolean) as QuestionCandidate[]
@@ -191,7 +234,7 @@ export function commitQuestionCandidate(id: string) {
     answerText: candidate.answerText,
     analysisMarkdown: candidate.analysisMarkdown,
     figures: figuresForQuestionBank(candidate.figures),
-    sourceRunId: importJobContext?.sourceRunId || `ifv2:${candidate.sourceDocumentId}`,
+    sourceRunId: '',
   })
   if (!item) throw new RouteError(500, '入库失败。')
   const committedCandidate = candidateRepo.updateQuestionCandidate(id, {

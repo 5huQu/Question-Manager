@@ -177,12 +177,13 @@ export type CollectionItemRow = QuestionRow & {
   section_name: string
 }
 
-export type ExportRecordSourceType = 'collection' | 'run'
+export type ExportRecordSourceType = 'collection' | 'run' | 'import_job'
 export type ExportRecordRow = {
   id: string
   source_type: ExportRecordSourceType
   collection_id: string
   run_id: string
+  import_job_id: string
   title: string
   format: string
   variant: string

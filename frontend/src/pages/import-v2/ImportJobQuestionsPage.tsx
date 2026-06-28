@@ -1,22 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { BadgeCheck, LoaderCircle, RefreshCcw, Tags } from 'lucide-react'
+import { Database, LoaderCircle, RefreshCcw, Tags } from 'lucide-react'
 import { collectionsApi } from '@/api/collections'
+import { importV2Api, type ImportV2JobQuestionsResponse } from '@/api/importV2'
 import { learningTagsApi } from '@/api/learningTags'
-import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { questionBankApi } from '@/api/questionBank'
-import { RunExportDialog } from '@/components/pdf-slicer/RunExportDialog'
+import { ImportJobExportDialog } from '@/components/import-v2/ImportJobExportDialog'
 import { getActiveCollectionId, basketUpdatedEvent } from '@/components/QuestionBasket'
 import { WorkbenchQuestionCard } from '@/components/questions/WorkbenchQuestionCard'
 import { Button, Empty, Input, SelectFilter } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
-import type { ApiRun, QuestionItem, TagLibraries } from '@/types'
+import type { QuestionItem, TagLibraries } from '@/types'
 import { addQuestionToActiveBasket } from '@/utils/questionBasket'
 
-export function RunQuestionsPage() {
-  const { runId = '' } = useParams()
+export function ImportJobQuestionsPage() {
+  const { jobId = '' } = useParams()
   const navigate = useNavigate()
-  const decodedRunId = decodeURIComponent(runId)
+  const decodedJobId = decodeURIComponent(jobId)
   const [localItems, setLocalItems] = useState<QuestionItem[]>([])
   const [exportOpen, setExportOpen] = useState(false)
   const [classifying, setClassifying] = useState(false)
@@ -27,9 +27,9 @@ export function RunQuestionsPage() {
   const [knowledgePoint, setKnowledgePoint] = useState('')
   const [solutionMethod, setSolutionMethod] = useState('')
 
-  const { data, error, loading, reload } = useAsync<{ run: ApiRun; items: QuestionItem[] }>(
-    () => questionBankApi.listRunQuestions(decodedRunId),
-    [decodedRunId]
+  const { data, error, loading, reload } = useAsync<ImportV2JobQuestionsResponse>(
+    () => importV2Api.listImportJobQuestions(decodedJobId),
+    [decodedJobId],
   )
   const tagLibraries = useAsync<TagLibraries>(() => learningTagsApi.getQuestionBankTagLibraries(), [])
 
@@ -44,42 +44,39 @@ export function RunQuestionsPage() {
     return () => window.removeEventListener(basketUpdatedEvent, handleUpdate)
   }, [basket.reload])
 
-  const basketQuestionIds = useMemo(() => {
-    return new Set((basket.data?.questions ?? []).map((entry) => entry.item.id))
-  }, [basket.data?.questions])
-
   useEffect(() => {
     if (data?.items) setLocalItems(data.items)
   }, [data?.items])
 
-  function replaceQuestionInRun(next: QuestionItem) {
+  const basketQuestionIds = useMemo(() => {
+    return new Set((basket.data?.questions ?? []).map((entry) => entry.item.id))
+  }, [basket.data?.questions])
+
+  const primaryDocumentId = useMemo(() => {
+    const documents = data?.documents ?? []
+    return (documents.find((item) => item.role === 'full') || documents.find((item) => item.role === 'questions') || documents[0])?.sourceDocumentId || ''
+  }, [data?.documents])
+
+  function replaceQuestion(next: QuestionItem) {
     setLocalItems((current) => current.map((item) => item.id === next.id ? next : item))
   }
 
   async function addToBasket(id: string) {
-    if (id.startsWith('mock_')) {
-      alert('已将模拟题目加入试题篮 (静态操作)')
-      return
-    }
     await addQuestionToActiveBasket(id)
   }
 
   async function deleteQuestion(id: string) {
     if (!window.confirm('确定删除这道题目？')) return
-    if (id.startsWith('mock_')) {
-      alert('模拟数据已删除 (静态操作)')
-      return
-    }
     await questionBankApi.deleteItem(id)
     setLocalItems((current) => current.filter((item) => item.id !== id))
   }
 
-  async function classifyRunQuestions() {
-    if (!items.length) return
-    if (!window.confirm('确认对当前批次执行数据分类？本操作只更新知识点、解题方法和难度。')) return
+  async function classifyImportJobQuestions() {
+    if (!localItems.length) return
+    if (!window.confirm('确认对当前导入批次执行数据分类？本操作只更新知识点、解题方法和难度。')) return
     setClassifying(true)
     try {
-      const result = await pdfSlicerApi.classifyRunQuestions(decodedRunId)
+      const result = await importV2Api.classifyImportJobQuestions(decodedJobId)
       setLocalItems(result.items)
       await reload()
       const report = result.report
@@ -92,9 +89,9 @@ export function RunQuestionsPage() {
   }
 
   if (loading) return <Empty text="读取中..." />
-  if (error || !data) return <Empty text={error || '批次不存在或无题目数据'} />
+  if (error || !data) return <Empty text={error || '导入批次不存在或无题目数据'} />
 
-  const run = data.run
+  const importJob = data.importJob
   const items = localItems
   const filteredItems = items.filter((item) => {
     const q = query.trim().toLowerCase()
@@ -115,35 +112,42 @@ export function RunQuestionsPage() {
       && (!solutionMethod || (item.solutionMethods ?? []).includes(solutionMethod))
   })
   const hasActiveFilters = Boolean(query.trim() || stage || questionType || difficulty || knowledgePoint || solutionMethod)
-  const allQuestionsBanked = items.length > 0 && items.every((item) => item.bankStatus === 'banked')
 
   return (
     <section className="mock-page-root min-h-[calc(100vh-6rem)] space-y-6 overflow-y-auto bg-zinc-50/30 p-6 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
       <div className="flex flex-col gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400">OCR 队列 / 批次详情</p>
+          <p className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400">资料导入 / 批次题目</p>
           <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            {run.paperTitle || run.pdfName}
+            {importJob.paperTitle || importJob.title || '资料导入批次'}
           </h1>
-          <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">批次 ID: {run.runId}</p>
+          <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">批次 ID: {importJob.id}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
             variant="outline"
-            onClick={classifyRunQuestions}
+            onClick={classifyImportJobQuestions}
             icon={classifying ? LoaderCircle : Tags}
             disabled={classifying || !items.length}
           >
             {classifying ? '分类中...' : '数据分类'}
           </Button>
           <Button size="sm" variant="outline" onClick={() => setExportOpen(true)}>导出批次</Button>
-          <Button size="sm" variant="outline" onClick={() => navigate(-1)}>返回上一页</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            icon={Database}
+            onClick={() => primaryDocumentId
+              ? navigate(`/tools/import/jobs/${encodeURIComponent(importJob.id)}/documents/${encodeURIComponent(primaryDocumentId)}`, { replace: true })
+              : navigate('/tools/import', { replace: true })}
+          >
+            返回导入批次
+          </Button>
           <Button size="sm" variant="outline" onClick={reload} icon={RefreshCcw}>刷新</Button>
-          {!allQuestionsBanked ? <Button size="sm" asLink icon={BadgeCheck} to={`/tools/pdf-slicer/runs/${decodedRunId}/pending-bank`}>查看待入库结果</Button> : null}
         </div>
       </div>
-      {exportOpen ? <RunExportDialog run={run} onClose={() => setExportOpen(false)} /> : null}
+      {exportOpen ? <ImportJobExportDialog importJob={importJob} onClose={() => setExportOpen(false)} /> : null}
 
       <div className="grid gap-2 rounded-xl border border-zinc-200 bg-white p-4 text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 sm:grid-cols-2 lg:grid-cols-6">
         <Input className="h-9 border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 focus-visible:ring-1 focus-visible:ring-zinc-950 dark:focus-visible:ring-zinc-300" placeholder="搜索本批次题目..." value={query} onChange={(event) => setQuery(event.target.value)} />
@@ -168,12 +172,13 @@ export function RunQuestionsPage() {
             onAddToBasket={addToBasket}
             onDelete={deleteQuestion}
             onReload={reload}
-            onQuestionSaved={replaceQuestionInRun}
+            onQuestionSaved={replaceQuestion}
             isInBasket={basketQuestionIds.has(item.id)}
+            showFigureAction={false}
           />
         ))}
         {!items.length ? (
-          <Empty text="该批次下暂无题目。请先在该批次中执行 OCR 或导入题目。" />
+          <Empty text="该导入批次下暂无已入库题目。请先完成题目核对并确认入库。" />
         ) : !filteredItems.length ? (
           <Empty text="未找到匹配筛选条件的题目。" />
         ) : null}
@@ -182,4 +187,4 @@ export function RunQuestionsPage() {
   )
 }
 
-export default RunQuestionsPage
+export default ImportJobQuestionsPage

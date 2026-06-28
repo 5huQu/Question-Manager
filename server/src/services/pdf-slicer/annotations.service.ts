@@ -9,7 +9,12 @@ import { assetPathFor, resolveStoragePath } from '../../utils/paths.js'
 import { pythonCommand, pythonEnv } from '../settings/python.js'
 import { normalizedReviewQuestionNo } from '../../db/review.js'
 import { updateBatchWorkflow } from '../../db/runs.js'
-import { validateQuestionCandidate, statusForIssues } from '../question-parser/candidate-validator.js'
+import {
+  LIVE_VALIDATION_ISSUE_CODES,
+  refreshCandidateParseDiagnostics,
+  validateQuestionCandidate,
+  statusForIssues,
+} from '../question-parser/candidate-validator.js'
 import type { CandidateFigure, CandidateSourceRef } from '../../types/question-candidate.js'
 import * as candidateRepo from '../../repositories/question-candidates.repo.js'
 
@@ -967,17 +972,20 @@ export function revalidateAllCandidatesForSourceDocument(sourceDocumentId: strin
     if (c.status === 'committed') continue
     
     // Filter out standard validation issues before validating
-    const baseIssues = c.issues.filter(
-      (iss) =>
-        !['missing_question_no', 'duplicate_question_no', 'missing_stem', 'missing_answer', 'missing_analysis'].includes(iss.code)
-    )
+    const baseIssues = c.issues.filter((iss) => !LIVE_VALIDATION_ISSUE_CODES.has(iss.code))
     
     const nextIssues = validateQuestionCandidate({ ...c, issues: baseIssues }, duplicateNos)
     const nextStatus = statusForIssues(nextIssues)
+    const nextParseDiagnostics = refreshCandidateParseDiagnostics(c, nextIssues)
     
-    if (JSON.stringify(nextIssues) !== JSON.stringify(c.issues) || nextStatus !== c.status) {
+    if (
+      JSON.stringify(nextIssues) !== JSON.stringify(c.issues)
+      || JSON.stringify(nextParseDiagnostics) !== JSON.stringify(c.parseDiagnostics)
+      || nextStatus !== c.status
+    ) {
       candidateRepo.updateQuestionCandidate(c.id, {
         issues: nextIssues,
+        parseDiagnostics: nextParseDiagnostics,
         status: nextStatus
       })
     }

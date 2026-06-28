@@ -5,14 +5,20 @@ import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
 import * as candidateRepo from '../../repositories/question-candidates.repo.js'
 import type { ImportJob, ImportJobDocument, ImportJobDocumentRole, ImportJobMode } from '../../types/import-job.js'
 import type { SourceDocument } from '../../types/source-document.js'
-import type { QuestionCandidate } from '../../types/question-candidate.js'
+import type { CandidateParseDiagnostic, QuestionCandidate } from '../../types/question-candidate.js'
 import { RouteError } from '../../utils/http-error.js'
 import { parseQuestionCandidates } from '../question-parser/question-candidate.parser.js'
 import { parseSolutionDocument } from '../question-parser/solution-document.parser.js'
 import { mergeQuestionCandidatesWithSolutions } from '../question-parser/question-solution-merge.js'
+import { buildParserPreview } from '../question-parser/parser-preview.js'
+import { parserConfigForRequest } from '../question-parser/parser-config.js'
+import { refreshCandidateParseDiagnostics, validationIssueDiagnostics } from '../question-parser/candidate-validator.js'
+import type { ImportFlowV2ParserConfig } from '../question-parser/default-parser-config.js'
 import { revalidateAllCandidatesForSourceDocument } from '../pdf-slicer/annotations.service.js'
 import { getOcrFigureDiagnostics } from './figure-mapping.js'
 import { loadOcrDocument } from './ocr-document.service.js'
+import { deleteSourceDocument } from './source-document.service.js'
+
 
 const VALID_IMPORT_JOB_MODES: ImportJobMode[] = ['single_document', 'separated_documents']
 const VALID_IMPORT_JOB_DOCUMENT_ROLES: ImportJobDocumentRole[] = ['full', 'questions', 'solutions']
@@ -129,6 +135,44 @@ function saveParsedCandidates(
   }
 }
 
+function attachParserDiagnostics(
+  diagnosticDocument: ReturnType<typeof loadOcrDocument>,
+  candidates: QuestionCandidate[],
+  config: ImportFlowV2ParserConfig,
+) {
+  const preview = buildParserPreview(diagnosticDocument, { config })
+  const diagnosticsByQuestion = new Map<string, CandidateParseDiagnostic[]>()
+  for (const diagnostic of preview.diagnostics) {
+    if (!diagnostic.questionNo) continue
+    const current = diagnosticsByQuestion.get(diagnostic.questionNo) || []
+    current.push({
+      code: diagnostic.code,
+      severity: diagnostic.severity,
+      questionNo: diagnostic.questionNo,
+      message: diagnostic.message,
+      start: diagnostic.start,
+      end: diagnostic.end,
+    })
+    diagnosticsByQuestion.set(diagnostic.questionNo, current)
+  }
+  return candidates.map((candidate) => {
+    const diagnostics = [
+      ...(diagnosticsByQuestion.get(candidate.questionNo) || []),
+      ...validationIssueDiagnostics(candidate, candidate.issues),
+    ]
+    const uniqueDiagnostics = Array.from(new Map(diagnostics.map((diagnostic) => [`${diagnostic.code}:${diagnostic.message}`, diagnostic])).values())
+    const nextCandidate = {
+      ...candidate,
+      parseDiagnostics: uniqueDiagnostics,
+      parserConfigSnapshot: config,
+    }
+    return {
+      ...nextCandidate,
+      parseDiagnostics: refreshCandidateParseDiagnostics(nextCandidate, candidate.issues),
+    }
+  })
+}
+
 export function createImportJob(body: Record<string, unknown>) {
   const importJob = importJobRepo.createImportJob({
     id: body.id ? String(body.id) : undefined,
@@ -175,9 +219,10 @@ export function listImportJobDocuments(id: string) {
   return { items: importJobRepo.listImportJobDocuments(id) }
 }
 
-export function parseCandidatesForImportJob(id: string) {
+export function parseCandidatesForImportJob(id: string, body: Record<string, unknown> = {}) {
   const importJob = requireImportJob(id)
   const documents = importJobRepo.listImportJobDocuments(id)
+  const config = parserConfigForRequest(body)
   importJobRepo.updateImportJob(importJob.id, { status: 'parsing' })
 
   try {
@@ -191,7 +236,8 @@ export function parseCandidatesForImportJob(id: string) {
     const questionSource = requireSourceDocument(questionDocument.sourceDocumentId)
     const questionOcrRecord = latestOcrDocumentForSource(questionSource.id)
     const questionOcrDocument = loadOcrDocument(questionOcrRecord.id)
-    let candidates = parseQuestionCandidates(questionOcrDocument)
+    let candidates = parseQuestionCandidates(questionOcrDocument, { config })
+    let diagnosticDocument = questionOcrDocument
 
     if (importJob.mode === 'separated_documents') {
       const solutionDocument = firstDocumentByRole(documents, 'solutions')
@@ -199,11 +245,13 @@ export function parseCandidatesForImportJob(id: string) {
       const solutionSource = requireSourceDocument(solutionDocument.sourceDocumentId)
       const solutionOcrRecord = latestOcrDocumentForSource(solutionSource.id)
       const solutionOcrDocument = loadOcrDocument(solutionOcrRecord.id)
-      const solutionMatches = parseSolutionDocument(solutionOcrDocument)
+      const solutionMatches = parseSolutionDocument(solutionOcrDocument, { config })
       candidates = mergeQuestionCandidatesWithSolutions(candidates, solutionMatches, solutionOcrDocument)
+      diagnosticDocument = solutionOcrDocument
       sourceRepo.updateSourceDocument(solutionSource.id, { status: 'parsed' })
     }
 
+    candidates = attachParserDiagnostics(diagnosticDocument, candidates, config)
     const { finalCandidates, nextStatus } = saveParsedCandidates(importJob, questionSource, questionOcrDocument.id, candidates)
     return {
       importJob: importJobRepo.getImportJob(importJob.id),
@@ -217,4 +265,85 @@ export function parseCandidatesForImportJob(id: string) {
     importJobRepo.updateImportJob(importJob.id, { status: 'failed' })
     throw error
   }
+}
+
+export function deleteImportJob(id: string) {
+  const importJob = requireImportJob(id)
+  const documents = importJobRepo.listImportJobDocuments(id)
+
+  for (const doc of documents) {
+    try {
+      deleteSourceDocument(doc.sourceDocumentId)
+    } catch (err) {
+      console.error(`Failed to delete source document ${doc.sourceDocumentId} for job ${id}:`, err)
+    }
+  }
+
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    db.prepare('DELETE FROM import_job_documents WHERE job_id = ?').run(id)
+    db.prepare('DELETE FROM import_jobs WHERE id = ?').run(id)
+    db.exec('COMMIT')
+  } catch (error) {
+    try {
+      db.exec('ROLLBACK')
+    } catch {
+      // ignore
+    }
+    throw error
+  }
+
+  return { success: true }
+}
+
+export function updateImportJob(id: string, body: Record<string, unknown>) {
+  const importJob = requireImportJob(id)
+
+  const updated = importJobRepo.updateImportJob(importJob.id, {
+    title: body.title === undefined ? undefined : String(body.title),
+    province: body.province === undefined ? undefined : String(body.province),
+    city: body.city === undefined ? undefined : String(body.city),
+    paperTitle: body.paperTitle === undefined ? undefined : String(body.paperTitle),
+    batchName: body.batchName === undefined ? undefined : String(body.batchName),
+    stage: body.stage === undefined ? undefined : String(body.stage),
+    subject: body.subject === undefined ? undefined : String(body.subject),
+    paperKind: body.paperKind === undefined ? undefined : String(body.paperKind) as any,
+    examYear: body.examYear === undefined ? undefined : (body.examYear ? Number(body.examYear) : null) as any,
+    sourceOrg: body.sourceOrg === undefined ? undefined : String(body.sourceOrg),
+    status: body.status === undefined ? undefined : String(body.status) as any,
+  })
+
+  if (!updated) throw new RouteError(500, '更新导入任务失败。')
+
+  const documents = importJobRepo.listImportJobDocuments(id)
+  for (const doc of documents) {
+    sourceRepo.updateSourceDocument(doc.sourceDocumentId, {
+      province: updated.province,
+      city: updated.city,
+      paperTitle: updated.paperTitle,
+      batchName: updated.batchName,
+      stage: updated.stage,
+      subject: updated.subject,
+      paperKind: updated.paperKind,
+      examYear: updated.examYear,
+      sourceOrg: updated.sourceOrg,
+    })
+
+    const candidates = candidateRepo.listQuestionCandidates({ sourceDocumentId: doc.sourceDocumentId })
+    for (const cand of candidates) {
+      candidateRepo.updateQuestionCandidate(cand.id, {
+        province: updated.province,
+        city: updated.city,
+        paperTitle: updated.paperTitle,
+        batchName: updated.batchName,
+        stage: updated.stage,
+        subject: updated.subject,
+        paperKind: updated.paperKind,
+        examYear: updated.examYear,
+        sourceOrg: updated.sourceOrg,
+      })
+    }
+  }
+
+  return { importJob: updated, documents }
 }

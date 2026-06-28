@@ -13,6 +13,20 @@ import { createId, nowIso } from '../../utils/ids.js'
 import { resolveStoragePath } from '../../utils/paths.js'
 import { loadOcrDocument } from './ocr-document.service.js'
 
+function solutionSourceDocumentIdForCandidateSource(sourceDocumentId: string) {
+  const row = db.prepare(`
+    SELECT solution_doc.source_document_id AS source_document_id
+    FROM import_job_documents current_doc
+    JOIN import_jobs job ON job.id = current_doc.job_id
+    JOIN import_job_documents solution_doc ON solution_doc.job_id = job.id AND solution_doc.role = 'solutions'
+    WHERE current_doc.source_document_id = ?
+      AND job.mode = 'separated_documents'
+    ORDER BY job.updated_at DESC, job.created_at DESC, solution_doc.sort_order ASC
+    LIMIT 1
+  `).get(sourceDocumentId) as { source_document_id?: string } | undefined
+  return row?.source_document_id || ''
+}
+
 export function renderSourceDocumentPage(sourceDocumentId: string, pageNum: number): string {
   const doc = sourceRepo.getSourceDocument(sourceDocumentId)
   if (!doc) {
@@ -47,26 +61,33 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
   if (candidate.status === 'committed') {
     throw new RouteError(403, '已入库的候选题不允许进行修正。')
   }
+  const currentCandidate = candidate
 
-  const sourceDocument = sourceRepo.getSourceDocument(candidate.sourceDocumentId)
+  const sourceDocument = sourceRepo.getSourceDocument(currentCandidate.sourceDocumentId)
   if (!sourceDocument) {
     throw new RouteError(404, '源资料文件不存在。')
   }
-  const [ocrDocument] = ocrRepo.listOcrDocuments({ sourceDocumentId: candidate.sourceDocumentId, limit: 1 })
-  const pageSizeByPage = new Map<number, { width: number; height: number }>()
-  if (ocrDocument) {
-    try {
-      const document = loadOcrDocument(ocrDocument.id)
-      for (const page of document.pages) {
-        pageSizeByPage.set(page.pageNo, { width: page.width, height: page.height })
+  const solutionSourceDocumentId = solutionSourceDocumentIdForCandidateSource(currentCandidate.sourceDocumentId)
+  const sourceDocumentIds = Array.from(new Set([currentCandidate.sourceDocumentId, solutionSourceDocumentId].filter(Boolean)))
+  const pageSizeBySourceAndPage = new Map<string, Map<number, { width: number; height: number }>>()
+  for (const sourceDocumentId of sourceDocumentIds) {
+    const [ocrDocument] = ocrRepo.listOcrDocuments({ sourceDocumentId, limit: 1 })
+    const pageSizeByPage = new Map<number, { width: number; height: number }>()
+    if (ocrDocument) {
+      try {
+        const document = loadOcrDocument(ocrDocument.id)
+        for (const page of document.pages) {
+          pageSizeByPage.set(page.pageNo, { width: page.width, height: page.height })
+        }
+      } catch {
+        // Existing manual-fix sessions should still be restorable if OCR artifacts are missing.
       }
-    } catch {
-      // Existing manual-fix sessions should still be restorable if OCR artifacts are missing.
     }
+    pageSizeBySourceAndPage.set(sourceDocumentId, pageSizeByPage)
   }
-  const normalizeBBoxSegment = (pageNo: number, bbox: [number, number, number, number] | undefined) => {
+  const normalizeBBoxSegment = (sourceDocumentId: string, pageNo: number, bbox: [number, number, number, number] | undefined) => {
     if (!bbox) return null
-    const pageSize = pageSizeByPage.get(pageNo)
+    const pageSize = pageSizeBySourceAndPage.get(sourceDocumentId)?.get(pageNo)
     const rawWidth = bbox[2] - bbox[0]
     const rawHeight = bbox[3] - bbox[1]
     if (rawWidth <= 0 || rawHeight <= 0) return null
@@ -88,8 +109,45 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
       : null
   }
 
-  const sessionId = `sess_candidate_${candidate.id}`
+  const sessionId = `sess_candidate_${currentCandidate.id}`
   const existing = db.prepare('SELECT * FROM pdf_slicer_annotation_sessions WHERE id = ?').get(sessionId) as any
+  const profileForSourceDocument = (item: typeof sourceDocument) => ({
+    pageCount: item.pageCount,
+    pdfName: item.originalFileName
+  })
+  const profiles = {
+    [currentCandidate.sourceDocumentId]: profileForSourceDocument(sourceDocument),
+    ...(solutionSourceDocumentId
+      ? (() => {
+          const solutionSource = sourceRepo.getSourceDocument(solutionSourceDocumentId)
+          return solutionSource ? { [solutionSourceDocumentId]: profileForSourceDocument(solutionSource) } : {}
+        })()
+      : {}),
+  }
+
+  function insertSolutionRegions(sessionIdForInsert: string, insertRegion: ReturnType<typeof db.prepare>, startSortOrder: number) {
+    const analysisRefs = currentCandidate.sourceRefs.filter(r => r.kind === 'analysis' || r.kind === 'answer')
+    if (!analysisRefs.length) return startSortOrder
+    const analysisSourceDocumentId = solutionSourceDocumentId || currentCandidate.sourceDocumentId
+    const segments = analysisRefs.map(r => normalizeBBoxSegment(analysisSourceDocumentId, r.pageNo, r.bbox)).filter(Boolean)
+    if (!segments.length) return startSortOrder
+    insertRegion.run(
+      createId('reg'),
+      sessionIdForInsert,
+      analysisSourceDocumentId,
+      'solution',
+      'analysis',
+      '解析',
+      JSON.stringify([]),
+      JSON.stringify(segments),
+      startSortOrder++,
+      '',
+      nowIso(),
+      nowIso()
+    )
+    return startSortOrder
+  }
+
   if (existing) {
     let row = existing
     if (existing.status !== 'draft') {
@@ -101,7 +159,24 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
       `).run(now, sessionId)
       row = db.prepare('SELECT * FROM pdf_slicer_annotation_sessions WHERE id = ?').get(sessionId) as any
     }
+    const currentProfiles = { ...JSON.parse(row.source_profile_json || '{}'), ...profiles }
+    db.prepare(`
+      UPDATE pdf_slicer_annotation_sessions
+      SET source_profile_json = ?, updated_at = ?
+      WHERE id = ?
+    `).run(JSON.stringify(currentProfiles), nowIso(), sessionId)
+    row = db.prepare('SELECT * FROM pdf_slicer_annotation_sessions WHERE id = ?').get(sessionId) as any
     const regions = getRegionsForSession(sessionId)
+    const hasSolutionRegionOnSolutionDocument = Boolean(solutionSourceDocumentId && regions.some((region) => region.kind === 'solution' && region.sourceRunId === solutionSourceDocumentId))
+    if (solutionSourceDocumentId && !hasSolutionRegionOnSolutionDocument) {
+      db.prepare('DELETE FROM pdf_slicer_annotation_regions WHERE session_id = ? AND kind = ?').run(sessionId, 'solution')
+      const insertRegion = db.prepare(`
+        INSERT INTO pdf_slicer_annotation_regions (
+          id, session_id, source_run_id, kind, question_key, question_label, question_keys_json, segments_json, sort_order, note, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      insertSolutionRegions(sessionId, insertRegion, regions.length)
+    }
     return {
       id: row.id,
       batchId: row.batch_id,
@@ -111,22 +186,15 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       finalizedAt: row.finalized_at,
-      regions
+      regions: getRegionsForSession(sessionId)
     }
   }
 
   const now = nowIso()
-  const profiles = {
-    [candidate.sourceDocumentId]: {
-      pageCount: sourceDocument.pageCount,
-      pdfName: sourceDocument.originalFileName
-    }
-  }
-
   db.prepare(`
     INSERT INTO pdf_slicer_annotation_sessions (id, batch_id, revision, status, source_profile_json, created_at, updated_at)
     VALUES (?, ?, 1, 'draft', ?, ?, ?)
-  `).run(sessionId, candidate.id, JSON.stringify(profiles), now, now)
+  `).run(sessionId, currentCandidate.id, JSON.stringify(profiles), now, now)
 
   const insertRegion = db.prepare(`
     INSERT INTO pdf_slicer_annotation_regions (
@@ -137,15 +205,15 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
   let sortOrder = 0
 
   // 1. 映射题干 (stem)
-  const stemRefs = candidate.sourceRefs.filter(r => r.kind === 'stem')
+  const stemRefs = currentCandidate.sourceRefs.filter(r => r.kind === 'stem')
   if (stemRefs.length > 0) {
-    const segments = stemRefs.map(r => normalizeBBoxSegment(r.pageNo, r.bbox)).filter(Boolean)
+    const segments = stemRefs.map(r => normalizeBBoxSegment(currentCandidate.sourceDocumentId, r.pageNo, r.bbox)).filter(Boolean)
 
     if (segments.length > 0) {
       insertRegion.run(
         createId('reg'),
         sessionId,
-        candidate.sourceDocumentId,
+        currentCandidate.sourceDocumentId,
         'question',
         'stem',
         '题干',
@@ -160,37 +228,17 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
   }
 
   // 2. 映射解析 (analysis / answer)
-  const analysisRefs = candidate.sourceRefs.filter(r => r.kind === 'analysis' || r.kind === 'answer')
-  if (analysisRefs.length > 0) {
-    const segments = analysisRefs.map(r => normalizeBBoxSegment(r.pageNo, r.bbox)).filter(Boolean)
-
-    if (segments.length > 0) {
-      insertRegion.run(
-        createId('reg'),
-        sessionId,
-        candidate.sourceDocumentId,
-        'solution',
-        'analysis',
-        '解析',
-        JSON.stringify([]),
-        JSON.stringify(segments),
-        sortOrder++,
-        '',
-        now,
-        now
-      )
-    }
-  }
+  sortOrder = insertSolutionRegions(sessionId, insertRegion, sortOrder)
 
   // 3. 映射已有关联的 figures (如果有 bbox 信息的话)
-  for (const figure of candidate.figures) {
+  for (const figure of currentCandidate.figures) {
     if (figure.bbox && figure.pageNo) {
-      const seg = normalizeBBoxSegment(figure.pageNo, figure.bbox)
+      const seg = normalizeBBoxSegment(currentCandidate.sourceDocumentId, figure.pageNo, figure.bbox)
       if (seg) {
         insertRegion.run(
           createId('reg'),
           sessionId,
-          candidate.sourceDocumentId,
+          currentCandidate.sourceDocumentId,
           'shared_answer_key',
           'figure',
           '题图',
@@ -207,7 +255,7 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
 
   return {
     id: sessionId,
-    batchId: candidate.id,
+    batchId: currentCandidate.id,
     revision: 1,
     status: 'draft',
     sourceProfileJson: JSON.stringify(profiles),

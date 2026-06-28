@@ -50,6 +50,15 @@ export type CandidateIssue = {
   relatedBlockIds?: string[]
 }
 
+export type CandidateParseDiagnostic = {
+  code: string
+  severity: 'info' | 'warning' | 'error'
+  questionNo?: string
+  message: string
+  start?: number
+  end?: number
+}
+
 export type QuestionCandidate = {
   id: string
   sourceDocumentId: string
@@ -78,6 +87,8 @@ export type QuestionCandidate = {
   committedQuestionId?: string
   committedAt?: string
   issues: CandidateIssue[]
+  parseDiagnostics: CandidateParseDiagnostic[]
+  parserConfigSnapshot: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }
@@ -110,6 +121,8 @@ export type QuestionCandidateRow = {
   committed_question_id: string
   committed_at: string
   issues_json: string
+  parse_diagnostics_json: string
+  parser_config_snapshot_json: string
   created_at: string
   updated_at: string
 }
@@ -142,6 +155,8 @@ export type CreateQuestionCandidateInput = {
   committedQuestionId?: string
   committedAt?: string
   issues?: CandidateIssue[]
+  parseDiagnostics?: CandidateParseDiagnostic[]
+  parserConfigSnapshot?: Record<string, unknown>
 }
 
 export type UpdateQuestionCandidateInput = Partial<{
@@ -170,4 +185,6 @@ export type UpdateQuestionCandidateInput = Partial<{
   committedQuestionId: string
   committedAt: string
   issues: CandidateIssue[]
+  parseDiagnostics: CandidateParseDiagnostic[]
+  parserConfigSnapshot: Record<string, unknown>
 }>
