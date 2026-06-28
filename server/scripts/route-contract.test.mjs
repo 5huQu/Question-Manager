@@ -34,6 +34,7 @@ const expectedRoutes = new Set([
   'POST /api/import-flow-v2/jobs/:id/parse-candidates',
   'GET /api/import-flow-v2/jobs/:id/candidates',
   'GET /api/import-flow-v2/jobs/:id/questions',
+  'POST /api/import-flow-v2/jobs/:id/classify',
   'GET /api/import-flow-v2/jobs/:id/export-records',
   'POST /api/import-flow-v2/jobs/:id/export',
   'GET /api/import-flow-v2/source-documents',
