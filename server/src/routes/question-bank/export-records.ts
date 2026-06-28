@@ -25,6 +25,7 @@ export function mountExportRecordsRoutes(app: Express) {
     const sourceType = normalizeExportRecordSourceType(req.query.sourceType)
     const collectionId = String(req.query.collectionId || '').trim()
     const runId = String(req.query.runId || '').trim()
+    const importJobId = String(req.query.importJobId || '').trim()
     const query = String(req.query.q || req.query.query || '').trim()
     const limit = Math.floor(normalizeNumber(req.query.limit, 100))
     res.json({
@@ -32,6 +33,7 @@ export function mountExportRecordsRoutes(app: Express) {
         sourceType,
         collectionId,
         runId,
+        importJobId,
         query,
         limit,
       }),

@@ -7,7 +7,10 @@ export type ExportRecordsResponse = {
 
 export type ExportRecordsParams = {
   q?: string
-  sourceType?: 'collection' | 'run' | ''
+  sourceType?: 'collection' | 'run' | 'import_job' | ''
+  importJobId?: string
+  runId?: string
+  collectionId?: string
   limit?: number
 }
 
@@ -22,6 +25,9 @@ export const exportRecordsApi = {
     const query = new URLSearchParams()
     if (params.q?.trim()) query.set('q', params.q.trim())
     if (params.sourceType) query.set('sourceType', params.sourceType)
+    if (params.collectionId) query.set('collectionId', params.collectionId)
+    if (params.runId) query.set('runId', params.runId)
+    if (params.importJobId) query.set('importJobId', params.importJobId)
     if (params.limit !== undefined) query.set('limit', String(params.limit))
     const queryString = query.toString()
     return api<ExportRecordsResponse>(`/api/question-bank/export-records${queryString ? `?${queryString}` : ''}`)

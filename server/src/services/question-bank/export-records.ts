@@ -3,7 +3,7 @@ import type { ExportRecordSourceType } from '../../types/index.js'
 type ExportVariant = 'student' | 'teacher'
 
 export function normalizeExportRecordSourceType(value: unknown): ExportRecordSourceType | '' {
-  if (value === 'collection' || value === 'run') return value
+  if (value === 'collection' || value === 'run' || value === 'import_job') return value
   return ''
 }
 

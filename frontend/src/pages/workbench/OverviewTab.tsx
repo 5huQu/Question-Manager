@@ -11,7 +11,6 @@ import {
   ChevronUp,
   Database,
   Plus,
-  ScanSearch,
   ShoppingBag,
   Sparkles,
   Flame,
@@ -20,17 +19,16 @@ import {
   Sunrise,
   Sun,
   Sunset,
+  type LucideIcon,
 } from 'lucide-react'
 import type { ActivityHeatmapDay, ActivityHeatmapResponse } from '@/api/dashboard'
 import type { ExportRecordsResponse } from '@/api/exportRecords'
 import { MarkdownContent } from '@/components/MarkdownContent'
-import type { Dashboard, ExportRecord, OcrSettings, QuestionBankResponse, QuestionItem } from '@/types'
+import type { ExportRecord, OcrSettings, QuestionBankResponse, QuestionItem } from '@/types'
 import { addQuestionToActiveBasket } from '@/utils/questionBasket'
 import { QuickActionDialog } from '@/components/dialogs/QuickActionDialog'
 
 export function OverviewTab({
-  dashboard,
-  dashboardError,
   questionBank,
   questionBankLoading,
   ocrSettings,
@@ -40,9 +38,6 @@ export function OverviewTab({
   exportRecords,
   exportRecordsLoading,
 }: {
-  dashboard: Dashboard | null
-  dashboardError?: string
-  dashboardLoading?: boolean
   questionBank: QuestionBankResponse | null
   questionBankLoading?: boolean
   ocrSettings: OcrSettings | null
@@ -89,9 +84,9 @@ export function OverviewTab({
         </div>
       </div>
 
-      {(dashboardError || activityHeatmapError) ? (
+      {activityHeatmapError ? (
         <div className="rounded-xl border border-zinc-200 bg-card p-4 text-left text-xs text-zinc-500 shadow-sm dark:border-zinc-800">
-          {dashboardError || activityHeatmapError}
+          {activityHeatmapError}
         </div>
       ) : null}
 
@@ -320,7 +315,6 @@ export function OverviewTab({
           <div className="space-y-3">
             <h3 className="px-1 text-left text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">快捷工具入口</h3>
             <div className="space-y-1 rounded-xl border border-zinc-200 bg-card p-3 text-card-foreground shadow-sm dark:border-zinc-800">
-              <ShortcutButton icon={ScanSearch} label="OCR 识别复核工作区" onClick={() => navigate('/tools/pdf-slicer/ocr-jobs')} />
               <ShortcutButton icon={Database} label="题库检索与试卷大纲" onClick={() => navigate('/questions')} />
               <ShortcutButton icon={Plus} label="手动录入数学题" onClick={() => navigate('/questions/new')} />
             </div>
@@ -331,7 +325,7 @@ export function OverviewTab({
             <div className="space-y-3 rounded-xl border border-zinc-200 bg-card p-4 text-left text-xs text-card-foreground shadow-sm dark:border-zinc-800">
               <div className="flex items-center justify-between">
                 <span className="font-medium text-zinc-400 dark:text-zinc-500">SQLite 本地主库:</span>
-                <StatusText ready={!dashboardError && Boolean(dashboard || questionBank)} label={dashboardError ? '连接异常' : '连接正常'} />
+                <StatusText ready={!questionBankLoading && Boolean(questionBank)} label={questionBankLoading ? '连接中' : questionBank ? '连接正常' : '连接异常'} />
               </div>
               <div className="flex items-center justify-between">
                 <span className="font-medium text-zinc-400 dark:text-zinc-500">KaTeX 排版公式引擎:</span>
@@ -524,7 +518,7 @@ function ExportRow({ record }: { record: ExportRecord }) {
   )
 }
 
-function ShortcutButton({ icon: Icon, label, onClick }: { icon: typeof ScanSearch; label: string; onClick: () => void }) {
+function ShortcutButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
   return (
     <button
       onClick={onClick}

@@ -65,6 +65,7 @@ export type ExportCollection = NonNullable<ReturnType<typeof getCollection>>
 // ---------------------------------------------------------------------------
 
 const DOC2X_FIGURE_MARKER_RE = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/g
+type ExportContentField = 'stem' | 'answer' | 'analysis'
 
 /** Escape special LaTeX characters for text (non-math) segments. */
 function escapeLatex(value: string) {
@@ -74,14 +75,24 @@ function escapeLatex(value: string) {
     .replace(/\n{2,}/g, '\n\n')
 }
 
-/** A pseudo-collection built from a run's banked questions for worksheet export. */
-function buildRunWorksheetCollection(run: NonNullable<ReturnType<typeof getRun>>, rows: QuestionRow[]) {
+/** A pseudo-collection built from an ordered question set for worksheet export. */
+function buildQuestionSetWorksheetCollection(input: {
+  id: string
+  title: string
+  subtitle?: string
+  createdAt?: string
+  updatedAt?: string
+  rows: QuestionRow[]
+  bindingRunId?: string
+  variant: ExportVariant
+}) {
+  const rows = input.rows
   const sectionNames = collectionSectionNames(rows)
   let previousSection = ''
   return {
-    id: `run-${run.runId}`,
-    title: run.paperTitle || run.pdfName || '综合练习',
-    subtitle: '学生版',
+    id: input.id,
+    title: input.title || '综合练习',
+    subtitle: input.subtitle || '学生版',
     description: '',
     kind: 'paper' as const,
     status: 'finalized' as const,
@@ -89,15 +100,19 @@ function buildRunWorksheetCollection(run: NonNullable<ReturnType<typeof getRun>>
     timeLimit: 0,
     exportFormat: 'pdf',
     questionCount: rows.length,
-    createdAt: run.createdAt,
-    updatedAt: run.updatedAt,
+    createdAt: input.createdAt || '',
+    updatedAt: input.updatedAt || '',
     questions: rows.map((row, index) => {
-      const item = questionForExport(mapQuestion(row), run.runId)
+      const item = questionForExport(
+        mapQuestion(row),
+        input.bindingRunId || row.source_run_id || input.id,
+        exportFieldsForVariant(input.variant),
+      )
       const section = sectionNames.get(item.questionType) || ''
       const sectionName = section && section !== previousSection ? section : ''
       if (section) previousSection = section
       return {
-        relationId: `${run.runId}-${item.id}`,
+        relationId: `${input.id}-${item.id}`,
         sortOrder: index + 1,
         score: 0,
         sectionName,
@@ -112,8 +127,8 @@ function buildRunWorksheetCollection(run: NonNullable<ReturnType<typeof getRun>>
  * This is intentionally non-mutating: export either gets a fully consistent
  * snapshot or stops with an actionable question number.
  */
-function questionForExport(item: ReturnType<typeof mapQuestion>, runId: string) {
-  assertQuestionExportable(item)
+function questionForExport(item: ReturnType<typeof mapQuestion>, runId: string, fields: ExportContentField[] = exportFieldsForVariant('teacher')) {
+  assertQuestionExportable(item, fields)
   const binding = bindInlineImageReferences(
     {
       id: item.id,
@@ -122,7 +137,7 @@ function questionForExport(item: ReturnType<typeof mapQuestion>, runId: string) 
       analysis: item.analysisMarkdown,
     },
     runId,
-    { localFigures: item.figures },
+    { localFigures: item.figures, fields },
   )
   if (!binding) return item
   if (binding.issue) {
@@ -138,16 +153,29 @@ function questionForExport(item: ReturnType<typeof mapQuestion>, runId: string) 
   }
 }
 
-function assertQuestionExportable(item: Pick<ReturnType<typeof mapQuestion>, 'id' | 'questionNo' | 'stemMarkdown' | 'answerText' | 'analysisMarkdown'>) {
+function exportFieldsForVariant(variant: ExportVariant): ExportContentField[] {
+  return variant === 'teacher' ? ['stem', 'answer', 'analysis'] : ['stem']
+}
+
+function assertQuestionExportable(
+  item: Pick<ReturnType<typeof mapQuestion>, 'id' | 'questionNo' | 'stemMarkdown' | 'answerText' | 'analysisMarkdown'>,
+  fields: ExportContentField[] = exportFieldsForVariant('teacher'),
+) {
   const issues = validateQuestionMarkdown({ problem_text: item.stemMarkdown, answer: item.answerText, analysis: item.analysisMarkdown })
+    .filter((issue) => {
+      if (issue.field === '题干') return fields.includes('stem')
+      if (issue.field === '答案') return fields.includes('answer')
+      if (issue.field === '解析') return fields.includes('analysis')
+      return true
+    })
   if (!issues.length) return
   const label = item.questionNo ? `第 ${item.questionNo} 题` : `题目 #${item.id}`
   const issue = issues[0]
   throw new Error(`${label}${issue.field}存在公式格式问题：${issue.snippet}。请修复后再导出。`)
 }
 
-function assertCollectionExportable(collection: ExportCollection) {
-  collection.questions.forEach((entry) => assertQuestionExportable(entry.item))
+function assertCollectionExportable(collection: ExportCollection, fields: ExportContentField[] = exportFieldsForVariant('teacher')) {
+  collection.questions.forEach((entry) => assertQuestionExportable(entry.item, fields))
 }
 
 /** Build section-name hints from question types in the same order as index.ts. */
@@ -197,7 +225,7 @@ export function buildCollectionMarkdown(
   collection: ExportCollection,
   variant: ExportVariant,
 ) {
-  assertCollectionExportable(collection)
+  assertCollectionExportable(collection, exportFieldsForVariant(variant))
   const lines: string[] = []
   lines.push(`# ${collection.title || '未命名试卷'}（${variant === 'teacher' ? '教师版' : '学生版'}）`)
   if (collection.subtitle) lines.push('', collection.subtitle)
@@ -238,7 +266,7 @@ export function buildCollectionLatex(
   collection: ExportCollection,
   variant: ExportVariant,
 ) {
-  assertCollectionExportable(collection)
+  assertCollectionExportable(collection, exportFieldsForVariant(variant))
   const lines: string[] = [
     '\\documentclass[12pt]{ctexart}',
     '\\usepackage{amsmath,amssymb}',
@@ -533,7 +561,7 @@ export function exportCollectionWorksheetPdf(
   documentClass = 'qbank-worksheet',
 ) {
   if (!collection.questions.length) throw new Error('当前试题篮没有题目，无法导出。')
-  assertCollectionExportable(collection)
+  assertCollectionExportable(collection, exportFieldsForVariant(variant))
   const exportRoot = path.join(storageRoot, 'output', 'pdf', 'collection-exports', safeName(collection.id))
   const figuresDir = path.join(exportRoot, 'figures')
   fs.mkdirSync(figuresDir, { recursive: true })
@@ -560,6 +588,31 @@ export function exportCollectionWorksheetPdf(
   return path.join(exportRoot, `${baseName}.pdf`)
 }
 
+export function exportQuestionSetPdf(input: {
+  id: string
+  title: string
+  rows: QuestionRow[]
+  template: 'exam' | 'worksheet'
+  variant: ExportVariant
+  createdAt?: string
+  updatedAt?: string
+  bindingRunId?: string
+}) {
+  if (!input.rows.length) throw new Error('当前题组没有题目，无法导出。')
+  const collection = buildQuestionSetWorksheetCollection({
+    id: input.id,
+    title: input.title,
+    createdAt: input.createdAt,
+    updatedAt: input.updatedAt,
+    rows: input.rows,
+    bindingRunId: input.bindingRunId,
+    variant: input.variant,
+  })
+  const documentClass = input.template === 'exam' ? 'qbank-exam' : 'qbank-worksheet'
+  const pdfPath = exportCollectionWorksheetPdf(collection as any, input.variant, documentClass)
+  return { path: pdfPath, format: 'pdf' as const }
+}
+
 // ── Run worksheet PDF ──────────────────────────────────────────────────────
 
 export function exportRunWorksheetPdf(runId: string, options: { title?: string; variant?: ExportVariant }) {
@@ -571,10 +624,17 @@ export function exportRunWorksheetPdf(runId: string, options: { title?: string; 
     ORDER BY serial_no ASC
   `).all(runId) as QuestionRow[]
   if (!rows.length) throw new Error('当前批次暂无已入库题目，无法导出。')
-  const collection = buildRunWorksheetCollection({ ...run, paperTitle: options.title || run.paperTitle }, rows)
   const variant = options.variant || 'student'
-  const pdfPath = exportCollectionWorksheetPdf(collection as any, variant)
-  return { path: pdfPath, format: 'pdf' as const }
+  return exportQuestionSetPdf({
+    id: `run-${run.runId}`,
+    title: options.title || run.paperTitle || run.pdfName || '综合练习',
+    rows,
+    template: 'worksheet',
+    variant,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    bindingRunId: run.runId,
+  })
 }
 
 // ── Run exam PDF (qbank-exam template) ─────────────────────────────────────
@@ -591,13 +651,20 @@ export function exportRunExamPdf(runId: string, options: { title?: string; varia
   if (!rows.length) throw new Error('当前批次暂无已入库题目，无法导出。')
   // The alternate template used to bypass all image review rules. Validate
   // every exported question before choosing either renderer.
-  rows.forEach((row) => questionForExport(mapQuestion(row), runId))
+  rows.forEach((row) => questionForExport(mapQuestion(row), runId, exportFieldsForVariant(variant)))
   if (readAppSettings().examExportTemplate === 'examch') {
     return exportRunExamZh(runId, { ...options, format: 'pdf', variant })
   }
-  const collection = buildRunWorksheetCollection({ ...run, paperTitle: options.title || run.paperTitle }, rows)
-  const pdfPath = exportCollectionWorksheetPdf(collection as any, variant, 'qbank-exam')
-  return { path: pdfPath, format: 'pdf' as const }
+  return exportQuestionSetPdf({
+    id: `run-${run.runId}`,
+    title: options.title || run.paperTitle || run.pdfName || '综合练习',
+    rows,
+    template: 'exam',
+    variant,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    bindingRunId: run.runId,
+  })
 }
 
 // ── Re-export exam-zh functions so callers can use them directly ───────────
