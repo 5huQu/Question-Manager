@@ -29,6 +29,28 @@ export type QuestionBankClassificationReport = {
   failures?: Array<{ id: string; error: string }>
 }
 
+export type RandomPaperMatchMode = 'strict' | 'loose'
+export type RandomPaperDifficultyMode = 'foundation' | 'standard' | 'advanced' | 'challenge' | 'custom'
+
+export type QuickActionMetadata = {
+  stages: string[]
+  questionTypes: Array<{ type: string; total: number; available: number }>
+  totalReady: number
+  filteredTotal: number
+  averageDifficulty: number | null
+  difficultyUnknownCount: number
+}
+
+export type RandomPaperSummary = {
+  requestedTotal: number
+  generatedTotal: number
+  typeCounts: Record<string, number>
+  averageDifficulty: number | null
+  matchMode: RandomPaperMatchMode
+  difficultyMode: RandomPaperDifficultyMode
+  difficultyRange?: { min: number; max: number }
+}
+
 function buildQuery(params: QuestionBankListParams = {}) {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -117,8 +139,30 @@ export const questionBankApi = {
       body: form,
     })
   },
-  getDailyQuestion(params: { knowledgePoint?: string; solutionMethod?: string } = {}) {
+  getQuickActionMetadata(params: {
+    stage?: string
+    knowledgePoints?: string[]
+    solutionMethods?: string[]
+    matchMode?: RandomPaperMatchMode
+    difficultyMode?: RandomPaperDifficultyMode
+    difficultyRange?: { min: number; max: number }
+  } = {}) {
     const query = new URLSearchParams()
+    if (params.stage) query.set('stage', params.stage)
+    if (params.knowledgePoints?.length) query.set('knowledgePoints', params.knowledgePoints.join(','))
+    if (params.solutionMethods?.length) query.set('solutionMethods', params.solutionMethods.join(','))
+    if (params.matchMode) query.set('matchMode', params.matchMode)
+    if (params.difficultyMode) query.set('difficultyMode', params.difficultyMode)
+    if (params.difficultyRange) {
+      query.set('difficultyMin', String(params.difficultyRange.min))
+      query.set('difficultyMax', String(params.difficultyRange.max))
+    }
+    const queryString = query.toString()
+    return api<QuickActionMetadata>(`/api/question-bank/quick-action-metadata${queryString ? `?${queryString}` : ''}`)
+  },
+  getDailyQuestion(params: { stage?: string; knowledgePoint?: string; solutionMethod?: string } = {}) {
+    const query = new URLSearchParams()
+    if (params.stage) query.set('stage', params.stage)
     if (params.knowledgePoint) query.set('knowledgePoint', params.knowledgePoint)
     if (params.solutionMethod) query.set('solutionMethod', params.solutionMethod)
     const queryString = query.toString()
@@ -127,6 +171,11 @@ export const questionBankApi = {
     )
   },
   generateRandomPaper(payload: {
+    stage?: string
+    matchMode?: RandomPaperMatchMode
+    difficultyMode?: RandomPaperDifficultyMode
+    difficultyRange?: { min: number; max: number }
+    typeCounts?: Record<string, number>
     knowledgePoints?: string[]
     solutionMethods?: string[]
     counts?: {
@@ -136,7 +185,7 @@ export const questionBankApi = {
       bigQuestion?: number
     }
   }) {
-    return api<{ questions: QuestionItem[]; warnings: string[] }>('/api/question-bank/random-paper', {
+    return api<{ questions: QuestionItem[]; warnings: string[]; summary?: RandomPaperSummary }>('/api/question-bank/random-paper', {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify(payload),

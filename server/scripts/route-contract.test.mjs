@@ -160,6 +160,7 @@ const expectedRoutes = new Set([
   'GET /api/question-bank/collections/:id/export-records',
   'GET /api/tools/pdf-slicer/runs/:runId/export-records',
   'POST /api/tools/pdf-slicer/runs/:runId/export-batch',
+  'GET /api/question-bank/quick-action-metadata',
   'GET /api/question-bank/daily-question',
   'POST /api/question-bank/random-paper',
 ])

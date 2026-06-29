@@ -4,10 +4,8 @@ import {
   X,
   Sparkles,
   Flame,
-  BookOpen,
   Eye,
   EyeOff,
-  Plus,
   Check,
   RotateCcw,
   ShoppingBag,
@@ -22,14 +20,46 @@ import {
   FileText,
   FileDown
 } from 'lucide-react'
-import { Button, Badge } from '../ui'
+import { Badge } from '../ui'
 import { learningTagsApi } from '@/api/learningTags'
-import { questionBankApi } from '@/api/questionBank'
+import {
+  questionBankApi,
+  type QuickActionMetadata,
+  type RandomPaperDifficultyMode,
+  type RandomPaperMatchMode,
+  type RandomPaperSummary,
+} from '@/api/questionBank'
 import { collectionsApi } from '@/api/collections'
 import { notifyBasketUpdated, stripLeadingQuestionNo } from '../QuestionBasket'
 import { QuestionMarkdownContent } from '../questions/QuestionContent'
 
 type QuickActionMode = 'daily' | 'random'
+
+const difficultyOptions: Array<{ value: RandomPaperDifficultyMode; label: string; hint: string }> = [
+  { value: 'foundation', label: '基础巩固', hint: '1-5' },
+  { value: 'standard', label: '常规练习', hint: '3-7' },
+  { value: 'advanced', label: '提升训练', hint: '4-8' },
+  { value: 'challenge', label: '挑战拔高', hint: '6-10' },
+  { value: 'custom', label: '自定义', hint: '1-10' },
+]
+
+const matchModeOptions: Array<{ value: RandomPaperMatchMode; label: string }> = [
+  { value: 'strict', label: '精准匹配' },
+  { value: 'loose', label: '宽松匹配' },
+]
+
+const defaultTypeCountByName: Record<string, number> = {
+  单选题: 8,
+  多选题: 3,
+  填空题: 3,
+  解答题: 5,
+}
+
+function difficultyText(question: { difficultyScore10?: number; difficultyLabel?: string }) {
+  const score = Number(question.difficultyScore10 || 0)
+  if (score > 0) return `难度 ${score}/10`
+  return question.difficultyLabel || '难度待定'
+}
 
 interface QuickActionDialogProps {
   initialMode: QuickActionMode
@@ -76,6 +106,8 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
 
   // Hierarchical libraries list
   const [libraries, setLibraries] = useState<any[]>([])
+  const [metadata, setMetadata] = useState<QuickActionMetadata | null>(null)
+  const [metadataLoading, setMetadataLoading] = useState(false)
 
   // Search filter for trees
   const [kpSearch, setKpSearch] = useState('')
@@ -90,14 +122,13 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
   const [selectedSm, setSelectedSm] = useState<string>('')
   const [selectedKps, setSelectedKps] = useState<string[]>([])
   const [selectedSms, setSelectedSms] = useState<string[]>([])
+  const [selectedStage, setSelectedStage] = useState<string>('')
 
   // Random paper counts
-  const [counts, setCounts] = useState({
-    singleChoice: 8,
-    multiChoice: 3,
-    fillBlank: 3,
-    bigQuestion: 5
-  })
+  const [matchMode, setMatchMode] = useState<RandomPaperMatchMode>('strict')
+  const [difficultyMode, setDifficultyMode] = useState<RandomPaperDifficultyMode>('standard')
+  const [difficultyRange, setDifficultyRange] = useState({ min: 3, max: 7 })
+  const [typeCounts, setTypeCounts] = useState<Record<string, number>>({})
 
   // Results
   const [dailyResult, setDailyResult] = useState<{
@@ -109,6 +140,7 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
   const [randomResult, setRandomResult] = useState<{
     questions: any[]
     warnings: string[]
+    summary?: RandomPaperSummary
   } | null>(null)
 
   // Result display states
@@ -136,6 +168,70 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
     loadTags()
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    async function loadMetadata() {
+      setMetadataLoading(true)
+      try {
+        const res = await questionBankApi.getQuickActionMetadata({
+          stage: selectedStage || undefined,
+          knowledgePoints: mode === 'random' ? selectedKps : selectedKp ? [selectedKp] : [],
+          solutionMethods: mode === 'random' ? selectedSms : selectedSm ? [selectedSm] : [],
+          matchMode,
+          difficultyMode,
+          difficultyRange: difficultyMode === 'custom' ? difficultyRange : undefined,
+        })
+        if (!cancelled) setMetadata(res)
+      } catch (err) {
+        console.error('Failed to load quick action metadata:', err)
+        if (!cancelled) setMetadata(null)
+      } finally {
+        if (!cancelled) setMetadataLoading(false)
+      }
+    }
+    loadMetadata()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    selectedStage,
+    selectedKp,
+    selectedSm,
+    selectedKps.join('|'),
+    selectedSms.join('|'),
+    matchMode,
+    difficultyMode,
+    difficultyRange.min,
+    difficultyRange.max,
+    mode,
+  ])
+
+  useEffect(() => {
+    if (!metadata) return
+    setTypeCounts((current) => {
+      const validTypes = new Set(metadata.questionTypes.map((item) => item.type))
+      const next: Record<string, number> = {}
+      let changed = false
+
+      Object.entries(current).forEach(([type, count]) => {
+        if (!validTypes.has(type)) {
+          changed = true
+          return
+        }
+        next[type] = count
+      })
+
+      metadata.questionTypes.forEach((item) => {
+        if (next[item.type] !== undefined) return
+        const fallback = defaultTypeCountByName[item.type] ?? Math.min(5, item.total)
+        next[item.type] = Math.min(fallback, item.total)
+        changed = true
+      })
+
+      return changed ? next : current
+    })
+  }, [metadata])
+
   // Memoize hierarchical sections
   const kpChapters = useMemo(() => {
     const kps = libraries.filter((lib: any) => lib.libraryType === 'knowledge_point')
@@ -147,6 +243,13 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
     return sms.flatMap((lib: any) => lib.chapters || [])
   }, [libraries])
 
+  const stageOptions = metadata?.stages ?? []
+  const totalRequested = useMemo(() => Object.values(typeCounts).reduce((sum, count) => sum + Math.max(0, Number(count || 0)), 0), [typeCounts])
+  const typeCountWarnings = useMemo(
+    () => (metadata?.questionTypes ?? []).filter((item) => (typeCounts[item.type] || 0) > item.available),
+    [metadata, typeCounts]
+  )
+
   // Submit action
   const handleGenerate = async () => {
     setSubmitting(true)
@@ -157,16 +260,25 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
     try {
       if (mode === 'daily') {
         const res = await questionBankApi.getDailyQuestion({
+          stage: selectedStage || undefined,
           knowledgePoint: selectedKp || undefined,
           solutionMethod: selectedSm || undefined
         })
         setDailyResult(res)
         setShowDailyAnswer(false)
       } else {
+        if (totalRequested <= 0) {
+          setError('请至少设置 1 道题。')
+          return
+        }
         const res = await questionBankApi.generateRandomPaper({
+          stage: selectedStage || undefined,
           knowledgePoints: selectedKps,
           solutionMethods: selectedSms,
-          counts
+          matchMode,
+          difficultyMode,
+          difficultyRange: difficultyMode === 'custom' ? difficultyRange : undefined,
+          typeCounts,
         })
         setRandomResult(res)
         setLocalRandomAnswersVisible({})
@@ -382,6 +494,35 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
                   <Sparkles className={`size-3.5 ${mode === 'random' ? 'text-amber-500' : ''}`} />
                   随机出卷
                 </button>
+              </div>
+
+              {/* Stage selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
+                  学段范围
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {['', ...stageOptions].map((stage) => {
+                    const active = selectedStage === stage
+                    return (
+                      <button
+                        key={stage || 'all'}
+                        type="button"
+                        onClick={() => setSelectedStage(stage)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                          active
+                            ? 'border-zinc-950 bg-zinc-950 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-950'
+                            : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                        }`}
+                      >
+                        {stage || '全部'}
+                      </button>
+                    )
+                  })}
+                  {stageOptions.length === 0 && !metadataLoading && (
+                    <span className="text-xs text-zinc-400">暂无已入库学段</span>
+                  )}
+                </div>
               </div>
 
               {/* Hierarchical Tag Selection Section */}
@@ -696,6 +837,10 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
               {/* Show selected tags review summary */}
               <div className="flex flex-col gap-1.5 text-xs text-zinc-500 bg-zinc-50/30 p-3 rounded-lg border border-zinc-200 dark:bg-zinc-900/10 dark:border-zinc-800">
                 <div className="flex gap-1.5 flex-wrap items-center">
+                  <span className="font-semibold text-zinc-400">已选学段:</span>
+                  <Badge variant="outline">{selectedStage || '全部'}</Badge>
+                </div>
+                <div className="flex gap-1.5 flex-wrap items-center">
                   <span className="font-semibold text-zinc-400">已选知识点:</span>
                   {mode === 'daily' ? (
                     selectedKp ? <Badge variant="outline">{selectedKp}</Badge> : <span className="text-zinc-400 italic">未选择则不设范围</span>
@@ -715,75 +860,148 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
 
               {/* Counts config for Random Paper mode */}
               {mode === 'random' && (
-                <div className="border-t border-zinc-100 dark:border-zinc-800 pt-5 space-y-3">
-                  <label className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
-                    组卷题量配置
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <label className="space-y-1 block">
-                      <span className="text-[10px] font-semibold text-zinc-500">单选题数量</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="50"
-                        value={counts.singleChoice}
-                        onChange={e =>
-                          setCounts(prev => ({
-                            ...prev,
-                            singleChoice: Math.max(0, parseInt(e.target.value) || 0)
-                          }))
-                        }
-                        className="w-full text-xs rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 outline-none focus:border-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 text-center font-mono font-bold"
-                      />
-                    </label>
-                    <label className="space-y-1 block">
-                      <span className="text-[10px] font-semibold text-zinc-505">多选题数量</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="50"
-                        value={counts.multiChoice}
-                        onChange={e =>
-                          setCounts(prev => ({
-                            ...prev,
-                            multiChoice: Math.max(0, parseInt(e.target.value) || 0)
-                          }))
-                        }
-                        className="w-full text-xs rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 outline-none focus:border-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 text-center font-mono font-bold"
-                      />
-                    </label>
-                    <label className="space-y-1 block">
-                      <span className="text-[10px] font-semibold text-zinc-505">填空题数量</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="50"
-                        value={counts.fillBlank}
-                        onChange={e =>
-                          setCounts(prev => ({
-                            ...prev,
-                            fillBlank: Math.max(0, parseInt(e.target.value) || 0)
-                          }))
-                        }
-                        className="w-full text-xs rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 outline-none focus:border-zinc-555 dark:border-zinc-800 dark:bg-zinc-900 text-center font-mono font-bold"
-                      />
-                    </label>
-                    <label className="space-y-1 block">
-                      <span className="text-[10px] font-semibold text-zinc-505">解答题数量</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="50"
-                        value={counts.bigQuestion}
-                        onChange={e =>
-                          setCounts(prev => ({
-                            ...prev,
-                            bigQuestion: Math.max(0, parseInt(e.target.value) || 0)
-                          }))
-                        }
-                        className="w-full text-xs rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 outline-none focus:border-zinc-555 dark:border-zinc-800 dark:bg-zinc-900 text-center font-mono font-bold"
-                      />
-                    </label>
+                <div className="border-t border-zinc-100 dark:border-zinc-800 pt-5 space-y-5">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
+                        匹配方式
+                      </label>
+                      <div className="flex rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900">
+                        {matchModeOptions.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setMatchMode(option.value)}
+                            className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                              matchMode === option.value
+                                ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-50'
+                                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
+                        难度
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-3 gap-2">
+                        {difficultyOptions.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setDifficultyMode(option.value)}
+                            className={`rounded-lg border px-2.5 py-2 text-left transition-all cursor-pointer ${
+                              difficultyMode === option.value
+                                ? 'border-zinc-950 bg-zinc-950 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-950'
+                                : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                            }`}
+                          >
+                            <span className="block text-xs font-bold">{option.label}</span>
+                            <span className={`block text-[10px] ${difficultyMode === option.value ? 'text-white/70 dark:text-zinc-600' : 'text-zinc-400'}`}>
+                              {option.hint}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                      {difficultyMode === 'custom' && (
+                        <div className="grid grid-cols-2 gap-3 pt-1">
+                          <label className="space-y-1">
+                            <span className="text-[10px] font-semibold text-zinc-500">最低难度</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="10"
+                              value={difficultyRange.min}
+                              onChange={(event) => {
+                                const min = Math.min(10, Math.max(1, parseInt(event.target.value, 10) || 1))
+                                setDifficultyRange((prev) => ({ min, max: Math.max(min, prev.max) }))
+                              }}
+                              className="w-full rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-center text-xs font-bold outline-none focus:border-zinc-500 dark:border-zinc-800 dark:bg-zinc-900"
+                            />
+                          </label>
+                          <label className="space-y-1">
+                            <span className="text-[10px] font-semibold text-zinc-500">最高难度</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="10"
+                              value={difficultyRange.max}
+                              onChange={(event) => {
+                                const max = Math.min(10, Math.max(1, parseInt(event.target.value, 10) || 10))
+                                setDifficultyRange((prev) => ({ min: Math.min(prev.min, max), max }))
+                              }}
+                              className="w-full rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-center text-xs font-bold outline-none focus:border-zinc-500 dark:border-zinc-800 dark:bg-zinc-900"
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
+                        题型数量
+                      </label>
+                      <span className="text-[11px] text-zinc-400">
+                        总题数 {totalRequested} · 预计平均难度 {metadata?.averageDifficulty ? `${metadata.averageDifficulty}/10` : '待定'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {(metadata?.questionTypes ?? []).map((item) => {
+                        const count = typeCounts[item.type] || 0
+                        const overLimit = count > item.available
+                        return (
+                          <label
+                            key={item.type}
+                            className={`rounded-lg border p-3 transition-colors ${
+                              overLimit
+                                ? 'border-amber-300 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/10'
+                                : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/30'
+                            }`}
+                          >
+                            <span className="flex items-center justify-between gap-2">
+                              <span className="truncate text-xs font-bold text-zinc-800 dark:text-zinc-200">{item.type}</span>
+                              <span className={`text-[10px] font-semibold ${overLimit ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-400'}`}>
+                                可用 {item.available}
+                              </span>
+                            </span>
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={count}
+                              onChange={(event) => {
+                                const nextCount = Math.min(100, Math.max(0, parseInt(event.target.value, 10) || 0))
+                                setTypeCounts((prev) => ({ ...prev, [item.type]: nextCount }))
+                              }}
+                              className="mt-2 w-full rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-center text-xs font-mono font-bold outline-none focus:border-zinc-500 dark:border-zinc-800 dark:bg-zinc-900"
+                            />
+                          </label>
+                        )
+                      })}
+                    </div>
+
+                    {metadataLoading && (
+                      <p className="text-xs text-zinc-400">正在刷新可用题量...</p>
+                    )}
+                    {!metadataLoading && (metadata?.questionTypes.length ?? 0) === 0 && (
+                      <p className="rounded-lg border border-dashed border-zinc-200 p-3 text-center text-xs text-zinc-400 dark:border-zinc-800">
+                        当前题库暂无可用于出卷的题型。
+                      </p>
+                    )}
+                    {typeCountWarnings.length > 0 && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/10 dark:text-amber-400">
+                        {typeCountWarnings.map((item) => (
+                          <p key={item.type}>{item.type} 当前条件下可用 {item.available} 道，生成时可能不足。</p>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -796,8 +1014,12 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
                 {dailyResult ? (
                   /* Daily Question Result */
                   <div className="space-y-6 text-left">
-                    <div className="flex items-center justify-between">
-                      <Badge variant="success">匹配题型: {dailyResult.question.questionType}</Badge>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="success">匹配题型: {dailyResult.question.questionType}</Badge>
+                        <Badge variant="outline">{dailyResult.question.stage || '未设学段'}</Badge>
+                        <Badge variant="outline">{difficultyText(dailyResult.question)}</Badge>
+                      </div>
                       <span className="text-[11px] text-zinc-400 font-mono">ID: #{dailyResult.question.id}</span>
                     </div>
 
@@ -832,6 +1054,42 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
                 ) : (
                   /* Random Paper Result */
                   <div className="space-y-6 text-left pb-12">
+                    {randomResult!.summary && (
+                      <div className="rounded-xl border border-zinc-200 bg-white p-4 text-xs shadow-sm dark:border-zinc-800 dark:bg-zinc-900/40">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <div>
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400">题量</span>
+                            <span className="mt-1 block font-mono font-bold text-zinc-900 dark:text-zinc-100">
+                              {randomResult!.summary!.generatedTotal}/{randomResult!.summary!.requestedTotal}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400">平均难度</span>
+                            <span className="mt-1 block font-mono font-bold text-zinc-900 dark:text-zinc-100">
+                              {randomResult!.summary!.averageDifficulty ? `${randomResult!.summary!.averageDifficulty}/10` : '待定'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400">匹配方式</span>
+                            <span className="mt-1 block font-semibold text-zinc-900 dark:text-zinc-100">
+                              {randomResult!.summary!.matchMode === 'strict' ? '精准匹配' : '宽松匹配'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400">难度模式</span>
+                            <span className="mt-1 block font-semibold text-zinc-900 dark:text-zinc-100">
+                              {difficultyOptions.find((item) => item.value === randomResult!.summary!.difficultyMode)?.label || '常规练习'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                          {Object.entries(randomResult!.summary!.typeCounts).map(([type, count]) => (
+                            <Badge key={type} variant="outline">{type} {count}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Warnings (Shortage banners) */}
                     {randomResult!.warnings.length > 0 && (
                       <div className="rounded-xl border border-amber-200 bg-amber-50/55 p-4 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/10 dark:text-amber-400 space-y-1">
@@ -866,8 +1124,8 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
                               {/* Metadata row */}
                               <div className="flex items-center justify-between text-[11px] text-zinc-400 dark:text-zinc-500 font-mono">
                                 <span>
-                                  {question.questionType} · {question.chapter || '未分类'} ·{' '}
-                                  {question.difficultyLabel || '难度待定'}
+                                  {question.questionType} · {question.stage || '未设学段'} · {question.chapter || '未分类'} ·{' '}
+                                  {difficultyText(question)}
                                 </span>
                                 <span>ID: #{question.id}</span>
                               </div>
@@ -1156,7 +1414,8 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
             </button>
             <button
               onClick={handleGenerate}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200 cursor-pointer"
+              disabled={mode === 'random' && totalRequested <= 0}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200 cursor-pointer"
             >
               {mode === 'daily' ? (
                 <>

@@ -34,6 +34,16 @@ export function parseChoiceQuestion(value: string): ParsedChoiceQuestion | null 
   }
 }
 
+function normalizeInlineMathDotChoiceMarkers(source: string) {
+  const markerPattern = /(?<![A-Za-z0-9])([A-D])\s+\$\s*\\(?:cdot|bullet)\s*/g
+  const matches = Array.from(source.matchAll(markerPattern))
+  if (matches.length < 4) return source
+  if (matches.slice(0, 4).map((match) => match[1]).join('') !== 'ABCD') return source
+  return source.replace(markerPattern, (_match, label: string, offset: number) => {
+    return `${offset === 0 ? '' : '\n'}${label}. $ `
+  })
+}
+
 export function stripLeadingQuestionNo(value: string) {
   return String(value || '')
     .trimStart()
@@ -43,11 +53,11 @@ export function stripLeadingQuestionNo(value: string) {
 }
 
 export function normalizeChoiceMarkers(value: string) {
-  const source = String(value || '')
+  const source = normalizeInlineMathDotChoiceMarkers(String(value || ''))
   const lineMatches = Array.from(source.matchAll(/(?:^|\n)[ \t]*([A-D])\s*[.．、:：]\s*/g))
   if (lineMatches.length >= 4) return source
   let markerCount = 0
-  const marked = source.replace(/(?<![A-Za-z0-9])([A-D])\s*[.．、:：]\s*/g, (match, label: string, offset: number) => {
+  const marked = source.replace(/(?<![A-Za-z0-9])([A-D])\s*[.．、:：·•]\s*/g, (match, label: string, offset: number) => {
     markerCount += 1
     return `${offset === 0 ? '' : '\n'}${label}. `
   })
