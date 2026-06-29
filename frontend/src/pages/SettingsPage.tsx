@@ -1,26 +1,21 @@
 import { useEffect, useState } from 'react'
 import {
   AlertCircle,
-  BookOpen,
   Check,
   CheckCircle2,
   ExternalLink,
   LoaderCircle,
   Plus,
-  RotateCcw,
   Save,
-  ToggleLeft,
-  ToggleRight,
   Trash2,
 } from 'lucide-react'
-import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { settingsApi } from '@/api/settings'
 import { importV2Api, type AnswerTablePolicy, type ImportFlowV2ParserConfig, type ImportParserPreset, type MetadataBlockPolicy, type SolutionBindingStrategy } from '@/api/importV2'
 import { Button } from '@/components/ui'
 import { UpdateCard } from '@/components/UpdateCard'
 import { Modal } from '@/components/dialogs/Modal'
 import { useAsync } from '@/hooks/useAsync'
-import type { OcrSettings, SlicerRuleEntry, SlicerRulesData, SlicerRulesResponse } from '@/types'
+import type { OcrSettings } from '@/types'
 import { teachingStageOptions } from '@/utils/stages'
 import { libreOfficeDownloadUrl } from '@/utils/wordFiles'
 
@@ -34,6 +29,15 @@ type SettingsDraft = Partial<OcrSettings & {
 type ParserListKey = keyof Pick<ImportFlowV2ParserConfig, 'sectionHeadings' | 'documentNoteKeywords' | 'solutionSectionKeywords' | 'primaryQuestionPatterns' | 'subQuestionPatterns' | 'figureKeywords' | 'metadataBlockKeywords'>
 type ParserTextDraft = Record<ParserListKey, string>
 const parserListKeys: ParserListKey[] = ['sectionHeadings', 'documentNoteKeywords', 'solutionSectionKeywords', 'primaryQuestionPatterns', 'subQuestionPatterns', 'figureKeywords', 'metadataBlockKeywords']
+const PARSER_RULE_CATEGORIES: Array<{ key: ParserListKey; label: string; desc: string; placeholder: string; mono?: boolean }> = [
+  { key: 'sectionHeadings', label: '大题标题', desc: '识别“一、选择题”“二、填空题”等卷面栏目，不会作为题目入库。', placeholder: '例如：一、选择题' },
+  { key: 'documentNoteKeywords', label: '说明文字', desc: '识别“注意事项”“参考公式”等非题目内容。', placeholder: '例如：注意事项' },
+  { key: 'solutionSectionKeywords', label: '答案解析标记', desc: '判断后半部分是否进入答案或解析区。', placeholder: '例如：参考答案' },
+  { key: 'metadataBlockKeywords', label: '说明块关键词', desc: '识别“命题说明”“教材题源”“课标要求”等说明块。', placeholder: '例如：命题说明' },
+  { key: 'figureKeywords', label: '图形提示词', desc: '帮助系统在题目附近优先关注可能相关的图形。', placeholder: '例如：如图' },
+  { key: 'primaryQuestionPatterns', label: '一级题号规则', desc: '用于识别“第 1 题”“1.”、“1、”等一级题号，可填写正则表达式。', placeholder: '例如：^\\s*(\\d+)[\\.、]', mono: true },
+  { key: 'subQuestionPatterns', label: '小问编号', desc: '用于避免把“（1）（2）”误识别成新题。', placeholder: '例如：^\\s*[（(]\\d+[）)]', mono: true },
+]
 
 function parserConfigToTextDraft(config: ImportFlowV2ParserConfig): ParserTextDraft {
   return Object.fromEntries(parserListKeys.map((key) => [key, config[key].join('\n')])) as ParserTextDraft
@@ -53,13 +57,6 @@ export function SettingsPage() {
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [showLibreOfficeAlert, setShowLibreOfficeAlert] = useState(false)
 
-  const rulesApi = useAsync<SlicerRulesResponse>(() => pdfSlicerApi.getRules(), [])
-  const [rulesDraft, setRulesDraft] = useState<SlicerRulesData | null>(null)
-  const [rulesBaseVersion, setRulesBaseVersion] = useState<number>(0)
-  const [activeRuleCategory, setActiveRuleCategory] = useState<(typeof RULES_CATEGORIES)[number]['key']>('auxiliaryMarkers')
-  const [isRulesSaving, setIsRulesSaving] = useState(false)
-  const [rulesSaveStatus, setRulesSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
-  const [showSlicerGuide, setShowSlicerGuide] = useState(false)
   const parserConfigApi = useAsync<{ config: ImportFlowV2ParserConfig }>(() => importV2Api.getParserConfig(), [])
   const parserPresetsApi = useAsync<{ items: ImportParserPreset[] }>(() => importV2Api.listParserPresets(), [])
   const [parserConfig, setParserConfig] = useState<ImportFlowV2ParserConfig | null>(null)
@@ -68,6 +65,7 @@ export function SettingsPage() {
   const [selectedParserPresetId, setSelectedParserPresetId] = useState('')
   const [isParserSaving, setIsParserSaving] = useState(false)
   const [parserSaveStatus, setParserSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [activeParserRuleKey, setActiveParserRuleKey] = useState<ParserListKey>('sectionHeadings')
 
   useEffect(() => {
     if (data) {
@@ -75,13 +73,6 @@ export function SettingsPage() {
       if (!data.sofficeAvailable) setShowLibreOfficeAlert(true)
     }
   }, [data])
-
-  useEffect(() => {
-    if (rulesApi.data) {
-      setRulesDraft(rulesApi.data)
-      setRulesBaseVersion(rulesApi.data.baseVersion)
-    }
-  }, [rulesApi.data])
 
   useEffect(() => {
     if (parserConfigApi.data?.config) {
@@ -102,6 +93,31 @@ export function SettingsPage() {
       const base = draft || (parserConfig ? parserConfigToTextDraft(parserConfig) : null)
       return base ? { ...base, [key]: value } : draft
     })
+  }
+
+  function parserListValues(key: ParserListKey) {
+    const text = parserTextDraft?.[key] ?? parserConfig?.[key].join('\n') ?? ''
+    return text ? text.split('\n') : []
+  }
+
+  function setParserListValues(key: ParserListKey, values: string[]) {
+    updateParserList(key, values.join('\n'))
+  }
+
+  function addParserRule(key: ParserListKey) {
+    setParserListValues(key, [...parserListValues(key), ''])
+  }
+
+  function updateParserRule(key: ParserListKey, index: number, value: string) {
+    const values = parserListValues(key)
+    values[index] = value
+    setParserListValues(key, values)
+  }
+
+  function deleteParserRule(key: ParserListKey, index: number) {
+    const values = parserListValues(key)
+    values.splice(index, 1)
+    setParserListValues(key, values)
   }
 
   async function saveParserConfig() {
@@ -211,71 +227,6 @@ export function SettingsPage() {
     setDraft({ ...draft, teachingStages: next.length ? next : ['高中'] })
   }
 
-  function addRule(category: string) {
-    if (!rulesDraft) return
-    const entries: SlicerRuleEntry[] = [...((rulesDraft as any)[category] || [])]
-    entries.push({ id: `${category}_${Date.now()}`, term: '', matchMode: 'contains', enabled: true })
-    setRulesDraft({ ...rulesDraft, [category]: entries })
-  }
-
-  function updateRule(category: string, index: number, updated: SlicerRuleEntry) {
-    if (!rulesDraft) return
-    const entries: SlicerRuleEntry[] = [...((rulesDraft as any)[category] || [])]
-    entries[index] = updated
-    setRulesDraft({ ...rulesDraft, [category]: entries })
-  }
-
-  function deleteRule(category: string, index: number) {
-    if (!rulesDraft) return
-    const entries: SlicerRuleEntry[] = [...((rulesDraft as any)[category] || [])]
-    entries.splice(index, 1)
-    setRulesDraft({ ...rulesDraft, [category]: entries })
-  }
-
-  function validateRulesDraft() {
-    if (!rulesDraft) return
-    pdfSlicerApi.validateRules(rulesDraft)
-      .then((result) => {
-        if (result.valid) {
-          setRulesSaveStatus({ type: 'success', message: '规则校验通过！' })
-          setTimeout(() => setRulesSaveStatus(null), 3000)
-        } else {
-          setRulesSaveStatus({ type: 'error', message: `校验失败：${result.errors.join('；')}` })
-        }
-      })
-      .catch((err) => setRulesSaveStatus({ type: 'error', message: `校验请求失败：${err?.message || '未知错误'}` }))
-  }
-
-  function reloadPublishedRules() {
-    rulesApi.reload()
-  }
-
-  function discardRulesDraft() {
-    if (rulesApi.data) {
-      setRulesDraft(rulesApi.data)
-      setRulesBaseVersion(rulesApi.data.baseVersion)
-    }
-    setRulesSaveStatus(null)
-  }
-
-  async function saveRules() {
-    if (!rulesDraft) return
-    setIsRulesSaving(true)
-    setRulesSaveStatus(null)
-    try {
-      const saved = await pdfSlicerApi.updateRules(rulesDraft, rulesBaseVersion)
-      setRulesBaseVersion(saved.baseVersion)
-      setRulesDraft(saved)
-      rulesApi.setData(saved)
-      setRulesSaveStatus({ type: 'success', message: '规则已保存并生效！下次切题将使用新规则。' })
-      setTimeout(() => setRulesSaveStatus(null), 5000)
-    } catch (err) {
-      setRulesSaveStatus({ type: 'error', message: err instanceof Error ? err.message : '保存失败' })
-    } finally {
-      setIsRulesSaving(false)
-    }
-  }
-
   if (loading && !data) {
     return <div className="mock-page-root p-6 text-xs text-zinc-400">读取设置中...</div>
   }
@@ -284,15 +235,15 @@ export function SettingsPage() {
     return <div className="mock-page-root p-6 text-xs text-zinc-400">{error}</div>
   }
 
-  const activeRules = rulesDraft ? ((rulesDraft as any)[activeRuleCategory] as SlicerRuleEntry[] | undefined) ?? [] : []
-  const activeRuleMeta = RULES_CATEGORIES.find((item) => item.key === activeRuleCategory) ?? RULES_CATEGORIES[0]
+  const activeParserRuleMeta = PARSER_RULE_CATEGORIES.find((item) => item.key === activeParserRuleKey) ?? PARSER_RULE_CATEGORIES[0]
+  const activeParserRules = parserListValues(activeParserRuleKey)
 
   return (
     <div className="mock-page-root flex min-h-[calc(100vh-6rem)] select-none flex-col gap-6 overflow-y-auto bg-zinc-50/10 p-6 text-zinc-950 dark:bg-zinc-950/20 dark:text-zinc-50">
       <div className="flex flex-col gap-1 border-b border-zinc-200 pb-4 text-left dark:border-zinc-800">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">系统设置</h1>
         <p className="text-[13px] text-zinc-500 dark:text-zinc-400">
-          配置系统的基础名称、外部转换工具、OCR 识别引擎密钥、大模型分类参数以及 PDF 切题匹配词字典。
+          配置系统的基础名称、外部转换工具、OCR 识别引擎密钥、V2 导入识别规则以及大模型分类参数。
         </p>
       </div>
 
@@ -445,19 +396,6 @@ export function SettingsPage() {
               </div>
             )}
 
-            <div className="space-y-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <Field label="并发数量">
-                  <TextInput value={draft.concurrency ?? ''} onChange={(value) => setDraft({ ...draft, concurrency: value })} />
-                </Field>
-                <Field label="最大重试次数">
-                  <TextInput value={draft.maxRetries ?? ''} onChange={(value) => setDraft({ ...draft, maxRetries: value })} />
-                </Field>
-                <Field label="图像最大宽度">
-                  <TextInput value={draft.imageMaxWidth ?? ''} onChange={(value) => setDraft({ ...draft, imageMaxWidth: value })} />
-                </Field>
-              </div>
-            </div>
           </SettingsCard>
 
           <SettingsCard
@@ -532,35 +470,58 @@ export function SettingsPage() {
                   </select>
                 </Field>
               </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <Field label="大题标题">
-                  <TextArea rows={5} value={parserTextDraft?.sectionHeadings ?? parserConfig.sectionHeadings.join('\n')} onChange={(value) => updateParserList('sectionHeadings', value)} />
-                  <p className="text-[11px] text-zinc-400">用于识别“一、选择题”“二、填空题”等卷面栏目，不会作为题目入库。</p>
-                </Field>
-                <Field label="说明文字">
-                  <TextArea rows={5} value={parserTextDraft?.documentNoteKeywords ?? parserConfig.documentNoteKeywords.join('\n')} onChange={(value) => updateParserList('documentNoteKeywords', value)} />
-                  <p className="text-[11px] text-zinc-400">用于识别“注意事项”“参考公式”等非题目内容。</p>
-                </Field>
-                <Field label="答案解析标记">
-                  <TextArea rows={5} value={parserTextDraft?.solutionSectionKeywords ?? parserConfig.solutionSectionKeywords.join('\n')} onChange={(value) => updateParserList('solutionSectionKeywords', value)} />
-                  <p className="text-[11px] text-zinc-400">用于判断后半部分是否进入答案或解析区。</p>
-                </Field>
-                <Field label="说明块关键词">
-                  <TextArea rows={5} value={parserTextDraft?.metadataBlockKeywords ?? parserConfig.metadataBlockKeywords.join('\n')} onChange={(value) => updateParserList('metadataBlockKeywords', value)} />
-                  <p className="text-[11px] text-zinc-400">例如“命题说明”“教材题源”“课标要求”，默认不进入答案/解析。</p>
-                </Field>
-                <Field label="图形提示词">
-                  <TextArea rows={5} value={parserTextDraft?.figureKeywords ?? parserConfig.figureKeywords.join('\n')} onChange={(value) => updateParserList('figureKeywords', value)} />
-                  <p className="text-[11px] text-zinc-400">帮助系统在题目附近优先关注可能相关的图形。</p>
-                </Field>
-                <Field label="一级题号规则">
-                  <TextArea mono rows={4} value={parserTextDraft?.primaryQuestionPatterns ?? parserConfig.primaryQuestionPatterns.join('\n')} onChange={(value) => updateParserList('primaryQuestionPatterns', value)} />
-                  <p className="text-[11px] text-zinc-400">每行一条。用于“第 1 题”“1.”、“1、”等题号。</p>
-                </Field>
-                <Field label="小问编号">
-                  <TextArea mono rows={4} value={parserTextDraft?.subQuestionPatterns ?? parserConfig.subQuestionPatterns.join('\n')} onChange={(value) => updateParserList('subQuestionPatterns', value)} />
-                  <p className="text-[11px] text-zinc-400">用于避免把“（1）（2）”误识别成新题。</p>
-                </Field>
+              <div className="flex flex-wrap gap-1 rounded-lg border border-zinc-200/50 bg-zinc-100 p-0.5 dark:border-zinc-800/50 dark:bg-zinc-900">
+                {PARSER_RULE_CATEGORIES.map((category) => (
+                  <button
+                    key={category.key}
+                    type="button"
+                    onClick={() => setActiveParserRuleKey(category.key)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                      activeParserRuleKey === category.key
+                        ? 'border border-zinc-200/20 bg-white text-zinc-900 shadow-xs dark:bg-zinc-950 dark:text-zinc-50'
+                        : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    {category.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-900 dark:bg-zinc-900/20">
+                <div>
+                  <h4 className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">{activeParserRuleMeta.label}</h4>
+                  <p className="mt-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">{activeParserRuleMeta.desc}</p>
+                </div>
+                <button type="button" onClick={() => addParserRule(activeParserRuleKey)} className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                  <Plus className="size-3.5" />
+                  新增规则
+                </button>
+              </div>
+              <p className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2 text-[11px] leading-5 text-zinc-500 dark:border-zinc-900 dark:bg-zinc-900/20 dark:text-zinc-400">
+                普通词条按文本包含关系识别；一级题号规则和小问编号支持正则表达式。保存后只影响之后重新生成的待确认题目。
+              </p>
+              <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
+                <div className="flex border-b border-zinc-200 bg-zinc-50/70 px-4 py-2 text-[12px] font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40">
+                  <span className="w-10 shrink-0 text-center">序号</span>
+                  <span className="flex-1 px-3">识别规则</span>
+                  <span className="w-10 text-center">删除</span>
+                </div>
+                <div className="max-h-[340px] divide-y divide-zinc-100 overflow-y-auto dark:divide-zinc-900">
+                  {activeParserRules.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-zinc-400 dark:text-zinc-500">该分类暂无规则，请点击上方“新增规则”。</div>
+                  ) : (
+                    activeParserRules.map((value, index) => (
+                      <ParserRuleRow
+                        key={`${activeParserRuleKey}-${index}`}
+                        value={value}
+                        index={index}
+                        mono={activeParserRuleMeta.mono}
+                        placeholder={activeParserRuleMeta.placeholder}
+                        onChange={(next) => updateParserRule(activeParserRuleKey, index, next)}
+                        onDelete={() => deleteParserRule(activeParserRuleKey, index)}
+                      />
+                    ))
+                  )}
+                </div>
               </div>
               <Field label="括号数字作为一级题号">
                 <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300"><input type="checkbox" checked={parserConfig.allowParenthesizedNumberAsPrimary} onChange={(event) => setParserConfig({ ...parserConfig, allowParenthesizedNumberAsPrimary: event.target.checked })} />仅当资料完全没有常规题号时，才把“（1）”当作新题号</label>
@@ -570,7 +531,7 @@ export function SettingsPage() {
 
           <SettingsCard
             title="数据分类与自动标签"
-            desc="用于 OCR 完成后自动利用大语言模型评估并分类知识点、解题方法和难度标签。"
+            desc="用于题目批次分类服务自动利用大语言模型评估知识点、解题方法和难度标签。"
             footer={<SaveButton label="保存分类设置" loading={isSaving} onClick={() => save('属性分类')} />}
           >
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -597,94 +558,33 @@ export function SettingsPage() {
                 <TextInput mono value={draft.cleanupModel ?? ''} placeholder="deepseek-v4-flash" onChange={(value) => setDraft({ ...draft, cleanupModel: value })} />
               </Field>
             </div>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-300">
+              下方 Prompt 是全局基础模板。实际分类时，系统会自动追加当前题目批次的学段、科目、资料类型、年份、地区、来源机构和试卷标题；单题已有元数据会优先覆盖批次默认值。
+            </div>
             <div className="grid grid-cols-1 gap-4 border-t border-zinc-100 pt-4 dark:border-zinc-800 md:grid-cols-2">
-              <Field label="分类 System Prompt">
-                <TextArea mono rows={4} value={draft.classificationSystemPrompt ?? ''} onChange={(value) => setDraft({ ...draft, classificationSystemPrompt: value })} />
+              <Field label="分类 System Prompt 基础模板">
+                <TextArea
+                  mono
+                  rows={4}
+                  value={draft.classificationSystemPrompt ?? ''}
+                  placeholder="例如：你是题库分类工具。运行时会自动追加批次上下文和输出要求。"
+                  onChange={(value) => setDraft({ ...draft, classificationSystemPrompt: value })}
+                />
+                <p className="text-[11px] text-zinc-400">这里建议只写角色定位；学段、科目、资料类型、输出字段等由系统自动追加。</p>
               </Field>
-              <Field label="分类 User Prompt">
-                <TextArea mono rows={4} value={draft.classificationUserPrompt ?? ''} onChange={(value) => setDraft({ ...draft, classificationUserPrompt: value })} />
+              <Field label="分类 User Prompt 基础模板">
+                <TextArea
+                  mono
+                  rows={4}
+                  value={draft.classificationUserPrompt ?? ''}
+                  placeholder="可使用 {payload} 插入待分类 JSON；payload 内包含 classification_context。"
+                  onChange={(value) => setDraft({ ...draft, classificationUserPrompt: value })}
+                />
+                <p className="text-[11px] text-zinc-400">`classification_context` 会随每道题一起传给模型，用于自动选择分类语境。</p>
               </Field>
             </div>
           </SettingsCard>
 
-          <SettingsCard
-            title="PDF 切题规则与字典"
-            desc="维护自动切题时用来排除目录、说明和栏目编号的词。保存后会用于新上传或重新切题的资料，已切好的历史批次不会自动变化。"
-            footer={
-              <div className="flex flex-wrap justify-end gap-2">
-                <button type="button" onClick={() => setShowSlicerGuide(true)} disabled={isRulesSaving} className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"><BookOpen className="size-3.5" />查看使用说明</button>
-                <button type="button" onClick={validateRulesDraft} disabled={isRulesSaving} className="inline-flex items-center rounded border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">校验草稿</button>
-                <button type="button" onClick={reloadPublishedRules} disabled={isRulesSaving} className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"><RotateCcw className="size-3.5" />重新读取已发布规则</button>
-                <button type="button" onClick={discardRulesDraft} disabled={isRulesSaving} className="inline-flex items-center rounded border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">放弃修改</button>
-                <SaveButton label={isRulesSaving ? '保存中...' : '保存切题字典'} loading={isRulesSaving} onClick={saveRules} />
-              </div>
-            }
-          >
-            {rulesApi.loading ? (
-              <p className="text-xs text-zinc-400">加载规则中...</p>
-            ) : rulesApi.error ? (
-              <p className="text-xs text-red-500">{rulesApi.error}</p>
-            ) : !rulesDraft ? (
-              <p className="text-xs text-zinc-400">暂无规则数据</p>
-            ) : (
-              <>
-                {rulesSaveStatus ? <StatusBanner status={rulesSaveStatus} /> : null}
-                <div className="flex flex-wrap gap-1 rounded-lg border border-zinc-200/50 bg-zinc-100 p-0.5 dark:border-zinc-800/50 dark:bg-zinc-900">
-                  {RULES_CATEGORIES.map((category) => (
-                    <button
-                      key={category.key}
-                      type="button"
-                      onClick={() => setActiveRuleCategory(category.key)}
-                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
-                        activeRuleCategory === category.key
-                          ? 'border border-zinc-200/20 bg-white text-zinc-900 shadow-xs dark:bg-zinc-950 dark:text-zinc-50'
-                          : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
-                      }`}
-                    >
-                      {category.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-900 dark:bg-zinc-900/20">
-                  <div>
-                    <h4 className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">{activeRuleMeta.label}</h4>
-                    <p className="mt-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">{activeRuleMeta.desc}</p>
-                  </div>
-                  <button type="button" onClick={() => addRule(activeRuleCategory)} className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                    <Plus className="size-3.5" />
-                    新增字典词
-                  </button>
-                </div>
-                <p className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2 text-[11px] leading-5 text-zinc-500 dark:border-zinc-900 dark:bg-zinc-900/20 dark:text-zinc-400">
-                  “包含”表示一行文字里带有该词即可命中；“精确”表示这一行文字必须和词条完全相同。拿不准时，先用“包含”，词太短容易误伤时再用“精确”。
-                </p>
-                <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
-                  <div className="flex border-b border-zinc-200 bg-zinc-50/70 px-4 py-2 text-[12px] font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40">
-                    <span className="w-10 shrink-0 text-center">序号</span>
-                    <span className="flex-1 px-3">匹配词条</span>
-                    <span className="w-24 px-3 text-center">匹配模式</span>
-                    <span className="w-16 text-center">状态</span>
-                    <span className="w-10 text-center">删除</span>
-                  </div>
-                  <div className="max-h-[300px] divide-y divide-zinc-100 overflow-y-auto dark:divide-zinc-900">
-                    {activeRules.length === 0 ? (
-                      <div className="p-8 text-center text-xs text-zinc-400 dark:text-zinc-500">该字典分类暂无自定义匹配词，请点击上方“新增字典词”。</div>
-                    ) : (
-                      activeRules.map((rule, index) => (
-                        <RuleRow
-                          key={rule.id}
-                          entry={rule}
-                          index={index}
-                          onChange={(updated) => updateRule(activeRuleCategory, index, updated)}
-                          onDelete={() => deleteRule(activeRuleCategory, index)}
-                        />
-                      ))
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-          </SettingsCard>
         </div>
 
         <div className="space-y-6">
@@ -709,17 +609,6 @@ export function SettingsPage() {
       </div>
 
       {saveStatus ? <Toast status={saveStatus} /> : null}
-
-      {showSlicerGuide ? (
-        <Modal
-          title="PDF 自动切题词表使用说明"
-          desc="词表只帮助系统判断编号是不是题目；自动切题后仍建议到复核页快速检查。"
-          onClose={() => setShowSlicerGuide(false)}
-          wide
-        >
-          <PdfSlicerGuide />
-        </Modal>
-      ) : null}
 
       {showLibreOfficeAlert && !data?.sofficeAvailable ? (
         <Modal
@@ -848,22 +737,19 @@ function StatusBanner({ status }: { status: { type: 'success' | 'error'; message
   )
 }
 
-function Toast({ status }: { status: { type: 'success' | 'error'; message: string } }) {
-  return (
-    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-md border border-zinc-800 bg-zinc-950 px-3.5 py-2.5 text-xs text-zinc-50 shadow-lg animate-fade-in dark:border-zinc-200 dark:bg-zinc-50 dark:text-zinc-950">
-      {status.type === 'success' ? <CheckCircle2 className="size-4.5 shrink-0 text-zinc-400" /> : <AlertCircle className="size-4.5 shrink-0 text-red-500" />}
-      <div className="space-y-0.5 text-left">
-        <span className="block font-bold">{status.type === 'success' ? '配置保存成功' : '配置保存失败'}</span>
-        <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{status.message}</span>
-      </div>
-    </div>
-  )
-}
-
-function RuleRow({ entry, index, onChange, onDelete }: {
-  entry: SlicerRuleEntry
+function ParserRuleRow({
+  value,
+  index,
+  mono,
+  placeholder,
+  onChange,
+  onDelete,
+}: {
+  value: string
   index: number
-  onChange: (entry: SlicerRuleEntry) => void
+  mono?: boolean
+  placeholder: string
+  onChange: (value: string) => void
   onDelete: () => void
 }) {
   return (
@@ -872,26 +758,11 @@ function RuleRow({ entry, index, onChange, onDelete }: {
       <div className="flex-1 px-3">
         <input
           type="text"
-          value={entry.term}
-          onChange={(event) => onChange({ ...entry, term: event.target.value })}
-          placeholder="请输入标记词（例如：注意事项）"
-          className="w-full rounded border border-zinc-200 bg-white px-2.5 py-1 text-xs font-normal text-zinc-900 outline-none focus:border-zinc-950 dark:border-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-300"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className={`w-full rounded border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-900 outline-none focus:border-zinc-950 dark:border-zinc-800 dark:text-zinc-100 dark:focus:border-zinc-300 ${mono ? 'font-mono' : ''}`}
         />
-      </div>
-      <div className="flex w-24 shrink-0 justify-center px-3">
-        <select
-          value={entry.matchMode}
-          onChange={(event) => onChange({ ...entry, matchMode: event.target.value as 'contains' | 'exact' })}
-          className="cursor-pointer rounded border border-zinc-200 bg-white px-1.5 py-1 text-xs outline-none dark:border-zinc-800"
-        >
-          <option value="contains">包含</option>
-          <option value="exact">精确</option>
-        </select>
-      </div>
-      <div className="flex w-16 shrink-0 justify-center">
-        <button type="button" onClick={() => onChange({ ...entry, enabled: !entry.enabled })} className="p-1 text-zinc-400 transition-colors hover:text-zinc-600">
-          {entry.enabled ? <ToggleRight className="size-4.5 text-zinc-700 dark:text-zinc-300" /> : <ToggleLeft className="size-4.5 text-zinc-300 dark:text-zinc-700" />}
-        </button>
       </div>
       <div className="flex w-10 shrink-0 justify-center">
         <button type="button" onClick={onDelete} className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20">
@@ -902,78 +773,13 @@ function RuleRow({ entry, index, onChange, onDelete }: {
   )
 }
 
-const RULES_CATEGORIES = [
-  { key: 'auxiliaryMarkers', label: '辅助区标记', desc: '遇到目录、归纳等非做题区时，暂停识别同页后续题号。' },
-  { key: 'noticeTerms', label: '考试说明词', desc: '跳过试卷开头的答题说明，避免说明中的编号被当成题号。' },
-  { key: 'referenceFormulaMarkers', label: '参考资料标记', desc: '跳过公式表、关系式表和数据表附近的普通数字编号。' },
-  { key: 'trainingMarkers', label: '训练恢复标记', desc: '表示目录或总结结束，之后可以继续识别正式题号。' },
-  { key: 'nonQuestionRemainders', label: '编号栏目标题', desc: '跳过“1. 方法总结”这类有编号但不是题的小标题。' },
-  { key: 'sectionMarkers', label: '跨页截断标记', desc: '题目跨页时，遇到新栏目标题就在标题前结束上一题的裁图。' },
-] as const
-
-function PdfSlicerGuide() {
-  const sections = [
-    {
-      title: '辅助区标记：目录和总结不是题目',
-      body: '填写“目录、题型归纳、思维导图、方法技巧”等栏目标题。系统看到它们后，会暂时不把同页后面的编号当作题目；遇到正式题型标题或训练标题后，再恢复识别。适合补充“考点精练、专题突破”等词。',
-    },
-    {
-      title: '考试说明词：跳过开头的答题要求',
-      body: '填写“注意事项、答题、作答、考试结束”等词。它们用来防止“1. 请填写姓名”被误切成第 1 题，不会删除 PDF 里的文字。',
-    },
-    {
-      title: '参考资料标记：公式表和数据表不是题目',
-      body: '填写“参考公式、参考关系式、参考数据”等词。系统会避开这些标题附近的“1.”、“2.”等数字编号，减少把表格条目当题目的情况。',
-    },
-    {
-      title: '训练恢复标记：从目录回到正式练习',
-      body: '填写“【典例训练】、【例题】、一、选择题、二、填空题”等标题。它们本身不会切出题目，只是告诉系统下一行开始可以继续寻找题号。',
-    },
-    {
-      title: '编号栏目标题：有编号也可能不是题',
-      body: '填写“方法总结、规律总结、常见类型”等词。它专门处理“1. 方法总结”这样的栏目名；匹配的是题号后面的文字。',
-    },
-    {
-      title: '跨页截断标记：别让上一题吃进下一章',
-      body: '填写可能出现在新页顶部的栏目标题，例如“题型归纳、目录、【典例训练】”。它只在题目跨页时起作用：从这个标题前结束上一题，不会单独创建题目。',
-    },
-  ]
-
+function Toast({ status }: { status: { type: 'success' | 'error'; message: string } }) {
   return (
-    <div className="mx-auto max-w-4xl space-y-5 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
-      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-blue-950 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-100">
-        <p className="font-semibold">这项设置是做什么的？</p>
-        <p className="mt-1 text-[13px]">系统先在 PDF 的可复制文字里寻找题号，再按题号位置切图。词表只负责告诉系统：哪些编号属于目录、说明或栏目，不应该当作题目。</p>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-xl border p-4">
-          <h4 className="font-semibold text-zinc-900 dark:text-zinc-50">包含匹配</h4>
-          <p className="mt-1 text-[13px]">一行文字中带有这个词就算命中。大多数情况选它即可。</p>
-        </div>
-        <div className="rounded-xl border p-4">
-          <h4 className="font-semibold text-zinc-900 dark:text-zinc-50">精确匹配</h4>
-          <p className="mt-1 text-[13px]">一行文字必须和词条完全相同才算命中。短词容易误伤正常题目时，选它更稳妥。</p>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        {sections.map((section) => (
-          <section key={section.title} className="rounded-xl border p-4">
-            <h4 className="font-semibold text-zinc-900 dark:text-zinc-50">{section.title}</h4>
-            <p className="mt-1 text-[13px]">{section.body}</p>
-          </section>
-        ))}
-      </div>
-
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
-        <p className="font-semibold">使用小建议</p>
-        <ol className="mt-1 list-decimal space-y-1 pl-5 text-[13px]">
-          <li>一次只加一两个词，再用一份容易误切的资料重新切题验证。</li>
-          <li>词尽量具体，例如用“专题突破”，不要只填“专题”。</li>
-          <li>修改后只影响新上传或重新切题的资料；已有切题结果不会自动改动。</li>
-          <li>扫描件或整页图片 PDF 没有可用文字层，会转为人工框选，不使用这套词表。</li>
-        </ol>
+    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-md border border-zinc-800 bg-zinc-950 px-3.5 py-2.5 text-xs text-zinc-50 shadow-lg animate-fade-in dark:border-zinc-200 dark:bg-zinc-50 dark:text-zinc-950">
+      {status.type === 'success' ? <CheckCircle2 className="size-4.5 shrink-0 text-zinc-400" /> : <AlertCircle className="size-4.5 shrink-0 text-red-500" />}
+      <div className="space-y-0.5 text-left">
+        <span className="block font-bold">{status.type === 'success' ? '配置保存成功' : '配置保存失败'}</span>
+        <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{status.message}</span>
       </div>
     </div>
   )

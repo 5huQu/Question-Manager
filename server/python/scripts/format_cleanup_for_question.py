@@ -65,19 +65,7 @@ DEFAULT_CLEANUP_USER_PROMPT = """请轻量清理以下 OCR 字段并完成分类
 
 {payload}"""
 
-DEFAULT_CLASSIFICATION_SYSTEM_PROMPT = """你是高中数学题目分类工具。
-
-根据题干、答案和解析识别：
-1. knowledge_points：本题涉及的知识点，返回 1-6 个中文短标签。
-2. solution_methods：本题使用的解题方法，返回 1-6 个中文短标签。
-3. difficulty_score_10：按高考/高三统考语境给 1-10 的整数难度分。
-4. difficulty_label：按分值输出基础/中等/较难/压轴之一。1-3 基础，4-6 中等，7-8 较难，9-10 压轴。
-
-要求：
-- 不改写题干、答案、解析。
-- 标签要具体，例如“函数零点”“导数与单调性”“分类讨论”“数形结合”。
-- 标签必须优先从 allowed_knowledge_points 与 allowed_solution_methods 中选择，使用完整名称。
-- 只输出 JSON 对象，字段仅包含 knowledge_points、solution_methods、difficulty_score_10、difficulty_label。"""
+DEFAULT_CLASSIFICATION_SYSTEM_PROMPT = "你是题库分类工具。"
 
 DEFAULT_CLASSIFICATION_USER_PROMPT = """请对以下题目进行分类。
 

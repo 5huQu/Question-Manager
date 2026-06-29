@@ -9,6 +9,9 @@ import { sofficePath } from './tools.js'
 
 type OcrProvider = 'legacy' | 'doc2x' | 'glm'
 
+const SIMPLIFIED_CLASSIFICATION_SYSTEM_PROMPT = '你是题库分类工具。'
+const LEGACY_CLASSIFICATION_SYSTEM_PROMPT_PREFIX = '你是高中数学题目分类工具。'
+
 export function ocrEnvPath() {
   const configDir = path.join(storageRoot, 'config')
   fs.mkdirSync(configDir, { recursive: true })
@@ -109,6 +112,9 @@ export function readOcrPromptSettings() {
   const payload = parseJson<Record<string, string>>(fs.readFileSync(promptPath, 'utf8'), {})
   const promptValue = (key: string, fallback: string) => {
     const value = String(payload[key] || '')
+    if (key === 'classification_system_prompt' && value.trim().startsWith(LEGACY_CLASSIFICATION_SYSTEM_PROMPT_PREFIX)) {
+      return SIMPLIFIED_CLASSIFICATION_SYSTEM_PROMPT
+    }
     return value && !value.includes('�') ? value : fallback
   }
   return {
