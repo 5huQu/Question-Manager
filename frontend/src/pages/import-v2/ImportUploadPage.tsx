@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Upload,
@@ -13,8 +13,10 @@ import {
 } from 'lucide-react'
 import { importV2Api, type PaperKind, type SourceMetadataDraft } from '@/api/importV2'
 import { settingsApi } from '@/api/settings'
+import { SearchableSelect } from '@/components/SearchableSelect'
 import { PageTitle, Panel, Button } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
+import { cityOptionsForProvince, provinceOptions, yearOptionsFromServerYear } from '@/utils/metadataOptions'
 import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
 
 type UploadDocumentMode = 'single_document' | 'separated_documents'
@@ -88,7 +90,10 @@ export default function ImportUploadPage() {
   const solutionFileInputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
 
+  const health = useAsync(() => settingsApi.getHealth(), [])
   const ocrSettings = useAsync(() => settingsApi.getOcrSettings(), [])
+  const serverYear = health.data?.serverYear
+  const yearOptions = useMemo(() => yearOptionsFromServerYear(serverYear), [serverYear])
   const currentOcrProvider = ocrSettings.data?.ocrProvider === 'glm' ? 'glm' : 'doc2x'
   const currentOcrProviderLabel = currentOcrProvider === 'glm' ? 'GLM-OCR' : 'Doc2X'
   const configuredStageOptions = gradeOptionsForTeachingStages(ocrSettings.data?.teachingStages)
@@ -98,6 +103,19 @@ export default function ImportUploadPage() {
   const selectedStage = ensureStageValue(metadataDraft.stage, stageOptions)
   const metadataSubject = metadataDraft.subject || '数学'
   const visibleSubjectOptions = subjectOptions.includes(metadataSubject) ? subjectOptions : [metadataSubject, ...subjectOptions]
+  const cityOptions = useMemo(() => cityOptionsForProvince(metadataDraft.province), [metadataDraft.province])
+  const visibleCityOptions = metadataDraft.city && !cityOptions.includes(metadataDraft.city)
+    ? [metadataDraft.city, ...cityOptions]
+    : cityOptions
+
+  useEffect(() => {
+    if (!serverYear) return
+    setMetadataDraft((draft) => {
+      const clientInitialYear = String(new Date().getFullYear())
+      if (draft.examYear && draft.examYear !== clientInitialYear) return draft
+      return { ...draft, examYear: String(serverYear) }
+    })
+  }, [serverYear])
 
   function baseNameFromFile(file: File) {
     return file.name.replace(/\.[^.]+$/i, '')
@@ -278,7 +296,7 @@ export default function ImportUploadPage() {
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
         {/* 左侧元数据配置 */}
         <div className="md:col-span-6">
-          <Panel title="试卷信息与元数据">
+          <Panel title="试卷信息与元数据" className="overflow-visible" bodyClassName="overflow-visible">
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <label className="space-y-1.5 col-span-2">
@@ -301,13 +319,13 @@ export default function ImportUploadPage() {
                 </label>
                 <label className="space-y-1.5">
                   <span className="text-[13px] font-medium text-zinc-500">学段/年级</span>
-                  <select
-                    className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
+                  <SearchableSelect
                     value={selectedStage}
-                    onChange={(e) => setMetadataDraft((d) => ({ ...d, stage: e.target.value }))}
-                  >
-                    {stageOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                    options={stageOptions}
+                    onChange={(stage) => setMetadataDraft((d) => ({ ...d, stage }))}
+                    placeholder="请选择学段"
+                    searchPlaceholder="搜索学段"
+                  />
                 </label>
                 <label className="space-y-1.5">
                   <span className="text-[13px] font-medium text-zinc-500">学科</span>
@@ -337,25 +355,26 @@ export default function ImportUploadPage() {
                 </label>
                 <label className="space-y-1.5">
                   <span className="text-[13px] font-medium text-zinc-500">年份</span>
-                  <input
-                    type="number"
-                    className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
+                  <SearchableSelect
                     value={metadataDraft.examYear}
-                    onChange={(e) => setMetadataDraft((d) => ({ ...d, examYear: e.target.value }))}
+                    options={yearOptions}
+                    onChange={(examYear) => setMetadataDraft((d) => ({ ...d, examYear }))}
+                    placeholder="请选择年份"
+                    searchPlaceholder="搜索年份"
                   />
                 </label>
 
                 {metadataDraft.paperKind === 'gaokao_real' ? (
                   <label className="col-span-2 space-y-1.5">
                     <span className="text-[13px] font-medium text-zinc-500">试卷适用地区</span>
-                    <select
-                      className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
+                    <SearchableSelect
                       value={isGaokaoRegion(metadataDraft.province) ? metadataDraft.province : ''}
-                      onChange={(e) => setMetadataDraft((d) => ({ ...d, province: e.target.value, city: '', sourceOrg: '' }))}
-                    >
-                      <option value="">请选择全国卷或直辖市</option>
-                      {gaokaoRegionOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                    </select>
+                      options={gaokaoRegionOptions.map((item) => item.value)}
+                      onChange={(province) => setMetadataDraft((d) => ({ ...d, province, city: '', sourceOrg: '' }))}
+                      placeholder="请选择全国卷或直辖市"
+                      searchPlaceholder="搜索全国卷或地区"
+                      allowClear
+                    />
                     {gaokaoRegionOptions.find((item) => item.value === metadataDraft.province)?.provinces && (
                       <p className="text-[11px] leading-4 text-zinc-400">
                         {gaokaoRegionOptions.find((item) => item.value === metadataDraft.province)?.provinces}
@@ -366,20 +385,24 @@ export default function ImportUploadPage() {
                   <>
                     <label className="space-y-1.5">
                       <span className="text-[13px] font-medium text-zinc-500">省份</span>
-                      <input
-                        className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
+                      <SearchableSelect
                         value={metadataDraft.province}
-                        onChange={(e) => setMetadataDraft((d) => ({ ...d, province: e.target.value }))}
-                        placeholder="例如：安徽"
+                        options={provinceOptions}
+                        onChange={(province) => setMetadataDraft((d) => ({ ...d, province, city: cityOptionsForProvince(province).includes(d.city) ? d.city : '' }))}
+                        placeholder="请选择省份"
+                        searchPlaceholder="搜索省份"
+                        allowClear
                       />
                     </label>
                     <label className="space-y-1.5">
                       <span className="text-[13px] font-medium text-zinc-500">城市</span>
-                      <input
-                        className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800"
+                      <SearchableSelect
                         value={metadataDraft.city}
-                        onChange={(e) => setMetadataDraft((d) => ({ ...d, city: e.target.value }))}
-                        placeholder="例如：合肥"
+                        options={visibleCityOptions}
+                        onChange={(city) => setMetadataDraft((d) => ({ ...d, city }))}
+                        placeholder={metadataDraft.province ? '请选择城市' : '可先选择省份'}
+                        searchPlaceholder="搜索城市"
+                        allowClear
                       />
                     </label>
                     <label className="col-span-2 space-y-1.5">

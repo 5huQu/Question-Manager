@@ -18,19 +18,21 @@ import {
   PencilLine,
   Plus,
   RefreshCcw,
-  Scissors,
   Settings2,
   Sparkles,
   X,
 } from 'lucide-react'
 import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { questionBankApi } from '@/api/questionBank'
+import { settingsApi } from '@/api/settings'
 import { Modal } from '@/components/dialogs/Modal'
 import { QuestionContent } from '@/components/questions/QuestionContent'
+import { SearchableSelect } from '@/components/SearchableSelect'
 import { Button } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { Dashboard, QuestionItem, RichBlock, SliceReviewItem } from '@/types'
 import { buildFullPaperOcrPrompt, singleQuestionOcrPrompt } from '@/constants/ocrPrompts'
+import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
 import {
   buildJsonParseHint,
   cleanAiJsonText,
@@ -61,7 +63,6 @@ const sectionClass = 'rounded-xl border border-zinc-200 bg-white text-zinc-950 s
 const sectionHeaderClass = 'flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/50 px-6 py-4 dark:border-zinc-900 dark:bg-zinc-900/10'
 const inputTabClass = 'flex rounded-lg border border-zinc-200/50 bg-zinc-100/80 p-0.5 shadow-sm dark:border-zinc-800/50 dark:bg-zinc-900/80'
 const inputTabButtonClass = (active: boolean) => `flex-1 rounded-md py-1.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${active ? 'bg-white text-zinc-900 shadow-xs border border-zinc-200/20 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-300'}`
-const optionButtonClass = (active: boolean) => `flex flex-col rounded-lg border p-3 text-left transition-all cursor-pointer ${active ? 'border-zinc-950 bg-zinc-50/60 text-zinc-950 ring-1 ring-zinc-950 shadow-sm dark:border-zinc-300 dark:bg-zinc-900/40 dark:text-zinc-50 dark:ring-1 dark:ring-zinc-300' : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50/50 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100'}`
 const miniTabClass = (active: boolean) => `rounded-md px-2.5 py-1 text-[10px] font-medium transition-colors ${active ? 'bg-white text-zinc-900 shadow-xs border border-zinc-200/20 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-300'}`
 
 function questionFromUnknown(question: unknown, fallback: Draft): Draft {
@@ -87,7 +88,7 @@ export function QuestionCreatePage() {
   const [searchParams] = useSearchParams()
   const [target, setTarget] = useState<'single' | 'paper'>('single')
   const [method, setMethod] = useState<'direct' | 'ai'>('direct')
-  const [singleMethod, setSingleMethod] = useState<'form' | 'json'>('form')
+  const [singleMethod, setSingleMethod] = useState<'form' | 'json'>('json')
   const [notice, setNoticeText] = useState('')
   const [noticeType, setNoticeType] = useState<NoticeType>('info')
   const [pendingBankUrl, setPendingBankUrl] = useState('')
@@ -228,6 +229,17 @@ export function QuestionCreatePage() {
     if (queryRunId) setSelectedSliceRunId(queryRunId)
     if (queryPrompt === 'paper') setPromptModalOpen(true)
   }, [searchParams])
+
+  const ocrSettings = useAsync(() => settingsApi.getOcrSettings(), [])
+  const configuredStageOptions = gradeOptionsForTeachingStages(ocrSettings.data?.teachingStages)
+  const singleStageOptions = singleDraft.stage && !configuredStageOptions.includes(singleDraft.stage)
+    ? [singleDraft.stage, ...configuredStageOptions]
+    : configuredStageOptions
+  const paperStageOptions = paperDraft.stage && !configuredStageOptions.includes(paperDraft.stage)
+    ? [paperDraft.stage, ...configuredStageOptions]
+    : configuredStageOptions
+  const selectedSingleStage = ensureStageValue(singleDraft.stage, singleStageOptions)
+  const selectedPaperStage = ensureStageValue(paperDraft.stage, paperStageOptions)
 
   useEffect(() => {
     if (!selectedSliceRun || paperDraft.sourceTitle.trim()) return
@@ -395,6 +407,40 @@ export function QuestionCreatePage() {
   const previewBlocks = useMemo(() => paragraphBlocksFromText(singleDraft.problemText), [singleDraft.problemText])
   const answerPreviewBlocks = useMemo(() => paragraphBlocksFromText(singleDraft.answerText), [singleDraft.answerText])
   const analysisPreviewBlocks = useMemo(() => paragraphBlocksFromText(singleDraft.analysisText), [singleDraft.analysisText])
+  const workspaceTabs = [
+    { key: 'single-json', title: 'JSON 单题录入', desc: '手动导入首选', Icon: Code },
+    { key: 'single-form', title: '表单录入', desc: '精修单题字段', Icon: PencilLine },
+    { key: 'paper-json', title: '整套试卷 JSON', desc: '批量解析导入', Icon: FileStack },
+    { key: 'ai-prompt', title: 'AI 转写提示词', desc: '复制 OCR 模板', Icon: Sparkles },
+  ] as const
+  const activeWorkspaceTab = method === 'ai'
+    ? 'ai-prompt'
+    : target === 'paper'
+      ? 'paper-json'
+      : singleMethod === 'form'
+        ? 'single-form'
+        : 'single-json'
+
+  function switchWorkspaceTab(tab: typeof workspaceTabs[number]['key']) {
+    if (tab === 'single-json') {
+      setMethod('direct')
+      setTarget('single')
+      setSingleMethod('json')
+      return
+    }
+    if (tab === 'single-form') {
+      setMethod('direct')
+      setTarget('single')
+      setSingleMethod('form')
+      return
+    }
+    if (tab === 'paper-json') {
+      setMethod('direct')
+      setTarget('paper')
+      return
+    }
+    setMethod('ai')
+  }
 
   function renderNotice() {
     if (!notice) return null
@@ -477,75 +523,58 @@ export function QuestionCreatePage() {
 
       <div className="border-b border-zinc-200 pb-4 dark:border-zinc-800">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">新建试题 / 试卷导入</h1>
-        <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">通过表单和分屏渲染编辑单题，或使用 JSON 解析器进行结构化导入。</p>
+        <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">优先使用 JSON 单题录入，也可切换到表单精修、整套试卷导入或 AI 转写提示词。</p>
       </div>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="space-y-4 lg:sticky lg:top-6">
-          <div className={`${sectionClass} space-y-5 p-5`}>
-            <div>
-              <h3 className="text-sm font-semibold">录入配置</h3>
-              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">快速设定录入工作模式</p>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">创建对象</label>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { key: 'single' as const, title: '单道试题', desc: '精细/源码录入', Icon: FileText },
-                  { key: 'paper' as const, title: '整套试卷', desc: '粘贴 JSON 批量导入', Icon: FileStack },
-                ].map(({ key, title, desc, Icon }) => (
-                  <button key={key} type="button" onClick={() => setTarget(key)} className={optionButtonClass(target === key)}>
-                    <span className="flex items-center justify-between gap-2 text-xs font-bold">{title}<Icon className="size-3.5 opacity-70" /></span>
-                    <span className={`mt-1 text-[10px] leading-normal ${target === key ? 'text-white/70 dark:text-zinc-950/70' : 'text-zinc-500 dark:text-zinc-400'}`}>{desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">录入方式</label>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { key: 'direct' as const, title: '直接录入', desc: target === 'single' ? '表单/源码导入' : '粘贴 JSON 导入', Icon: PencilLine },
-                  { key: 'ai' as const, title: 'AI 辅助', desc: 'OCR 转写提示词', Icon: Sparkles },
-                ].map(({ key, title, desc, Icon }) => (
-                  <button key={key} type="button" onClick={() => setMethod(key)} className={optionButtonClass(method === key)}>
-                    <span className="flex items-center justify-between gap-2 text-xs font-bold">{title}<Icon className="size-3.5 opacity-70" /></span>
-                    <span className={`mt-1 text-[10px] leading-normal ${method === key ? 'text-white/70 dark:text-zinc-950/70' : 'text-zinc-500 dark:text-zinc-400'}`}>{desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+      <div className="space-y-5">
+        <div className={`${sectionClass} p-2`}>
+          <div className="grid gap-2 md:grid-cols-4">
+            {workspaceTabs.map(({ key, title, desc, Icon }) => {
+              const active = activeWorkspaceTab === key
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => switchWorkspaceTab(key)}
+                  className={`flex min-h-16 items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                    active
+                      ? 'bg-zinc-950 text-white shadow-sm dark:bg-zinc-50 dark:text-zinc-950'
+                      : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50'
+                  }`}
+                >
+                  <span className={`flex size-9 shrink-0 items-center justify-center rounded-md ${active ? 'bg-white/15 dark:bg-zinc-950/10' : 'bg-zinc-100 dark:bg-zinc-900'}`}>
+                    <Icon className="size-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold">{title}</span>
+                    <span className={`mt-0.5 block truncate text-xs ${active ? 'text-white/70 dark:text-zinc-950/60' : 'text-zinc-500 dark:text-zinc-500'}`}>{desc}</span>
+                  </span>
+                </button>
+              )
+            })}
           </div>
+        </div>
 
-          {method === 'ai' ? (
-            <div className={`${sectionClass} space-y-4 p-5`}>
-              <h4 className="flex items-center gap-2 border-b border-zinc-200 pb-2.5 text-xs font-bold dark:border-zinc-800"><BookOpen className="size-4 text-zinc-500" />AI 转写说明</h4>
-              <ol className="list-decimal space-y-3.5 pl-4 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                <li>复制右侧面板中的专用 OCR 提示词。</li>
-                <li>打开大模型平台，将提示词与试卷图片/PDF 文件一并发送。</li>
-                <li>将模型生成的 JSON 复制回来。</li>
-                <li><button type="button" className="font-bold text-zinc-900 underline dark:text-zinc-50" onClick={() => setMethod('direct')}>切回直接录入</button>，粘贴 JSON 后导入。</li>
-              </ol>
-            </div>
-          ) : null}
-
-          {renderNotice()}
-        </aside>
+        {renderNotice()}
 
         <div className="min-w-0 space-y-6">
           {method === 'direct' && target === 'single' ? (
             <div className="space-y-6">
-              <div className={inputTabClass}>
-                <button type="button" onClick={() => setSingleMethod('form')} className={inputTabButtonClass(singleMethod === 'form')}><PencilLine className="size-3.5" />手动表单录入</button>
-                <button type="button" onClick={() => setSingleMethod('json')} className={inputTabButtonClass(singleMethod === 'json')}><Code className="size-3.5" />JSON 单题录入</button>
-              </div>
-
               {singleMethod === 'form' ? (
                 <form className="space-y-6" onSubmit={createSingle}>
                   <section className={sectionClass}>
                     <div className={sectionHeaderClass}><Settings2 className="size-4 text-zinc-500" /><h2 className="text-xs font-bold uppercase tracking-wider">1. 基本属性设定</h2></div>
                     <div className="grid gap-6 p-6 sm:grid-cols-2 lg:grid-cols-4">
-                      <label className="space-y-2"><span className={smallLabelClass}>学段</span><input className={editorInputClass} placeholder="例：高三" value={singleDraft.stage} onChange={(e) => updateDraft({ stage: e.target.value })} /></label>
+                      <label className="space-y-2">
+                        <span className={smallLabelClass}>学段</span>
+                        <SearchableSelect
+                          value={selectedSingleStage}
+                          options={singleStageOptions}
+                          onChange={(stage) => updateDraft({ stage })}
+                          placeholder="请选择学段"
+                          searchPlaceholder="搜索学段"
+                        />
+                      </label>
                       <label className="space-y-2"><span className={smallLabelClass}>题型</span><select className={editorInputClass} value={singleDraft.questionType} onChange={(e) => updateDraft({ questionType: e.target.value })}><option value="单选题">单选题</option><option value="多选题">多选题</option><option value="填空题">填空题</option><option value="解答题">解答题</option></select></label>
                       <label className="space-y-2"><span className={smallLabelClass}>题号</span><input className={editorInputClass} placeholder="例: 1" value={singleDraft.questionNo} onChange={(e) => updateDraft({ questionNo: e.target.value })} /></label>
                       <label className="space-y-2"><span className={smallLabelClass}>来源</span><input className={editorInputClass} placeholder="例: 2026高考模拟" value={singleDraft.sourceTitle} onChange={(e) => updateDraft({ sourceTitle: e.target.value })} /></label>
@@ -656,7 +685,16 @@ export function QuestionCreatePage() {
               <h3 className="text-sm font-semibold">试卷批量导入</h3>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-1.5"><span className={smallLabelClass}>试卷名称</span><input className={editorInputClass} placeholder="输入试卷名称" value={paperDraft.sourceTitle} onChange={(e) => setPaperDraft({ ...paperDraft, sourceTitle: e.target.value })} /></label>
-                <label className="space-y-1.5"><span className={smallLabelClass}>全局学段</span><input className={editorInputClass} placeholder="例：高三" value={paperDraft.stage} onChange={(e) => setPaperDraft({ ...paperDraft, stage: e.target.value })} /></label>
+                <label className="space-y-1.5">
+                  <span className={smallLabelClass}>全局学段</span>
+                  <SearchableSelect
+                    value={selectedPaperStage}
+                    options={paperStageOptions}
+                    onChange={(stage) => setPaperDraft({ ...paperDraft, stage })}
+                    placeholder="请选择学段"
+                    searchPlaceholder="搜索学段"
+                  />
+                </label>
               </div>
 
               <section className="space-y-3">

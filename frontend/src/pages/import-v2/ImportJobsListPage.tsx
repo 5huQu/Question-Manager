@@ -15,8 +15,12 @@ import {
   Eye,
 } from 'lucide-react'
 import { importV2Api, type ImportV2ImportJob, type ImportV2ImportJobDetail, type PaperKind, type SourceMetadataDraft } from '@/api/importV2'
+import { settingsApi } from '@/api/settings'
+import { SearchableSelect } from '@/components/SearchableSelect'
 import { PageTitle, Panel, Badge, Button } from '@/components/ui'
 import { Modal } from '@/components/dialogs/Modal'
+import { useAsync } from '@/hooks/useAsync'
+import { cityOptionsForProvince, provinceOptions, yearOptionsFromServerYear } from '@/utils/metadataOptions'
 
 const paperKindOptions: Array<{ value: PaperKind; label: string }> = [
   { value: 'gaokao_real', label: '高考真题' },
@@ -47,6 +51,7 @@ function isGaokaoRegion(val?: string) {
 
 export default function ImportJobsListPage() {
   const navigate = useNavigate()
+  const health = useAsync(() => settingsApi.getHealth(), [])
   const [jobs, setJobs] = useState<ImportV2ImportJobDetail[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -66,6 +71,11 @@ export default function ImportJobsListPage() {
 
   // 轮询状态：记录处于 ocr_running 状态的 jobId，用于页面轮询
   const [hasRunningOcr, setHasRunningOcr] = useState(false)
+  const yearOptions = useMemo(() => yearOptionsFromServerYear(health.data?.serverYear), [health.data?.serverYear])
+  const editCityOptions = useMemo(() => editForm ? cityOptionsForProvince(editForm.province) : [], [editForm?.province])
+  const visibleEditCityOptions = editForm?.city && !editCityOptions.includes(editForm.city)
+    ? [editForm.city, ...editCityOptions]
+    : editCityOptions
 
   async function fetchJobs(silent = false) {
     if (!silent) setLoading(true)
@@ -123,7 +133,7 @@ export default function ImportJobsListPage() {
   }, [jobs])
 
   const yearFilterOptions = useMemo(() => {
-    return Array.from(new Set(jobs.map(job => job.importJob.examYear).filter(Boolean).map(String))).sort((a, b) => Number(b) - Number(a))
+    return Array.from(new Set(jobs.map(job => job.importJob.examYear).filter(Boolean).map(String))).sort((a, b) => Number(a) - Number(b))
   }, [jobs])
 
   const hasActiveFilters = Boolean(stageFilter || subjectFilter || paperKindFilter || regionFilter || yearFilter)
@@ -648,13 +658,13 @@ export default function ImportJobsListPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <label className="space-y-1.5 block">
                       <span className="text-[13px] font-medium text-zinc-500">学段/年级</span>
-                      <select
-                        className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                      <SearchableSelect
                         value={editForm.stage}
-                        onChange={(e) => updateEditForm({ stage: e.target.value })}
-                      >
-                        {stageOptions.map(o => <option key={o} value={o}>{o}</option>)}
-                      </select>
+                        options={stageOptions.includes(editForm.stage) ? stageOptions : [editForm.stage, ...stageOptions]}
+                        onChange={(stage) => updateEditForm({ stage })}
+                        placeholder="请选择学段"
+                        searchPlaceholder="搜索学段"
+                      />
                     </label>
                     <label className="space-y-1.5 block">
                       <span className="text-[13px] font-medium text-zinc-500">学科</span>
@@ -685,11 +695,12 @@ export default function ImportJobsListPage() {
                     </label>
                     <label className="space-y-1.5 block">
                       <span className="text-[13px] font-medium text-zinc-500">年份</span>
-                      <input
-                        type="number"
-                        className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                      <SearchableSelect
                         value={editForm.examYear}
-                        onChange={(e) => updateEditForm({ examYear: e.target.value })}
+                        options={yearOptions.includes(editForm.examYear) ? yearOptions : [editForm.examYear, ...yearOptions].filter(Boolean)}
+                        onChange={(examYear) => updateEditForm({ examYear })}
+                        placeholder="请选择年份"
+                        searchPlaceholder="搜索年份"
                       />
                     </label>
                   </div>
@@ -703,32 +714,38 @@ export default function ImportJobsListPage() {
                   {editForm.paperKind === 'gaokao_real' ? (
                     <label className="space-y-1.5 block">
                       <span className="text-[13px] font-medium text-zinc-500">试卷适用地区</span>
-                      <select
-                        className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                      <SearchableSelect
                         value={isGaokaoRegion(editForm.province) ? editForm.province : ''}
-                        onChange={(e) => updateEditForm({ province: e.target.value, city: '', sourceOrg: '' })}
-                      >
-                        <option value="">请选择全国卷或直辖市</option>
-                        {gaokaoRegionOptions.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-                      </select>
+                        options={gaokaoRegionOptions.map((item) => item.value)}
+                        onChange={(province) => updateEditForm({ province, city: '', sourceOrg: '' })}
+                        placeholder="请选择全国卷或直辖市"
+                        searchPlaceholder="搜索全国卷或地区"
+                        allowClear
+                      />
                     </label>
                   ) : (
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
                         <label className="space-y-1.5 block">
                           <span className="text-[13px] font-medium text-zinc-500">省份</span>
-                          <input
-                            className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                          <SearchableSelect
                             value={editForm.province}
-                            onChange={(e) => updateEditForm({ province: e.target.value })}
+                            options={provinceOptions}
+                            onChange={(province) => updateEditForm({ province, city: cityOptionsForProvince(province).includes(editForm.city) ? editForm.city : '' })}
+                            placeholder="请选择省份"
+                            searchPlaceholder="搜索省份"
+                            allowClear
                           />
                         </label>
                         <label className="space-y-1.5 block">
                           <span className="text-[13px] font-medium text-zinc-500">城市</span>
-                          <input
-                            className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
+                          <SearchableSelect
                             value={editForm.city}
-                            onChange={(e) => updateEditForm({ city: e.target.value })}
+                            options={visibleEditCityOptions}
+                            onChange={(city) => updateEditForm({ city })}
+                            placeholder={editForm.province ? '请选择城市' : '可先选择省份'}
+                            searchPlaceholder="搜索城市"
+                            allowClear
                           />
                         </label>
                       </div>
