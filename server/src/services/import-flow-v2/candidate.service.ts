@@ -22,6 +22,8 @@ import {
 import { revalidateAllCandidatesForSourceDocument } from '../pdf-slicer/annotations.service.js'
 import { figuresForQuestionBank, getOcrFigureDiagnostics } from './figure-mapping.js'
 import { loadOcrDocument } from './ocr-document.service.js'
+import { readOcrSettings } from '../settings/ocr-settings.js'
+import { runQuestionBatchClassification, type QuestionBatchClassificationReport } from '../question-bank/batch-classification.js'
 
 function candidateStatusCounts(candidates: QuestionCandidate[]) {
   return {
@@ -98,6 +100,17 @@ function importJobContextForSource(sourceDocumentId: string) {
     importSourceId: row.id,
     sourceTitle: row.paper_title || row.title || sourceTitle(sourceDocumentId),
   }
+}
+
+async function maybeClassifyCommittedImportJobs(items: Array<{ importSourceId?: string }>) {
+  if (readOcrSettings().classificationEnabled === 'false') return null
+  const importJobIds = Array.from(new Set(items.map((item) => String(item.importSourceId || '').trim()).filter(Boolean)))
+    .filter((id) => Boolean(db.prepare('SELECT id FROM import_jobs WHERE id = ?').get(id)))
+  const reports: QuestionBatchClassificationReport[] = []
+  for (const importJobId of importJobIds) {
+    reports.push(await runQuestionBatchClassification({ type: 'import_job', id: importJobId }))
+  }
+  return reports.length ? reports : null
 }
 
 function sourceMetadata(sourceDocumentId: string) {
@@ -193,7 +206,7 @@ export function updateQuestionCandidate(id: string, body: Record<string, unknown
   return { candidate: finalUpdated }
 }
 
-export function commitQuestionCandidate(id: string) {
+export async function commitQuestionCandidate(id: string, options: { skipAutoClassification?: boolean } = {}) {
   const candidate = candidateRepo.getQuestionCandidate(id)
   if (!candidate) throw new RouteError(404, '候选题不存在。')
   if (candidate.status === 'committed') {
@@ -204,7 +217,7 @@ export function commitQuestionCandidate(id: string) {
     if (!committedItem) {
       throw new RouteError(409, `候选题已标记为已入库，但题库中不存在对应题目（${candidate.committedQuestionId}）。`)
     }
-    return { candidate, item: committedItem }
+    return { candidate, item: committedItem, classificationReports: null }
   }
   if (!candidate.stemMarkdown.trim()) throw new RouteError(400, '题干为空，不能入库。')
   const difficultyScore10 = normalizeDifficultyScore10(candidate.difficultyScore10)
@@ -243,22 +256,24 @@ export function commitQuestionCandidate(id: string) {
     committedAt: nowIso(),
   })
   if (!committedCandidate) throw new RouteError(500, '题目已创建，但候选题入库状态更新失败。')
-  return { candidate: committedCandidate, item }
+  const classificationReports = options.skipAutoClassification ? null : await maybeClassifyCommittedImportJobs([item])
+  return { candidate: committedCandidate, item, classificationReports }
 }
 
-export function commitQuestionCandidates(body: Record<string, unknown>) {
+export async function commitQuestionCandidates(body: Record<string, unknown>) {
   const ids = Array.isArray(body.candidateIds) ? body.candidateIds.map(String) : []
   if (!ids.length) throw new RouteError(400, '请指定要入库的候选题。')
   const items = []
   const errors = []
   for (const id of ids) {
     try {
-      items.push(commitQuestionCandidate(id).item)
+      items.push((await commitQuestionCandidate(id, { skipAutoClassification: true })).item)
     } catch (error) {
       errors.push({ id, error: error instanceof Error ? error.message : String(error) })
     }
   }
-  return { success: items.length, failed: errors.length, items, errors }
+  const classificationReports = await maybeClassifyCommittedImportJobs(items)
+  return { success: items.length, failed: errors.length, items, errors, classificationReports }
 }
 
 export function deleteQuestionCandidate(id: string) {

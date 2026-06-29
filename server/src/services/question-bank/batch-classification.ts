@@ -7,6 +7,7 @@ import { pythonCommand } from '../settings/python.js'
 import { ocrRunnerEnv, readOcrSettings } from '../settings/ocr-settings.js'
 
 export type QuestionBatchClassificationScope =
+  | { type: 'all'; id?: string }
   | { type: 'pdf_slicer_run'; id: string }
   | { type: 'import_job'; id: string }
 
@@ -23,7 +24,7 @@ export type QuestionBatchClassificationReport = {
 
 function normalizeScope(scope: QuestionBatchClassificationScope) {
   const id = String(scope.id || '').trim()
-  if (!id) throw new RouteError(400, '题目分类缺少批次 ID。')
+  if (scope.type !== 'all' && !id) throw new RouteError(400, '题目分类缺少批次 ID。')
   return { type: scope.type, id }
 }
 

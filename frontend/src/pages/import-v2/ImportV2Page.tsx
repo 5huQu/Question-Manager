@@ -1455,14 +1455,14 @@ export default function ImportV2Page() {
     setBusy('bulk-confirm')
     setError('')
     try {
-      const results = await Promise.all(idsArray.map(id => importV2Api.commitCandidate(id)))
-      const committedById = new Map(results.map((result) => [result.candidate.id, fromCandidate(result.candidate)]))
-      setQuestions((items) => items.map((item) => committedById.get(item.id) || item))
-      showNotice(`批量确认完成：成功入库 ${idsArray.length} 题。`)
+      const result = await importV2Api.commitCandidates(idsArray)
+      const committedIdsSet = new Set(idsArray.filter((id) => !result.errors?.some((error) => error.id === id)))
+      setQuestions((items) => items.map((item) => committedIdsSet.has(item.id) ? { ...item, status: 'committed' } : item))
+      showNotice(`批量确认完成：成功入库 ${result.success} 题${result.failed ? `，失败 ${result.failed} 题` : ''}。`)
 
       setCommittedIds((prev) => {
         const next = new Set(prev)
-        idsArray.forEach(id => next.add(id))
+        committedIdsSet.forEach(id => next.add(id))
         return next
       })
       setSelectedIds(new Set())
@@ -1590,11 +1590,6 @@ export default function ImportV2Page() {
         />
       </div>
 
-      {/* 明确提示文案 */}
-      <div className="rounded-lg border border-amber-200 bg-amber-50/20 p-3.5 text-xs text-amber-800 dark:border-amber-900/30 dark:bg-amber-95/10 dark:text-amber-400 flex items-center gap-2.5 shadow-sm animate-in fade-in duration-200">
-        <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
-        <span>资料导入不会直接进入题库。请核对后点击确认入库。</span>
-      </div>
 
       {/* 消息提示框 */}
       {notice ? (

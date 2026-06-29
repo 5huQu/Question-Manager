@@ -363,17 +363,17 @@ export function mountImportFlowV2Routes(app: Express) {
     }
   })
 
-  app.post('/api/import-flow-v2/candidates/:id/commit', (req, res) => {
+  app.post('/api/import-flow-v2/candidates/:id/commit', async (req, res) => {
     try {
-      res.json(commitQuestionCandidate(decodeURIComponent(String(req.params.id || ''))))
+      res.json(await commitQuestionCandidate(decodeURIComponent(String(req.params.id || ''))))
     } catch (error) {
       sendRouteError(res, error)
     }
   })
 
-  app.post('/api/import-flow-v2/candidates/commit', (req, res) => {
+  app.post('/api/import-flow-v2/candidates/commit', async (req, res) => {
     try {
-      res.json(commitQuestionCandidates(req.body || {}))
+      res.json(await commitQuestionCandidates(req.body || {}))
     } catch (error) {
       sendRouteError(res, error)
     }
@@ -531,17 +531,17 @@ export function mountImportFlowV2Routes(app: Express) {
     }
   })
 
-  app.post('/api/question-candidates/:id/commit', (req, res) => {
+  app.post('/api/question-candidates/:id/commit', async (req, res) => {
     try {
-      res.json(commitQuestionCandidate(decodeURIComponent(String(req.params.id || ''))))
+      res.json(await commitQuestionCandidate(decodeURIComponent(String(req.params.id || ''))))
     } catch (error) {
       sendRouteError(res, error)
     }
   })
 
-  app.post('/api/question-candidates/commit', (req, res) => {
+  app.post('/api/question-candidates/commit', async (req, res) => {
     try {
-      res.json(commitQuestionCandidates(req.body || {}))
+      res.json(await commitQuestionCandidates(req.body || {}))
     } catch (error) {
       sendRouteError(res, error)
     }

@@ -20,6 +20,15 @@ export type QuestionFigurePayload = {
   sourcePath?: string
 }
 
+export type QuestionBankClassificationReport = {
+  scopeType: 'all' | 'pdf_slicer_run' | 'import_job'
+  scopeId: string
+  total: number
+  updated: number
+  failed: number
+  failures?: Array<{ id: string; error: string }>
+}
+
 function buildQuery(params: QuestionBankListParams = {}) {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -59,6 +68,13 @@ export const questionBankApi = {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify(payload),
+    })
+  },
+  classifyAllItems() {
+    return api<{ report: QuestionBankClassificationReport }>('/api/question-bank/items/classify', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({}),
     })
   },
   importJsonItems(payload: Record<string, unknown>) {

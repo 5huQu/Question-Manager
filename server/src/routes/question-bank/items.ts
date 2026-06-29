@@ -15,6 +15,7 @@ import {
   updateItem,
   uploadFigure,
 } from '../../services/question-bank/items.service.js'
+import { runQuestionBatchClassification } from '../../services/question-bank/batch-classification.js'
 
 export function mountQuestionBankItemsRoutes(app: Express) {
   app.get('/api/question-bank/items', (req, res) => {
@@ -28,6 +29,14 @@ export function mountQuestionBankItemsRoutes(app: Express) {
   app.post('/api/question-bank/items/:id/rerun-ocr', (req, res) => {
     try {
       res.json(rerunItemOcr(decodeURIComponent(String(req.params.id || '')), req.body || {}))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/question-bank/items/classify', async (_req, res) => {
+    try {
+      res.json({ report: await runQuestionBatchClassification({ type: 'all' }) })
     } catch (error) {
       sendRouteError(res, error)
     }

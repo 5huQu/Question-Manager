@@ -469,8 +469,15 @@ export const importV2Api = {
     })
   },
   commitCandidate(candidateId: string) {
-    return api<{ candidate: ImportV2Candidate; item: unknown }>('/api/import-flow-v2/candidates/' + encodeURIComponent(candidateId) + '/commit', {
+    return api<{ candidate: ImportV2Candidate; item: unknown; classificationReports?: unknown }>('/api/import-flow-v2/candidates/' + encodeURIComponent(candidateId) + '/commit', {
       method: 'POST',
+    })
+  },
+  commitCandidates(candidateIds: string[]) {
+    return api<{ success: number; failed: number; items: unknown[]; errors: Array<{ id: string; error: string }>; classificationReports?: unknown }>('/api/import-flow-v2/candidates/commit', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ candidateIds }),
     })
   },
   createManualFixSession(candidateId: string) {

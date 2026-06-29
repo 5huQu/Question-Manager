@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BookOpen, Calendar, Check, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Crop, Grid, List, PencilLine, PlusSquare, Search, ShoppingBag, Tag, Trash2, X } from 'lucide-react'
+import { BookOpen, Calendar, Check, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Crop, Grid, List, LoaderCircle, PencilLine, PlusSquare, Search, ShoppingBag, Tag, Tags, Trash2, X } from 'lucide-react'
 import { questionBankApi } from '@/api/questionBank'
 import { learningTagsApi } from '@/api/learningTags'
 import { FigureCropDialog } from '@/components/questions/FigureDialogs'
@@ -457,6 +457,8 @@ export function BankTab({
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [classifying, setClassifying] = useState(false)
+  const [classificationStatus, setClassificationStatus] = useState('')
 
   const [stageExpanded, setStageExpanded] = useState(false)
   const [questionTypeExpanded, setQuestionTypeExpanded] = useState(true)
@@ -542,6 +544,24 @@ export function BankTab({
       await addToBasket(id)
     }
     setSelectedIds([])
+  }
+
+  async function classifyAllQuestions() {
+    if (!totalItems || classifying) return
+    const confirmed = window.confirm(`确认对题库主库中的 ${totalItems} 道题目执行数据分类？本操作只更新知识点、解题方法和难度。`)
+    if (!confirmed) return
+    setClassifying(true)
+    setClassificationStatus('')
+    try {
+      const result = await questionBankApi.classifyAllItems()
+      const report = result.report
+      setClassificationStatus(`分类完成：已更新 ${report.updated}/${report.total} 题${report.failed ? `，失败 ${report.failed} 题` : ''}。`)
+      reload()
+    } catch (error) {
+      setClassificationStatus(error instanceof Error ? error.message : '分类任务启动失败')
+    } finally {
+      setClassifying(false)
+    }
   }
 
   function selectAllCurrentPage() {
@@ -913,12 +933,19 @@ export function BankTab({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2 border-l border-zinc-200 pl-3 dark:border-zinc-800">
-
+            <Button size="sm" variant="outline" icon={classifying ? LoaderCircle : Tags} disabled={classifying || totalItems === 0} onClick={classifyAllQuestions}>
+              {classifying ? '分类中...' : '开始分类'}
+            </Button>
             <Button size="sm" variant="outline" asLink to="/questions/basket" icon={ShoppingBag}>试题篮 ({basketCount})</Button>
           </div>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4 pb-16">
+          {classificationStatus ? (
+            <div className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-600 shadow-xs dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
+              {classificationStatus}
+            </div>
+          ) : null}
           <div className="flex items-center justify-between px-1">
             <span className="font-mono text-[10px] text-zinc-400 dark:text-zinc-500">找到 {totalItems} 道试题</span>
             <button type="button" onClick={selectAllCurrentPage} className="text-[10px] font-bold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200">

@@ -180,7 +180,7 @@ try {
   assert.equal(q2.batchName, 'Separated Batch')
 
   console.log('3. Committing a merged candidate to the bank...')
-  const commitResult = commitQuestionCandidate(q2.id)
+  const commitResult = await commitQuestionCandidate(q2.id, { skipAutoClassification: true })
   assert.equal(commitResult.candidate.status, 'committed')
   assert.equal(commitResult.item.answerText, '4')
   assert.equal(commitResult.item.analysisMarkdown.includes('2a=4'), true)
@@ -205,7 +205,7 @@ try {
   const directResult = parseCandidatesForOcrDocument(directOcr.id)
   assert.equal(directResult.items.length, 1)
   assert.equal(directResult.items[0].answerText, '8')
-  const directCommit = commitQuestionCandidate(directResult.items[0].id)
+  const directCommit = await commitQuestionCandidate(directResult.items[0].id, { skipAutoClassification: true })
   assert.equal(directCommit.item.sourceRunId, '')
   assert.equal(directCommit.item.importSourceId, directSource.id)
   const directJob = ensureSingleDocumentImportJob(directSource.id)
