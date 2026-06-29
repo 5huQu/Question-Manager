@@ -21,7 +21,7 @@ import {
   Sunset,
   type LucideIcon,
 } from 'lucide-react'
-import type { ActivityHeatmapDay, ActivityHeatmapResponse } from '@/api/dashboard'
+import type { ActivityHeatmapDay, ActivityHeatmapResponse, ActivityHoursResponse } from '@/api/dashboard'
 import type { ExportRecordsResponse } from '@/api/exportRecords'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import type { ExportRecord, OcrSettings, QuestionBankResponse, QuestionItem } from '@/types'
@@ -35,6 +35,9 @@ export function OverviewTab({
   activityHeatmap,
   activityHeatmapError,
   activityHeatmapLoading,
+  activityHours,
+  activityHoursError,
+  activityHoursLoading,
   exportRecords,
   exportRecordsLoading,
 }: {
@@ -44,6 +47,9 @@ export function OverviewTab({
   activityHeatmap: ActivityHeatmapResponse | null
   activityHeatmapError?: string
   activityHeatmapLoading?: boolean
+  activityHours: ActivityHoursResponse | null
+  activityHoursError?: string
+  activityHoursLoading?: boolean
   exportRecords: ExportRecordsResponse | null
   exportRecordsLoading?: boolean
 }) {
@@ -56,13 +62,8 @@ export function OverviewTab({
   const stats = useMemo(() => buildStats(heatmapDays, questionBank?.totalItems ?? 0, exports), [exports, heatmapDays, questionBank?.totalItems])
   const weeks = useMemo(() => buildHeatmapWeeks(heatmapDays), [heatmapDays])
   const ocrReady = getOcrReady(ocrSettings)
-
-  const peakHoursData = useMemo(() => [
-    { label: '凌晨', range: '0:00 - 8:00', percentage: 8, icon: Moon },
-    { label: '上午', range: '8:00 - 12:00', percentage: 27, icon: Sunrise },
-    { label: '下午', range: '12:00 - 16:00', percentage: 20, icon: Sun },
-    { label: '晚上', range: '16:00 - 24:00', percentage: 45, icon: Sunset, isPeak: true },
-  ], [])
+  const peakHoursData = useMemo(() => buildPeakHoursData(activityHours), [activityHours])
+  const peakHoursLabel = activityHoursLoading ? '统计中' : activityHoursError ? '加载失败' : activityHours?.summary.peakLabel || '暂无数据'
 
   return (
     <div className="mock-page-root flex flex-col gap-6 select-none bg-background text-foreground">
@@ -183,7 +184,7 @@ export function OverviewTab({
               <div className="flex items-center gap-1.5 h-8">
                 <Clock className="size-4 text-zinc-500" />
                 <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                  最常活跃时间段：晚上
+                  最常活跃时间段：{peakHoursLabel}
                 </span>
               </div>
 
@@ -199,16 +200,14 @@ export function OverviewTab({
                           <span>{item.label}</span>
                           <span className="text-[10px] text-zinc-400 font-normal">{item.range}</span>
                         </span>
-                        <span className={`font-semibold font-mono ${item.isPeak ? 'text-zinc-900 dark:text-zinc-50 font-bold' : 'text-zinc-500'}`}>
-                          {item.percentage}%
+                        <span className={`font-semibold font-mono ${activityHoursLoading ? 'text-zinc-300 dark:text-zinc-700' : item.isPeak ? 'text-zinc-900 dark:text-zinc-50 font-bold' : 'text-zinc-500'}`}>
+                          {activityHoursLoading ? '--' : item.percentage}%
                         </span>
                       </div>
                       <div className="h-1.5 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
                         <div
-                          className={`h-full rounded-full transition-all duration-300 ${
-                            item.isPeak ? 'bg-zinc-800 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-700'
-                          }`}
-                          style={{ width: `${item.percentage}%` }}
+                          className={`h-full rounded-full transition-all duration-300 ${activityHoursLoading ? 'animate-pulse bg-zinc-200 dark:bg-zinc-700' : item.isPeak ? 'bg-zinc-800 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-700'}`}
+                          style={{ width: activityHoursLoading ? '100%' : `${item.percentage}%` }}
                         />
                       </div>
                     </div>
@@ -691,6 +690,32 @@ function buildStats(days: ActivityHeatmapDay[], totalQuestions: number, exports:
     weeklyExports,
     activeRatio,
   }
+}
+
+function buildPeakHoursData(activityHours: ActivityHoursResponse | null) {
+  const iconBySlot: Record<string, LucideIcon> = {
+    late_night: Moon,
+    morning: Sunrise,
+    afternoon: Sun,
+    evening: Sunset,
+  }
+  const fallbackSlots = [
+    { id: 'late_night', label: '凌晨', range: '0:00 - 8:00', startHour: 0, endHour: 8 },
+    { id: 'morning', label: '上午', range: '8:00 - 12:00', startHour: 8, endHour: 12 },
+    { id: 'afternoon', label: '下午', range: '12:00 - 16:00', startHour: 12, endHour: 16 },
+    { id: 'evening', label: '晚上', range: '16:00 - 24:00', startHour: 16, endHour: 24 },
+  ]
+  const slots = activityHours?.slots.length ? activityHours.slots : fallbackSlots.map((slot) => ({
+    ...slot,
+    count: 0,
+    percentage: 0,
+    isPeak: false,
+  }))
+
+  return slots.map((slot) => ({
+    ...slot,
+    icon: iconBySlot[slot.id] ?? Clock,
+  }))
 }
 
 function formatDelta(current: number, previous: number) {

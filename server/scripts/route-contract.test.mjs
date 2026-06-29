@@ -86,6 +86,7 @@ const expectedRoutes = new Set([
   'POST /api/tools/pdf-slicer/rules/rollback/:version',
   'GET /api/tools/pdf-slicer/dashboard',
   'GET /api/dashboard/activity-heatmap',
+  'GET /api/dashboard/activity-hours',
   'POST /api/tools/pdf-slicer/uploads',
   'GET /api/tools/pdf-slicer/batches/:batchId',
   'POST /api/tools/pdf-slicer/batches/:batchId/merge-separated-exam',
