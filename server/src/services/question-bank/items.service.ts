@@ -23,6 +23,15 @@ import * as repo from '../../repositories/question-bank/items.repo.js'
 
 export const questionFigureUpload = upload.single('file')
 
+function isImportFlowV2SourceId(value: unknown) {
+  const sourceId = String(value || '')
+  return sourceId.startsWith('ifv2:') || sourceId.startsWith('ifv2-job:')
+}
+
+function isImportFlowV2Question(item: NonNullable<ReturnType<typeof repo.getQuestion>>) {
+  return Boolean(item.importSourceId) || isImportFlowV2SourceId(item.sourceRunId)
+}
+
 export function listItems(query: Record<string, unknown>) {
   const requestedPage = Number.parseInt(String(query.page || '1'), 10)
   const requestedPageSize = Number.parseInt(String(query.pageSize || '20'), 10)
@@ -41,6 +50,9 @@ export function listItems(query: Record<string, unknown>) {
 export function rerunItemOcr(id: string, body: Record<string, unknown>) {
   const item = repo.getQuestion(id)
   if (!item) throw new RouteError(404, '题目不存在。')
+  if (isImportFlowV2Question(item)) {
+    throw new RouteError(400, 'V2 导入题目请回到导入批次中重新识别或修正。')
+  }
   if (!item.sourceRunId) throw new RouteError(400, '当前题目没有原始 OCR 来源，无法重新 OCR。')
   const sourceRun = getRun(item.sourceRunId)
   if (sourceRun?.ocrProvider === 'doc2x' || normalizeOcrProvider(readOcrSettings().ocrProvider) === 'doc2x') {

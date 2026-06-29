@@ -1,5 +1,5 @@
 import { detectQuestionNumbers, detectSolutionQuestionNumbers, type QuestionNumberMatch } from './question-number-detector.js'
-import { findSolutionSections, type SolutionSection } from './solution-matcher.js'
+import { findSolutionSections, maskNonSolutionBlocks, type SolutionSection } from './solution-matcher.js'
 import { getParserConfig } from './parser-config.js'
 import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
 
@@ -115,7 +115,8 @@ function strictGlobalSolutionSection(
 ): { section: SolutionSection; repeatedQuestionNos: string[]; firstQuestionNoAfterHeading?: string } | undefined {
   for (const section of sections) {
     const before = questionMatches.filter((item) => item.start < section.start)
-    const after = detectSolutionQuestionNumbers(markdown.slice(section.contentStart), config).map((item) => ({
+    const sectionContent = markdown.slice(section.contentStart)
+    const after = detectSolutionQuestionNumbers(maskNonSolutionBlocks(sectionContent, config), config).map((item) => ({
       ...item,
       start: item.start + section.contentStart,
       contentStart: item.contentStart + section.contentStart,

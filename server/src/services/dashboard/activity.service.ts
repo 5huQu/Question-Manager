@@ -1,5 +1,10 @@
 import { RouteError } from '../../utils/http-error.js'
-import { getActivityBreakdownByDay, type ActivityBreakdownCounts, type ActivityMetricKey } from '../../repositories/dashboard/activity.repo.js'
+import {
+  getActivityBreakdownByDay,
+  getActivityBreakdownByHour,
+  type ActivityBreakdownCounts,
+  type ActivityMetricKey,
+} from '../../repositories/dashboard/activity.repo.js'
 
 export type ActivityMetric = 'all' | 'questions_created' | 'questions_updated' | 'exports_created' | 'ocr_completed'
 
@@ -9,8 +14,22 @@ type ActivityHeatmapQuery = {
   metric?: unknown
 }
 
+type ActivitySlot = {
+  id: string
+  label: string
+  range: string
+  startHour: number
+  endHour: number
+}
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const SUPPORTED_METRICS: ActivityMetric[] = ['all', 'questions_created', 'questions_updated', 'exports_created', 'ocr_completed']
+const ACTIVITY_SLOTS: ActivitySlot[] = [
+  { id: 'late_night', label: '凌晨', range: '0:00 - 8:00', startHour: 0, endHour: 8 },
+  { id: 'morning', label: '上午', range: '8:00 - 12:00', startHour: 8, endHour: 12 },
+  { id: 'afternoon', label: '下午', range: '12:00 - 16:00', startHour: 12, endHour: 16 },
+  { id: 'evening', label: '晚上', range: '16:00 - 24:00', startHour: 16, endHour: 24 },
+]
 
 const METRIC_KEYS: Record<Exclude<ActivityMetric, 'all'>, ActivityMetricKey> = {
   questions_created: 'questionsCreated',
@@ -153,5 +172,51 @@ export function getActivityHeatmap(query: ActivityHeatmapQuery = {}) {
       averagePerActiveDay: activeDays ? totalCount / activeDays : 0,
     },
     days,
+  }
+}
+
+export function getActivityHours(query: ActivityHeatmapQuery = {}) {
+  const metric = parseMetricParam(query.metric)
+  const { from, to } = resolveDateRange(query)
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local'
+  const rowsByMetric = getActivityBreakdownByHour(from, to)
+  const countsByHour = Array.from({ length: 24 }, () => 0)
+
+  for (const [key, rows] of Object.entries(rowsByMetric) as Array<[ActivityMetricKey, Array<{ hour: number; count: number }>]>) {
+    if (metric !== 'all' && METRIC_KEYS[metric] !== key) continue
+    for (const row of rows) {
+      const hour = Number(row.hour)
+      if (!Number.isInteger(hour) || hour < 0 || hour > 23) continue
+      countsByHour[hour] += Number(row.count || 0)
+    }
+  }
+
+  const totalCount = countsByHour.reduce((sum, count) => sum + count, 0)
+  const slots = ACTIVITY_SLOTS.map((slot) => {
+    const count = countsByHour.slice(slot.startHour, slot.endHour).reduce((sum, value) => sum + value, 0)
+    return {
+      ...slot,
+      count,
+      percentage: totalCount ? Math.round((count / totalCount) * 100) : 0,
+      isPeak: false,
+    }
+  })
+  const peakCount = slots.reduce((max, slot) => Math.max(max, slot.count), 0)
+  const peakSlotId = peakCount > 0 ? slots.find((slot) => slot.count === peakCount)?.id ?? '' : ''
+
+  return {
+    from,
+    to,
+    metric,
+    timezone,
+    summary: {
+      totalCount,
+      peakSlotId,
+      peakLabel: slots.find((slot) => slot.id === peakSlotId)?.label ?? '',
+    },
+    slots: slots.map((slot) => ({
+      ...slot,
+      isPeak: slot.id === peakSlotId,
+    })),
   }
 }

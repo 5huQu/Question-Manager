@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { classifyQuestionDocumentLayout, defaultParserConfig, mergeQuestionCandidatesWithSolutions, parseQuestionCandidates, parseSolutionDocument } from '../dist/services/question-parser/index.js'
+import { buildParserPreview, classifyQuestionDocumentLayout, defaultParserConfig, mergeQuestionCandidatesWithSolutions, parseQuestionCandidates, parseSolutionDocument } from '../dist/services/question-parser/index.js'
 
 function block(markdown, content, pageNo, id, type = 'text', assetId = '') {
   const markdownStart = markdown.indexOf(content)
@@ -144,6 +144,57 @@ assert.equal(looseMarkedSolutions.get('2')?.answerText, 'D')
 assert.match(looseMarkedSolutions.get('2')?.analysisMarkdown || '', /第二题详解/)
 assert.equal(looseMarkedSolutions.get('12')?.answerText, '\\frac{1+\\sqrt{5}}{2}')
 assert.match(looseMarkedSolutions.get('12')?.analysisMarkdown || '', /第十二题分析/)
+
+const inlineFillBlankAnswerTableSolutionDocument = {
+  ...ocrDocument,
+  id: 'ocr_inline_fill_blank_answer_table_solution_test',
+  markdown: [
+    '# 参考答案',
+    '12. $ \\underline{\\sqrt{6}} $ 13. $ \\underline{1 4} $ 14. $ \\underline{2 3} $',
+    '【命题说明】：',
+    '本段只是题目来源说明。',
+    '',
+    '15. 【答案】$5$',
+    '【解析】第十五题解析。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const inlineFillBlankAnswerTableSolutions = parseSolutionDocument(inlineFillBlankAnswerTableSolutionDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.equal(inlineFillBlankAnswerTableSolutions.get('12')?.answerText, '$\\sqrt{6}$')
+assert.equal(inlineFillBlankAnswerTableSolutions.get('13')?.answerText, '$14$')
+assert.equal(inlineFillBlankAnswerTableSolutions.get('14')?.answerText, '$23$')
+assert.ok(inlineFillBlankAnswerTableSolutions.get('12')?.answerRange)
+assert.doesNotMatch(inlineFillBlankAnswerTableSolutions.get('12')?.analysisMarkdown || '', /13\.|14\.|命题说明/)
+assert.equal(inlineFillBlankAnswerTableSolutions.get('15')?.answerText, '$5$')
+assert.match(inlineFillBlankAnswerTableSolutions.get('15')?.analysisMarkdown || '', /第十五题解析/)
+
+const decimalHeavySolutionDocument = {
+  ...ocrDocument,
+  id: 'ocr_decimal_heavy_solution_test',
+  markdown: [
+    '# 数学参考答案',
+    '## 【解析】',
+    '16. （本小题满分15分）',
+    '',
+    '(1) 证明：甲工厂合格件数为 0.85m，乙工厂合格件数为 0.95n，混合后合格率为 0.89(m+n)=0.85m+0.95n，（4分）解得 0.06n=0.04m，即 2m=3n。（5分）',
+    '',
+    '（2）解：由（1）可知 m:n=3:2，故 X 的可能取值为 0，1，2。',
+    '所以 $ P(X=0)=\\frac{1}{10} $，$ P(X=1)=\\frac{3}{5} $，$ P(X=2)=\\frac{3}{10} $。',
+    '所以 X 的分布列为：',
+    '<table border="1"><tr><td>X</td><td>0</td><td>1</td><td>2</td></tr><tr><td>P</td><td>$\\frac{1}{10}$</td><td>$\\frac{3}{5}$</td><td>$\\frac{3}{10}$</td></tr></table>',
+    '因此 $ E(X)=0\\times\\frac{1}{10}+1\\times\\frac{3}{5}+2\\times\\frac{3}{10}=\\frac{6}{5} $。',
+    '',
+    '17. 第十七题解析。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const decimalHeavySolutions = parseSolutionDocument(decimalHeavySolutionDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.equal(decimalHeavySolutions.has('0'), false)
+assert.match(decimalHeavySolutions.get('16')?.analysisMarkdown || '', /0\.85m/)
+assert.match(decimalHeavySolutions.get('16')?.analysisMarkdown || '', /E\(X\)/)
+assert.doesNotMatch(decimalHeavySolutions.get('16')?.analysisMarkdown || '', /第十七题解析/)
 
 const analysisOnlyCandidateDocument = {
   ...ocrDocument,
@@ -618,6 +669,96 @@ assert.match(tableAnswersAndHeadingSolutions.get('16')?.analysisMarkdown || '', 
 assert.equal(tableAnswersAndHeadingSolutions.get('19')?.answerText, 'C')
 assert.match(tableAnswersAndHeadingSolutions.get('19')?.analysisMarkdown || '', /第十九题解析/)
 
+const scoringInstructionsBeforeAnswerTableDocument = {
+  ...ocrDocument,
+  id: 'ocr_scoring_instructions_before_answer_table_test',
+  markdown: [
+    '<!-- GLM_PAGE:1 -->',
+    '# 2026届广州市高三年级调研测试数学试题参考答案及评分标准',
+    '',
+    '评分说明：',
+    '',
+    '1. 本解答给出了一种或几种解法供参考，如果考生的解法与本解答不同，可根据试题的主要考查内容比照评分参考制订相应的评分细则.',
+    '',
+    '2. 对计算题，当考生的解答在某一步出现错误时，可视影响的程度决定后继部分的给分.',
+    '',
+    '3. 解答右端所注分数，表示考生正确做到这一步应得的累加分数.',
+    '',
+    '4. 只给整数分数. 选择题不给中间分.',
+    '',
+    '## 一、选择题：本题共8小题，每小题5分，共40分。',
+    '',
+    '<table border="1"><tr><td>题号</td><td>1</td><td>2</td><td>3</td><td>4</td></tr><tr><td>答案</td><td>C</td><td>B</td><td>C</td><td>B</td></tr></table>',
+    '',
+    '二、选择题：本题共3小题，每小题6分，共18分。',
+    '',
+    '9. AC 10. ABD 11. ABD',
+    '',
+    '三、填空题：本题共3小题，每小题5分，共15分。',
+    '',
+    '12. $ \\frac{1}{2} $ 13. $ \\frac{2}{7} $ 14. $ \\frac{2}{3} $',
+    '',
+    '## 四、解答题：共77分。',
+    '',
+    '15. （13分）',
+    '',
+    '（1）解法1：由余弦定理可得结论。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const scoringInstructionsSolutions = parseSolutionDocument(scoringInstructionsBeforeAnswerTableDocument)
+assert.equal(scoringInstructionsSolutions.get('1')?.answerText, 'C')
+assert.equal(scoringInstructionsSolutions.get('1')?.analysisMarkdown || '', '')
+assert.equal(scoringInstructionsSolutions.get('2')?.analysisMarkdown || '', '')
+assert.equal(scoringInstructionsSolutions.get('9')?.answerText, 'AC')
+assert.equal(scoringInstructionsSolutions.get('10')?.answerText, 'ABD')
+assert.equal(scoringInstructionsSolutions.get('12')?.answerText, '$\\frac{1}{2}$')
+assert.equal(scoringInstructionsSolutions.get('14')?.answerText, '$\\frac{2}{3}$')
+assert.match(scoringInstructionsSolutions.get('15')?.analysisMarkdown || '', /余弦定理/)
+assert.doesNotMatch(scoringInstructionsSolutions.get('15')?.analysisMarkdown || '', /本解答给出|只给整数分数/)
+const scoringInstructionsPreview = buildParserPreview(scoringInstructionsBeforeAnswerTableDocument, { config: defaultParserConfig })
+assert.equal(scoringInstructionsPreview.structures.filter((token) => token.kind === 'question_no').some((token) => ['1', '2', '3', '4'].includes(token.questionNo || '')), false)
+assert.equal(scoringInstructionsPreview.structures.some((token) => token.kind === 'metadata_heading' && token.label === '评分说明'), true)
+
+const questionThenHeadingSolutionDocument = {
+  ...ocrDocument,
+  id: 'ocr_question_then_heading_solution_preview_test',
+  markdown: [
+    '<!-- GLM_PAGE:7 -->',
+    '19.',
+    '',
+    '【命题说明】',
+    '考查函数与导数综合应用。',
+    '',
+    '## 【参考答案】',
+    '解：设函数 $f(x)=x^2$。',
+    '由题意可得结论。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const questionThenHeadingDefaultPreview = buildParserPreview(questionThenHeadingSolutionDocument, {
+  config: { ...defaultParserConfig, solutionBindingStrategy: 'heading_then_question' },
+  focusQuestionNo: '19',
+})
+assert.equal(questionThenHeadingDefaultPreview.diagnostics.some((diagnostic) => diagnostic.code === 'solution_heading_without_following_question'), true)
+const questionThenHeadingPreview = buildParserPreview(questionThenHeadingSolutionDocument, {
+  config: { ...defaultParserConfig, solutionBindingStrategy: 'question_then_heading' },
+  focusQuestionNo: '19',
+})
+assert.match(questionThenHeadingPreview.candidatePreviews.find((preview) => preview.questionNo === '19')?.analysisPreview || '', /解：设函数/)
+assert.equal(questionThenHeadingPreview.diagnostics.some((diagnostic) => diagnostic.code === 'question_before_solution_heading'), false)
+const questionThenHeadingSolutions = parseSolutionDocument(questionThenHeadingSolutionDocument, {
+  config: { ...defaultParserConfig, solutionBindingStrategy: 'question_then_heading' },
+})
+assert.match(questionThenHeadingSolutions.get('19')?.analysisMarkdown || '', /解：设函数/)
+const questionThenHeadingAutoPreview = buildParserPreview(questionThenHeadingSolutionDocument, {
+  config: { ...defaultParserConfig, solutionBindingStrategy: 'auto' },
+  focusQuestionNo: '19',
+})
+assert.equal(questionThenHeadingAutoPreview.strategyRecommendation?.strategy, 'question_then_heading')
+
 const presentationNoiseDocument = {
   ...ocrDocument,
   id: 'ocr_presentation_noise_test',
@@ -685,6 +826,31 @@ assert.match(ocrSpacedFormulaCandidates[0].stemMarkdown, /x _ \{1\} \+ x _ \{2\}
   assert.equal(parsedWithPlaceholders[0].figures[0].id, 'placeholder_fig_1')
   assert.equal(parsedWithPlaceholders[0].figures[0].blockId, 'placeholder_fig_1')
   assert.equal(parsedWithPlaceholders[0].figures[0].path, 'import-flow-v2/source-documents/src_parser_test/assets/fig.png')
+}
+
+// Test D2: answer 中 DOC2X_FIGURE 也要补出解析区 figures，供教师版导出使用
+{
+  const answerPlaceholderDocument = {
+    ...ocrDocument,
+    id: 'ocr_answer_placeholder_test',
+    markdown: [
+      '1. 第一题如图所示。',
+      '',
+      '答案：见图。',
+      '',
+      '<!-- DOC2X_FIGURE:answer_fig_1 -->',
+    ].join('\n'),
+    pages: [],
+    assets: [
+      { id: 'answer_fig_1', type: 'image', path: 'import-flow-v2/source-documents/src_parser_test/assets/answer.png', pageNo: 2 },
+    ],
+  }
+  const parsedWithAnswerPlaceholder = parseQuestionCandidates(answerPlaceholderDocument, { now: '2026-06-24T00:00:00.000Z' })
+  assert.equal(parsedWithAnswerPlaceholder.length, 1)
+  assert.equal(parsedWithAnswerPlaceholder[0].figures.length, 1)
+  assert.equal(parsedWithAnswerPlaceholder[0].figures[0].id, 'answer_fig_1')
+  assert.equal(parsedWithAnswerPlaceholder[0].figures[0].usage, 'analysis')
+  assert.equal(parsedWithAnswerPlaceholder[0].figures[0].path, 'import-flow-v2/source-documents/src_parser_test/assets/answer.png')
 }
 
 // Test E: Doc2X parser keeps provider formula markdown unchanged while splitting fields

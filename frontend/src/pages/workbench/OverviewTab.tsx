@@ -11,7 +11,6 @@ import {
   ChevronUp,
   Database,
   Plus,
-  ScanSearch,
   ShoppingBag,
   Sparkles,
   Flame,
@@ -20,35 +19,37 @@ import {
   Sunrise,
   Sun,
   Sunset,
+  type LucideIcon,
 } from 'lucide-react'
-import type { ActivityHeatmapDay, ActivityHeatmapResponse } from '@/api/dashboard'
+import type { ActivityHeatmapDay, ActivityHeatmapResponse, ActivityHoursResponse } from '@/api/dashboard'
 import type { ExportRecordsResponse } from '@/api/exportRecords'
 import { MarkdownContent } from '@/components/MarkdownContent'
-import type { Dashboard, ExportRecord, OcrSettings, QuestionBankResponse, QuestionItem } from '@/types'
+import type { ExportRecord, OcrSettings, QuestionBankResponse, QuestionItem } from '@/types'
 import { addQuestionToActiveBasket } from '@/utils/questionBasket'
 import { QuickActionDialog } from '@/components/dialogs/QuickActionDialog'
 
 export function OverviewTab({
-  dashboard,
-  dashboardError,
   questionBank,
   questionBankLoading,
   ocrSettings,
   activityHeatmap,
   activityHeatmapError,
   activityHeatmapLoading,
+  activityHours,
+  activityHoursError,
+  activityHoursLoading,
   exportRecords,
   exportRecordsLoading,
 }: {
-  dashboard: Dashboard | null
-  dashboardError?: string
-  dashboardLoading?: boolean
   questionBank: QuestionBankResponse | null
   questionBankLoading?: boolean
   ocrSettings: OcrSettings | null
   activityHeatmap: ActivityHeatmapResponse | null
   activityHeatmapError?: string
   activityHeatmapLoading?: boolean
+  activityHours: ActivityHoursResponse | null
+  activityHoursError?: string
+  activityHoursLoading?: boolean
   exportRecords: ExportRecordsResponse | null
   exportRecordsLoading?: boolean
 }) {
@@ -61,13 +62,8 @@ export function OverviewTab({
   const stats = useMemo(() => buildStats(heatmapDays, questionBank?.totalItems ?? 0, exports), [exports, heatmapDays, questionBank?.totalItems])
   const weeks = useMemo(() => buildHeatmapWeeks(heatmapDays), [heatmapDays])
   const ocrReady = getOcrReady(ocrSettings)
-
-  const peakHoursData = useMemo(() => [
-    { label: '凌晨', range: '0:00 - 8:00', percentage: 8, icon: Moon },
-    { label: '上午', range: '8:00 - 12:00', percentage: 27, icon: Sunrise },
-    { label: '下午', range: '12:00 - 16:00', percentage: 20, icon: Sun },
-    { label: '晚上', range: '16:00 - 24:00', percentage: 45, icon: Sunset, isPeak: true },
-  ], [])
+  const peakHoursData = useMemo(() => buildPeakHoursData(activityHours), [activityHours])
+  const peakHoursLabel = activityHoursLoading ? '统计中' : activityHoursError ? '加载失败' : activityHours?.summary.peakLabel || '暂无数据'
 
   return (
     <div className="mock-page-root flex flex-col gap-6 select-none bg-background text-foreground">
@@ -89,9 +85,9 @@ export function OverviewTab({
         </div>
       </div>
 
-      {(dashboardError || activityHeatmapError) ? (
+      {activityHeatmapError ? (
         <div className="rounded-xl border border-zinc-200 bg-card p-4 text-left text-xs text-zinc-500 shadow-sm dark:border-zinc-800">
-          {dashboardError || activityHeatmapError}
+          {activityHeatmapError}
         </div>
       ) : null}
 
@@ -188,7 +184,7 @@ export function OverviewTab({
               <div className="flex items-center gap-1.5 h-8">
                 <Clock className="size-4 text-zinc-500" />
                 <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                  最常活跃时间段：晚上
+                  最常活跃时间段：{peakHoursLabel}
                 </span>
               </div>
 
@@ -204,16 +200,14 @@ export function OverviewTab({
                           <span>{item.label}</span>
                           <span className="text-[10px] text-zinc-400 font-normal">{item.range}</span>
                         </span>
-                        <span className={`font-semibold font-mono ${item.isPeak ? 'text-zinc-900 dark:text-zinc-50 font-bold' : 'text-zinc-500'}`}>
-                          {item.percentage}%
+                        <span className={`font-semibold font-mono ${activityHoursLoading ? 'text-zinc-300 dark:text-zinc-700' : item.isPeak ? 'text-zinc-900 dark:text-zinc-50 font-bold' : 'text-zinc-500'}`}>
+                          {activityHoursLoading ? '--' : item.percentage}%
                         </span>
                       </div>
                       <div className="h-1.5 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
                         <div
-                          className={`h-full rounded-full transition-all duration-300 ${
-                            item.isPeak ? 'bg-zinc-800 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-700'
-                          }`}
-                          style={{ width: `${item.percentage}%` }}
+                          className={`h-full rounded-full transition-all duration-300 ${activityHoursLoading ? 'animate-pulse bg-zinc-200 dark:bg-zinc-700' : item.isPeak ? 'bg-zinc-800 dark:bg-zinc-200' : 'bg-zinc-300 dark:bg-zinc-700'}`}
+                          style={{ width: activityHoursLoading ? '100%' : `${item.percentage}%` }}
                         />
                       </div>
                     </div>
@@ -320,7 +314,6 @@ export function OverviewTab({
           <div className="space-y-3">
             <h3 className="px-1 text-left text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">快捷工具入口</h3>
             <div className="space-y-1 rounded-xl border border-zinc-200 bg-card p-3 text-card-foreground shadow-sm dark:border-zinc-800">
-              <ShortcutButton icon={ScanSearch} label="OCR 识别复核工作区" onClick={() => navigate('/tools/pdf-slicer/ocr-jobs')} />
               <ShortcutButton icon={Database} label="题库检索与试卷大纲" onClick={() => navigate('/questions')} />
               <ShortcutButton icon={Plus} label="手动录入数学题" onClick={() => navigate('/questions/new')} />
             </div>
@@ -331,7 +324,7 @@ export function OverviewTab({
             <div className="space-y-3 rounded-xl border border-zinc-200 bg-card p-4 text-left text-xs text-card-foreground shadow-sm dark:border-zinc-800">
               <div className="flex items-center justify-between">
                 <span className="font-medium text-zinc-400 dark:text-zinc-500">SQLite 本地主库:</span>
-                <StatusText ready={!dashboardError && Boolean(dashboard || questionBank)} label={dashboardError ? '连接异常' : '连接正常'} />
+                <StatusText ready={!questionBankLoading && Boolean(questionBank)} label={questionBankLoading ? '连接中' : questionBank ? '连接正常' : '连接异常'} />
               </div>
               <div className="flex items-center justify-between">
                 <span className="font-medium text-zinc-400 dark:text-zinc-500">KaTeX 排版公式引擎:</span>
@@ -524,7 +517,7 @@ function ExportRow({ record }: { record: ExportRecord }) {
   )
 }
 
-function ShortcutButton({ icon: Icon, label, onClick }: { icon: typeof ScanSearch; label: string; onClick: () => void }) {
+function ShortcutButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -697,6 +690,32 @@ function buildStats(days: ActivityHeatmapDay[], totalQuestions: number, exports:
     weeklyExports,
     activeRatio,
   }
+}
+
+function buildPeakHoursData(activityHours: ActivityHoursResponse | null) {
+  const iconBySlot: Record<string, LucideIcon> = {
+    late_night: Moon,
+    morning: Sunrise,
+    afternoon: Sun,
+    evening: Sunset,
+  }
+  const fallbackSlots = [
+    { id: 'late_night', label: '凌晨', range: '0:00 - 8:00', startHour: 0, endHour: 8 },
+    { id: 'morning', label: '上午', range: '8:00 - 12:00', startHour: 8, endHour: 12 },
+    { id: 'afternoon', label: '下午', range: '12:00 - 16:00', startHour: 12, endHour: 16 },
+    { id: 'evening', label: '晚上', range: '16:00 - 24:00', startHour: 16, endHour: 24 },
+  ]
+  const slots = activityHours?.slots.length ? activityHours.slots : fallbackSlots.map((slot) => ({
+    ...slot,
+    count: 0,
+    percentage: 0,
+    isPeak: false,
+  }))
+
+  return slots.map((slot) => ({
+    ...slot,
+    icon: iconBySlot[slot.id] ?? Clock,
+  }))
 }
 
 function formatDelta(current: number, previous: number) {

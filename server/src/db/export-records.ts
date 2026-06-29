@@ -18,6 +18,7 @@ export function mapExportRecord(row: ExportRecordRow) {
     sourceType: row.source_type,
     collectionId: row.collection_id,
     runId: row.run_id,
+    importJobId: row.import_job_id,
     title: row.title,
     format: row.format,
     variant: row.variant,
@@ -86,6 +87,21 @@ function runExportItems(runId: string): ExportRecordItemSnapshot[] {
   }))
 }
 
+function importJobExportItems(importJobId: string): ExportRecordItemSnapshot[] {
+  const sourceIds = (db.prepare('SELECT source_document_id FROM import_job_documents WHERE job_id = ?')
+    .all(importJobId) as Array<{ source_document_id: string }>).map((row) => row.source_document_id)
+  const importSourceIds = [importJobId, `ifv2-job:${importJobId}`, ...sourceIds]
+  return (db.prepare(`
+    SELECT id
+    FROM question_bank_items
+    WHERE import_source_id IN (${importSourceIds.map(() => '?').join(', ')})
+    ORDER BY serial_no ASC, created_at ASC
+  `).all(...importSourceIds) as Array<{ id: string }>).map((row, index) => ({
+    questionId: row.id,
+    exportOrder: index + 1,
+  }))
+}
+
 function getCollection(id: string) {
   const row = db.prepare('SELECT * FROM question_bank_collections WHERE id = ?').get(id) as Record<string, unknown> | undefined
   if (!row) return undefined
@@ -104,12 +120,12 @@ function getBasket() {
 
 export function backfillExportRecordItems() {
   const rows = db.prepare(`
-    SELECT id, source_type, collection_id, run_id, items_json, question_count
+    SELECT id, source_type, collection_id, run_id, import_job_id, items_json, question_count
     FROM question_bank_export_records
     WHERE items_json = ''
        OR items_json = '[]'
        OR items_json IS NULL
-  `).all() as Array<Pick<ExportRecordRow, 'id' | 'source_type' | 'collection_id' | 'run_id' | 'items_json' | 'question_count'>>
+  `).all() as Array<Pick<ExportRecordRow, 'id' | 'source_type' | 'collection_id' | 'run_id' | 'import_job_id' | 'items_json' | 'question_count'>>
   if (!rows.length) return 0
   const update = db.prepare('UPDATE question_bank_export_records SET items_json = ? WHERE id = ?')
   let updated = 0
@@ -118,7 +134,9 @@ export function backfillExportRecordItems() {
       ? collectionExportItems(getCollection(row.collection_id) ?? getBasket())
       : row.source_type === 'run' && row.run_id
         ? runExportItems(row.run_id)
-        : []
+        : row.source_type === 'import_job' && row.import_job_id
+          ? importJobExportItems(row.import_job_id)
+          : []
     const expectedCount = Number(row.question_count || 0)
     if (!items.length || (expectedCount > 0 && items.length !== expectedCount)) continue
     update.run(JSON.stringify(items), row.id)
@@ -223,6 +241,7 @@ export function createExportRecord(input: {
   sourceType: ExportRecordRow['source_type']
   collectionId?: string
   runId?: string
+  importJobId?: string
   title?: string
   format: string
   variant?: string
@@ -239,13 +258,14 @@ export function createExportRecord(input: {
   const now = nowIso()
   db.prepare(`
     INSERT INTO question_bank_export_records
-      (id, source_type, collection_id, run_id, title, format, variant, filename, path, url, items_json, content_length, question_count, status, error, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, source_type, collection_id, run_id, import_job_id, title, format, variant, filename, path, url, items_json, content_length, question_count, status, error, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.sourceType,
     input.collectionId || '',
     input.runId || '',
+    input.importJobId || '',
     input.title || '',
     input.format,
     input.variant || '',
@@ -266,6 +286,7 @@ export function listExportRecords(options: {
   sourceType?: ExportRecordRow['source_type'] | ''
   collectionId?: string
   runId?: string
+  importJobId?: string
   query?: string
   limit?: number
 } = {}) {
@@ -282,6 +303,10 @@ export function listExportRecords(options: {
   if (options.runId) {
     where.push('run_id = ?')
     values.push(options.runId)
+  }
+  if (options.importJobId) {
+    where.push('import_job_id = ?')
+    values.push(options.importJobId)
   }
   const query = String(options.query || '').trim()
   if (query) {

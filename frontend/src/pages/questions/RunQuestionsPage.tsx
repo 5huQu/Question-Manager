@@ -115,9 +115,7 @@ export function RunQuestionsPage() {
       && (!solutionMethod || (item.solutionMethods ?? []).includes(solutionMethod))
   })
   const hasActiveFilters = Boolean(query.trim() || stage || questionType || difficulty || knowledgePoint || solutionMethod)
-  const isImportV2Run = decodedRunId.startsWith('ifv2:')
-  const displayRunId = isImportV2Run ? decodedRunId.slice('ifv2:'.length) : run.runId
-  const allQuestionsBanked = isImportV2Run || (items.length > 0 && items.every((item) => item.bankStatus === 'banked'))
+  const allQuestionsBanked = items.length > 0 && items.every((item) => item.bankStatus === 'banked')
 
   return (
     <section className="mock-page-root min-h-[calc(100vh-6rem)] space-y-6 overflow-y-auto bg-zinc-50/30 p-6 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
@@ -127,7 +125,7 @@ export function RunQuestionsPage() {
           <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             {run.paperTitle || run.pdfName}
           </h1>
-          <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">批次 ID: {displayRunId}</p>
+          <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">批次 ID: {run.runId}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button

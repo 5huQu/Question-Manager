@@ -217,7 +217,12 @@ export function ExportRecordsPage() {
                 >
                   <td className="p-3 font-mono text-[10px] text-zinc-400">#{record.id}</td>
                   <td className="p-3 text-left font-bold text-zinc-800 dark:text-zinc-200">
-                    {record.title || record.filename || '未命名导出'}
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 truncate">{record.title || record.filename || '未命名导出'}</span>
+                      <span className="shrink-0 rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                        {sourceTypeLabel(record.sourceType)}
+                      </span>
+                    </div>
                   </td>
                   <td className="p-3 text-center">
                     <FormatBadge format={record.format} />
@@ -440,6 +445,12 @@ function formatDate(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+}
+
+function sourceTypeLabel(value: ExportRecord['sourceType']) {
+  if (value === 'import_job') return '导入批次'
+  if (value === 'run') return 'PDF 批次'
+  return '试题篮'
 }
 
 export default ExportRecordsPage

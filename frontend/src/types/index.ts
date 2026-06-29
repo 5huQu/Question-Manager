@@ -214,9 +214,10 @@ export type CollectionExport = {
 
 export type ExportRecord = {
   id: string
-  sourceType: 'collection' | 'run'
+  sourceType: 'collection' | 'run' | 'import_job'
   collectionId: string
   runId: string
+  importJobId: string
   title: string
   format: string
   variant: string

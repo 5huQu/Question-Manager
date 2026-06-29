@@ -13,6 +13,15 @@ import { addQuestionToActiveBasket } from '@/utils/questionBasket'
 import { difficultyBadgeVariant, difficultyLabel10, label } from '@/utils/questionDisplay'
 import { richBlocksPlainText } from '@/components/RichContent'
 
+function isImportFlowV2SourceId(value: unknown) {
+  const sourceId = String(value || '')
+  return sourceId.startsWith('ifv2:') || sourceId.startsWith('ifv2-job:')
+}
+
+function isImportFlowV2Question(question?: Pick<QuestionItem, 'sourceRunId' | 'importSourceId'> | null) {
+  return Boolean(question?.importSourceId) || isImportFlowV2SourceId(question?.sourceRunId)
+}
+
 export function QuestionDetailPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
@@ -25,6 +34,7 @@ export function QuestionDetailPage() {
   const [ocrAction, setOcrAction] = useState('')
   const [draft, setDraft] = useState<Partial<QuestionItem>>({})
   const doc2xRerunUnavailable = data?.sourceOcrProvider === 'doc2x'
+  const importFlowV2Question = isImportFlowV2Question(data)
   useEffect(() => {
     if (data) setDraft(data)
   }, [data])
@@ -52,7 +62,7 @@ export function QuestionDetailPage() {
   }
   async function quickOcr() {
     const question = data
-    if (!question?.sourceRunId) return
+    if (!question?.sourceRunId || isImportFlowV2Question(question)) return
     setOcrAction('whole')
     try {
       await ocrApi.startOcr(question.sourceRunId)
@@ -73,7 +83,7 @@ export function QuestionDetailPage() {
   }
   async function chunkOcr() {
     const question = data
-    if (!question?.sourceRunId) return
+    if (!question?.sourceRunId || isImportFlowV2Question(question)) return
     const confirmed = window.confirm('分块 OCR 会重新识别并覆盖当前题干、答案和解析。仅在整图 OCR 效果不好时使用，是否继续？')
     if (!confirmed) return
     setOcrAction('region')
@@ -106,11 +116,14 @@ export function QuestionDetailPage() {
     navigate('/questions')
   }
   useEffect(() => {
-    if (!data?.sourceRunId) return
+    if (!data?.sourceRunId || isImportFlowV2Question(data)) {
+      setOcrProgress(null)
+      return
+    }
     loadQuestionOcrProgress(data.sourceRunId).catch(() => undefined)
     const timer = window.setInterval(() => loadQuestionOcrProgress(data.sourceRunId).catch(() => undefined), 2500)
     return () => window.clearInterval(timer)
-  }, [data?.sourceRunId])
+  }, [data?.sourceRunId, data?.importSourceId])
   if (loading) return <Empty text="读取中..." />
   if (error || !data) return <Empty text={error || '题目不存在'} />
   return (
@@ -214,23 +227,27 @@ export function QuestionDetailPage() {
             <div className="space-y-2">
               <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-semibold block">题目工具</span>
               <div className="grid gap-2">
-	                <Button
-	                  className="w-full justify-start text-[13px] font-medium"
-	                  icon={ScanSearch}
-	                  disabled={!data.sourceRunId || doc2xRerunUnavailable || ocrProgress?.active || Boolean(ocrAction)}
-	                  onClick={quickOcr}
-	                >
-	                  {doc2xRerunUnavailable ? 'Doc2X 不支持单题重识别' : ocrAction === 'whole' ? '整图 OCR 中...' : '重新 OCR'}
-	                </Button>
-	                <Button
-	                  className="w-full justify-start text-[13px] font-medium"
-	                  variant="outline"
-	                  icon={Scissors}
-	                  disabled={!data.sourceRunId || doc2xRerunUnavailable || ocrProgress?.active || Boolean(ocrAction)}
-	                  onClick={chunkOcr}
-	                >
-	                  {ocrAction === 'region' ? '分块 OCR 中...' : '分块 OCR'}
-	                </Button>
+                {!importFlowV2Question ? (
+                  <>
+                    <Button
+                      className="w-full justify-start text-[13px] font-medium"
+                      icon={ScanSearch}
+                      disabled={!data.sourceRunId || doc2xRerunUnavailable || ocrProgress?.active || Boolean(ocrAction)}
+                      onClick={quickOcr}
+                    >
+                      {doc2xRerunUnavailable ? 'Doc2X 不支持单题重识别' : ocrAction === 'whole' ? '整图 OCR 中...' : '重新 OCR'}
+                    </Button>
+                    <Button
+                      className="w-full justify-start text-[13px] font-medium"
+                      variant="outline"
+                      icon={Scissors}
+                      disabled={!data.sourceRunId || doc2xRerunUnavailable || ocrProgress?.active || Boolean(ocrAction)}
+                      onClick={chunkOcr}
+                    >
+                      {ocrAction === 'region' ? '分块 OCR 中...' : '分块 OCR'}
+                    </Button>
+                  </>
+                ) : null}
                 <Button
                   className="w-full justify-start text-[13px] font-medium"
                   variant="outline"
@@ -288,7 +305,7 @@ export function QuestionDetailPage() {
             </div>
 
             {/* Status Info / Progress */}
-            {(() => {
+            {!importFlowV2Question ? (() => {
               const ocrStatus = ocrProgress?.run?.ocrStatus || 'succeeded'
               const isFailed = ocrStatus === 'failed' || ocrStatus === 'error'
               const isSucceeded = ocrStatus === 'succeeded'
@@ -322,7 +339,7 @@ export function QuestionDetailPage() {
                   </div>
                 </div>
               )
-            })()}
+            })() : null}
           </div>
         </Panel>
       </div>

@@ -2,6 +2,8 @@ import { api, jsonHeaders } from './client'
 import type { OcrSettings } from '@/types'
 
 export type HealthResponse = {
+  serverTime?: string
+  serverYear?: number
   tools?: {
     soffice?: boolean
     sofficePath?: string

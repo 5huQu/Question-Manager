@@ -227,7 +227,7 @@ try {
   const questionId = commitResult.item.id
   const question = getQuestion(questionId)
   assert.ok(question)
-  assert.equal(question.sourceRunId, `ifv2:${doc.id}`)
+  assert.equal(question.sourceRunId, '')
   assert.equal(question.sourceTitle, '2025 杭州一模数学')
   assert.equal(question.province, '浙江')
   assert.equal(question.city, '杭州')

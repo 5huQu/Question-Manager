@@ -16,6 +16,9 @@ const {
   parseCandidatesForOcrDocument,
   listQuestionCandidatesForSource,
   commitQuestionCandidate,
+  ensureSingleDocumentImportJob,
+  listImportJobQuestions,
+  resolveImportJobForLegacyRunId,
 } = await import('../dist/services/import-flow-v2/import-flow-v2.service.js')
 const { updateQuestionCandidate: persistQuestionCandidate } = await import('../dist/repositories/question-candidates.repo.js')
 const { assetPathFor } = await import('../dist/utils/paths.js')
@@ -177,12 +180,15 @@ try {
   assert.equal(q2.batchName, 'Separated Batch')
 
   console.log('3. Committing a merged candidate to the bank...')
-  const commitResult = commitQuestionCandidate(q2.id)
+  const commitResult = await commitQuestionCandidate(q2.id, { skipAutoClassification: true })
   assert.equal(commitResult.candidate.status, 'committed')
   assert.equal(commitResult.item.answerText, '4')
   assert.equal(commitResult.item.analysisMarkdown.includes('2a=4'), true)
-  assert.equal(commitResult.item.sourceRunId, `ifv2-job:${separatedJob.importJob.id}`)
-  assert.equal(commitResult.item.importSourceId, `ifv2-job:${separatedJob.importJob.id}`)
+  assert.equal(commitResult.item.sourceRunId, '')
+  assert.equal(commitResult.item.importSourceId, separatedJob.importJob.id)
+  const separatedQuestions = listImportJobQuestions(separatedJob.importJob.id)
+  assert.equal(separatedQuestions.items.length, 1)
+  assert.equal(separatedQuestions.items[0].id, commitResult.item.id)
 
   console.log('4. Verifying direct OCRDocument parsing is unchanged...')
   const directSource = makeSourceDocument('src_direct_parse', 'Direct Parse Source')
@@ -199,9 +205,16 @@ try {
   const directResult = parseCandidatesForOcrDocument(directOcr.id)
   assert.equal(directResult.items.length, 1)
   assert.equal(directResult.items[0].answerText, '8')
-  const directCommit = commitQuestionCandidate(directResult.items[0].id)
-  assert.equal(directCommit.item.sourceRunId, `ifv2:${directSource.id}`)
+  const directCommit = await commitQuestionCandidate(directResult.items[0].id, { skipAutoClassification: true })
+  assert.equal(directCommit.item.sourceRunId, '')
   assert.equal(directCommit.item.importSourceId, directSource.id)
+  const directJob = ensureSingleDocumentImportJob(directSource.id)
+  assert.equal(directJob.importJob.mode, 'single_document')
+  const directQuestions = listImportJobQuestions(directJob.importJob.id)
+  assert.equal(directQuestions.items.length, 1)
+  assert.equal(directQuestions.items[0].id, directCommit.item.id)
+  const resolvedLegacy = resolveImportJobForLegacyRunId(`ifv2:${directSource.id}`)
+  assert.equal(resolvedLegacy.importJob.id, directJob.importJob.id)
 
   console.log('5. Listing candidates recalculates stale persisted validation issues...')
   const staleSource = makeSourceDocument('src_live_validation', 'Live Validation Source')

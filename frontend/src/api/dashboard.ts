@@ -37,6 +37,30 @@ export type ActivityHeatmapResponse = {
   days: ActivityHeatmapDay[]
 }
 
+export type ActivityHourSlot = {
+  id: string
+  label: string
+  range: string
+  startHour: number
+  endHour: number
+  count: number
+  percentage: number
+  isPeak: boolean
+}
+
+export type ActivityHoursResponse = {
+  from: string
+  to: string
+  metric: ActivityHeatmapMetric
+  timezone: string
+  summary: {
+    totalCount: number
+    peakSlotId: string
+    peakLabel: string
+  }
+  slots: ActivityHourSlot[]
+}
+
 function buildActivityHeatmapQuery(params: ActivityHeatmapParams = {}) {
   const query = new URLSearchParams()
   const entries: Array<[keyof ActivityHeatmapParams, string | undefined]> = [
@@ -57,5 +81,8 @@ function buildActivityHeatmapQuery(params: ActivityHeatmapParams = {}) {
 export const dashboardApi = {
   getActivityHeatmap(params: ActivityHeatmapParams = {}) {
     return api<ActivityHeatmapResponse>(`/api/dashboard/activity-heatmap${buildActivityHeatmapQuery(params)}`)
+  },
+  getActivityHours(params: ActivityHeatmapParams = {}) {
+    return api<ActivityHoursResponse>(`/api/dashboard/activity-hours${buildActivityHeatmapQuery(params)}`)
   },
 }

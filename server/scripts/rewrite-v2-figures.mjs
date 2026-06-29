@@ -5,7 +5,7 @@ try {
   console.log('Starting DB migration for v2 imported figures...')
   
   // 1. Update question_bank_items
-  const items = db.prepare("SELECT id, figures_json FROM question_bank_items WHERE source_run_id LIKE 'ifv2:%'").all()
+  const items = db.prepare("SELECT id, figures_json FROM question_bank_items WHERE import_source_id != '' OR source_run_id LIKE 'ifv2:%'").all()
   console.log(`Found ${items.length} items in question_bank_items to check.`)
   
   let updatedItemsCount = 0

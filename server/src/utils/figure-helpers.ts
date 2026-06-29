@@ -562,6 +562,20 @@ function inlineImageReferenceCount(value: string) {
   return Array.from(value.matchAll(INLINE_IMAGE_REFERENCE_RE)).length + Array.from(value.matchAll(INLINE_IMAGE_PLACEHOLDER_RE)).length + Array.from(value.matchAll(INLINE_BOUND_FIGURE_RE)).length
 }
 
+function inlineBoundFigureIds(value: string) {
+  INLINE_BOUND_FIGURE_RE.lastIndex = 0
+  return Array.from(String(value || '').matchAll(INLINE_BOUND_FIGURE_RE), (match) => {
+    const idMatch = match[0].match(/DOC2X_FIGURE:([^>\s]+)/i)
+    return idMatch?.[1] || ''
+  }).filter(Boolean)
+}
+
+function figureMatchesId(figure: Record<string, any>, id: string) {
+  return [figure.id, figure.blockId, figure.sourceBlockId]
+    .filter(Boolean)
+    .some((value) => String(value) === String(id))
+}
+
 function cleanOcrPresentationHtml(value: string, field?: InlineImageField) {
   let figureCaptionIndex = 0
   const captionPlaceholder = () => {
@@ -604,11 +618,18 @@ function cleanOcrPresentationHtml(value: string, field?: InlineImageField) {
  * falling back to page-wide provider images is what previously caused figures
  * from neighbouring questions to be bound to the current question.
  */
-export function bindInlineImageReferences(result: Record<string, any>, runId: string, options: { localFigures?: Array<Record<string, any>> } = {}) {
+export function bindInlineImageReferences(
+  result: Record<string, any>,
+  runId: string,
+  options: { localFigures?: Array<Record<string, any>>, fields?: InlineImageField[] } = {},
+) {
   const reviewRow = db.prepare('SELECT * FROM pdf_slicer_review_items WHERE run_id = ? AND result_id = ?')
     .get(runId, String(result.id || '')) as ReviewRow | undefined
   const reviewFigures = reviewRow ? parseJson<Array<Record<string, any>>>(reviewRow.figures_json || '[]', []) : []
-  const references = inlineImageFields.map((entry) => ({
+  const fieldsToBind = options.fields?.length
+    ? inlineImageFields.filter((entry) => options.fields?.includes(entry.field))
+    : inlineImageFields
+  const references = fieldsToBind.map((entry) => ({
     ...entry,
     value: cleanOcrPresentationHtml(String(result[entry.resultKey] || ''), entry.field),
     count: inlineImageReferenceCount(cleanOcrPresentationHtml(String(result[entry.resultKey] || ''), entry.field)),
@@ -669,14 +690,22 @@ export function bindInlineImageReferences(result: Record<string, any>, runId: st
   let usedNativeDoc2xFigures = false
   for (const entry of references) {
     if (!entry.count) continue
-    const allCandidates = byUsage.get(entry.field) || []
+    const allCandidates = entry.field === 'answer'
+      ? [...(byUsage.get('answer') || []), ...(byUsage.get('analysis') || [])]
+      : byUsage.get(entry.field) || []
+    const referenceIds = inlineBoundFigureIds(entry.value)
+    const directCandidates = referenceIds.map((id) => allCandidates.find((figure) => figureMatchesId(figure, id))).filter(Boolean) as Array<Record<string, any>>
     const hasNativeReference = /<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->/i.test(entry.value)
     const nativeCandidates = hasNativeReference
       ? allCandidates.filter((figure) => String(figure.origin || '') === 'doc2x_v3')
       : []
     // A Doc2X marker names a provider block exactly.  Prefer that provider's
     // downloaded figure over an overlapping manual crop of the same option.
-    const candidates = nativeCandidates.length === entry.count ? nativeCandidates : allCandidates
+    const candidates = directCandidates.length === entry.count
+      ? directCandidates
+      : nativeCandidates.length === entry.count
+        ? nativeCandidates
+        : allCandidates
     if (candidates.length !== entry.count) {
       issues.push({ field: entry.field, expected: entry.count, available: candidates.length, label: entry.label })
       let missingIndex = 0

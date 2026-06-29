@@ -89,7 +89,7 @@ export function OcrSettingsDialog({ onClose }: { onClose: () => void }) {
               <div className="space-y-4">
                 <div className="bg-zinc-50 dark:bg-zinc-800/40 rounded-xl p-3 border border-zinc-200 dark:border-zinc-700/20">
                   <p className="text-sm font-semibold">题目数据分类</p>
-                  <p className="mt-1 text-xs text-zinc-500 leading-relaxed">用于 OCR 完成后补充知识点、解题方法和难度标签。</p>
+                  <p className="mt-1 text-xs text-zinc-500 leading-relaxed">用于题目批次分类服务补充知识点、解题方法和难度标签。Prompt 是全局基础模板，运行时会自动追加批次上下文。</p>
                 </div>
                 <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">OCR 完成后自动分类</span><select className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.classificationEnabled ?? 'true'} onChange={(e) => setDraft({ ...draft, classificationEnabled: e.target.value })}><option value="true">开启</option><option value="false">关闭</option></select></label>
                 <div className="grid gap-3">
@@ -98,9 +98,12 @@ export function OcrSettingsDialog({ onClose }: { onClose: () => void }) {
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">分类模型</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.cleanupModel ?? ''} onChange={(e) => setDraft({ ...draft, cleanupModel: e.target.value })} placeholder="留空时沿用 OCR 模型" /></label>
                   <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">分类并发（1-20）</span><input className="w-full rounded-xl border px-3 py-2 text-sm" value={draft.cleanupConcurrency ?? ''} onChange={(e) => setDraft({ ...draft, cleanupConcurrency: e.target.value })} type="number" /></label>
                 </div>
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-500 dark:border-zinc-700/40 dark:bg-zinc-800/40">
+                  自动上下文包含学段、科目、资料类型、年份、地区、来源机构和试卷标题；题目自身元数据会优先覆盖批次默认值。
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">分类 System Prompt</span><textarea className="min-h-28 w-full rounded-xl border px-3 py-2 text-xs leading-5" value={draft.classificationSystemPrompt ?? ''} onChange={(e) => setDraft({ ...draft, classificationSystemPrompt: e.target.value })} placeholder="留空使用默认分类提示词" /></label>
-                  <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">分类 User Prompt</span><textarea className="min-h-28 w-full rounded-xl border px-3 py-2 text-xs leading-5" value={draft.classificationUserPrompt ?? ''} onChange={(e) => setDraft({ ...draft, classificationUserPrompt: e.target.value })} placeholder="可使用 {payload} 插入待分类 JSON" /></label>
+                  <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">分类 System Prompt 基础模板</span><textarea className="min-h-28 w-full rounded-xl border px-3 py-2 text-xs leading-5" value={draft.classificationSystemPrompt ?? ''} onChange={(e) => setDraft({ ...draft, classificationSystemPrompt: e.target.value })} placeholder="例如：你是题库分类工具。运行时会自动追加批次上下文和输出要求。" /></label>
+                  <label className="space-y-1 block"><span className="text-xs text-zinc-500 font-medium">分类 User Prompt 基础模板</span><textarea className="min-h-28 w-full rounded-xl border px-3 py-2 text-xs leading-5" value={draft.classificationUserPrompt ?? ''} onChange={(e) => setDraft({ ...draft, classificationUserPrompt: e.target.value })} placeholder="可使用 {payload} 插入待分类 JSON；payload 内包含 classification_context。" /></label>
                 </div>
               </div>
             )}

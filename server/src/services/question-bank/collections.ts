@@ -48,3 +48,21 @@ export function runExportItems(runId: string): ExportRecordItemSnapshot[] {
     exportOrder: index + 1,
   }))
 }
+
+/**
+ * Build the item-snapshot list for an import-flow-v2 job export.
+ */
+export function importJobExportItems(importJobId: string): ExportRecordItemSnapshot[] {
+  const sourceIds = (db.prepare('SELECT source_document_id FROM import_job_documents WHERE job_id = ?')
+    .all(importJobId) as Array<{ source_document_id: string }>).map((row) => row.source_document_id)
+  const importSourceIds = [importJobId, `ifv2-job:${importJobId}`, ...sourceIds]
+  return (db.prepare(`
+    SELECT id
+    FROM question_bank_items
+    WHERE import_source_id IN (${importSourceIds.map(() => '?').join(', ')})
+    ORDER BY serial_no ASC, created_at ASC
+  `).all(...importSourceIds) as Array<{ id: string }>).map((row, index) => ({
+    questionId: row.id,
+    exportOrder: index + 1,
+  }))
+}

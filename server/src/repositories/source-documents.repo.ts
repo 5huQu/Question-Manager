@@ -216,6 +216,20 @@ export function getSourceDocumentImportStats(sourceDocumentId: string): SourceDo
   const candidateCount = readyCount + needsReviewCount + needsManualFixCount + blockedCount + committedCount
   const uncommittedCount = readyCount + needsReviewCount + needsManualFixCount + blockedCount
   const allCommitted = candidateCount > 0 && committedCount === candidateCount
+  const diagnosticRow = db.prepare(`
+    SELECT
+      SUM(CASE WHEN parse_diagnostics_json != '' AND parse_diagnostics_json != '[]' THEN 1 ELSE 0 END) AS parse_diagnostic_count,
+      SUM(CASE WHEN parse_diagnostics_json LIKE '%metadata_used_as_answer%' THEN 1 ELSE 0 END) AS metadata_like_answer_count,
+      SUM(CASE WHEN parse_diagnostics_json LIKE '%missing_analysis%' THEN 1 ELSE 0 END) AS missing_analysis_diagnostic_count,
+      SUM(CASE WHEN parse_diagnostics_json LIKE '%unmatched_solution%' OR parse_diagnostics_json LIKE '%solution_heading_without_following_question%' THEN 1 ELSE 0 END) AS unmatched_solution_diagnostic_count
+    FROM question_candidates
+    WHERE source_document_id = ?
+  `).get(sourceDocumentId) as {
+    parse_diagnostic_count?: number
+    metadata_like_answer_count?: number
+    missing_analysis_diagnostic_count?: number
+    unmatched_solution_diagnostic_count?: number
+  } | undefined
 
   return {
     ocrDocumentCount,
@@ -227,5 +241,9 @@ export function getSourceDocumentImportStats(sourceDocumentId: string): SourceDo
     committedCount,
     uncommittedCount,
     allCommitted,
+    parseDiagnosticCount: Number(diagnosticRow?.parse_diagnostic_count || 0),
+    metadataLikeAnswerCount: Number(diagnosticRow?.metadata_like_answer_count || 0),
+    missingAnalysisDiagnosticCount: Number(diagnosticRow?.missing_analysis_diagnostic_count || 0),
+    unmatchedSolutionDiagnosticCount: Number(diagnosticRow?.unmatched_solution_diagnostic_count || 0),
   }
 }

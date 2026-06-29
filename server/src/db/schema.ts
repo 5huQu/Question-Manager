@@ -269,6 +269,8 @@ export function ensureSchema() {
       committed_question_id TEXT NOT NULL DEFAULT '',
       committed_at TEXT NOT NULL DEFAULT '',
       issues_json TEXT NOT NULL DEFAULT '[]',
+      parse_diagnostics_json TEXT NOT NULL DEFAULT '[]',
+      parser_config_snapshot_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (source_document_id) REFERENCES source_documents(id) ON DELETE CASCADE
@@ -318,6 +320,7 @@ export function ensureSchema() {
       source_type TEXT NOT NULL,
       collection_id TEXT NOT NULL DEFAULT '',
       run_id TEXT NOT NULL DEFAULT '',
+      import_job_id TEXT NOT NULL DEFAULT '',
       title TEXT NOT NULL DEFAULT '',
       format TEXT NOT NULL DEFAULT '',
       variant TEXT NOT NULL DEFAULT '',
@@ -414,6 +417,8 @@ export function ensureSchema() {
   ensureColumn('question_bank_items', 'import_source_id', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_candidates', 'committed_question_id', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_candidates', 'committed_at', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_candidates', 'parse_diagnostics_json', "TEXT NOT NULL DEFAULT '[]'")
+  ensureColumn('question_candidates', 'parser_config_snapshot_json', "TEXT NOT NULL DEFAULT '{}'")
   ensureColumn('question_bank_items', 'search_text', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('pdf_slicer_solution_items', 'answer_text', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('pdf_slicer_solution_items', 'analysis_markdown', "TEXT NOT NULL DEFAULT ''")
@@ -427,6 +432,8 @@ export function ensureSchema() {
   ensureColumn('question_bank_collections', 'time_limit', "INTEGER NOT NULL DEFAULT 0")
   ensureColumn('question_bank_collections', 'export_format', "TEXT NOT NULL DEFAULT 'markdown'")
   ensureColumn('question_bank_export_records', 'items_json', "TEXT NOT NULL DEFAULT '[]'")
+  ensureColumn('question_bank_export_records', 'import_job_id', "TEXT NOT NULL DEFAULT ''")
+  db.exec('CREATE INDEX IF NOT EXISTS idx_qb_export_records_import_job ON question_bank_export_records(import_job_id, created_at DESC)')
   ensureColumn('question_bank_collection_items', 'score', "REAL NOT NULL DEFAULT 0")
   ensureColumn('question_bank_collection_items', 'section_name', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('pdf_slicer_review_items', 'segments_json', "TEXT NOT NULL DEFAULT '[]'")

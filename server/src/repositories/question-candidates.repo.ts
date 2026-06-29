@@ -2,6 +2,7 @@ import { db } from '../db/connection.js'
 import type {
   CandidateFigure,
   CandidateIssue,
+  CandidateParseDiagnostic,
   CandidateSourceRef,
   CreateQuestionCandidateInput,
   QuestionCandidate,
@@ -77,6 +78,8 @@ export function mapQuestionCandidate(row: QuestionCandidateRow): QuestionCandida
     committedQuestionId: row.committed_question_id || undefined,
     committedAt: row.committed_at || undefined,
     issues: parseJson<CandidateIssue[]>(row.issues_json || '[]', []),
+    parseDiagnostics: parseJson<CandidateParseDiagnostic[]>(row.parse_diagnostics_json || '[]', []),
+    parserConfigSnapshot: parseJson<Record<string, unknown>>(row.parser_config_snapshot_json || '{}', {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -91,8 +94,8 @@ export function createQuestionCandidate(input: CreateQuestionCandidateInput) {
       id, source_document_id, ocr_document_id, question_no, stem_markdown, answer_text, analysis_markdown,
       question_type, difficulty_score_10, difficulty_label, knowledge_points_json, solution_methods_json,
       figures_json, source_refs_json, status, province, city, paper_title, batch_name, stage, subject, paper_kind, exam_year, source_org,
-      committed_question_id, committed_at, issues_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      committed_question_id, committed_at, issues_json, parse_diagnostics_json, parser_config_snapshot_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.sourceDocumentId,
@@ -121,6 +124,8 @@ export function createQuestionCandidate(input: CreateQuestionCandidateInput) {
     input.committedQuestionId || '',
     input.committedAt || '',
     stringifyArray(input.issues),
+    stringifyArray(input.parseDiagnostics),
+    JSON.stringify(input.parserConfigSnapshot || {}),
     now,
     now,
   )
@@ -197,6 +202,8 @@ export function updateQuestionCandidate(id: string, input: UpdateQuestionCandida
   add('committed_question_id', input.committedQuestionId)
   add('committed_at', input.committedAt)
   add('issues_json', input.issues === undefined ? undefined : stringifyArray(input.issues))
+  add('parse_diagnostics_json', input.parseDiagnostics === undefined ? undefined : stringifyArray(input.parseDiagnostics))
+  add('parser_config_snapshot_json', input.parserConfigSnapshot === undefined ? undefined : JSON.stringify(input.parserConfigSnapshot || {}))
 
   if (!assignments.length) return getQuestionCandidate(id)
   add('updated_at', nowIso())

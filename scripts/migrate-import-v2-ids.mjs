@@ -153,7 +153,8 @@ try {
     db.prepare('UPDATE source_documents SET id = ? WHERE id = ?').run(newId, oldId)
     db.prepare('UPDATE ocr_documents SET source_document_id = ? WHERE source_document_id = ?').run(newId, oldId)
     db.prepare('UPDATE question_candidates SET source_document_id = ? WHERE source_document_id = ?').run(newId, oldId)
-    db.prepare('UPDATE question_bank_items SET source_run_id = ? WHERE source_run_id = ?').run(`ifv2:${newId}`, `ifv2:${oldId}`)
+    db.prepare('UPDATE question_bank_items SET import_source_id = ? WHERE import_source_id = ?').run(newId, oldId)
+    db.prepare("UPDATE question_bank_items SET import_source_id = ?, source_run_id = '' WHERE source_run_id = ?").run(newId, `ifv2:${oldId}`)
     db.prepare('UPDATE pdf_slicer_annotation_regions SET source_run_id = ? WHERE source_run_id = ?').run(newId, oldId)
   }
 

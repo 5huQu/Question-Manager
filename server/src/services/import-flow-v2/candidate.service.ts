@@ -3,25 +3,27 @@ import { createQuestion, getQuestion } from '../../db/questions.js'
 import * as sourceRepo from '../../repositories/source-documents.repo.js'
 import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
 import * as candidateRepo from '../../repositories/question-candidates.repo.js'
-import type { CandidateIssue, QuestionCandidate, QuestionCandidateStatus, UpdateQuestionCandidateInput } from '../../types/question-candidate.js'
+import type { CandidateParseDiagnostic, QuestionCandidate, QuestionCandidateStatus, UpdateQuestionCandidateInput } from '../../types/question-candidate.js'
 import { RouteError } from '../../utils/http-error.js'
 import { nowIso } from '../../utils/ids.js'
 import { difficultyLabel10, normalizeDifficultyScore10 } from '../../utils/search.js'
 import { inferQuestionType, normalizeQuestionType } from '../../utils/question-type.js'
 import { normalizeTags } from '../tags/tag-libraries.js'
-import { parseQuestionCandidates } from '../question-parser/index.js'
-import { statusForIssues, validateQuestionCandidate } from '../question-parser/candidate-validator.js'
+import { buildParserPreview, parseQuestionCandidates } from '../question-parser/index.js'
+import { parserConfigForRequest } from '../question-parser/parser-config.js'
+import type { ImportFlowV2ParserConfig } from '../question-parser/default-parser-config.js'
+import {
+  LIVE_VALIDATION_ISSUE_CODES,
+  refreshCandidateParseDiagnostics,
+  statusForIssues,
+  validateQuestionCandidate,
+  validationIssueDiagnostics,
+} from '../question-parser/candidate-validator.js'
 import { revalidateAllCandidatesForSourceDocument } from '../pdf-slicer/annotations.service.js'
 import { figuresForQuestionBank, getOcrFigureDiagnostics } from './figure-mapping.js'
 import { loadOcrDocument } from './ocr-document.service.js'
-
-const LIVE_VALIDATION_ISSUE_CODES = new Set<CandidateIssue['code']>([
-  'missing_question_no',
-  'duplicate_question_no',
-  'missing_stem',
-  'missing_answer',
-  'missing_analysis',
-])
+import { readOcrSettings } from '../settings/ocr-settings.js'
+import { runQuestionBatchClassification, type QuestionBatchClassificationReport } from '../question-bank/batch-classification.js'
 
 function candidateStatusCounts(candidates: QuestionCandidate[]) {
   return {
@@ -69,7 +71,12 @@ function liveValidateCandidates(candidates: QuestionCandidate[]) {
     if (candidate.status === 'committed') return candidate
     const baseIssues = candidate.issues.filter((issue) => !LIVE_VALIDATION_ISSUE_CODES.has(issue.code))
     const issues = validateQuestionCandidate({ ...candidate, issues: baseIssues }, duplicateQuestionNos)
-    return { ...candidate, issues, status: statusForIssues(issues) }
+    return {
+      ...candidate,
+      issues,
+      parseDiagnostics: refreshCandidateParseDiagnostics(candidate, issues),
+      status: statusForIssues(issues),
+    }
   })
 }
 
@@ -89,12 +96,21 @@ function importJobContextForSource(sourceDocumentId: string) {
     LIMIT 1
   `).get(sourceDocumentId) as { id: string; title: string; paper_title: string } | undefined
   if (!row) return null
-  const sourceId = `ifv2-job:${row.id}`
   return {
-    importSourceId: sourceId,
-    sourceRunId: sourceId,
+    importSourceId: row.id,
     sourceTitle: row.paper_title || row.title || sourceTitle(sourceDocumentId),
   }
+}
+
+async function maybeClassifyCommittedImportJobs(items: Array<{ importSourceId?: string }>) {
+  if (readOcrSettings().classificationEnabled === 'false') return null
+  const importJobIds = Array.from(new Set(items.map((item) => String(item.importSourceId || '').trim()).filter(Boolean)))
+    .filter((id) => Boolean(db.prepare('SELECT id FROM import_jobs WHERE id = ?').get(id)))
+  const reports: QuestionBatchClassificationReport[] = []
+  for (const importJobId of importJobIds) {
+    reports.push(await runQuestionBatchClassification({ type: 'import_job', id: importJobId }))
+  }
+  return reports.length ? reports : null
 }
 
 function sourceMetadata(sourceDocumentId: string) {
@@ -112,9 +128,49 @@ function sourceMetadata(sourceDocumentId: string) {
   } : {}
 }
 
-export function parseCandidatesForOcrDocument(id: string) {
+function attachParserDiagnostics(
+  document: ReturnType<typeof loadOcrDocument>,
+  candidates: QuestionCandidate[],
+  config: ImportFlowV2ParserConfig,
+) {
+  const preview = buildParserPreview(document, { config })
+  const diagnosticsByQuestion = new Map<string, CandidateParseDiagnostic[]>()
+  for (const diagnostic of preview.diagnostics) {
+    if (!diagnostic.questionNo) continue
+    const current = diagnosticsByQuestion.get(diagnostic.questionNo) || []
+    current.push({
+      code: diagnostic.code,
+      severity: diagnostic.severity,
+      questionNo: diagnostic.questionNo,
+      message: diagnostic.message,
+      start: diagnostic.start,
+      end: diagnostic.end,
+    })
+    diagnosticsByQuestion.set(diagnostic.questionNo, current)
+  }
+
+  return candidates.map((candidate) => {
+    const diagnostics = [
+      ...(diagnosticsByQuestion.get(candidate.questionNo) || []),
+      ...validationIssueDiagnostics(candidate, candidate.issues),
+    ]
+    const uniqueDiagnostics = Array.from(new Map(diagnostics.map((diagnostic) => [`${diagnostic.code}:${diagnostic.message}`, diagnostic])).values())
+    const nextCandidate = {
+      ...candidate,
+      parseDiagnostics: uniqueDiagnostics,
+      parserConfigSnapshot: config,
+    }
+    return {
+      ...nextCandidate,
+      parseDiagnostics: refreshCandidateParseDiagnostics(nextCandidate, candidate.issues),
+    }
+  })
+}
+
+export function parseCandidatesForOcrDocument(id: string, body: Record<string, unknown> = {}) {
   const document = loadOcrDocument(id)
-  const candidates = parseQuestionCandidates(document)
+  const config = parserConfigForRequest(body)
+  const candidates = attachParserDiagnostics(document, parseQuestionCandidates(document, { config }), config)
   const metadata = sourceMetadata(document.sourceDocumentId)
   candidateRepo.deleteQuestionCandidatesForOcrDocument(id)
   const saved = candidates.map((candidate) => candidateRepo.createQuestionCandidate({ ...candidate, ...metadata })).filter(Boolean) as QuestionCandidate[]
@@ -150,7 +206,7 @@ export function updateQuestionCandidate(id: string, body: Record<string, unknown
   return { candidate: finalUpdated }
 }
 
-export function commitQuestionCandidate(id: string) {
+export async function commitQuestionCandidate(id: string, options: { skipAutoClassification?: boolean } = {}) {
   const candidate = candidateRepo.getQuestionCandidate(id)
   if (!candidate) throw new RouteError(404, '候选题不存在。')
   if (candidate.status === 'committed') {
@@ -161,7 +217,7 @@ export function commitQuestionCandidate(id: string) {
     if (!committedItem) {
       throw new RouteError(409, `候选题已标记为已入库，但题库中不存在对应题目（${candidate.committedQuestionId}）。`)
     }
-    return { candidate, item: committedItem }
+    return { candidate, item: committedItem, classificationReports: null }
   }
   if (!candidate.stemMarkdown.trim()) throw new RouteError(400, '题干为空，不能入库。')
   const difficultyScore10 = normalizeDifficultyScore10(candidate.difficultyScore10)
@@ -191,7 +247,7 @@ export function commitQuestionCandidate(id: string) {
     answerText: candidate.answerText,
     analysisMarkdown: candidate.analysisMarkdown,
     figures: figuresForQuestionBank(candidate.figures),
-    sourceRunId: importJobContext?.sourceRunId || `ifv2:${candidate.sourceDocumentId}`,
+    sourceRunId: '',
   })
   if (!item) throw new RouteError(500, '入库失败。')
   const committedCandidate = candidateRepo.updateQuestionCandidate(id, {
@@ -200,22 +256,24 @@ export function commitQuestionCandidate(id: string) {
     committedAt: nowIso(),
   })
   if (!committedCandidate) throw new RouteError(500, '题目已创建，但候选题入库状态更新失败。')
-  return { candidate: committedCandidate, item }
+  const classificationReports = options.skipAutoClassification ? null : await maybeClassifyCommittedImportJobs([item])
+  return { candidate: committedCandidate, item, classificationReports }
 }
 
-export function commitQuestionCandidates(body: Record<string, unknown>) {
+export async function commitQuestionCandidates(body: Record<string, unknown>) {
   const ids = Array.isArray(body.candidateIds) ? body.candidateIds.map(String) : []
   if (!ids.length) throw new RouteError(400, '请指定要入库的候选题。')
   const items = []
   const errors = []
   for (const id of ids) {
     try {
-      items.push(commitQuestionCandidate(id).item)
+      items.push((await commitQuestionCandidate(id, { skipAutoClassification: true })).item)
     } catch (error) {
       errors.push({ id, error: error instanceof Error ? error.message : String(error) })
     }
   }
-  return { success: items.length, failed: errors.length, items, errors }
+  const classificationReports = await maybeClassifyCommittedImportJobs(items)
+  return { success: items.length, failed: errors.length, items, errors, classificationReports }
 }
 
 export function deleteQuestionCandidate(id: string) {

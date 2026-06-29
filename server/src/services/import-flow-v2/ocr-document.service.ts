@@ -3,7 +3,8 @@ import * as sourceRepo from '../../repositories/source-documents.repo.js'
 import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
 import type { OCRAsset, OCRDocument, OCRPage } from '../../types/ocr-document.js'
 import { RouteError } from '../../utils/http-error.js'
-import { assetPathFor } from '../../utils/paths.js'
+import { nowIso } from '../../utils/ids.js'
+import { assetPathFor, resolveStoragePath } from '../../utils/paths.js'
 import { ensureOcrDocumentFiguresAndPlaceholders } from '../ocr-providers/ocr-document.normalizer.js'
 import { ensureDir, readJsonFile, readText, storedOcrDocumentDir, writeJson, writeText } from './import-flow-v2.paths.js'
 import { localizeRemoteImages } from './figure-mapping.js'
@@ -109,6 +110,24 @@ export function getOcrDocument(id: string) {
   const ocrDocument = ocrRepo.getOcrDocument(id)
   if (!ocrDocument) throw new RouteError(404, 'OCRDocument 不存在。')
   return { ocrDocument }
+}
+
+export function updateOcrDocumentMarkdown(id: string, body: Record<string, unknown>) {
+  const record = ocrRepo.getOcrDocument(id)
+  if (!record) throw new RouteError(404, 'OCRDocument 不存在。')
+  if (typeof body.markdown !== 'string') throw new RouteError(400, '请提供 markdown 文本。')
+  const markdownPath = resolveStoragePath(record.markdownPath)
+  if (!markdownPath) throw new RouteError(400, 'OCRDocument 缺少 markdown 文件路径。')
+  writeText(markdownPath, body.markdown)
+  const updated = ocrRepo.updateOcrDocument(id, {
+    metadata: {
+      ...record.metadata,
+      manualMarkdownEditedAt: nowIso(),
+      manualMarkdownEdited: true,
+    },
+  })
+  if (!updated) throw new RouteError(500, 'OCRDocument 更新失败。')
+  return { ocrDocument: updated }
 }
 
 export function loadOcrDocument(id: string): OCRDocument {

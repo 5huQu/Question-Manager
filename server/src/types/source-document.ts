@@ -22,6 +22,10 @@ export type SourceDocumentImportStats = {
   committedCount: number
   uncommittedCount: number
   allCommitted: boolean
+  parseDiagnosticCount: number
+  metadataLikeAnswerCount: number
+  missingAnalysisDiagnosticCount: number
+  unmatchedSolutionDiagnosticCount: number
 }
 
 export type SourceDocument = {

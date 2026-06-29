@@ -850,11 +850,11 @@ export default function CandidateFixWorkbenchPage() {
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* 选区操作快捷按键 */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
-                1. 选区划定与微调
+          <div className="flex-1 overflow-y-auto p-4 space-y-5">
+            {/* 卡片一：选区与微调控制盒 */}
+            <div className="rounded-xl border border-zinc-150 bg-zinc-50/10 p-4 shadow-xs space-y-3 dark:border-zinc-800 dark:bg-zinc-900/10">
+              <label className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block select-none">
+                1. 选区定界与微调
               </label>
               <div className="flex flex-wrap gap-1.5">
                 <Button size="xs" variant="outline" icon={Plus} onClick={() => handleAddNewRegion('question')}>
@@ -867,20 +867,20 @@ export default function CandidateFixWorkbenchPage() {
                   补充插图选区
                 </Button>
                 <Button size="xs" variant="outline" icon={Trash2} onClick={handleCleanHeaderFooter}>
-                  清理页眉页脚
+                  清理常规页脚
                 </Button>
               </div>
 
               {/* 当前选中选区信息与操作 */}
               {selectedRegionId && (
-                <div className="mt-2.5 rounded-lg border border-zinc-150 bg-zinc-50/30 p-2.5 text-xs space-y-2 dark:border-zinc-800 dark:bg-zinc-955">
+                <div className="mt-1 rounded-lg border border-zinc-200/60 bg-white/50 p-3 text-xs space-y-2 dark:border-zinc-850 dark:bg-zinc-900/50">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-zinc-700 dark:text-zinc-300">
                       当前选中：{regions.find(r => r.id === selectedRegionId)?.questionLabel || '选区'}
                     </span>
                     <button
                       onClick={handleDeleteSelected}
-                      className="text-red-500 hover:text-red-700 flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                      className="text-red-500 hover:text-red-700 flex items-center gap-1 font-medium transition-colors cursor-pointer text-xs"
                     >
                       <Trash2 className="size-3.5" /> 删除该图框
                     </button>
@@ -900,115 +900,121 @@ export default function CandidateFixWorkbenchPage() {
                             return r
                           }))
                         }}
-                        className="h-7 rounded border border-zinc-200 bg-background px-2 text-[11px] outline-none"
+                        className="h-7 rounded border border-zinc-200 bg-background px-2 text-[11px] outline-none transition-all focus:border-zinc-400"
                       >
                         <option value="stem">题干段落</option>
                         <option value="analysis">解析段落</option>
                       </select>
                     </div>
                   )}
-                  <p className="text-[10px] text-zinc-400">
+                  <p className="text-[10px] text-zinc-400 leading-normal">
                     可以在左侧拖拽边缘调整框大小，或者按 Delete / Backspace 键快速删除。
                   </p>
                 </div>
               )}
             </div>
 
-            {/* 题干文本编辑 */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
-                2. 题干文本内容 (Markdown)
-              </label>
-              <textarea
-                value={stemMarkdown}
-                onChange={(e) => setStemMarkdown(e.target.value)}
-                className="w-full h-40 rounded-lg border border-zinc-200 bg-background p-3 text-xs outline-none focus:ring-1 focus:ring-zinc-950 font-mono resize-y"
-                placeholder="在此录入或修改识别出的题干内容..."
-              />
-            </div>
+            {/* 卡片二：题干与题图 */}
+            <div className="rounded-xl border border-zinc-150 bg-white p-4 shadow-xs space-y-4 dark:border-zinc-800 dark:bg-zinc-955">
+              {/* 题干文本编辑 */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block select-none">
+                  2. 题干文本内容 (Markdown)
+                </label>
+                <textarea
+                  value={stemMarkdown}
+                  onChange={(e) => setStemMarkdown(e.target.value)}
+                  className="w-full h-40 rounded-lg border border-zinc-200 bg-background p-3 text-xs outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 font-mono resize-y transition-all leading-relaxed"
+                  placeholder="在此录入或修改识别出的题干内容..."
+                />
+              </div>
 
-            {/* 题图资源编辑 */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
-                3. 题图资源
-              </label>
-              {figures.length ? (
-                <div className="space-y-2">
-                  {figures.map((figure, index) => {
-                    const path = String(figure.path || '')
-                    const isRenderable = path && !path.trim().startsWith('<')
-                    return (
-                      <div
-                        key={figure.id || `${path}-${index}`}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => handleLocateFigure(figure)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault()
-                            handleLocateFigure(figure)
-                          }
-                        }}
-                        className="flex w-full items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50/30 p-2 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950/30 dark:hover:bg-zinc-900"
-                      >
-                        <span className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded border border-zinc-200 bg-white text-[10px] text-zinc-400 dark:border-zinc-800">
-                          {isRenderable ? (
-                            <img src={assetUrl(path)} alt={`题图 ${index + 1}`} className="h-full w-full object-contain" />
-                          ) : (
-                            <span>表格/内联资源</span>
-                          )}
-                        </span>
-                        <span className="min-w-0 flex-1 text-[11px] text-zinc-500">
-                          <span className="block font-semibold text-zinc-700 dark:text-zinc-300">题图 #{index + 1}</span>
-                          <span className="block">位置：{figure.usage || 'unknown'}{figure.pageNo ? ` · 第 ${figure.pageNo} 页` : ''}</span>
-                          {figure.bbox ? <span className="block truncate">bbox: {figure.bbox.join(', ')}</span> : null}
-                        </span>
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          icon={Trash2}
-                          onClick={(event: any) => {
-                            event.stopPropagation()
-                            handleDeleteFigure(figure)
+              {/* 题图资源编辑 */}
+              <div className="space-y-2 border-t border-zinc-100 dark:border-zinc-900 pt-3">
+                <label className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block select-none">
+                  3. 题图资源
+                </label>
+                {figures.length ? (
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {figures.map((figure, index) => {
+                      const path = String(figure.path || '')
+                      const isRenderable = path && !path.trim().startsWith('<')
+                      return (
+                        <div
+                          key={figure.id || `${path}-${index}`}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => handleLocateFigure(figure)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              handleLocateFigure(figure)
+                            }
                           }}
+                          className="flex w-full items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50/30 p-2.5 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-955/30 dark:hover:bg-zinc-900 cursor-pointer"
                         >
-                          删除
-                        </Button>
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-dashed border-zinc-200 px-3 py-4 text-center text-xs text-zinc-400 dark:border-zinc-800">
-                  当前题目暂无题图资源。
-                </div>
-              )}
+                          <span className="flex h-14 w-20 shrink-0 items-center justify-center overflow-hidden rounded border border-zinc-200 bg-white text-[10px] text-zinc-400 dark:border-zinc-800">
+                            {isRenderable ? (
+                              <img src={assetUrl(path)} alt={`题图 ${index + 1}`} className="h-full w-full object-contain" />
+                            ) : (
+                              <span>表格/内联资源</span>
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1 text-[11px] text-zinc-500 leading-normal">
+                            <span className="block font-semibold text-zinc-700 dark:text-zinc-300">题图 #{index + 1}</span>
+                            <span className="block mt-0.5 text-[10px]">位置：{figure.usage || 'unknown'}{figure.pageNo ? ` · 第 ${figure.pageNo} 页` : ''}</span>
+                          </span>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            icon={Trash2}
+                            className="text-red-655 hover:bg-red-50 hover:text-red-700 border-zinc-200"
+                            onClick={(event: any) => {
+                              event.stopPropagation()
+                              handleDeleteFigure(figure)
+                            }}
+                          >
+                            删除
+                          </Button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-zinc-200 px-3 py-4 text-center text-xs text-zinc-400 dark:border-zinc-800 select-none">
+                    当前题目暂无题图资源。
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* 答案文本编辑 */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
-                4. 答案文本内容 (Markdown)
-              </label>
-              <textarea
-                value={answerText}
-                onChange={(e) => setAnswerText(e.target.value)}
-                className="w-full h-24 rounded-lg border border-zinc-200 bg-background p-3 text-xs outline-none focus:ring-1 focus:ring-zinc-950 font-mono resize-y"
-                placeholder="在此输入或修改答案..."
-              />
-            </div>
+            {/* 卡片三：解答内容 */}
+            <div className="rounded-xl border border-zinc-150 bg-white p-4 shadow-xs space-y-4 dark:border-zinc-800 dark:bg-zinc-955">
+              {/* 答案文本编辑 */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block select-none">
+                  4. 答案文本内容 (Markdown)
+                </label>
+                <textarea
+                  value={answerText}
+                  onChange={(e) => setAnswerText(e.target.value)}
+                  className="w-full h-24 rounded-lg border border-zinc-200 bg-background p-3 text-xs outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 font-mono resize-y transition-all leading-relaxed"
+                  placeholder="在此输入或修改答案..."
+                />
+              </div>
 
-            {/* 解析步骤编辑 */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block">
-                5. 自动解析步骤 (Markdown)
-              </label>
-              <textarea
-                value={analysisMarkdown}
-                onChange={(e) => setAnalysisMarkdown(e.target.value)}
-                className="w-full h-32 rounded-lg border border-zinc-200 bg-background p-3 text-xs outline-none focus:ring-1 focus:ring-zinc-950 font-mono resize-y"
-                placeholder="在此输入参考答案与解析思路..."
-              />
+              {/* 解析步骤编辑 */}
+              <div className="space-y-2 border-t border-zinc-100 dark:border-zinc-900 pt-3">
+                <label className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block select-none">
+                  5. 自动解析步骤 (Markdown)
+                </label>
+                <textarea
+                  value={analysisMarkdown}
+                  onChange={(e) => setAnalysisMarkdown(e.target.value)}
+                  className="w-full h-32 rounded-lg border border-zinc-200 bg-background p-3 text-xs outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 font-mono resize-y transition-all leading-relaxed"
+                  placeholder="在此输入参考答案与解析思路..."
+                />
+              </div>
             </div>
 
             {/* 诊断小贴士 */}
