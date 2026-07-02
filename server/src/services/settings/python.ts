@@ -17,27 +17,29 @@ export function pythonDetails() {
   const command = pythonCommand()
   try {
     const code = [
-      'import json, sys, importlib.metadata',
+      'import json, sys, importlib.metadata, importlib.util',
       'import fitz',
       'from PIL import Image',
-      'import flask',
-      'print(json.dumps({"version": sys.version.split()[0], "executable": sys.executable, "pymupdf": fitz.VersionBind, "pillow": Image.__version__, "flask": importlib.metadata.version("flask")}))',
+      'flask_version = importlib.metadata.version("flask") if importlib.util.find_spec("flask") else ""',
+      'print(json.dumps({"version": sys.version.split()[0], "executable": sys.executable, "pymupdf": fitz.VersionBind, "pillow": Image.__version__, "flask": flask_version}))',
     ].join('; ')
     const value = JSON.parse(
-      execFileSync(command, ['-I', '-c', code], {
+      execFileSync(command, ['-c', code], {
         env: pythonEnv(),
         encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
+        stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 5000,
       }),
     )
     return { available: true, source: process.env.QUESTION_PYTHON_RUNTIME || 'system', ...value }
   } catch (error) {
+    const execError = error as { stderr?: unknown; message?: string }
+    const stderr = Buffer.isBuffer(execError.stderr) ? execError.stderr.toString('utf8') : String(execError.stderr || '')
     return {
       available: false,
       source: process.env.QUESTION_PYTHON_RUNTIME || 'system',
       executable: command,
-      error: error instanceof Error ? error.message : String(error),
+      error: stderr.trim() || (error instanceof Error ? error.message : String(error)),
     }
   }
 }

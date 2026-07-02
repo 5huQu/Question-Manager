@@ -29,6 +29,7 @@ export type CandidateFigure = {
   id: string
   usage: CandidateFigureUsage
   path: string
+  sourceDocumentId?: string
   blockId?: string
   sourceBlockId?: string
   pageNo?: number
@@ -37,6 +38,7 @@ export type CandidateFigure = {
 }
 
 export type CandidateSourceRef = {
+  sourceDocumentId?: string
   pageNo: number
   blockIds: string[]
   bbox?: OCRBBox

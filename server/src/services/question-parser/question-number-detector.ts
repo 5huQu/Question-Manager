@@ -43,6 +43,21 @@ function matchLine(line: string, patterns: string[]) {
   return null
 }
 
+function isFigureCaptionQuestionMarker(line: string, rawMarker: string) {
+  if (!/第\s*[0-9０-９]{1,3}\s*题/.test(rawMarker)) return false
+  const markerIndex = line.indexOf(rawMarker)
+  if (markerIndex < 0) return false
+  const suffix = line.slice(markerIndex + rawMarker.length).trim()
+  return /^[图圖](?:\s*[0-9０-９]{0,3})?\s*$/.test(suffix)
+}
+
+function isDecimalDataQuestionMarker(line: string, rawMarker: string) {
+  if (!/[.．]\s*$/.test(rawMarker)) return false
+  const markerIndex = line.indexOf(rawMarker)
+  if (markerIndex < 0) return false
+  return /^[0-9０-９]/.test(line.slice(markerIndex + rawMarker.length))
+}
+
 function detectQuestionNumbersWithPatterns(markdown: string, patterns: string[], config: ImportFlowV2ParserConfig): QuestionNumberMatch[] {
   const matches: QuestionNumberMatch[] = []
   const source = String(markdown || '')
@@ -52,6 +67,8 @@ function detectQuestionNumbersWithPatterns(markdown: string, patterns: string[],
   for (const line of lines) {
     const found = matchLine(line, patterns)
     if (!found) { offset += line.length; continue }
+    if (isFigureCaptionQuestionMarker(line, found.raw)) { offset += line.length; continue }
+    if (isDecimalDataQuestionMarker(line, found.raw)) { offset += line.length; continue }
     const markerIndex = line.indexOf(found.raw)
     const lineStart = offset + Math.max(0, markerIndex)
     const questionNo = normalizeDetectedQuestionNo(found.questionNo)

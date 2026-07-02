@@ -208,6 +208,34 @@ export function getRegionsForSession(sessionId: string): AnnotationRegion[] {
   }))
 }
 
+function sourceRunsForCandidateSession(session: { batch_id: string; source_profile_json?: string }) {
+  const profiles = parseJson<Record<string, { pageCount?: number; pdfName?: string }>>(session.source_profile_json || '{}', {})
+  const sourceRuns = Object.entries(profiles).map(([sourceDocumentId, profile]) => ({
+    run_id: sourceDocumentId,
+    document_diagnostics_json: JSON.stringify({
+      profile: {
+        pageCount: Number(profile?.pageCount || 0),
+        pdfName: String(profile?.pdfName || ''),
+      },
+    }),
+  }))
+  if (sourceRuns.length) return sourceRuns
+
+  const candidate = db.prepare('SELECT source_document_id FROM question_candidates WHERE id = ?').get(session.batch_id) as any
+  if (!candidate) return []
+  const sourceDoc = db.prepare('SELECT page_count, original_file_name FROM source_documents WHERE id = ?').get(candidate.source_document_id) as any
+  if (!sourceDoc) return []
+  return [{
+    run_id: candidate.source_document_id,
+    document_diagnostics_json: JSON.stringify({
+      profile: {
+        pageCount: Number(sourceDoc.page_count || 0),
+        pdfName: sourceDoc.original_file_name,
+      },
+    }),
+  }]
+}
+
 export function saveRegions(sessionId: string, regions: any[], clientRevision: number): AnnotationSession {
   const now = nowIso()
   withTransaction(() => {
@@ -227,21 +255,7 @@ export function saveRegions(sessionId: string, regions: any[], clientRevision: n
     }
     let sourceRuns: Array<{ run_id: string; document_diagnostics_json: string }> = []
     if (sessionId.startsWith('sess_candidate_')) {
-      const candidate = db.prepare('SELECT source_document_id FROM question_candidates WHERE id = ?').get(session.batch_id) as any
-      if (candidate) {
-        const sourceDoc = db.prepare('SELECT page_count, original_file_name FROM source_documents WHERE id = ?').get(candidate.source_document_id) as any
-        if (sourceDoc) {
-          sourceRuns = [{
-            run_id: candidate.source_document_id,
-            document_diagnostics_json: JSON.stringify({
-              profile: {
-                pageCount: Number(sourceDoc.page_count || 0),
-                pdfName: sourceDoc.original_file_name
-              }
-            })
-          }]
-        }
-      }
+      sourceRuns = sourceRunsForCandidateSession(session)
     } else {
       sourceRuns = db.prepare('SELECT run_id, document_diagnostics_json FROM pdf_slicer_runs WHERE batch_id = ?').all(session.batch_id) as Array<{ run_id: string; document_diagnostics_json: string }>
     }
@@ -465,47 +479,69 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
       throw new Error('原资料文件不存在。')
     }
 
-    const pdfPath = resolveStoragePath(sourceDoc.file_path)
     const regions = session.regions || []
 
     const targetAssetsDir = path.join(dataDir, 'import-flow-v2', 'source-documents', sourceDoc.id, 'assets')
     fs.mkdirSync(targetAssetsDir, { recursive: true })
 
-    const tempJsonFile = path.join(targetAssetsDir, `manual_crop_input_${sessionId}.json`)
-    fs.writeFileSync(tempJsonFile, JSON.stringify(regions.map(r => ({
-      id: r.id,
-      kind: r.kind,
-      question_key: r.questionKey,
-      question_label: r.questionLabel,
-      segments: r.segments
-    }))))
-
     const scriptPath = path.join(pythonRoot, 'scripts', 'crop_manual_annotation.py')
     const croppedResults = new Map<string, any>()
-    try {
-      const resultObj = runManualCropScript([
-        scriptPath,
-        '--pdf', pdfPath,
-        '--regions-json-file', tempJsonFile,
-        '--output-dir', targetAssetsDir,
-        '--dpi', '180'
-      ])
-      if (resultObj.error) {
-        throw new Error(resultObj.error)
+    const sourceDocumentById = new Map<string, any>([[sourceDoc.id, sourceDoc]])
+    const getSourceDocumentForRegion = (sourceDocumentId: string) => {
+      const existing = sourceDocumentById.get(sourceDocumentId)
+      if (existing) return existing
+      const row = db.prepare('SELECT * FROM source_documents WHERE id = ?').get(sourceDocumentId) as any
+      if (!row) {
+        throw new Error(`标注区域关联的源资料不存在：${sourceDocumentId}`)
       }
-      for (const item of resultObj.results || []) {
-        if (item.error) {
-          throw new Error(`剪裁失败：${item.error}`)
+      sourceDocumentById.set(sourceDocumentId, row)
+      return row
+    }
+    const regionsBySource = new Map<string, AnnotationRegion[]>()
+    for (const region of regions) {
+      const sourceRunId = region.sourceRunId || sourceDoc.id
+      regionsBySource.set(sourceRunId, [...(regionsBySource.get(sourceRunId) || []), region])
+    }
+    try {
+      for (const [sourceRunId, sourceRegions] of regionsBySource) {
+        if (!sourceRegions.length) continue
+        const regionSourceDoc = getSourceDocumentForRegion(sourceRunId)
+        const pdfPath = resolveStoragePath(regionSourceDoc.file_path)
+        const tempJsonFile = path.join(targetAssetsDir, `manual_crop_input_${sessionId}_${sourceRunId}.json`)
+        fs.writeFileSync(tempJsonFile, JSON.stringify(sourceRegions.map(r => ({
+          id: r.id,
+          kind: r.kind,
+          question_key: r.questionKey,
+          question_label: r.questionLabel,
+          segments: r.segments
+        }))))
+
+        try {
+          const resultObj = runManualCropScript([
+            scriptPath,
+            '--pdf', pdfPath,
+            '--regions-json-file', tempJsonFile,
+            '--output-dir', targetAssetsDir,
+            '--dpi', '180'
+          ])
+          if (resultObj.error) {
+            throw new Error(resultObj.error)
+          }
+          for (const item of resultObj.results || []) {
+            if (item.error) {
+              throw new Error(`剪裁失败（${regionSourceDoc.original_file_name || sourceRunId}）：${item.error}`)
+            }
+            croppedResults.set(item.regionId, item)
+          }
+        } finally {
+          try {
+            fs.unlinkSync(tempJsonFile)
+          } catch {}
         }
-        croppedResults.set(item.regionId, item)
       }
     } catch (err) {
       console.error(`Crop failed for candidate session ${sessionId}:`, err)
       throw new Error(`物理图片裁切失败，请检查标注区域范围。原因为：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      try {
-        fs.unlinkSync(tempJsonFile)
-      } catch {}
     }
 
     const currentFigures = parseJson<CandidateFigure[]>(candidate.figures_json || '[]', [])
@@ -539,6 +575,7 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
         updatedFig.pageNo = pageNo
         updatedFig.bbox = bbox
         updatedFig.path = relativePath
+        updatedFig.sourceDocumentId = r.sourceRunId || sourceDoc.id
         newFigures.push(updatedFig)
       } else {
         const newFigId = `fig_manual_${createId('fig')}`
@@ -546,6 +583,7 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
           id: newFigId,
           usage: (r.note as any) || 'stem',
           path: relativePath,
+          sourceDocumentId: r.sourceRunId || sourceDoc.id,
           pageNo,
           bbox
         }
@@ -571,6 +609,7 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
     for (const r of questionRegions) {
       for (const seg of r.segments) {
         newSourceRefs.push({
+          sourceDocumentId: r.sourceRunId || sourceDoc.id,
           pageNo: seg.page,
           blockIds: [],
           kind: 'stem',
@@ -588,6 +627,7 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
     for (const r of solutionRegions) {
       for (const seg of r.segments) {
         newSourceRefs.push({
+          sourceDocumentId: r.sourceRunId || sourceDoc.id,
           pageNo: seg.page,
           blockIds: [],
           kind: 'analysis',

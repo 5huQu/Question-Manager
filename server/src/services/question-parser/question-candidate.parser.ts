@@ -187,11 +187,52 @@ function duplicateQuestionNos(chunks: QuestionMarkdownChunk[]) {
   return new Set(Array.from(countQuestionNos(chunks).entries()).filter(([, count]) => count > 1).map(([questionNo]) => questionNo))
 }
 
-function dedupeFigures(figures: CandidateFigure[]) {
-  return Array.from(new Map(figures.map((figure) => [`${figure.usage}:${figure.path}`, figure])).values())
+function hasChoiceOptionLines(value: string) {
+  return /(?:^|\n)\s*[A-D]\s*[.．、]/.test(value)
 }
 
-function figuresForMarkdown(markdown: string, usage: CandidateFigure['usage']): CandidateFigure[] {
+function hasFigureMarker(value: string) {
+  return /<!--\s*DOC2X_FIGURE:[^>]+\s*-->|!\[[^\]]*]\(/.test(value)
+}
+
+function hasFigureKeyword(value: string, config: ImportFlowV2ParserConfig) {
+  return config.figureKeywords.some((keyword) => String(value || '').includes(keyword))
+}
+
+function shouldMergeDuplicateQuestionChunk(previous: QuestionMarkdownChunk, current: QuestionMarkdownChunk, config: ImportFlowV2ParserConfig) {
+  if (previous.questionNo !== current.questionNo) return false
+  if (hasAnswerOrAnalysisMarkerText(previous.body) || containsSectionHeading(previous.body, config)) return false
+  const combined = `${previous.body}\n${current.body}`
+  return previous.body.length <= 120
+    && (hasFigureKeyword(combined, config) || hasChoiceOptionLines(current.body) || hasFigureMarker(current.raw))
+}
+
+function mergeDuplicateContinuationChunks(source: string, chunks: QuestionMarkdownChunk[], config: ImportFlowV2ParserConfig) {
+  const merged: QuestionMarkdownChunk[] = []
+  for (const chunk of chunks) {
+    const previous = merged[merged.length - 1]
+    if (previous && shouldMergeDuplicateQuestionChunk(previous, chunk, config)) {
+      previous.end = chunk.end
+      previous.raw = source.slice(previous.start, chunk.end).trim()
+      previous.body = source.slice(previous.contentStart, chunk.end).trim()
+      continue
+    }
+    merged.push({ ...chunk })
+  }
+  return merged
+}
+
+function stripRepeatedQuestionMarker(value: string, questionNo: string) {
+  const normalized = numberValue(questionNo)
+  if (normalized === undefined) return value
+  return String(value || '').replace(new RegExp(`(^|\\n)\\s*(?:第\\s*${normalized}\\s*题|${normalized})\\s*[.．、·•]\\s*`, 'g'), '$1')
+}
+
+function dedupeFigures(figures: CandidateFigure[]) {
+  return Array.from(new Map(figures.map((figure) => [`${figure.sourceDocumentId || ''}:${figure.usage}:${figure.path}`, figure])).values())
+}
+
+function figuresForMarkdown(markdown: string, usage: CandidateFigure['usage'], sourceDocumentId = ''): CandidateFigure[] {
   const figures: CandidateFigure[] = []
   const pattern = /!\[[^\]]*]\(\s*(?:<([^>\n]+)>|([^\s)\n]+))\s*\)/g
   for (const match of normalizeHtmlImageTags(markdown).matchAll(pattern)) {
@@ -201,6 +242,7 @@ function figuresForMarkdown(markdown: string, usage: CandidateFigure['usage']): 
       id: `inline_${usage}_${createId('image', path)}`,
       usage,
       path,
+      sourceDocumentId: sourceDocumentId || undefined,
       inlineMarker: String(match.index ?? path),
     })
   }
@@ -210,7 +252,7 @@ function figuresForMarkdown(markdown: string, usage: CandidateFigure['usage']): 
 function dedupeSourceRefs(refs: CandidateSourceRef[]) {
   const grouped = new Map<string, CandidateSourceRef>()
   for (const ref of refs) {
-    const key = ref.kind + ':' + ref.pageNo
+    const key = `${ref.sourceDocumentId || ''}:${ref.kind}:${ref.pageNo}`
     const existing = grouped.get(key)
     if (!existing) {
       grouped.set(key, ref)
@@ -296,6 +338,7 @@ function attachImageBlocks(document: OCRDocument, chunks: QuestionMarkdownChunk[
     if (!figure) continue
     candidates[index].figures = dedupeFigures([...candidates[index].figures, figure])
     candidates[index].sourceRefs = dedupeSourceRefs([...candidates[index].sourceRefs, {
+      sourceDocumentId: document.sourceDocumentId,
       pageNo: block.pageNo,
       blockIds: [block.id],
       bbox: block.bbox,
@@ -591,7 +634,7 @@ function candidateFromChunk(
   config: ImportFlowV2ParserConfig,
 ): QuestionCandidate {
   const fields = splitQuestionFields(maskStructuralText(chunk.body, config), chunk.contentStart)
-  const stemMarkdown = cleanOcrPresentationMarkdown(fields.stemMarkdown, config)
+  const stemMarkdown = stripRepeatedQuestionMarker(cleanOcrPresentationMarkdown(fields.stemMarkdown, config), chunk.questionNo)
   const answerText = cleanOcrPresentationMarkdown(solutionValue(fields.answerText, solution?.answerText), config)
   const analysisMarkdown = cleanOcrPresentationMarkdown(solutionValue(fields.analysisMarkdown, solution?.analysisMarkdown), config)
   const stemRange = fields.stemRange || { start: chunk.contentStart, end: chunk.end }
@@ -601,9 +644,9 @@ function candidateFromChunk(
     ...figuresForRange(document, stemRange, 'stem'),
     ...figuresForRange(document, answerRange, 'analysis'),
     ...figuresForRange(document, analysisRange, 'analysis'),
-    ...figuresForMarkdown(stemMarkdown, 'stem'),
-    ...figuresForMarkdown(answerText, 'analysis'),
-    ...figuresForMarkdown(analysisMarkdown, 'analysis'),
+    ...figuresForMarkdown(stemMarkdown, 'stem', document.sourceDocumentId),
+    ...figuresForMarkdown(answerText, 'analysis', document.sourceDocumentId),
+    ...figuresForMarkdown(analysisMarkdown, 'analysis', document.sourceDocumentId),
   ])
   const sourceRefs = dedupeSourceRefs([
     ...sourceRefsForRange(document, stemRange, 'stem'),
@@ -660,9 +703,9 @@ function fallbackCandidate(document: OCRDocument, timestamp: string, config: Imp
     solutionMethods: [],
     figures: dedupeFigures([
       ...figuresForRange(document, fields.stemRange || fullRange, 'stem'),
-      ...figuresForMarkdown(stemMarkdown, 'stem'),
-      ...figuresForMarkdown(answerText, 'analysis'),
-      ...figuresForMarkdown(analysisMarkdown, 'analysis'),
+      ...figuresForMarkdown(stemMarkdown, 'stem', document.sourceDocumentId),
+      ...figuresForMarkdown(answerText, 'analysis', document.sourceDocumentId),
+      ...figuresForMarkdown(analysisMarkdown, 'analysis', document.sourceDocumentId),
     ]),
     sourceRefs: sourceRefsForRange(document, fields.stemRange || fullRange, 'stem'),
     status: 'needs_review',
@@ -771,7 +814,7 @@ export function parseQuestionCandidates(document: OCRDocument, options: ParseQue
     classification,
     config,
   )
-  const chunks = splitMarkdownByQuestionNumbers(questionMarkdown, questionMatches)
+  const chunks = mergeDuplicateContinuationChunks(questionMarkdown, splitMarkdownByQuestionNumbers(questionMarkdown, questionMatches), config)
 
   let candidates: QuestionCandidate[] = []
   if (!chunks.length) {

@@ -222,8 +222,8 @@ export type ImportV2Candidate = {
   difficultyLabel?: string
   knowledgePoints: string[]
   solutionMethods: string[]
-  figures: Array<{ id: string; usage: string; path: string; pageNo?: number; blockId?: string; sourceBlockId?: string; bbox?: [number, number, number, number]; inlineMarker?: string; optionLabel?: string }>
-  sourceRefs: Array<{ pageNo: number; blockIds: string[]; kind: string }>
+  figures: Array<{ id: string; usage: string; path: string; sourceDocumentId?: string; pageNo?: number; blockId?: string; sourceBlockId?: string; bbox?: [number, number, number, number]; inlineMarker?: string; optionLabel?: string }>
+  sourceRefs: Array<{ sourceDocumentId?: string; pageNo: number; blockIds: string[]; kind: string }>
   status: 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked' | 'committed'
   province: string
   city: string

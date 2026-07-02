@@ -10,8 +10,10 @@ process.env.QUESTION_DATA_DIR = tempRoot
 // Mock Python crop child process execution to avoid real PDF rendering/cropping dependencies
 const originalExecFileSync = cp.execFileSync
 let mockedResults = []
+let cropCalls = []
 cp.execFileSync = (command, args, options) => {
   if (command.includes('crop_manual_annotation.py') || (args && args.some(a => String(a).includes('crop_manual_annotation.py')))) {
+    cropCalls.push(args.map(String))
     return JSON.stringify({ results: mockedResults })
   }
   if (command.includes('render_pdf_page.py') || (args && args.some(a => String(a).includes('render_pdf_page.py')))) {
@@ -28,7 +30,9 @@ const { saveRegions, finalizeSession, getSession } = await import('../dist/servi
 try {
   // 1. Mock DB data
   const docId = 'src_doc_test'
+  const solutionDocId = 'src_solution_doc_test'
   const candidateId = 'candidate_test'
+  const importJobId = 'ifv2job_manual_fix_test'
   
   db.prepare(`
     INSERT INTO source_documents (id, title, original_file_name, file_path, file_type, page_count, provider, status, created_at, updated_at)
@@ -36,9 +40,39 @@ try {
   `).run(docId)
 
   db.prepare(`
+    INSERT INTO source_documents (id, title, original_file_name, file_path, file_type, page_count, provider, status, created_at, updated_at)
+    VALUES (?, 'Solution PDF', 'solution.pdf', 'import-flow-v2/source-documents/src_solution_doc_test/solution.pdf', 'pdf', 4, 'glm', 'uploaded', '2026-06-25T00:00:00Z', '2026-06-25T00:00:00Z')
+  `).run(solutionDocId)
+
+  db.prepare(`
+    INSERT INTO import_jobs (id, title, mode, status, created_at, updated_at)
+    VALUES (?, 'Manual Fix Job', 'separated_documents', 'parsed', '2026-06-25T00:00:00Z', '2026-06-25T00:00:00Z')
+  `).run(importJobId)
+  db.prepare(`
+    INSERT INTO import_job_documents (id, job_id, source_document_id, role, sort_order, created_at, updated_at)
+    VALUES ('jobdoc_questions', ?, ?, 'questions', 0, '2026-06-25T00:00:00Z', '2026-06-25T00:00:00Z')
+  `).run(importJobId, docId)
+  db.prepare(`
+    INSERT INTO import_job_documents (id, job_id, source_document_id, role, sort_order, created_at, updated_at)
+    VALUES ('jobdoc_solutions', ?, ?, 'solutions', 1, '2026-06-25T00:00:00Z', '2026-06-25T00:00:00Z')
+  `).run(importJobId, solutionDocId)
+
+  const initialFigures = [{
+    id: 'fig_solution_existing',
+    usage: 'analysis',
+    path: 'import-flow-v2/source-documents/src_solution_doc_test/assets/fig_solution.png',
+    sourceDocumentId: solutionDocId,
+    pageNo: 2,
+    bbox: [0.1, 0.2, 0.4, 0.5],
+  }]
+  const initialSourceRefs = [
+    { sourceDocumentId: docId, pageNo: 1, blockIds: [], kind: 'stem', bbox: [0.1, 0.1, 0.6, 0.3] },
+    { sourceDocumentId: solutionDocId, pageNo: 2, blockIds: [], kind: 'analysis', bbox: [0.1, 0.2, 0.6, 0.5] },
+  ]
+  db.prepare(`
     INSERT INTO question_candidates (id, source_document_id, ocr_document_id, question_no, stem_markdown, answer_text, analysis_markdown, figures_json, source_refs_json, status, issues_json, created_at, updated_at)
-    VALUES (?, ?, 'ocr_doc_test', '1', '1. 计算 $1+1=2$。', '2', '因为 $1+1=2$。', '[]', '[]', 'needs_manual_fix', '[]', '2026-06-25T00:00:00Z', '2026-06-25T00:00:00Z')
-  `).run(candidateId, docId)
+    VALUES (?, ?, 'ocr_doc_test', '1', '1. 计算 $1+1=2$。', '2', '因为 $1+1=2$。', ?, ?, 'needs_manual_fix', '[]', '2026-06-25T00:00:00Z', '2026-06-25T00:00:00Z')
+  `).run(candidateId, docId, JSON.stringify(initialFigures), JSON.stringify(initialSourceRefs))
 
   // 2. Test createOrRestoreCandidateManualFixSession
   console.log('Testing createOrRestoreCandidateManualFixSession...')
@@ -46,6 +80,17 @@ try {
   assert.equal(session.id, `sess_candidate_${candidateId}`)
   assert.equal(session.batchId, candidateId)
   assert.equal(session.status, 'draft')
+  assert.equal(Boolean(JSON.parse(session.sourceProfileJson)[solutionDocId]), true)
+  const initialAnalysisRegion = session.regions.find((region) => region.kind === 'solution')
+  assert.equal(initialAnalysisRegion?.sourceRunId, solutionDocId)
+  const initialAnalysisFigureRegion = session.regions.find((region) => region.kind === 'shared_answer_key' && region.questionKeys?.includes('fig_solution_existing'))
+  assert.equal(initialAnalysisFigureRegion?.sourceRunId, solutionDocId)
+  db.prepare('UPDATE pdf_slicer_annotation_regions SET source_run_id = ? WHERE id = ?').run(docId, initialAnalysisFigureRegion?.id)
+  const restoredSession = createOrRestoreCandidateManualFixSession(candidateId)
+  const repairedFigureRegion = restoredSession.regions.find((region) => region.id === initialAnalysisFigureRegion?.id)
+  assert.equal(repairedFigureRegion?.sourceRunId, solutionDocId)
+
+  db.prepare('UPDATE question_candidates SET figures_json = ?, source_refs_json = ? WHERE id = ?').run('[]', '[]', candidateId)
   
   // 3. Test saveRegions (saving coordinates draft)
   console.log('Testing saveRegions for candidate session...')
@@ -61,7 +106,7 @@ try {
     },
     {
       id: 'reg_analysis',
-      sourceRunId: docId,
+      sourceRunId: solutionDocId,
       kind: 'solution',
       questionLabel: '解析',
       segments: [{ page: 1, x: 0.1, y: 0.4, width: 0.5, height: 0.2 }],
@@ -95,11 +140,14 @@ try {
     { regionId: 'reg_analysis', kind: 'solution', questionKey: 'analysis', imagePath: '/dummy/analysis.png' },
     { regionId: 'reg_new_figure', kind: 'shared_answer_key', questionKey: 'figure', imagePath: expectedImgPath }
   ]
+  cropCalls = []
 
   finalizeSession(session.id, {
     stemMarkdown: '1. 计算 $1+1$。',
     analysisMarkdown: '解析：1 加 1 的结果为 2。'
   })
+  assert.equal(cropCalls.length, 2)
+  assert.equal(cropCalls.some((args) => args.includes(path.join(tempRoot, 'import-flow-v2', 'source-documents', solutionDocId, 'solution.pdf'))), true)
 
   // 5. Verify database updates on Candidate
   const updatedCandidate = db.prepare('SELECT * FROM question_candidates WHERE id = ?').get(candidateId)
@@ -111,15 +159,18 @@ try {
   const figures = JSON.parse(updatedCandidate.figures_json)
   assert.equal(figures.length, 1)
   assert.equal(figures[0].usage, 'stem')
+  assert.equal(figures[0].sourceDocumentId, docId)
   assert.equal(figures[0].pageNo, 2)
   assert.deepEqual(figures[0].bbox, [0.2, 0.2, 0.6, 0.5])
   
   const sourceRefs = JSON.parse(updatedCandidate.source_refs_json)
   assert.equal(sourceRefs.length, 2)
   assert.equal(sourceRefs[0].kind, 'stem')
+  assert.equal(sourceRefs[0].sourceDocumentId, docId)
   assert.equal(sourceRefs[0].pageNo, 1)
   assert.deepEqual(sourceRefs[0].bbox, [0.1, 0.1, 0.6, 0.3])
   assert.equal(sourceRefs[1].kind, 'analysis')
+  assert.equal(sourceRefs[1].sourceDocumentId, solutionDocId)
   assert.equal(sourceRefs[1].pageNo, 1)
   assert.deepEqual(sourceRefs[1].bbox, [0.1, 0.4, 0.6, 0.6])
 

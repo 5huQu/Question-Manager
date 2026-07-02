@@ -289,6 +289,16 @@ export default function ImportV2Page() {
     return selectedSourceDocId ? sourceDocuments.find(d => d.id === selectedSourceDocId) || null : null
   }, [sourceDocuments, selectedSourceDocId])
 
+  const runningSourceDocumentIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const item of sourceDocuments) {
+      if (item.status === 'ocr_running') ids.add(item.id)
+    }
+    if (runningSourceDocumentId) ids.add(runningSourceDocumentId)
+    return Array.from(ids).sort()
+  }, [runningSourceDocumentId, sourceDocuments])
+  const runningSourceDocumentKey = runningSourceDocumentIds.join('|')
+
   const selectedImportJobDocument = useMemo(() => {
     if (!selectedDoc) return null
     return activeImportJobDocuments.find((item) => item.sourceDocumentId === selectedDoc.id) || null
@@ -641,29 +651,75 @@ export default function ImportV2Page() {
   }, [candidateIdFromPath, questions])
 
   useEffect(() => {
-    if (!runningSourceDocumentId) return undefined
+    if (!runningSourceDocumentKey) return undefined
     let active = true
+    const runningIds = runningSourceDocumentKey.split('|').filter(Boolean)
     const poll = async () => {
-      try {
-        const result = await importV2Api.getSourceDocumentOcrStatus(runningSourceDocumentId)
-        if (!active) return
-        setSourceDocuments((items) => items.map((item) => item.id === result.sourceDocument.id ? result.sourceDocument : item))
-        if (result.task.status === 'ocr_succeeded') {
-          await loadLists()
-          if (!active) return
-          if (result.ocrDocument) setSelectedOcrId(result.ocrDocument.id)
-          setRunningSourceDocumentId('')
-          showNotice('识别完成。请在右侧点击“生成待确认题目”继续。')
-        } else if (result.task.status === 'ocr_failed') {
-          setRunningSourceDocumentId('')
-          const message = result.task.error || 'OCR 识别失败。'
-          setSourceOcrErrors((current) => ({ ...current, [runningSourceDocumentId]: message }))
-          setError(message)
+      const settled = await Promise.all(runningIds.map(async (id) => {
+        try {
+          return { id, result: await importV2Api.getSourceDocumentOcrStatus(id) }
+        } catch (err) {
+          return { id, error: err }
         }
-      } catch (err) {
-        if (!active) return
-        setRunningSourceDocumentId('')
-        setError(err instanceof Error ? err.message : String(err))
+      }))
+      if (!active) return
+
+      const errors = settled.filter((item): item is { id: string; error: unknown } => 'error' in item)
+      if (errors.length) {
+        setError(errors[0].error instanceof Error ? errors[0].error.message : String(errors[0].error))
+      }
+
+      const results = settled
+        .filter((item): item is { id: string; result: Awaited<ReturnType<typeof importV2Api.getSourceDocumentOcrStatus>> } => 'result' in item)
+        .map((item) => item.result)
+      if (!results.length) return
+
+      const sourceById = new Map(results.map((result) => [result.sourceDocument.id, result.sourceDocument]))
+      setSourceDocuments((items) => items.map((item) => sourceById.get(item.id) || item))
+
+      const newOcrDocuments = results.map((result) => result.ocrDocument).filter(Boolean) as ImportV2OcrDocument[]
+      if (newOcrDocuments.length) {
+        setOcrDocuments((items) => {
+          const byId = new Map(items.map((item) => [item.id, item]))
+          for (const item of newOcrDocuments) byId.set(item.id, item)
+          return Array.from(byId.values())
+        })
+      }
+
+      const finished = results.filter((result) => ['ocr_succeeded', 'ocr_failed'].includes(result.task.status))
+      if (!finished.length) return
+
+      const finishedIds = new Set(finished.map((result) => result.sourceDocument.id))
+      setRunningSourceDocumentId((current) => finishedIds.has(current) ? '' : current)
+
+      const failed = finished.filter((result) => result.task.status === 'ocr_failed')
+      if (failed.length) {
+        const nextErrors = Object.fromEntries(failed.map((result) => [
+          result.sourceDocument.id,
+          result.task.error || 'OCR 识别失败。',
+        ]))
+        setSourceOcrErrors((current) => ({ ...current, ...nextErrors }))
+        setError(Object.values(nextErrors)[0])
+      }
+
+      await loadLists()
+      if (!active) return
+      if (currentImportJobId) {
+        try {
+          const result = await importV2Api.getImportJob(currentImportJobId)
+          if (!active) return
+          setActiveImportJob(result.importJob)
+          setActiveImportJobDocuments(result.documents || [])
+        } catch {
+          // 列表状态已经刷新；批次详情刷新失败时不打断 OCR 状态轮询。
+        }
+      }
+      const succeeded = finished.filter((result) => result.task.status === 'ocr_succeeded')
+      const selectedFinished = selectedDoc?.id ? finished.some((result) => result.sourceDocument.id === selectedDoc.id) : false
+      const firstSelectedOcr = results.find((result) => result.sourceDocument.id === selectedDoc?.id)?.ocrDocument
+      if (firstSelectedOcr) setSelectedOcrId(firstSelectedOcr.id)
+      if (succeeded.length && selectedFinished) {
+        showNotice(succeeded.length > 1 ? `${succeeded.length} 份资料识别完成。` : '识别完成。请在右侧点击“生成待确认题目”继续。')
       }
     }
     void poll()
@@ -672,7 +728,7 @@ export default function ImportV2Page() {
       active = false
       window.clearInterval(timer)
     }
-  }, [runningSourceDocumentId])
+  }, [currentImportJobId, runningSourceDocumentKey, selectedDoc?.id])
 
   // 清除通知和错误
   function showNotice(message: string) {

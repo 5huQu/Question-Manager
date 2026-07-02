@@ -13,7 +13,7 @@ function hasText(value: string | undefined) {
 function dedupeFigures(figures: CandidateFigure[]) {
   const result = new Map<string, CandidateFigure>()
   for (const figure of figures) {
-    result.set(`${figure.usage}:${figure.path}:${figure.sourceBlockId || figure.blockId || figure.inlineMarker || figure.id}`, figure)
+    result.set(`${figure.sourceDocumentId || ''}:${figure.usage}:${figure.path}:${figure.sourceBlockId || figure.blockId || figure.inlineMarker || figure.id}`, figure)
   }
   return Array.from(result.values())
 }
@@ -21,7 +21,7 @@ function dedupeFigures(figures: CandidateFigure[]) {
 function dedupeSourceRefs(refs: CandidateSourceRef[]) {
   const grouped = new Map<string, CandidateSourceRef>()
   for (const ref of refs) {
-    const key = `${ref.kind}:${ref.pageNo}`
+    const key = `${ref.sourceDocumentId || ''}:${ref.kind}:${ref.pageNo}`
     const existing = grouped.get(key)
     if (!existing) {
       grouped.set(key, ref)
@@ -36,7 +36,7 @@ function dedupeSourceRefs(refs: CandidateSourceRef[]) {
   return Array.from(grouped.values())
 }
 
-function figuresForInlineMarkdown(markdown: string): CandidateFigure[] {
+function figuresForInlineMarkdown(markdown: string, sourceDocumentId = ''): CandidateFigure[] {
   const source = String(markdown || '')
   const figures: CandidateFigure[] = []
   const markdownPattern = /!\[[^\]]*]\(\s*(?:<([^>\n]+)>|([^\s)\n]+))\s*\)/g
@@ -47,6 +47,7 @@ function figuresForInlineMarkdown(markdown: string): CandidateFigure[] {
       id: `inline_analysis_${createId('image', path)}`,
       usage: 'analysis',
       path,
+      sourceDocumentId: sourceDocumentId || undefined,
       inlineMarker: String(match.index ?? path),
     })
   }
@@ -59,6 +60,7 @@ function figuresForInlineMarkdown(markdown: string): CandidateFigure[] {
       id: `inline_analysis_${createId('image', path)}`,
       usage: 'analysis',
       path,
+      sourceDocumentId: sourceDocumentId || undefined,
       inlineMarker: String(match.index ?? path),
     })
   }
@@ -131,7 +133,7 @@ export function mergeQuestionCandidatesWithSolutions(
       next.figures = dedupeFigures([
         ...next.figures,
         ...figuresForRange(solutionDocument, solution.analysisRange, 'analysis'),
-        ...figuresForInlineMarkdown(solutionAnalysis),
+        ...figuresForInlineMarkdown(solutionAnalysis, solutionDocument.sourceDocumentId),
       ])
     }
 

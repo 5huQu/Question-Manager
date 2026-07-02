@@ -46,8 +46,12 @@ export function renderSourceDocumentPage(sourceDocumentId: string, pageNum: numb
         timeout: 15000
       })
     } catch (err) {
-      console.error(`Failed to render PDF page via Python script:`, err)
-      throw new RouteError(500, `页面渲染失败：无法使用 PyMuPDF 渲染 PDF 第 ${pageNum} 页。`)
+      const execError = err as { stdout?: unknown; stderr?: unknown; message?: string }
+      const stdout = Buffer.isBuffer(execError.stdout) ? execError.stdout.toString('utf8') : String(execError.stdout || '')
+      const stderr = Buffer.isBuffer(execError.stderr) ? execError.stderr.toString('utf8') : String(execError.stderr || '')
+      const reason = (stderr || stdout || execError.message || String(err)).trim()
+      console.error(`Failed to render PDF page via Python script:`, reason || err)
+      throw new RouteError(500, `页面渲染失败：无法使用 PyMuPDF 渲染 PDF 第 ${pageNum} 页。${reason ? `原因：${reason}` : ''}`)
     }
   }
   return pagePngPath
@@ -124,28 +128,70 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
         })()
       : {}),
   }
+  const fallbackSourceDocumentIdForUsage = (usage: string | undefined) => (
+    solutionSourceDocumentId && String(usage || '') === 'analysis'
+      ? solutionSourceDocumentId
+      : currentCandidate.sourceDocumentId
+  )
 
   function insertSolutionRegions(sessionIdForInsert: string, insertRegion: ReturnType<typeof db.prepare>, startSortOrder: number) {
     const analysisRefs = currentCandidate.sourceRefs.filter(r => r.kind === 'analysis' || r.kind === 'answer')
     if (!analysisRefs.length) return startSortOrder
-    const analysisSourceDocumentId = solutionSourceDocumentId || currentCandidate.sourceDocumentId
-    const segments = analysisRefs.map(r => normalizeBBoxSegment(analysisSourceDocumentId, r.pageNo, r.bbox)).filter(Boolean)
-    if (!segments.length) return startSortOrder
-    insertRegion.run(
-      createId('reg'),
-      sessionIdForInsert,
-      analysisSourceDocumentId,
-      'solution',
-      'analysis',
-      '解析',
-      JSON.stringify([]),
-      JSON.stringify(segments),
-      startSortOrder++,
-      '',
-      nowIso(),
-      nowIso()
-    )
+    const refsBySourceDocument = new Map<string, typeof analysisRefs>()
+    for (const ref of analysisRefs) {
+      const refSourceDocumentId = ref.sourceDocumentId || fallbackSourceDocumentIdForUsage('analysis')
+      refsBySourceDocument.set(refSourceDocumentId, [...(refsBySourceDocument.get(refSourceDocumentId) || []), ref])
+    }
+    for (const [analysisSourceDocumentId, refs] of refsBySourceDocument) {
+      const segments = refs.map(r => normalizeBBoxSegment(analysisSourceDocumentId, r.pageNo, r.bbox)).filter(Boolean)
+      if (!segments.length) continue
+      insertRegion.run(
+        createId('reg'),
+        sessionIdForInsert,
+        analysisSourceDocumentId,
+        'solution',
+        'analysis',
+        '解析',
+        JSON.stringify([]),
+        JSON.stringify(segments),
+        startSortOrder++,
+        '',
+        nowIso(),
+        nowIso()
+      )
+    }
     return startSortOrder
+  }
+
+  function repairExistingFigureRegions(sessionIdForRepair: string) {
+    if (!solutionSourceDocumentId) return
+    const analysisFigureIds = new Set(
+      currentCandidate.figures
+        .filter((figure) => String(figure.usage || '') === 'analysis')
+        .flatMap((figure) => [figure.id, figure.blockId, figure.sourceBlockId].filter(Boolean).map(String))
+    )
+    if (!analysisFigureIds.size) return
+    const rows = db.prepare(`
+      SELECT id, source_run_id, note, question_keys_json
+      FROM pdf_slicer_annotation_regions
+      WHERE session_id = ? AND kind = ?
+    `).all(sessionIdForRepair, 'shared_answer_key') as Array<{ id: string; source_run_id: string; note: string; question_keys_json: string }>
+    for (const row of rows) {
+      if (row.source_run_id === solutionSourceDocumentId) continue
+      let keys: string[] = []
+      try {
+        keys = JSON.parse(row.question_keys_json || '[]') as string[]
+      } catch {
+        keys = []
+      }
+      const isAnalysisFigure = String(row.note || '') === 'analysis' || keys.some((key) => analysisFigureIds.has(String(key)))
+      if (!isAnalysisFigure) continue
+      db.prepare(`
+        UPDATE pdf_slicer_annotation_regions
+        SET source_run_id = ?, updated_at = ?
+        WHERE id = ?
+      `).run(solutionSourceDocumentId, nowIso(), row.id)
+    }
   }
 
   if (existing) {
@@ -177,6 +223,7 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
       `)
       insertSolutionRegions(sessionId, insertRegion, regions.length)
     }
+    repairExistingFigureRegions(sessionId)
     return {
       id: row.id,
       batchId: row.batch_id,
@@ -233,12 +280,13 @@ export function createOrRestoreCandidateManualFixSession(candidateId: string) {
   // 3. 映射已有关联的 figures (如果有 bbox 信息的话)
   for (const figure of currentCandidate.figures) {
     if (figure.bbox && figure.pageNo) {
-      const seg = normalizeBBoxSegment(currentCandidate.sourceDocumentId, figure.pageNo, figure.bbox)
+      const figureSourceDocumentId = figure.sourceDocumentId || fallbackSourceDocumentIdForUsage(figure.usage)
+      const seg = normalizeBBoxSegment(figureSourceDocumentId, figure.pageNo, figure.bbox)
       if (seg) {
         insertRegion.run(
           createId('reg'),
           sessionId,
-          currentCandidate.sourceDocumentId,
+          figureSourceDocumentId,
           'shared_answer_key',
           'figure',
           '题图',

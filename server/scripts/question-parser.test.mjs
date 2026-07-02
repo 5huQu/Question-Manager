@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { buildParserPreview, classifyQuestionDocumentLayout, defaultParserConfig, mergeQuestionCandidatesWithSolutions, parseQuestionCandidates, parseSolutionDocument } from '../dist/services/question-parser/index.js'
+import { buildParserPreview, classifyQuestionDocumentLayout, defaultParserConfig, extractInlineAnswerTableBlocks, mergeQuestionCandidatesWithSolutions, parseQuestionCandidates, parseSolutionDocument } from '../dist/services/question-parser/index.js'
 
 function block(markdown, content, pageNo, id, type = 'text', assetId = '') {
   const markdownStart = markdown.indexOf(content)
@@ -168,6 +168,99 @@ assert.ok(inlineFillBlankAnswerTableSolutions.get('12')?.answerRange)
 assert.doesNotMatch(inlineFillBlankAnswerTableSolutions.get('12')?.analysisMarkdown || '', /13\.|14\.|命题说明/)
 assert.equal(inlineFillBlankAnswerTableSolutions.get('15')?.answerText, '$5$')
 assert.match(inlineFillBlankAnswerTableSolutions.get('15')?.analysisMarkdown || '', /第十五题解析/)
+
+const compactNumericInlineAnswerTableSolutionDocument = {
+  ...ocrDocument,
+  id: 'ocr_compact_numeric_inline_answer_table_solution_test',
+  markdown: [
+    '# 参考答案',
+    '12.112 13.0.58 14.[2$\\sqrt{3}$，$\\sqrt{21}$]',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const compactNumericInlineAnswerTableSolutions = parseSolutionDocument(compactNumericInlineAnswerTableSolutionDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.equal(compactNumericInlineAnswerTableSolutions.get('12')?.answerText, '112')
+assert.equal(compactNumericInlineAnswerTableSolutions.get('13')?.answerText, '0.58')
+assert.equal(compactNumericInlineAnswerTableSolutions.get('14')?.answerText, '[2$\\sqrt{3}$，$\\sqrt{21}$]')
+assert.equal(extractInlineAnswerTableBlocks('20.10, 20.10, 20.09, 20.08').length, 0)
+
+const inlineAnswerWithDecimalAnalysisDocument = {
+  ...ocrDocument,
+  id: 'ocr_inline_answer_decimal_analysis_test',
+  markdown: [
+    '# 数学参考答案',
+    '<table border="1"><tr><td>题号</td><td>9</td><td>10</td></tr><tr><td>答案</td><td>ACD</td><td>ABD</td></tr></table>',
+    '9. ACD【解析】将20.10，20.10，20.09，20.08，20.10，20.11，20.12，20.08，20.09，20.09从小到大排列为20.08， 20.08，20.09，20.09，20.09，20.10，20.10，20.10，20.11，20.12，所以A正确；平均数为 $ 2 0. 0 8+\\frac{3\\times0. 0 1}{1 0} $ cm，所以C正确；因为 $ 1 0\\times6 0\\%=6 $ ，所以D正确.',
+    '',
+    '10. ABD【解析】第十题解析。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const inlineAnswerWithDecimalAnalysisSolutions = parseSolutionDocument(inlineAnswerWithDecimalAnalysisDocument, {
+  config: { ...defaultParserConfig, solutionBindingStrategy: 'heading_then_question' },
+  now: '2026-06-24T00:00:00.000Z',
+})
+assert.equal(inlineAnswerWithDecimalAnalysisSolutions.get('9')?.answerText, 'ACD')
+assert.match(inlineAnswerWithDecimalAnalysisSolutions.get('9')?.analysisMarkdown || '', /20\.10/)
+assert.match(inlineAnswerWithDecimalAnalysisSolutions.get('9')?.analysisMarkdown || '', /D正确/)
+assert.doesNotMatch(inlineAnswerWithDecimalAnalysisSolutions.get('9')?.analysisMarkdown || '', /第十题解析/)
+
+const sectionedAnswerTableWithSpacedDecimalsSolutionDocument = {
+  ...ocrDocument,
+  id: 'ocr_sectioned_answer_table_spaced_decimals_test',
+  markdown: [
+    '# 数学参考答案',
+    '',
+    '一、单选题：本大题共8小题。',
+    '<table border="1"><tr><td>题号</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td></tr><tr><td>答案</td><td>A</td><td>C</td><td>B</td><td>D</td><td>B</td><td>D</td><td>A</td><td>B</td></tr></table>',
+    '',
+    '【解析】',
+    '',
+    '1. 第一题解析，故选A.',
+    '2. 第二题解析，故选C.',
+    '3. 第三题解析，故选B.',
+    '4. 第四题解析，故选D.',
+    '5. 第五题解析，故选B.',
+    '6. 依题意，设 $ 5^{1 0 0 0}=a \\times1 0^{n} $ ，因为 $ 1 0 0 0 \\times 0. 6 9 8 9 7=6 9 8. 9 7=6 9 8+0. 9 7 $ ，所以最高位为9，故选D.',
+    '7. 第七题解析，故选A.',
+    '',
+    '<!-- GLM_PAGE:2 -->',
+    '8. 第八题解析，故选B.',
+    '',
+    '## 二、选择题：本大题共3小题。',
+    '<table border="1"><tr><td>题号</td><td>9</td><td>10</td><td>11</td></tr><tr><td>答案</td><td>AB</td><td>ABD</td><td>AC</td></tr></table>',
+    '',
+    '## 【解析】',
+    '',
+    '9. 第九题解析，故选AB.',
+    '10. 第十题解析，故选ABD.',
+    '',
+    '<!-- GLM_PAGE:3 -->',
+    '11. 第十一题解析，故选AC.',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const sectionedAnswerTableWithSpacedDecimalsSolutions = parseSolutionDocument(sectionedAnswerTableWithSpacedDecimalsSolutionDocument, {
+  config: { ...defaultParserConfig, solutionBindingStrategy: 'heading_then_question' },
+  now: '2026-06-24T00:00:00.000Z',
+})
+assert.equal(sectionedAnswerTableWithSpacedDecimalsSolutions.get('5')?.answerText, 'B')
+assert.match(sectionedAnswerTableWithSpacedDecimalsSolutions.get('5')?.analysisMarkdown || '', /第五题解析/)
+assert.equal(sectionedAnswerTableWithSpacedDecimalsSolutions.get('6')?.answerText, 'D')
+assert.match(sectionedAnswerTableWithSpacedDecimalsSolutions.get('6')?.analysisMarkdown || '', /最高位为9/)
+assert.equal(sectionedAnswerTableWithSpacedDecimalsSolutions.get('8')?.answerText, 'B')
+assert.match(sectionedAnswerTableWithSpacedDecimalsSolutions.get('8')?.analysisMarkdown || '', /第八题解析/)
+assert.equal(sectionedAnswerTableWithSpacedDecimalsSolutions.get('11')?.answerText, 'AC')
+assert.match(sectionedAnswerTableWithSpacedDecimalsSolutions.get('11')?.analysisMarkdown || '', /第十一题解析/)
+const sectionedAnswerTableWithSpacedDecimalsPreview = buildParserPreview(sectionedAnswerTableWithSpacedDecimalsSolutionDocument, {
+  config: { ...defaultParserConfig, solutionBindingStrategy: 'heading_then_question' },
+  focusQuestionNo: '6',
+})
+assert.equal(sectionedAnswerTableWithSpacedDecimalsPreview.diagnostics.some((diagnostic) => diagnostic.code === 'solution_heading_without_following_question'), false)
+assert.equal(sectionedAnswerTableWithSpacedDecimalsPreview.diagnostics.some((diagnostic) => diagnostic.code === 'question_before_solution_heading' && ['8', '11'].includes(diagnostic.questionNo)), false)
 
 const decimalHeavySolutionDocument = {
   ...ocrDocument,
@@ -512,6 +605,65 @@ assert.equal(duplicates.length, 2)
 assert.equal(duplicates.every((candidate) => candidate.issues.some((issue) => issue.code === 'duplicate_question_no')), true)
 assert.equal(duplicates.every((candidate) => candidate.issues.some((issue) => issue.code === 'missing_answer')), true)
 assert.equal(duplicates.every((candidate) => candidate.issues.some((issue) => issue.code === 'missing_analysis')), true)
+
+const ocrContinuationAndFigureCaptionDocument = {
+  ...ocrDocument,
+  id: 'ocr_duplicate_marker_continuation_and_caption_test',
+  markdown: [
+    '9. 如图，该几何体由高均为1的圆锥与圆柱组成，若该',
+    '',
+    '9. 如图，该几何体底面半径为1，则',
+    '',
+    'A. 圆锥的母线长为 $\\sqrt{2}$',
+    '',
+    'B. 圆锥与圆柱的体积比为1:3',
+    '',
+    '<!-- DOC2X_FIGURE:fig_q9 -->',
+    '',
+    '第9题图',
+    '',
+    '10. 下一题题干。',
+  ].join('\n'),
+  pages: [],
+  assets: [
+    { id: 'fig_q9', type: 'image', path: 'q9.png', pageNo: 1 },
+  ],
+}
+const continuationAndCaptionCandidates = parseQuestionCandidates(ocrContinuationAndFigureCaptionDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.deepEqual(continuationAndCaptionCandidates.map((candidate) => candidate.questionNo), ['9', '10'])
+assert.match(continuationAndCaptionCandidates[0].stemMarkdown, /圆柱组成/)
+assert.match(continuationAndCaptionCandidates[0].stemMarkdown, /底面半径为1/)
+assert.doesNotMatch(continuationAndCaptionCandidates[0].stemMarkdown, /第9题图|^9\./m)
+assert.equal(continuationAndCaptionCandidates[0].figures.some((figure) => figure.id === 'fig_q9'), true)
+assert.equal(continuationAndCaptionCandidates.some((candidate) => candidate.issues.some((issue) => issue.code === 'duplicate_question_no')), false)
+
+const decimalDataLineInStemDocument = {
+  ...ocrDocument,
+  id: 'ocr_decimal_data_line_in_stem_test',
+  markdown: [
+    '9. 10 根圆钢的直径数据如下：',
+    '',
+    '20.10, 20.10, 20.09, 20.08, 20.10, 20.11, 20.12, 20.08, 20.09, 20.09（单位：cm），则这批圆钢直径的',
+    '',
+    'A. 极差为 0.04 cm',
+    '',
+    'B. 众数为 20.09 cm',
+    '',
+    'C. 平均数为 20.096 cm',
+    '',
+    'D. 60%分位数为 20.10 cm',
+    '',
+    '10. 若 $ f(x)=3\\sin x+1 $，则',
+    '',
+    '11. 在数阵中求值。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const decimalDataLineInStemCandidates = parseQuestionCandidates(decimalDataLineInStemDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.deepEqual(decimalDataLineInStemCandidates.map((candidate) => candidate.questionNo), ['9', '10', '11'])
+assert.match(decimalDataLineInStemCandidates[0].stemMarkdown, /20\.10, 20\.10/)
+assert.equal(decimalDataLineInStemCandidates.some((candidate) => candidate.questionNo === '20'), false)
 
 const noNumberDocument = {
   ...ocrDocument,

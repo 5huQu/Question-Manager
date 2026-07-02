@@ -55,6 +55,7 @@ export function cleanOcrPresentationMarkdown(value: string, config: ImportFlowV2
     .replace(PAGE_MARKER_RE, '\n')
     .replace(new RegExp(`(${markerPattern})\\s*(?:[图室]|figure)\\s*\\d+\\s*`, 'gi'), '$1\n')
     .replace(new RegExp(`(${markerPattern})\\s*[A-D]\\s*(?=\\n|$)`, 'gi'), '$1\n')
+    .replace(/^\s*第\s*[0-9０-９]{1,3}\s*题\s*[图圖]\s*$/gim, '\n')
     .replace(/^\s*(?:[图室]|figure)\s*\d+\s*$/gim, '\n')
     .replace(/<div\b[^>]*>/gi, '\n')
     .replace(/<\/div>/gi, '\n')

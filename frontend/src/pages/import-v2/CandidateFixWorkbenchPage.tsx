@@ -40,6 +40,11 @@ interface Region {
   note: string
 }
 
+interface SourceProfile {
+  pageCount?: number
+  pdfName?: string
+}
+
 function createRegionId() {
   return `reg_${globalThis.crypto.randomUUID()}`
 }
@@ -81,11 +86,11 @@ export default function CandidateFixWorkbenchPage() {
 
   // PDF Page navigation
   const [currentPage, setCurrentPage] = useState<number>(1)
-  const [maxPages, setMaxPages] = useState<number>(1)
-  const [pdfName, setPdfName] = useState('')
+  const [sourceProfiles, setSourceProfiles] = useState<Record<string, SourceProfile>>({})
+  const [activeSourceDocumentId, setActiveSourceDocumentId] = useState('')
   const [pageBrowseMode, setPageBrowseMode] = useState<'manual' | 'continuous'>('continuous')
   const [regionView, setRegionView] = useState<'all' | 'question' | 'solution'>('all')
-  const [initialFocusTarget, setInitialFocusTarget] = useState<{ page: number; regionId?: string } | null>(null)
+  const [initialFocusTarget, setInitialFocusTarget] = useState<{ sourceRunId?: string; page: number; regionId?: string } | null>(null)
 
   // Canvas interaction
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 })
@@ -95,6 +100,10 @@ export default function CandidateFixWorkbenchPage() {
   const pageImageRefs = useRef<Map<number, { current: HTMLImageElement | null }>>(new Map())
   const pageContainerRefs = useRef<Map<number, HTMLDivElement | null>>(new Map())
   const scrollAreaRef = useRef<HTMLDivElement | null>(null)
+  const activeProfile = sourceProfiles[activeSourceDocumentId] || (candidate?.sourceDocumentId ? sourceProfiles[candidate.sourceDocumentId] : undefined)
+  const maxPages = Math.max(1, Number(activeProfile?.pageCount || 1))
+  const pdfName = activeProfile?.pdfName || '原始 PDF 文件'
+  const sourceProfileEntries = Object.entries(sourceProfiles)
 
   // Load candidate and restore manual-fix session
   useEffect(() => {
@@ -123,9 +132,9 @@ export default function CandidateFixWorkbenchPage() {
       setRegions(sess.regions || [])
 
       // 3. 从 Session Profile 里获取 PDF 基本信息
-      const profile = JSON.parse(sess.sourceProfileJson || '{}')[currentCandidate.sourceDocumentId] || {}
-      setMaxPages(profile.pageCount || 1)
-      setPdfName(profile.pdfName || '原始 PDF 文件')
+      const profiles = JSON.parse(sess.sourceProfileJson || '{}')
+      setSourceProfiles(profiles)
+      setActiveSourceDocumentId(currentCandidate.sourceDocumentId)
 
       // 4. 进入编辑时默认定位到题干选区开始处，而不是题图位置。
       const initialTarget = initialQuestionRegion(sess.regions || [])
@@ -137,11 +146,12 @@ export default function CandidateFixWorkbenchPage() {
       const targetSegment = initialSegment || fallbackSegment
       if (targetRegion && targetSegment) {
         setSelectedRegionId(targetRegion.id)
+        setActiveSourceDocumentId(targetRegion.sourceRunId || currentCandidate.sourceDocumentId)
         setCurrentPage(targetSegment.page)
-        setInitialFocusTarget({ page: targetSegment.page, regionId: targetRegion.id })
+        setInitialFocusTarget({ sourceRunId: targetRegion.sourceRunId || currentCandidate.sourceDocumentId, page: targetSegment.page, regionId: targetRegion.id })
       } else {
         setCurrentPage(1)
-        setInitialFocusTarget({ page: 1 })
+        setInitialFocusTarget({ sourceRunId: currentCandidate.sourceDocumentId, page: 1 })
       }
     } catch (err) {
       console.error(err)
@@ -166,13 +176,21 @@ export default function CandidateFixWorkbenchPage() {
   useEffect(() => {
     if (loading || !initialFocusTarget) return
     const target = initialFocusTarget
+    if (target.sourceRunId && target.sourceRunId !== activeSourceDocumentId) {
+      setActiveSourceDocumentId(target.sourceRunId)
+      return
+    }
     const timer = window.setTimeout(() => {
       if (target.regionId) setSelectedRegionId(target.regionId)
       focusPage(target.page, { scroll: true })
       setInitialFocusTarget(null)
     }, 80)
     return () => window.clearTimeout(timer)
-  }, [initialFocusTarget, loading])
+  }, [activeSourceDocumentId, initialFocusTarget, loading])
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(maxPages, Math.max(1, page)))
+  }, [activeSourceDocumentId, maxPages])
 
   function navigateBack() {
     const currentSourceDocumentId = candidate?.sourceDocumentId || sourceDocumentId
@@ -329,6 +347,7 @@ export default function CandidateFixWorkbenchPage() {
   function focusRegion(region: Region, segment = region.segments[0]) {
     if (!segment) return
     setSelectedRegionId(region.id)
+    setActiveSourceDocumentId(region.sourceRunId || candidate?.sourceDocumentId || activeSourceDocumentId)
     setCurrentPage(segment.page)
     window.setTimeout(() => {
       setRectFromSegment(segment)
@@ -340,8 +359,26 @@ export default function CandidateFixWorkbenchPage() {
     return [figure.id, figure.blockId, figure.sourceBlockId].filter(Boolean).map(String)
   }
 
+  function inferredSourceDocumentIdForFigure(figure: any) {
+    const explicitSourceDocumentId = String(figure.sourceDocumentId || '')
+    if (explicitSourceDocumentId && sourceProfiles[explicitSourceDocumentId]) return explicitSourceDocumentId
+    const path = String(figure.path || '')
+    const match = /source-documents[\\/]+([^\\/]+)/.exec(path)
+    if (match?.[1] && sourceProfiles[match[1]]) return match[1]
+    if (String(figure.usage || '') === 'analysis') {
+      const solutionEntry = sourceProfileEntries.find(([id]) => id !== candidate?.sourceDocumentId)
+      if (solutionEntry?.[0]) return solutionEntry[0]
+    }
+    return ''
+  }
+
   function figureRegion(figure: any) {
-    return regions.find((region) => regionMatchesFigure(region, figure)) || null
+    const expectedSourceDocumentId = inferredSourceDocumentIdForFigure(figure)
+    const matches = regions.filter((region) => regionMatchesFigure(region, figure))
+    if (expectedSourceDocumentId) {
+      return matches.find((region) => region.sourceRunId === expectedSourceDocumentId) || null
+    }
+    return matches[0] || null
   }
 
   function handleLocateFigure(figure: any) {
@@ -351,6 +388,8 @@ export default function CandidateFixWorkbenchPage() {
       return
     }
     if (figure.pageNo) {
+      const sourceId = sourceDocumentIdForFigure(figure)
+      if (sourceId) setActiveSourceDocumentId(sourceId)
       setSelectedRegionId(null)
       setRect({ x: 0, y: 0, width: 0, height: 0 })
       const segment = segmentForFigure(figure)
@@ -361,6 +400,12 @@ export default function CandidateFixWorkbenchPage() {
         focusPage(Number(figure.pageNo), { scroll: true })
       }
     }
+  }
+
+  function sourceDocumentIdForFigure(figure: any) {
+    const region = figureRegion(figure)
+    if (region?.sourceRunId) return region.sourceRunId
+    return inferredSourceDocumentIdForFigure(figure) || candidate?.sourceDocumentId || activeSourceDocumentId
   }
 
   function segmentForFigure(figure: any): Segment | null {
@@ -556,9 +601,10 @@ export default function CandidateFixWorkbenchPage() {
       note = 'stem' // Default usage
     }
 
+    const sourceRunId = sourceRunIdForNewRegion(kind)
     const newReg: Region = {
       id: createRegionId(),
-      sourceRunId: candidate.sourceDocumentId,
+      sourceRunId,
       kind,
       questionLabel: label,
       questionKeys: [],
@@ -569,7 +615,18 @@ export default function CandidateFixWorkbenchPage() {
 
     setRegions([...regions, newReg])
     setSelectedRegionId(newReg.id)
+    setActiveSourceDocumentId(sourceRunId)
     setRect({ x: 0, y: 0, width: 0, height: 0 })
+  }
+
+  function sourceRunIdForNewRegion(kind: Region['kind']) {
+    if (kind === 'solution') {
+      return sourceProfileEntries.find(([id]) => id !== candidate?.sourceDocumentId)?.[0]
+        || activeSourceDocumentId
+        || candidate?.sourceDocumentId
+        || ''
+    }
+    return activeSourceDocumentId || candidate?.sourceDocumentId || ''
   }
 
   // Delete selected region
@@ -617,6 +674,7 @@ export default function CandidateFixWorkbenchPage() {
   // Helpers for mapping regions to Canvas Boxes
   function canvasBoxesForPage(page: number): BBoxCanvasBox[] {
     return regions.flatMap((region, idx) => {
+      if (region.sourceRunId !== activeSourceDocumentId) return []
       if (!regionVisible(region)) return []
       return region.segments
         .filter(seg => seg.page === page)
@@ -651,13 +709,13 @@ export default function CandidateFixWorkbenchPage() {
 
   function selectedBoxIdForPage(page: number) {
     if (!selectedRegionId) return undefined
-    const idx = regions.findIndex(r => regionVisible(r) && r.id === selectedRegionId && r.segments.some(seg => seg.page === page))
+    const idx = regions.findIndex(r => r.sourceRunId === activeSourceDocumentId && regionVisible(r) && r.id === selectedRegionId && r.segments.some(seg => seg.page === page))
     return idx >= 0 ? String(idx) : undefined
   }
 
   const visiblePageNumbers = regionView === 'all'
     ? Array.from({ length: maxPages }, (_, index) => index + 1)
-    : Array.from(new Set(regions.filter(regionVisible).flatMap((region) => region.segments.map((segment) => segment.page)))).sort((left, right) => left - right)
+    : Array.from(new Set(regions.filter((region) => region.sourceRunId === activeSourceDocumentId && regionVisible(region)).flatMap((region) => region.segments.map((segment) => segment.page)))).sort((left, right) => left - right)
   const pageNumbers = visiblePageNumbers.length ? visiblePageNumbers : [currentPage]
 
   if (loading) {
@@ -751,6 +809,30 @@ export default function CandidateFixWorkbenchPage() {
                     </button>
                   ))}
                 </div>
+                {sourceProfileEntries.length > 1 ? (
+                  <div className="flex rounded-md border border-zinc-200 bg-zinc-50 p-0.5 dark:border-zinc-800 dark:bg-zinc-900">
+                    {sourceProfileEntries.map(([sourceId, profile], index) => (
+                      <button
+                        key={sourceId}
+                        type="button"
+                        onClick={() => {
+                          setActiveSourceDocumentId(sourceId)
+                          setCurrentPage(1)
+                          setRect({ x: 0, y: 0, width: 0, height: 0 })
+                          setSelectedRegionId(null)
+                        }}
+                        className={`max-w-36 truncate rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                          activeSourceDocumentId === sourceId
+                            ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50'
+                            : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
+                        }`}
+                        title={profile.pdfName || sourceId}
+                      >
+                        {index === 0 ? '原卷' : '答案'}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -791,7 +873,8 @@ export default function CandidateFixWorkbenchPage() {
                   className="scroll-mt-4"
                 >
                   <BBoxCanvas
-                    imageUrl={`/api/import-flow-v2/source-documents/${candidate.sourceDocumentId}/pages/${currentPage}`}
+                    key={`${activeSourceDocumentId}:${currentPage}`}
+                    imageUrl={`/api/import-flow-v2/source-documents/${activeSourceDocumentId || candidate.sourceDocumentId}/pages/${currentPage}`}
                     boxes={canvasBoxesForPage(currentPage)}
                     selectedBoxId={selectedBoxIdForPage(currentPage)}
                     onSelectBoxId={handleSelectBoxId}
@@ -808,7 +891,7 @@ export default function CandidateFixWorkbenchPage() {
               <div className="mx-auto flex w-full max-w-[800px] flex-col gap-5">
                 {pageNumbers.map((page) => (
                   <div
-                    key={page}
+                    key={`${activeSourceDocumentId}:${page}`}
                     ref={(node) => { pageContainerRefs.current.set(page, node) }}
                     className="scroll-mt-4"
                   >
@@ -823,7 +906,8 @@ export default function CandidateFixWorkbenchPage() {
                       </button>
                     </div>
                     <BBoxCanvas
-                      imageUrl={`/api/import-flow-v2/source-documents/${candidate.sourceDocumentId}/pages/${page}`}
+                      key={`${activeSourceDocumentId}:${page}`}
+                      imageUrl={`/api/import-flow-v2/source-documents/${activeSourceDocumentId || candidate.sourceDocumentId}/pages/${page}`}
                       boxes={canvasBoxesForPage(page)}
                       selectedBoxId={selectedBoxIdForPage(page)}
                       onSelectBoxId={handleSelectBoxId}

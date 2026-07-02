@@ -216,6 +216,29 @@ function isMetadataLike(value: string | undefined, config: ImportFlowV2ParserCon
   })
 }
 
+const CHINESE_SECTION_PREFIX_RE = /^[一二三四五六七八九十百千万]+[、.．]/
+
+function titleMatchesConfiguredSection(title: string, config: ImportFlowV2ParserConfig) {
+  const strippedTitle = title.replace(CHINESE_SECTION_PREFIX_RE, '')
+  return config.sectionHeadings.some((heading) => {
+    const normalized = heading.replace(/\s+/g, '').replace(CHINESE_SECTION_PREFIX_RE, '')
+    return Boolean(normalized) && (
+      title === normalized
+      || title.startsWith(normalized)
+      || strippedTitle === normalized
+      || strippedTitle.startsWith(normalized)
+    )
+  })
+}
+
+function containsQuestionSectionHeading(markdown: string, config: ImportFlowV2ParserConfig) {
+  return String(markdown || '').split(/\r?\n/).some((line) => titleMatchesConfiguredSection(normalizeHeadingLine(line), config))
+}
+
+function containsAnswerTable(markdown: string) {
+  return extractAnswerTableEntries(markdown).length > 0
+}
+
 function extractAnswerTableEntries(markdown: string): TableAnswerEntry[] {
   const entries: TableAnswerEntry[] = []
   const tablePattern = /<table\b[^>]*>([\s\S]*?)<\/table>/gi
@@ -541,6 +564,7 @@ function strategyDiagnostics(markdown: string, config: ImportFlowV2ParserConfig)
     for (const section of sections) {
       const content = markdown.slice(section.contentStart, section.end)
       const followingQuestions = detectSolutionQuestionNumbers(maskNonSolutionBlocks(content, config), config)
+      if (!followingQuestions.length && section.kind === 'answer' && containsAnswerTable(content)) continue
       if (!followingQuestions.length) {
         const previousQuestion = [...questionMatches].reverse().find((match) => match.start < section.start)
         diagnostics.push({
@@ -560,6 +584,8 @@ function strategyDiagnostics(markdown: string, config: ImportFlowV2ParserConfig)
     for (const chunk of chunks) {
       const section = sections.find((item) => item.start >= chunk.contentStart && item.start < chunk.end)
       if (!section) continue
+      const between = markdown.slice(chunk.contentStart, section.start)
+      if (containsAnswerTable(between) || containsQuestionSectionHeading(between, config)) continue
       diagnostics.push({
         code: 'question_before_solution_heading',
         severity: 'info',

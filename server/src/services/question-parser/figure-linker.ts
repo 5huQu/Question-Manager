@@ -111,6 +111,7 @@ export function figureForBlock(document: OCRDocument, block: OCRBlock, usage: Ca
     id: asset?.id || block.assetId || block.id,
     usage,
     path,
+    sourceDocumentId: document.sourceDocumentId,
     sourceBlockId: block.id,
     pageNo: block.pageNo,
     bbox: asset?.bbox || block.bbox,
@@ -125,6 +126,7 @@ export function sourceRefsForRange(document: OCRDocument, range: MarkdownRange |
     byPage.set(block.pageNo, [...(byPage.get(block.pageNo) || []), block])
   }
   return Array.from(byPage.entries()).map(([pageNo, pageBlocks]) => ({
+    sourceDocumentId: document.sourceDocumentId,
     pageNo,
     blockIds: pageBlocks.map((block) => block.id),
     bbox: unionBBox(pageBlocks.map((block) => block.bbox).filter(Boolean) as OCRBBox[]),

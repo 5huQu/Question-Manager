@@ -53,6 +53,7 @@ const ANSWER_MARKER_RE = /【\s*答案\s*】|答案\s*[:：]/
 const ANALYSIS_MARKER_RE = /【\s*(?:解析|分析|详解)\s*】|(?:解析|分析|详解)\s*[:：]/
 const ANSWER_TABLE_RE = /<table\b[^>]*>[\s\S]*?<\/table>/gi
 const INLINE_ANSWER_MARKER_RE = /(?:^|\s)([0-9０-９]{1,3})\s*(?:\\cdot|[、:：]|[.．](?![0-9０-９]))\s*/g
+const COMPACT_NUMERIC_INLINE_ANSWER_MARKER_RE = /(?:^|\s)([0-9０-９]{1,3})\s*[.．]\s*/g
 
 function cleanField(value: string) {
   return String(value || '').replace(PAGE_MARKER_RE, '').trim()
@@ -133,6 +134,54 @@ function trimmedRange(offset: number, source: string, start: number, end: number
   return { start: offset + rangeStart, end: offset + rangeEnd }
 }
 
+function isEscaped(source: string, index: number) {
+  let slashCount = 0
+  for (let cursor = index - 1; cursor >= 0 && source[cursor] === '\\'; cursor -= 1) slashCount += 1
+  return slashCount % 2 === 1
+}
+
+function isInsideInlineMath(source: string, index: number) {
+  let inside = false
+  for (let cursor = 0; cursor < index && cursor < source.length; cursor += 1) {
+    if (source[cursor] === '$' && !isEscaped(source, cursor)) inside = !inside
+  }
+  return inside
+}
+
+function inlineAnswerMarkerStart(match: RegExpMatchArray) {
+  const digitIndex = match[0].search(/[0-9０-９]/)
+  return (match.index || 0) + Math.max(0, digitIndex)
+}
+
+function inlineAnswerMarkerHasCompactNumericDot(line: string, match: RegExpMatchArray) {
+  const dotIndex = match[0].search(/[.．]/)
+  if (dotIndex < 0) return false
+  return /^[0-9０-９]/.test(line.slice((match.index || 0) + dotIndex + 1))
+}
+
+function inlineQuestionNoValue(match: RegExpMatchArray) {
+  const questionNo = normalizeInlineQuestionNo(match[1] || '')
+  const parsed = Number.parseInt(questionNo, 10)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function inlineAnswerMarkerMatches(line: string, pattern: RegExp) {
+  pattern.lastIndex = 0
+  return Array.from(line.matchAll(pattern)).filter((match) => {
+    if (!normalizeInlineQuestionNo(match[1] || '')) return false
+    return !isInsideInlineMath(line, inlineAnswerMarkerStart(match))
+  })
+}
+
+function looksLikeCompactNumericAnswerTable(line: string, matches: RegExpMatchArray[]) {
+  if (matches.length < 3) return false
+  if (!matches.some((match) => inlineAnswerMarkerHasCompactNumericDot(line, match))) return false
+  const numbers = matches.map(inlineQuestionNoValue)
+  if (numbers.some((value) => value === undefined)) return false
+  if ((numbers[0] || 0) < 9) return false
+  return numbers.every((value, index) => index === 0 || value === (numbers[index - 1] || 0) + 1)
+}
+
 function inlineAnswerLooksShort(value: string) {
   const compact = String(value || '')
     .replace(/\$[^$]*\$/g, 'M')
@@ -140,6 +189,26 @@ function inlineAnswerLooksShort(value: string) {
     .replace(/\s+/g, '')
   if (!compact || compact.length > 40) return false
   return !/(教材题源|高考题源|课标要求|命题说明|本小题|解析|分析|证明|详解|答案为|故选|解[:：])/.test(compact)
+}
+
+function inlineAnswerEntriesFromMatches(line: string, offset: number, matches: RegExpMatchArray[]) {
+  const entries: InlineAnswerTableEntry[] = []
+  for (let index = 0; index < matches.length; index += 1) {
+    const match = matches[index]
+    const questionNo = normalizeInlineQuestionNo(match[1] || '')
+    if (!questionNo) continue
+    const next = matches[index + 1]
+    const answerStart = (match.index || 0) + match[0].length
+    const answerEnd = next ? (next.index || 0) : line.length
+    const answerText = normalizeInlineAnswer(line.slice(answerStart, answerEnd))
+    if (!answerText || !inlineAnswerLooksShort(answerText)) continue
+    entries.push({
+      questionNo,
+      answerText,
+      range: trimmedRange(offset, line, answerStart, answerEnd),
+    })
+  }
+  return entries
 }
 
 export function extractInlineAnswerTableBlocks(markdown: string): InlineAnswerTableBlock[] {
@@ -150,36 +219,27 @@ export function extractInlineAnswerTableBlocks(markdown: string): InlineAnswerTa
 
   for (const lineWithNewline of lines) {
     const line = lineWithNewline.replace(/\r?\n$/, '')
-    const matches = Array.from(line.matchAll(INLINE_ANSWER_MARKER_RE))
-    if (matches.length < 2) {
+    let matches = inlineAnswerMarkerMatches(line, INLINE_ANSWER_MARKER_RE)
+    let entries = inlineAnswerEntriesFromMatches(line, offset, matches)
+
+    if (entries.length < 2) {
+      const compactMatches = inlineAnswerMarkerMatches(line, COMPACT_NUMERIC_INLINE_ANSWER_MARKER_RE)
+      if (looksLikeCompactNumericAnswerTable(line, compactMatches)) {
+        matches = compactMatches
+        entries = inlineAnswerEntriesFromMatches(line, offset, matches)
+      }
+    }
+
+    if (entries.length < 2) {
       offset += lineWithNewline.length
       continue
     }
 
-    const entries: InlineAnswerTableEntry[] = []
-    for (let index = 0; index < matches.length; index += 1) {
-      const match = matches[index]
-      const questionNo = normalizeInlineQuestionNo(match[1] || '')
-      if (!questionNo) continue
-      const next = matches[index + 1]
-      const answerStart = (match.index || 0) + match[0].length
-      const answerEnd = next ? (next.index || 0) : line.length
-      const answerText = normalizeInlineAnswer(line.slice(answerStart, answerEnd))
-      if (!answerText || !inlineAnswerLooksShort(answerText)) continue
-      entries.push({
-        questionNo,
-        answerText,
-        range: trimmedRange(offset, line, answerStart, answerEnd),
-      })
-    }
-
-    if (entries.length >= 2) {
-      blocks.push({
-        start: offset,
-        end: offset + line.length,
-        entries,
-      })
-    }
+    blocks.push({
+      start: offset,
+      end: offset + line.length,
+      entries,
+    })
     offset += lineWithNewline.length
   }
 
@@ -323,10 +383,8 @@ function metadataKeywordForLine(line: string, config: ImportFlowV2ParserConfig) 
 }
 
 export function metadataOnlySolutionBlock(value: string, config: ImportFlowV2ParserConfig = getParserConfig()) {
-  const source = String(value || '')
-    .replace(PAGE_MARKER_RE, '')
-    .replace(ANSWER_TABLE_RE, '')
-    .replace(/^(?:.*(?:^|\s)[0-9０-９]{1,3}\s*(?:\\cdot|[.．、:：])\s*){2,}.*$/gm, '')
+  const raw = String(value || '').replace(PAGE_MARKER_RE, '')
+  const source = maskRanges(raw, answerTableRanges(raw))
     .replace(/^\s*#{1,6}\s*(?:[一二三四五六七八九十]+[、.．]\s*)?(?:选择题|填空题|解答题|选做题).*$/gm, '')
     .trim()
   if (!source) return true
@@ -451,7 +509,9 @@ function solutionPatchForSection(section: SolutionSection, fields: ParsedQuestio
   if (section.kind === 'answer') {
     return {
       answerText: fields.answerText || fields.stemMarkdown,
+      analysisMarkdown: fields.analysisMarkdown || undefined,
       answerRange: fields.answerRange || fields.stemRange || fallbackRange,
+      analysisRange: fields.analysisRange,
     }
   }
   if (section.kind === 'analysis') {
