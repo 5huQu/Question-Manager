@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import {
   Calendar,
   CheckCircle2,
@@ -39,6 +39,25 @@ export function ExportRecordsPage() {
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const [isRestoring, setIsRestoring] = useState<string | null>(null)
   const [outlineByRecordId, setOutlineByRecordId] = useState<Record<string, OutlineState>>({})
+  const outlineRequestsRef = useRef(new Set<string>())
+  const [showDrawer, setShowDrawer] = useState(false)
+  const [drawerRecord, setDrawerRecord] = useState<ExportRecord | null>(null)
+
+  useEffect(() => {
+    if (activeRecord) {
+      setDrawerRecord(activeRecord)
+      const frame = requestAnimationFrame(() => {
+        setShowDrawer(true)
+      })
+      return () => cancelAnimationFrame(frame)
+    } else {
+      setShowDrawer(false)
+      const timer = setTimeout(() => {
+        setDrawerRecord(null)
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+  }, [activeRecord])
 
   const { data, error, loading, setData } = useAsync<{ items: ExportRecord[] }>(
     () => exportRecordsApi.listExportRecords({ limit: 500 }),
@@ -57,13 +76,14 @@ export function ExportRecordsPage() {
 
   useEffect(() => {
     if (!activeRecord?.items?.length) return
-    if (outlineByRecordId[activeRecord.id]) return
+    if (outlineRequestsRef.current.has(activeRecord.id)) return
 
-    let cancelled = false
+    const recordId = activeRecord.id
+    outlineRequestsRef.current.add(recordId)
     const snapshots = [...activeRecord.items].sort((left, right) => Number(left.exportOrder || 0) - Number(right.exportOrder || 0))
     setOutlineByRecordId((current) => ({
       ...current,
-      [activeRecord.id]: { loading: true, error: '', items: snapshots },
+      [recordId]: current[recordId] ?? { loading: true, error: '', items: snapshots },
     }))
 
     Promise.all(snapshots.map(async (snapshot): Promise<OutlineItem> => {
@@ -74,21 +94,26 @@ export function ExportRecordsPage() {
         return { ...snapshot, error: error instanceof Error ? error.message : String(error) }
       }
     })).then((items) => {
-      if (cancelled) return
       setOutlineByRecordId((current) => ({
         ...current,
-        [activeRecord.id]: {
+        [recordId]: {
           loading: false,
           error: items.every((item) => item.error) ? '题目内容读取失败' : '',
           items,
         },
       }))
+    }).catch((error) => {
+      outlineRequestsRef.current.delete(recordId)
+      setOutlineByRecordId((current) => ({
+        ...current,
+        [recordId]: {
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+          items: snapshots,
+        },
+      }))
     })
-
-    return () => {
-      cancelled = true
-    }
-  }, [activeRecord, outlineByRecordId])
+  }, [activeRecord])
 
   async function handleDelete(id: string, event?: MouseEvent) {
     event?.stopPropagation()
@@ -180,8 +205,7 @@ export function ExportRecordsPage() {
         <table className="w-full border-collapse text-left text-xs">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50 font-medium text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/60">
-              <th className="w-24 p-3 font-mono text-[10px] text-zinc-400">导出编码</th>
-              <th className="p-3">试卷文档名称</th>
+              <th className="p-3 max-w-[480px]">试卷文档名称</th>
               <th className="w-24 p-3 text-center">输出格式</th>
               <th className="w-20 p-3 text-center">包含题数</th>
               <th className="w-32 p-3">导出时间</th>
@@ -192,19 +216,19 @@ export function ExportRecordsPage() {
           <tbody>
             {loading && !data ? (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-xs text-zinc-400">
+                <td colSpan={6} className="p-8 text-center text-xs text-zinc-400">
                   正在读取试卷导出记录
                 </td>
               </tr>
             ) : error ? (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-xs text-zinc-400">
+                <td colSpan={6} className="p-8 text-center text-xs text-zinc-400">
                   {error}
                 </td>
               </tr>
             ) : filteredRecords.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-xs text-zinc-400">
+                <td colSpan={6} className="p-8 text-center text-xs text-zinc-400">
                   暂无匹配的试卷导出记录
                 </td>
               </tr>
@@ -215,8 +239,7 @@ export function ExportRecordsPage() {
                   onClick={() => setActiveRecord(record)}
                   className="cursor-pointer border-b border-zinc-100 transition-colors hover:bg-zinc-50/50 dark:border-zinc-800 dark:hover:bg-zinc-800/30"
                 >
-                  <td className="p-3 font-mono text-[10px] text-zinc-400">#{record.id}</td>
-                  <td className="p-3 text-left font-bold text-zinc-800 dark:text-zinc-200">
+                  <td className="p-3 text-left font-bold text-zinc-800 dark:text-zinc-200 max-w-[480px]">
                     <div className="flex items-center gap-2">
                       <span className="min-w-0 truncate">{record.title || record.filename || '未命名导出'}</span>
                       <span className="shrink-0 rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
@@ -282,9 +305,19 @@ export function ExportRecordsPage() {
         </table>
       </div>
 
-      {activeRecord ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-zinc-950/40 backdrop-blur-sm">
-          <div className="flex h-full w-full max-w-xl flex-col justify-between border-l border-zinc-200 bg-white p-6 text-left shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+      {drawerRecord ? (
+        <div
+          onClick={() => setActiveRecord(null)}
+          className={`fixed inset-0 z-50 flex justify-end bg-zinc-950/0 backdrop-blur-none transition-all duration-300 ${
+            showDrawer ? 'bg-zinc-950/40 backdrop-blur-sm' : 'pointer-events-none'
+          }`}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            className={`flex h-full w-full max-w-xl flex-col justify-between border-l border-zinc-200 bg-white p-6 text-left shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 transform transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+              showDrawer ? 'translate-x-0' : 'translate-x-full'
+            }`}
+          >
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b border-zinc-100 pb-3 dark:border-zinc-800">
                 <div className="space-y-1">
@@ -293,7 +326,7 @@ export function ExportRecordsPage() {
                     试卷大纲结构预览
                   </h3>
                   <p className="font-mono text-[10px] text-zinc-400 dark:text-zinc-500">
-                    档案编码：#{activeRecord.id}
+                    档案编码：#{drawerRecord.id}
                   </p>
                 </div>
                 <button
@@ -307,26 +340,26 @@ export function ExportRecordsPage() {
               <div className="grid grid-cols-3 gap-3 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-950/20">
                 <div>
                   <span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400">文档名称</span>
-                  <span className="mt-0.5 block truncate font-bold text-zinc-800 dark:text-zinc-200">{activeRecord.title || activeRecord.filename}</span>
+                  <span className="mt-0.5 block truncate font-bold text-zinc-800 dark:text-zinc-200">{drawerRecord.title || drawerRecord.filename}</span>
                 </div>
                 <div>
                   <span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400">输出类型</span>
-                  <span className="mt-0.5 block font-semibold text-zinc-800 dark:text-zinc-200">{formatLabel(activeRecord.format)}</span>
+                  <span className="mt-0.5 block font-semibold text-zinc-800 dark:text-zinc-200">{formatLabel(drawerRecord.format)}</span>
                 </div>
                 <div>
                   <span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400">出卷日期</span>
-                  <span className="mt-0.5 block font-semibold text-zinc-800 dark:text-zinc-200">{formatDate(activeRecord.createdAt)}</span>
+                  <span className="mt-0.5 block font-semibold text-zinc-800 dark:text-zinc-200">{formatDate(drawerRecord.createdAt)}</span>
                 </div>
               </div>
             </div>
 
             <div className="my-4 flex-1 space-y-3 overflow-y-auto pr-1">
               <h4 className="mb-2 text-[10.5px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">
-                收录的试题大纲 ({activeRecord.questionCount} 道题)
+                收录的试题大纲 ({drawerRecord.questionCount} 道题)
               </h4>
 
-              {activeRecord.items?.length ? (
-                <ExportOutlineList state={outlineByRecordId[activeRecord.id]} fallbackItems={activeRecord.items} />
+              {drawerRecord.items?.length ? (
+                <ExportOutlineList state={outlineByRecordId[drawerRecord.id]} fallbackItems={drawerRecord.items} />
               ) : (
                 <div className="rounded border border-dashed border-zinc-200 py-8 text-center text-xs text-zinc-400 dark:border-zinc-800">
                   此历史记录包含的题目内容已在本地缓存中清空，可重新导出生成。
@@ -337,8 +370,8 @@ export function ExportRecordsPage() {
             <div className="flex gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
               <button
                 type="button"
-                onClick={() => handleDownload(activeRecord)}
-                disabled={activeRecord.status === 'failed' || !activeRecord.url}
+                onClick={() => handleDownload(drawerRecord)}
+                disabled={drawerRecord.status === 'failed' || !drawerRecord.url}
                 className="inline-flex flex-1 items-center justify-center gap-1 rounded bg-zinc-900 py-2 text-xs font-semibold text-zinc-50 hover:bg-zinc-800 disabled:opacity-30 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
               >
                 <Download className="mr-1 size-3.5" />
@@ -346,8 +379,8 @@ export function ExportRecordsPage() {
               </button>
               <button
                 type="button"
-                onClick={() => handleRestoreToBasket(activeRecord)}
-                disabled={!activeRecord.items?.length || isRestoring === activeRecord.id}
+                onClick={() => handleRestoreToBasket(drawerRecord)}
+                disabled={!drawerRecord.items?.length || isRestoring === drawerRecord.id}
                 className="inline-flex items-center justify-center gap-1 rounded border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-30 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
               >
                 <Undo2 className="size-3.5" />
@@ -367,6 +400,7 @@ export function ExportRecordsPage() {
     </div>
   )
 }
+
 
 function ExportOutlineList({ state, fallbackItems }: { state?: OutlineState; fallbackItems: ExportRecord['items'] }) {
   const rows = state?.items?.length ? state.items : fallbackItems

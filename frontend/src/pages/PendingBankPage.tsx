@@ -1097,7 +1097,7 @@ function PreviewPanel({ item, busy, onConfirm, onEdit, onReOcr, rerunUnavailable
                         <p className="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
                           {similarQuestionOriginLabel(item, candidate)}
                         </p>
-                        <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">{candidate.sourceTitle || '题库主库'}</p>
+                        <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">{candidate.sourceTitle || '题库'}</p>
                         {candidate.stemPreview ? <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300 line-clamp-2">{candidate.stemPreview}</p> : null}
                       </div>
                     ))}

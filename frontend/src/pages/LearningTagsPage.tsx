@@ -744,62 +744,70 @@ export default function LearningTagsPage() {
                             </div>
                           </div>
                         </div>
-                        <Button size="sm" icon={ChevronDown} onClick={() => setExpandedIds((current) => {
-                          const next = new Set(current)
-                          if (next.has(chapter.id)) next.delete(chapter.id)
-                          else next.add(chapter.id)
-                          return next
-                        })}>{expanded ? '收起' : '展开'}</Button>
+                        <Button
+                          size="sm"
+                          onClick={() => setExpandedIds((current) => {
+                            const next = new Set(current)
+                            if (next.has(chapter.id)) next.delete(chapter.id)
+                            else next.add(chapter.id)
+                            return next
+                          })}
+                        >
+                          <ChevronDown className={`size-4 transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`} />
+                          {expanded ? '收起' : '展开'}
+                        </Button>
                       </div>
 
-                      {expanded ? (
-                        <div className="mt-3 space-y-3 border-t pt-3">
-                          <div className="grid gap-2 md:grid-cols-[140px_minmax(0,1fr)_90px_36px] md:items-end">
-                            <label className="grid gap-1.5">
-                              <span className="text-xs text-zinc-500">{activeMeta.sectionLabel} code</span>
-                              <input className={inputClass('h-9')} value={chapter.code} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, code: event.target.value }))} />
-                            </label>
-                            <label className="grid gap-1.5">
-                              <span className="text-xs text-zinc-500">{activeMeta.sectionLabel}名称</span>
-                              <input className={inputClass('h-9')} value={chapter.name} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, name: event.target.value }))} />
-                            </label>
-                            <label className="grid gap-1.5">
-                              <span className="text-xs text-zinc-500">排序</span>
-                              <input className={inputClass('h-9')} type="number" value={chapter.sortOrder} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, sortOrder: Number(event.target.value) || chapterIndex + 1 }))} />
-                            </label>
-                            <button className="flex size-9 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white dark:border-red-950 dark:bg-red-950/30 dark:text-red-300" onClick={() => markEditor({ ...editor, chapters: editor.chapters.filter((_, index) => index !== chapterIndex) })} type="button"><Trash2 className="size-4" /></button>
-                          </div>
+                      <div className={`grid transition-all duration-300 ease-in-out ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                        <div className="overflow-hidden">
+                          <div className="mt-3 space-y-3 border-t pt-3">
+                            <div className="grid gap-2 md:grid-cols-[140px_minmax(0,1fr)_90px_36px] md:items-end">
+                              <label className="grid gap-1.5">
+                                <span className="text-xs text-zinc-500">{activeMeta.sectionLabel} code</span>
+                                <input className={inputClass('h-9')} value={chapter.code} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, code: event.target.value }))} />
+                              </label>
+                              <label className="grid gap-1.5">
+                                <span className="text-xs text-zinc-500">{activeMeta.sectionLabel}名称</span>
+                                <input className={inputClass('h-9')} value={chapter.name} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, name: event.target.value }))} />
+                              </label>
+                              <label className="grid gap-1.5">
+                                <span className="text-xs text-zinc-500">排序</span>
+                                <input className={inputClass('h-9')} type="number" value={chapter.sortOrder} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, sortOrder: Number(event.target.value) || chapterIndex + 1 }))} />
+                              </label>
+                              <button className="flex size-9 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white dark:border-red-950 dark:bg-red-950/30 dark:text-red-300" onClick={() => markEditor({ ...editor, chapters: editor.chapters.filter((_, index) => index !== chapterIndex) })} type="button"><Trash2 className="size-4" /></button>
+                            </div>
 
-                          <div className="space-y-2">
-                            {chapter.knowledgePoints.map((point, pointIndex) => (
-                              <div key={point.id} className={`grid gap-2 rounded-lg border bg-white p-2 dark:bg-zinc-900 ${editor.libraryType === 'method_tag' ? 'md:grid-cols-[130px_minmax(0,1fr)_120px_minmax(0,1fr)_36px]' : 'md:grid-cols-[140px_minmax(0,1fr)_minmax(0,1fr)_36px]'}`}>
-                                <input className={inputClass('h-9 font-mono text-xs')} value={point.code} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, knowledgePoints: item.knowledgePoints.map((kp, index) => index === pointIndex ? { ...kp, code: event.target.value } : kp) }))} />
-                                <input className={inputClass('h-9')} value={point.name} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, knowledgePoints: item.knowledgePoints.map((kp, index) => index === pointIndex ? { ...kp, name: event.target.value } : kp) }))} />
-                                {editor.libraryType === 'method_tag' ? (
-                                  <select className={inputClass('h-9')} value={point.tagType ?? 'method'} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, knowledgePoints: item.knowledgePoints.map((kp, index) => index === pointIndex ? { ...kp, tagType: event.target.value } : kp) }))}>
-                                    <option value="method">方法</option>
-                                    <option value="problem_type">题型</option>
-                                    <option value="strategy">策略</option>
-                                    <option value="other">其他</option>
-                                  </select>
-                                ) : null}
-                                <input className={inputClass('h-9')} placeholder={editor.libraryType === 'method_tag' ? '适用知识点，用顿号分隔' : '说明（可选）'} value={editor.libraryType === 'method_tag' ? (point.appliesTo ?? []).join('、') : point.description ?? ''} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, knowledgePoints: item.knowledgePoints.map((kp, index) => index === pointIndex ? editor.libraryType === 'method_tag' ? { ...kp, appliesTo: event.target.value.split(/[、,，;；/]+/).map((value) => value.trim()).filter(Boolean) } : { ...kp, description: event.target.value || undefined } : kp) }))} />
-                                <button className="flex size-9 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white dark:border-red-950 dark:bg-red-950/30 dark:text-red-300" onClick={() => updateChapter(chapterIndex, (item) => ({ ...item, knowledgePoints: item.knowledgePoints.filter((_, index) => index !== pointIndex) }))} type="button"><Trash2 className="size-4" /></button>
-                              </div>
-                            ))}
-                            <Button size="sm" variant="outline" icon={Plus} onClick={() => updateChapter(chapterIndex, (item) => ({
-                              ...item,
-                              knowledgePoints: [...item.knowledgePoints, {
-                                id: makeId('point'),
-                                code: `${editor.libraryType === 'method_tag' ? 'MT' : 'KP'}_${item.knowledgePoints.length + 1}`,
-                                name: editor.libraryType === 'method_tag' ? '新方法题型标签' : '新知识点',
-                                tagType: editor.libraryType === 'method_tag' ? 'method' : 'knowledge',
-                                sortOrder: item.knowledgePoints.length + 1,
-                              }],
-                            }))}>添加{activeMeta.pointLabel}</Button>
+                            <div className="space-y-2">
+                              {chapter.knowledgePoints.map((point, pointIndex) => (
+                                <div key={point.id} className={`grid gap-2 rounded-lg border bg-white p-2 dark:bg-zinc-900 ${editor.libraryType === 'method_tag' ? 'md:grid-cols-[130px_minmax(0,1fr)_120px_minmax(0,1fr)_36px]' : 'md:grid-cols-[140px_minmax(0,1fr)_minmax(0,1fr)_36px]'}`}>
+                                  <input className={inputClass('h-9 font-mono text-xs')} value={point.code} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, knowledgePoints: item.knowledgePoints.map((kp, index) => index === pointIndex ? { ...kp, code: event.target.value } : kp) }))} />
+                                  <input className={inputClass('h-9')} value={point.name} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, knowledgePoints: item.knowledgePoints.map((kp, index) => index === pointIndex ? { ...kp, name: event.target.value } : kp) }))} />
+                                  {editor.libraryType === 'method_tag' ? (
+                                    <select className={inputClass('h-9')} value={point.tagType ?? 'method'} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, knowledgePoints: item.knowledgePoints.map((kp, index) => index === pointIndex ? { ...kp, tagType: event.target.value } : kp) }))}>
+                                      <option value="method">方法</option>
+                                      <option value="problem_type">题型</option>
+                                      <option value="strategy">策略</option>
+                                      <option value="other">其他</option>
+                                    </select>
+                                  ) : null}
+                                  <input className={inputClass('h-9')} placeholder={editor.libraryType === 'method_tag' ? '适用知识点，用顿号分隔' : '说明（可选）'} value={editor.libraryType === 'method_tag' ? (point.appliesTo ?? []).join('、') : point.description ?? ''} onChange={(event) => updateChapter(chapterIndex, (item) => ({ ...item, knowledgePoints: item.knowledgePoints.map((kp, index) => index === pointIndex ? editor.libraryType === 'method_tag' ? { ...kp, appliesTo: event.target.value.split(/[、,，;；/]+/).map((value) => value.trim()).filter(Boolean) } : { ...kp, description: event.target.value || undefined } : kp) }))} />
+                                  <button className="flex size-9 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white dark:border-red-950 dark:bg-red-950/30 dark:text-red-300" onClick={() => updateChapter(chapterIndex, (item) => ({ ...item, knowledgePoints: item.knowledgePoints.filter((_, index) => index !== pointIndex) }))} type="button"><Trash2 className="size-4" /></button>
+                                </div>
+                              ))}
+                              <Button size="sm" variant="outline" icon={Plus} onClick={() => updateChapter(chapterIndex, (item) => ({
+                                ...item,
+                                knowledgePoints: [...item.knowledgePoints, {
+                                  id: makeId('point'),
+                                  code: `${editor.libraryType === 'method_tag' ? 'MT' : 'KP'}_${item.knowledgePoints.length + 1}`,
+                                  name: editor.libraryType === 'method_tag' ? '新方法题型标签' : '新知识点',
+                                  tagType: editor.libraryType === 'method_tag' ? 'method' : 'knowledge',
+                                  sortOrder: item.knowledgePoints.length + 1,
+                                }],
+                              }))}>添加{activeMeta.pointLabel}</Button>
+                            </div>
                           </div>
                         </div>
-                      ) : null}
+                      </div>
                     </article>
                   )
                 })}

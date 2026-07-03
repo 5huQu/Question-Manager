@@ -53,19 +53,15 @@ export function AppSidebar({
   const location = useLocation()
   const { state, toggleSidebar } = useSidebar()
   const collapsed = state === 'collapsed'
-  const platformItems: NavItem[] = [
+  const menuItems: NavItem[] = [
     { active: (pathname) => pathname === '/' || pathname === '/workbench', icon: LayoutDashboard, label: '工作台概览', to: '/workbench' },
-  ]
-  const toolItems: NavItem[] = [
     {
       active: (pathname) => pathname.startsWith('/tools/import'),
       icon: FileJson,
-      label: '资料导入 v2',
+      label: '资料导入',
       to: '/tools/import',
     },
-  ]
-  const questionItems: NavItem[] = [
-    { active: (pathname) => pathname.startsWith('/questions') && pathname !== '/questions/new' && pathname !== '/questions/basket', icon: Database, label: '题库主库', to: '/questions' },
+    { active: (pathname) => pathname.startsWith('/questions') && pathname !== '/questions/new' && pathname !== '/questions/basket', icon: Database, label: '题库', to: '/questions' },
     { active: (pathname) => pathname === '/questions/new', icon: BookOpen, label: '新建题目', to: '/questions/new' },
     { active: (pathname) => pathname === '/questions/basket', icon: ShoppingBag, label: '组卷工作台', to: '/questions/basket' },
     { active: (pathname) => pathname.startsWith('/learning-tags'), icon: BookOpenCheck, label: '学习标签库', to: '/learning-tags' },
@@ -113,25 +109,25 @@ export function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent>
-        <NavGroup label="平台" items={platformItems} pathname={location.pathname} />
-        <NavGroup label="工具" items={toolItems} pathname={location.pathname} />
-        <NavGroup label="题库" items={questionItems} pathname={location.pathname} />
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {menuItems.map((item) => (
+                <SidebarMenuItem key={item.to}>
+                  <SidebarMenuButton asChild isActive={item.active(location.pathname)} tooltip={item.label}>
+                    <Link to={item.to}>
+                      <item.icon />
+                      <span>{item.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-3 overflow-hidden">
-        <div className={cn(
-          "space-y-1 rounded-lg bg-sidebar-accent/50 transition-all duration-300 ease-in-out origin-top overflow-hidden",
-          collapsed ? "max-h-0 opacity-0 py-0 px-0 pointer-events-none mb-0" : "max-h-16 opacity-100 px-3 py-2.5 mb-2"
-        )}>
-          <div className="flex items-center gap-2">
-            <span className="relative flex size-1.5">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
-            </span>
-            <span className="text-[10px] font-semibold text-muted-foreground">系统运行中</span>
-          </div>
-          <p className="text-[10px] leading-relaxed text-muted-foreground whitespace-nowrap">引擎正常 · SQLite 正常</p>
-        </div>
         <div className={cn(
           "flex items-center px-1 transition-all duration-300 ease-in-out",
           collapsed ? "justify-center" : "justify-between"
@@ -154,38 +150,5 @@ export function AppSidebar({
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
-  )
-}
-
-function NavGroup({
-  label,
-  items,
-  pathname,
-  labelClassName,
-}: {
-  label: string
-  items: NavItem[]
-  pathname: string
-  labelClassName?: string
-}) {
-  return (
-    <SidebarGroup>
-      <SidebarGroupLabel className={labelClassName}>{label}</SidebarGroupLabel>
-      <SidebarGroupContent>
-        <SidebarMenu>
-          {items.map((item) => (
-            <SidebarMenuItem key={item.to}>
-              <SidebarMenuButton asChild isActive={item.active(pathname)} tooltip={item.label}>
-                <Link to={item.to}>
-                  <item.icon />
-                  <span>{item.label}</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ))}
-        </SidebarMenu>
-      </SidebarGroupContent>
-      <SidebarSeparator className="mt-2 last:hidden" />
-    </SidebarGroup>
   )
 }

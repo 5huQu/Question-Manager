@@ -548,7 +548,7 @@ export function BankTab({
 
   async function classifyAllQuestions() {
     if (!totalItems || classifying) return
-    const confirmed = window.confirm(`确认对题库主库中的 ${totalItems} 道题目执行数据分类？本操作只更新知识点、解题方法和难度。`)
+    const confirmed = window.confirm(`确认对题库中的 ${totalItems} 道题目执行数据分类？本操作只更新知识点、解题方法和难度。`)
     if (!confirmed) return
     setClassifying(true)
     setClassificationStatus('')

@@ -2,7 +2,6 @@ import { useMemo, useState, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Activity,
-  ArrowUpRight,
   BookOpen,
   Calendar,
   Check,
@@ -10,7 +9,6 @@ import {
   ChevronRight,
   ChevronUp,
   Database,
-  Plus,
   ShoppingBag,
   Sparkles,
   Flame,
@@ -311,13 +309,7 @@ export function OverviewTab({
             </div>
           </div>
 
-          <div className="space-y-3">
-            <h3 className="px-1 text-left text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">快捷工具入口</h3>
-            <div className="space-y-1 rounded-xl border border-zinc-200 bg-card p-3 text-card-foreground shadow-sm dark:border-zinc-800">
-              <ShortcutButton icon={Database} label="题库检索与试卷大纲" onClick={() => navigate('/questions')} />
-              <ShortcutButton icon={Plus} label="手动录入数学题" onClick={() => navigate('/questions/new')} />
-            </div>
-          </div>
+
 
           <div className="space-y-3">
             <h3 className="px-1 text-left text-[13px] font-semibold text-zinc-500 dark:text-zinc-400">服务运行状态</h3>
@@ -517,20 +509,7 @@ function ExportRow({ record }: { record: ExportRecord }) {
   )
 }
 
-function ShortcutButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center justify-between rounded-lg p-2 text-left text-xs font-semibold text-zinc-700 transition-colors hover:bg-zinc-50/50 dark:text-zinc-300 dark:hover:bg-zinc-900/30"
-    >
-      <span className="flex items-center gap-2">
-        <Icon className="size-4 text-zinc-400" />
-        {label}
-      </span>
-      <ArrowUpRight className="size-3.5 text-zinc-400" />
-    </button>
-  )
-}
+
 
 function StatusText({ ready, label }: { ready: boolean; label: string }) {
   return (
