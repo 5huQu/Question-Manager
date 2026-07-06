@@ -83,6 +83,8 @@ export type QuestionItem = {
   stemMarkdown: string
   answerText: string
   analysisMarkdown: string
+  totalScore: number
+  scoringRubric: ScoringRubricItem[]
   problemBlocks?: RichBlock[]
   answerBlocks?: RichBlock[]
   analysisBlocks?: RichBlock[]
@@ -115,6 +117,12 @@ export type QuestionItem = {
     start?: number
     end?: number
   }
+}
+
+export type ScoringRubricItem = {
+  label: string
+  score: number
+  text: string
 }
 
 export type SimilarQuestion = {
@@ -332,6 +340,8 @@ export type OcrSettings = {
   cleanupUserPrompt: string
   classificationSystemPrompt: string
   classificationUserPrompt: string
+  assistantCleanSystemPrompt: string
+  assistantCleanUserPrompt: string
 }
 
 export type SlicerRuleEntry = {

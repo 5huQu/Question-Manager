@@ -41,6 +41,37 @@ function normalizeTags(value: unknown) {
   return tags.slice(0, 8)
 }
 
+export type ScoringRubricItem = {
+  label: string
+  score: number
+  text: string
+}
+
+export function normalizeTotalScore(value: unknown) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+export function normalizeScoringRubric(value: unknown): ScoringRubricItem[] {
+  const raw = Array.isArray(value) ? value : typeof value === 'string' ? parseJson<unknown>(value, []) : []
+  if (!Array.isArray(raw)) return []
+  return raw.map((entry, index) => {
+    if (entry && typeof entry === 'object') {
+      const item = entry as Record<string, unknown>
+      return {
+        label: String(item.label ?? item.part ?? item.name ?? (index + 1)).trim(),
+        score: normalizeTotalScore(item.score ?? item.points ?? item.value),
+        text: String(item.text ?? item.description ?? item.criteria ?? '').trim(),
+      }
+    }
+    return {
+      label: String(index + 1),
+      score: 0,
+      text: String(entry ?? '').trim(),
+    }
+  }).filter((item) => item.label || item.score || item.text).slice(0, 20)
+}
+
 // ---------------------------------------------------------------------------
 // mapQuestion
 // ---------------------------------------------------------------------------
@@ -60,6 +91,7 @@ export function mapQuestion(row: QuestionRow) {
   const answerText = row.answer_text || ''
   const analysisMarkdown = row.analysis_markdown || ''
   const questionType = normalizeQuestionType(row.question_type, stemMarkdown, answerText)
+  const scoringRubric = normalizeScoringRubric(row.scoring_rubric_json || '[]')
   const { stage: _metadataStage, ...metadata } = normalizeImportMetadata({
     province: row.province,
     city: row.city,
@@ -89,6 +121,8 @@ export function mapQuestion(row: QuestionRow) {
     stemMarkdown,
     answerText,
     analysisMarkdown,
+    totalScore: normalizeTotalScore(row.total_score),
+    scoringRubric,
     problemBlocks: paragraphBlock(stemMarkdown),
     answerBlocks: paragraphBlock(answerText),
     analysisBlocks: paragraphBlock(analysisMarkdown),
@@ -146,8 +180,8 @@ export function createQuestion(input: Record<string, any> = {}) {
     INSERT INTO question_bank_items (
       id, serial_no, question_no, stage, question_type, difficulty_score, chapter, source_title, bank_status,
       province, city, paper_title, batch_name, subject, paper_kind, exam_year, source_org, import_source_id,
-      difficulty_score_10, difficulty_label, knowledge_points_json, solution_methods_json, stem_markdown, answer_text, analysis_markdown, search_text, slice_image_path, figures_json, source_run_id, source_solution_run_id, merge_status, merge_note, format_review_required, format_review_reasons_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      difficulty_score_10, difficulty_label, knowledge_points_json, solution_methods_json, stem_markdown, answer_text, analysis_markdown, total_score, scoring_rubric_json, search_text, slice_image_path, figures_json, source_run_id, source_solution_run_id, merge_status, merge_note, format_review_required, format_review_reasons_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     serialNo,
@@ -174,6 +208,8 @@ export function createQuestion(input: Record<string, any> = {}) {
     stemMarkdown,
     answerText,
     analysisMarkdown,
+    normalizeTotalScore(input.totalScore ?? input.total_score),
+    JSON.stringify(normalizeScoringRubric(input.scoringRubric ?? input.scoring_rubric)),
     buildSearchText(stemMarkdown, answerText, analysisMarkdown, [sourceTitle, chapter, knowledgePoints.join(' '), solutionMethods.join(' ')]),
     input.sliceImagePath || '',
     JSON.stringify(input.figures || []),

@@ -10,6 +10,9 @@ import type { QuestionRow } from '../../types/index.js'
 import type { SourceDocument } from '../../types/source-document.js'
 import { assetPathFor } from '../../utils/paths.js'
 import { RouteError } from '../../utils/http-error.js'
+import { formatReviewPayload, validateQuestionMarkdown } from '../../utils/validation.js'
+import { nowIso } from '../../utils/ids.js'
+import { updateQuestionFormatReviewState } from '../../repositories/question-bank/items.repo.js'
 import { normalizeExportVariant } from '../question-bank/export-records.js'
 import { exportQuestionSetPdf } from '../question-bank/export.js'
 import { runQuestionBatchClassification } from '../question-bank/batch-classification.js'
@@ -244,10 +247,39 @@ export function listImportJobExportRecords(jobId: string, query: Record<string, 
   }
 }
 
+export function refreshQuestionFormatStateForExport(rows: QuestionRow[]) {
+  for (const row of rows) {
+    if (row.bank_status !== 'blocked' && !row.format_review_required) continue
+    const issues = validateQuestionMarkdown({
+      problem_text: row.stem_markdown,
+      answer: row.answer_text,
+      analysis: row.analysis_markdown,
+    })
+    const updatedAt = nowIso()
+    if (issues.length) {
+      updateQuestionFormatReviewState(row.id, {
+        bankStatus: 'blocked',
+        formatReviewRequired: true,
+        formatReviewJson: JSON.stringify(formatReviewPayload(issues, updatedAt)),
+        updatedAt,
+      })
+    } else {
+      updateQuestionFormatReviewState(row.id, {
+        bankStatus: row.bank_status === 'blocked' ? 'ready' : null,
+        formatReviewRequired: false,
+        formatReviewJson: '{}',
+        updatedAt,
+      })
+    }
+  }
+}
+
 export function exportImportJob(jobId: string, body: Record<string, unknown> = {}) {
   const detail = getImportJobDetail(jobId)
-  const rows = importJobQuestionRows(jobId, { includeSkipped: false })
+  let rows = importJobQuestionRows(jobId, { includeSkipped: false })
   if (!rows.length) throw new RouteError(400, '当前导入批次暂无已入库题目，无法导出。')
+  refreshQuestionFormatStateForExport(rows)
+  rows = importJobQuestionRows(jobId, { includeSkipped: false })
   const blockedRows = rows.filter((row) => row.bank_status === 'blocked')
   if (blockedRows.length) {
     const labels = blockedRows

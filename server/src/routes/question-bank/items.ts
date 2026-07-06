@@ -15,6 +15,7 @@ import {
   updateItem,
   uploadFigure,
 } from '../../services/question-bank/items.service.js'
+import { previewQuestionAiClean as previewQuestionAiCleanService } from '../../services/question-bank/ai-cleaner.service.js'
 import { runQuestionBatchClassification } from '../../services/question-bank/batch-classification.js'
 
 export function mountQuestionBankItemsRoutes(app: Express) {
@@ -29,6 +30,14 @@ export function mountQuestionBankItemsRoutes(app: Express) {
   app.post('/api/question-bank/items/:id/rerun-ocr', (req, res) => {
     try {
       res.json(rerunItemOcr(decodeURIComponent(String(req.params.id || '')), req.body || {}))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/question-bank/items/:id/ai-clean-preview', async (req, res) => {
+    try {
+      res.json(await previewQuestionAiCleanService(decodeURIComponent(String(req.params.id || '')), req.body || {}))
     } catch (error) {
       sendRouteError(res, error)
     }

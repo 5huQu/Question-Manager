@@ -87,6 +87,8 @@ export function updateQuestionBankItem(id: string, values: SqlValue[]) {
       stem_markdown = ?,
       answer_text = ?,
       analysis_markdown = ?,
+      total_score = ?,
+      scoring_rubric_json = ?,
       search_text = ?,
       format_review_required = ?,
       format_review_reasons_json = ?,
@@ -121,6 +123,28 @@ export function markRerunRunning(runId: string) {
   const now = nowIso()
   db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'running', ocr_error = '', ocr_started_at = COALESCE(NULLIF(ocr_started_at, ''), ?), updated_at = ? WHERE run_id = ?")
     .run(now, now, runId)
+}
+
+export function updateQuestionFormatReviewState(id: string, values: {
+  bankStatus?: string | null
+  formatReviewRequired: boolean
+  formatReviewJson: string
+  updatedAt: string
+}) {
+  db.prepare(`
+    UPDATE question_bank_items SET
+      bank_status = COALESCE(?, bank_status),
+      format_review_required = ?,
+      format_review_reasons_json = ?,
+      updated_at = ?
+    WHERE id = ?
+  `).run(
+    values.bankStatus ?? null,
+    values.formatReviewRequired ? 1 : 0,
+    values.formatReviewJson,
+    values.updatedAt,
+    id,
+  )
 }
 
 export { getQuestion }

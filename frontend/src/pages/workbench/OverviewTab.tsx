@@ -21,9 +21,11 @@ import {
 } from 'lucide-react'
 import type { ActivityHeatmapDay, ActivityHeatmapResponse, ActivityHoursResponse } from '@/api/dashboard'
 import type { ExportRecordsResponse } from '@/api/exportRecords'
-import { MarkdownContent } from '@/components/MarkdownContent'
+import { richBlocksPlainText } from '@/components/RichContent'
+import { QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import type { ExportRecord, OcrSettings, QuestionBankResponse, QuestionItem } from '@/types'
 import { addQuestionToActiveBasket } from '@/utils/questionBasket'
+import { difficultyLabel10, displaySource } from '@/utils/questionDisplay'
 import { QuickActionDialog } from '@/components/dialogs/QuickActionDialog'
 
 export function OverviewTab({
@@ -382,6 +384,11 @@ function WorkbenchQuestionPreview({
 }) {
   const [showAnalysis, setShowAnalysis] = useState(false)
   const [adding, setAdding] = useState(false)
+  const stem = question.stemMarkdown || richBlocksPlainText(question.problemBlocks)
+  const answer = question.answerText || richBlocksPlainText(question.answerBlocks)
+  const analysis = question.analysisMarkdown || richBlocksPlainText(question.analysisBlocks)
+  const chapter = question.chapter || question.knowledgePoints?.[0] || '未分类'
+  const date = question.updatedAt ? new Date(question.updatedAt).toLocaleDateString() : ''
 
   async function addToBasket(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation()
@@ -402,20 +409,33 @@ function WorkbenchQuestionPreview({
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <Tag>{question.questionType || '题型待补充'}</Tag>
-            <Tag>{question.stage || '学段待补充'}</Tag>
-            <Tag>{question.chapter || '章节待补充'}</Tag>
-            <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold ${question.difficultyLabel === '难' ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'}`}>
-              难度: {question.difficultyLabel || '待定'}
+            <Tag>{question.questionType || '未设题型'}</Tag>
+            <Tag>{question.stage || '未设学段'}</Tag>
+            <Tag>{chapter}</Tag>
+            <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold ${String(difficultyLabel10(question)).includes('难') ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'}`}>
+              难度: {difficultyLabel10(question)}
             </span>
           </div>
         </div>
-        <span className="shrink-0 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">#{question.id}</span>
+        <span className="shrink-0 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">#{question.serialNo ?? question.questionNo ?? question.id.slice(0, 6)}</span>
       </div>
 
       <div className="select-text font-sans text-xs leading-relaxed text-zinc-900 dark:text-zinc-100">
-        <MarkdownContent content={question.stemMarkdown || question.searchText || ''} />
+        <QuestionMarkdownContent content={stem || '题干为空'} figures={question.figures} />
       </div>
+
+      {question.knowledgePoints && question.knowledgePoints.length > 0 ? (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {question.knowledgePoints.map((kp) => (
+            <span
+              key={kp}
+              className="inline-flex items-center rounded border border-zinc-200/60 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:border-zinc-800/80 dark:bg-zinc-900/30 dark:text-zinc-400"
+            >
+              {kp}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       <div className={`grid transition-all duration-300 ease-in-out ${showAnalysis ? 'mt-2 grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none'}`}>
         <div className="overflow-hidden">
@@ -423,13 +443,13 @@ function WorkbenchQuestionPreview({
             <div>
               <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【答案】</span>
               <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                <MarkdownContent content={question.answerText || '暂无答案'} />
+                <QuestionMarkdownContent content={answer || '暂无答案'} figures={question.figures} />
               </div>
             </div>
             <div>
               <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【解析】</span>
               <div className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                <MarkdownContent content={question.analysisMarkdown || '暂无解析'} />
+                <QuestionMarkdownContent content={analysis || '暂无解析'} figures={question.figures} />
               </div>
             </div>
           </div>
@@ -440,11 +460,11 @@ function WorkbenchQuestionPreview({
         <div className="flex items-center gap-3 text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
           <span className="flex items-center gap-1">
             <Calendar className="size-3 text-zinc-400" />
-            {formatDate(question.updatedAt)}
+            {date || formatDate(question.updatedAt)}
           </span>
           <span className="flex items-center gap-1">
             <BookOpen className="size-3 text-zinc-400" />
-            {question.sourceTitle || '高中数学专项试卷'}
+            {displaySource(question.sourceTitle || '') || '高中数学专项试卷'}
           </span>
         </div>
 

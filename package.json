@@ -27,7 +27,7 @@
     "pack:desktop": "npm run build && npm run prepare:python-runtime && electron-builder --dir && npm run verify:packaged-python",
     "pack:windows-installer": "npm run pack:desktop && electron-builder --win nsis --x64 --publish never",
     "test:math-render": "node server/scripts/validate_math_render.test.mjs",
-    "test:routes": "npm run build:server && node server/scripts/route-contract.test.mjs && node server/scripts/import-job.service.test.mjs && node server/scripts/source-document-ocr-task.test.mjs && node server/scripts/quick-actions.test.mjs",
+    "test:routes": "npm run build:server && node server/scripts/route-contract.test.mjs && node server/scripts/import-job.service.test.mjs && node server/scripts/source-document-ocr-task.test.mjs && node server/scripts/quick-actions.test.mjs && node server/scripts/ai-cleaner.service.test.mjs",
     "test:smoke": "node server/scripts/smoke.test.mjs",
     "start": "node server/dist/index.js"
   },

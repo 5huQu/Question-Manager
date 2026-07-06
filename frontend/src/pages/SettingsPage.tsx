@@ -243,7 +243,7 @@ export function SettingsPage() {
       <div className="flex flex-col gap-1 border-b border-zinc-200 pb-4 text-left dark:border-zinc-800">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">系统设置</h1>
         <p className="text-[13px] text-zinc-500 dark:text-zinc-400">
-          配置系统的基础名称、外部转换工具、OCR 识别引擎密钥、V2 导入识别规则以及大模型分类参数。
+          配置系统的基础名称、外部转换工具、OCR 识别引擎密钥、V2 导入识别规则以及 AI 助手模型参数。
         </p>
       </div>
 
@@ -530,9 +530,9 @@ export function SettingsPage() {
           </SettingsCard>
 
           <SettingsCard
-            title="数据分类与自动标签"
-            desc="用于题目批次分类服务自动利用大语言模型评估知识点、解题方法和难度标签。"
-            footer={<SaveButton label="保存分类设置" loading={isSaving} onClick={() => save('属性分类')} />}
+            title="AI 助手与自动标签"
+            desc="用于单题 AI 清洗、格式修复、评分拆分，以及题目批次自动标签和难度评估。"
+            footer={<SaveButton label="保存 AI 助手设置" loading={isSaving} onClick={() => save('AI 助手')} />}
           >
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Field label="OCR 完成后自动分类">
@@ -545,22 +545,46 @@ export function SettingsPage() {
                   <option value="false">关闭自动分类</option>
                 </select>
               </Field>
-              <Field label="分类并发数量限制 (1-20)">
+              <Field label="AI 助手并发数量限制 (1-20)">
                 <TextInput value={draft.cleanupConcurrency ?? ''} onChange={(value) => setDraft({ ...draft, cleanupConcurrency: value })} />
               </Field>
-              <Field label="分类 API 服务端点 (留空默认使用 DeepSeek)" className="md:col-span-2">
+              <Field label="AI 助手 API 服务端点 (留空默认使用 DeepSeek)" className="md:col-span-2">
                 <TextInput mono value={draft.cleanupApiBaseUrl ?? ''} placeholder="https://api.deepseek.com" onChange={(value) => setDraft({ ...draft, cleanupApiBaseUrl: value })} />
               </Field>
-              <Field label="分类 API 密钥">
+              <Field label="AI 助手 API 密钥">
                 <TextInput mono type="password" value={draft.cleanupApiKey ?? ''} placeholder={data?.cleanupApiKeyConfigured ? '已配置密钥，留空表示不修改' : '请输入 DeepSeek API Key'} onChange={(value) => setDraft({ ...draft, cleanupApiKey: value })} />
               </Field>
-              <Field label="分类大模型名称">
+              <Field label="AI 助手模型名称">
                 <TextInput mono value={draft.cleanupModel ?? ''} placeholder="deepseek-v4-flash" onChange={(value) => setDraft({ ...draft, cleanupModel: value })} />
               </Field>
             </div>
             <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-300">
-              下方 Prompt 是全局基础模板。实际分类时，系统会自动追加当前题目批次的学段、科目、资料类型、年份、地区、来源机构和试卷标题；单题已有元数据会优先覆盖批次默认值。
+              这组模型配置会被单题 AI 清洗和自动分类共同使用。单题清洗 Prompt 用于“AI 清洗”按钮；分类 Prompt 用于批次自动标签。
             </div>
+            <SectionTitle className="pt-2">单题 AI 清洗 Prompt</SectionTitle>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Field label="单题清洗 System Prompt">
+                <TextArea
+                  mono
+                  rows={8}
+                  value={draft.assistantCleanSystemPrompt ?? ''}
+                  placeholder="定义单题清洗助手的角色、安全边界和输出格式。"
+                  onChange={(value) => setDraft({ ...draft, assistantCleanSystemPrompt: value })}
+                />
+                <p className="text-[11px] text-zinc-400">建议保留“不解题、不补写、不改题意、只输出 JSON”的约束。</p>
+              </Field>
+              <Field label="单题清洗 User Prompt">
+                <TextArea
+                  mono
+                  rows={8}
+                  value={draft.assistantCleanUserPrompt ?? ''}
+                  placeholder="必须保留 {payload}，系统会替换为当前题目 JSON。"
+                  onChange={(value) => setDraft({ ...draft, assistantCleanUserPrompt: value })}
+                />
+                <p className="text-[11px] text-zinc-400">可使用 `{'{payload}'}` 插入当前题目、模式和输出 schema；若遗漏，系统会自动追加在末尾。</p>
+              </Field>
+            </div>
+            <SectionTitle className="pt-2">自动分类 Prompt</SectionTitle>
             <div className="grid grid-cols-1 gap-4 border-t border-zinc-100 pt-4 dark:border-zinc-800 md:grid-cols-2">
               <Field label="分类 System Prompt 基础模板">
                 <TextArea

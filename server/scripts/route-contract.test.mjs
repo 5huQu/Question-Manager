@@ -132,6 +132,7 @@ const expectedRoutes = new Set([
   'POST /api/tools/pdf-slicer/runs/:runId/pending-bank/bulk-delete',
   'GET /api/question-bank/items',
   'POST /api/question-bank/items/:id/rerun-ocr',
+  'POST /api/question-bank/items/:id/ai-clean-preview',
   'POST /api/question-bank/items/classify',
   'POST /api/question-bank/items',
   'POST /api/question-bank/import-json',

@@ -19,8 +19,11 @@ const {
   ensureSingleDocumentImportJob,
   listImportJobQuestions,
   resolveImportJobForLegacyRunId,
+  refreshQuestionFormatStateForExport,
 } = await import('../dist/services/import-flow-v2/import-flow-v2.service.js')
 const { updateQuestionCandidate: persistQuestionCandidate } = await import('../dist/repositories/question-candidates.repo.js')
+const { db } = await import('../dist/db/connection.js')
+const { getQuestion } = await import('../dist/db/questions.js')
 const { assetPathFor } = await import('../dist/utils/paths.js')
 
 function block(markdown, content, id, pageNo = 1, type = 'text', cursorHint = 0) {
@@ -242,6 +245,24 @@ try {
   assert.equal(readyResult.items.some((item) => item.id === staleResult.items[0].id), true)
   const reviewResult = listQuestionCandidatesForSource(staleSource.id, { status: 'needs_review' })
   assert.equal(reviewResult.items.some((item) => item.id === staleResult.items[0].id), false)
+
+  console.log('6. Export preflight clears stale blocked format state...')
+  const staleBlockedId = commitResult.item.id
+  db.prepare(`
+    UPDATE question_bank_items
+    SET bank_status = 'blocked',
+        format_review_required = 1,
+        format_review_reasons_json = '{"reasons":["analysis:math_delimiter_unclosed"]}'
+    WHERE id = ?
+  `).run(staleBlockedId)
+  let staleBlocked = getQuestion(staleBlockedId)
+  assert.equal(staleBlocked.bankStatus, 'blocked')
+  assert.equal(staleBlocked.needsFormatReview, true)
+  const staleBlockedRows = db.prepare('SELECT * FROM question_bank_items WHERE id = ?').all(staleBlockedId)
+  refreshQuestionFormatStateForExport(staleBlockedRows)
+  staleBlocked = getQuestion(staleBlockedId)
+  assert.equal(staleBlocked.bankStatus, 'ready')
+  assert.equal(staleBlocked.needsFormatReview, false)
 
   console.log('import job service ok')
 } catch (error) {

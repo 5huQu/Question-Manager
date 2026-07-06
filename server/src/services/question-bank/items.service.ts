@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Request } from 'express'
-import { createQuestion } from '../../db/questions.js'
+import { createQuestion, normalizeScoringRubric, normalizeTotalScore } from '../../db/questions.js'
 import { getRun } from '../../db/runs.js'
 import { upload, dataDir } from '../../config.js'
 import { resolveStoragePath } from '../../utils/paths.js'
@@ -100,6 +100,8 @@ export function importJsonItems(body: unknown) {
       difficultyLabel: String(question.difficulty_label || question.difficultyLabel || difficultyLabel10(difficultyScore10)),
       knowledgePoints,
       solutionMethods,
+      totalScore: normalizeTotalScore(question.total_score ?? question.totalScore),
+      scoringRubric: normalizeScoringRubric(question.scoring_rubric ?? question.scoringRubric),
       stemMarkdown,
       answerText,
       analysisMarkdown,
@@ -149,6 +151,8 @@ export function updateItem(id: string, rawBody: Record<string, any>) {
   const solutionMethods = body.solutionMethods ? normalizeTags(body.solutionMethods) : before.solutionMethods
   const sourceTitle = body.sourceTitle ?? before.sourceTitle
   const chapter = body.chapter ?? before.chapter
+  const totalScore = body.totalScore != null ? normalizeTotalScore(body.totalScore) : before.totalScore
+  const scoringRubric = body.scoringRubric != null ? normalizeScoringRubric(body.scoringRubric) : before.scoringRubric
   const figures = body.figures ? body.figures : before.figures
   const formatIssues = validateQuestionMarkdown({ problem_text: stemMarkdown, answer: answerText, analysis: analysisMarkdown })
   const unplacedAttachments = (figures as Array<Record<string, any>> || []).filter(
@@ -179,6 +183,8 @@ export function updateItem(id: string, rawBody: Record<string, any>) {
     stemMarkdown,
     answerText,
     analysisMarkdown,
+    totalScore,
+    JSON.stringify(scoringRubric),
     buildSearchText(stemMarkdown, answerText, analysisMarkdown, [String(sourceTitle), String(chapter), knowledgePoints.join(' '), solutionMethods.join(' ')]),
     requiresFormatReview ? 1 : 0,
     formatReviewJson,

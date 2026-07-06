@@ -118,6 +118,8 @@ export function ensureSchema() {
       stem_markdown TEXT NOT NULL DEFAULT '',
       answer_text TEXT NOT NULL DEFAULT '',
       analysis_markdown TEXT NOT NULL DEFAULT '',
+      total_score REAL NOT NULL DEFAULT 0,
+      scoring_rubric_json TEXT NOT NULL DEFAULT '[]',
       search_text TEXT NOT NULL DEFAULT '',
       slice_image_path TEXT NOT NULL DEFAULT '',
       figures_json TEXT NOT NULL DEFAULT '[]',
@@ -387,6 +389,8 @@ export function ensureSchema() {
   ensureColumn('question_bank_items', 'stem_markdown', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_bank_items', 'answer_text', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_bank_items', 'analysis_markdown', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_bank_items', 'total_score', "REAL NOT NULL DEFAULT 0")
+  ensureColumn('question_bank_items', 'scoring_rubric_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('source_documents', 'province', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('source_documents', 'city', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('source_documents', 'paper_title', "TEXT NOT NULL DEFAULT ''")

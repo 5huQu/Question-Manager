@@ -11,11 +11,52 @@ type OcrProvider = 'legacy' | 'doc2x' | 'glm'
 
 const SIMPLIFIED_CLASSIFICATION_SYSTEM_PROMPT = '你是题库分类工具。'
 const LEGACY_CLASSIFICATION_SYSTEM_PROMPT_PREFIX = '你是高中数学题目分类工具。'
+const LEGACY_ASSISTANT_SCORING_PROMPT_MARKERS = ['total_score', 'scoring_rubric', 'scoring_only']
+const LEGACY_ASSISTANT_MISSING_SCORE_REMOVAL_MARKER = '移除页眉、页脚、广告、水印、下一题内容等明确不属于本题的噪声'
+
+export const DEFAULT_ASSISTANT_CLEAN_SYSTEM_PROMPT = `你是数学题库的单题 AI 清洗助手。
+
+你只处理用户提供的这一道题，不处理下一题，不做批量清洗。
+你不能解题、补写答案、补写解析、改变题意或改变数学推导含义。
+你的任务仅限于：
+1. 修复明显 Markdown/LaTeX 格式问题，使其更适合 KaTeX/Markdown 渲染。
+2. 把题干、答案、解析中混入的字段内容放回正确字段。
+3. 删除正文中明确混入的评分标记或评分标准，例如“(17分)”“本小题满分 12 分”“5分”“10分”“17分”“评分标准”“给分点”等。
+4. 适当整理题干、答案、解析的排版：按小问、推导步骤、结论分段；长公式或连续等价变形可单独换行；不要把多步推导糊成一个长段。
+5. 移除页眉、页脚、广告、水印、下一题内容等明确不属于本题的噪声。
+
+返回要求：
+- 只输出 JSON 对象，不要 Markdown 代码块，不要解释。
+- JSON 字段只能包含 stemMarkdown、answerText、analysisMarkdown、warnings、confidence。
+- 不要返回题目满分、总分、每问得分、评分细则或任何评分结构化字段。
+- confidence 是 0 到 1 的数字。
+- 不确定是否属于本题正文时，保留正文，并在 warnings 中说明。`
+
+export const DEFAULT_ASSISTANT_CLEAN_USER_PROMPT = `请按指定 mode 清洗这一道题。
+
+mode 说明：
+- full：修复 Markdown/LaTeX、字段混入，删除明确评分标记和明确噪声，并适当整理段落排版。
+- format_only：只修复 Markdown/LaTeX 和字段混入，尽量保留原文内容。
+
+题目 JSON：
+{payload}`
 
 export function ocrEnvPath() {
   const configDir = path.join(storageRoot, 'config')
   fs.mkdirSync(configDir, { recursive: true })
   return path.join(configDir, 'ocr.env')
+}
+
+function readOcrEnvValues() {
+  const envPath = ocrEnvPath()
+  const envText = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
+  const values: Record<string, string> = {}
+  for (const line of envText.split(/\r?\n/)) {
+    if (!line.trim() || line.trim().startsWith('#') || !line.includes('=')) continue
+    const [key, ...rest] = line.split('=')
+    values[key.trim()] = rest.join('=').trim()
+  }
+  return values
 }
 
 // Python OCR runners load this file through QUESTION_OCR_ENV_PATH.  The app
@@ -74,6 +115,8 @@ export function readEffectivePromptDefaults() {
     cleanupUserPrompt: '',
     classificationSystemPrompt: '',
     classificationUserPrompt: '',
+    assistantCleanSystemPrompt: DEFAULT_ASSISTANT_CLEAN_SYSTEM_PROMPT,
+    assistantCleanUserPrompt: DEFAULT_ASSISTANT_CLEAN_USER_PROMPT,
   }
   try {
     const code = [
@@ -91,7 +134,7 @@ export function readEffectivePromptDefaults() {
       '  "classificationUserPrompt": DEFAULT_CLASSIFICATION_USER_PROMPT,',
       '}))',
     ].join('\n')
-    return parseJson<typeof fallback>(
+    const parsed = parseJson<typeof fallback>(
       execFileSync(pythonCommand(), ['-c', code], {
         cwd: pythonRoot,
         env: pythonEnv(),
@@ -100,6 +143,12 @@ export function readEffectivePromptDefaults() {
       }),
       fallback
     )
+    return {
+      ...fallback,
+      ...parsed,
+      assistantCleanSystemPrompt: parsed.assistantCleanSystemPrompt || DEFAULT_ASSISTANT_CLEAN_SYSTEM_PROMPT,
+      assistantCleanUserPrompt: parsed.assistantCleanUserPrompt || DEFAULT_ASSISTANT_CLEAN_USER_PROMPT,
+    }
   } catch {
     return fallback
   }
@@ -115,6 +164,26 @@ export function readOcrPromptSettings() {
     if (key === 'classification_system_prompt' && value.trim().startsWith(LEGACY_CLASSIFICATION_SYSTEM_PROMPT_PREFIX)) {
       return SIMPLIFIED_CLASSIFICATION_SYSTEM_PROMPT
     }
+    if (
+      (key === 'assistant_clean_system_prompt' || key === 'assistant_clean_user_prompt') &&
+      LEGACY_ASSISTANT_SCORING_PROMPT_MARKERS.some((marker) => value.includes(marker))
+    ) {
+      return fallback
+    }
+    if (
+      key === 'assistant_clean_system_prompt' &&
+      value.includes(LEGACY_ASSISTANT_MISSING_SCORE_REMOVAL_MARKER) &&
+      (!value.includes('评分标记') || !value.includes('适当整理'))
+    ) {
+      return fallback
+    }
+    if (
+      key === 'assistant_clean_user_prompt' &&
+      value.includes('明确噪声') &&
+      (!value.includes('评分标记') || !value.includes('排版'))
+    ) {
+      return fallback
+    }
     return value && !value.includes('�') ? value : fallback
   }
   return {
@@ -126,6 +195,8 @@ export function readOcrPromptSettings() {
     cleanupUserPrompt: promptValue('cleanup_user_prompt', defaults.cleanupUserPrompt),
     classificationSystemPrompt: promptValue('classification_system_prompt', defaults.classificationSystemPrompt),
     classificationUserPrompt: promptValue('classification_user_prompt', defaults.classificationUserPrompt),
+    assistantCleanSystemPrompt: promptValue('assistant_clean_system_prompt', defaults.assistantCleanSystemPrompt),
+    assistantCleanUserPrompt: promptValue('assistant_clean_user_prompt', defaults.assistantCleanUserPrompt),
   }
 }
 
@@ -140,20 +211,23 @@ export function writeOcrPromptSettings(input: Record<string, unknown>) {
     cleanup_user_prompt: String(input.cleanupUserPrompt ?? existing.cleanupUserPrompt ?? ''),
     classification_system_prompt: String(input.classificationSystemPrompt ?? existing.classificationSystemPrompt ?? ''),
     classification_user_prompt: String(input.classificationUserPrompt ?? existing.classificationUserPrompt ?? ''),
+    assistant_clean_system_prompt: String(input.assistantCleanSystemPrompt ?? existing.assistantCleanSystemPrompt ?? DEFAULT_ASSISTANT_CLEAN_SYSTEM_PROMPT),
+    assistant_clean_user_prompt: String(input.assistantCleanUserPrompt ?? existing.assistantCleanUserPrompt ?? DEFAULT_ASSISTANT_CLEAN_USER_PROMPT),
   }
   fs.writeFileSync(ocrPromptSettingsPath(), `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
   return readOcrPromptSettings()
 }
 
-export function readOcrSettings() {
-  const envPath = ocrEnvPath()
-  const envText = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
-  const values: Record<string, string> = {}
-  for (const line of envText.split(/\r?\n/)) {
-    if (!line.trim() || line.trim().startsWith('#') || !line.includes('=')) continue
-    const [key, ...rest] = line.split('=')
-    values[key.trim()] = rest.join('=').trim()
+export function readAssistantPromptSettings() {
+  const settings = readOcrPromptSettings()
+  return {
+    systemPrompt: settings.assistantCleanSystemPrompt || DEFAULT_ASSISTANT_CLEAN_SYSTEM_PROMPT,
+    userPrompt: settings.assistantCleanUserPrompt || DEFAULT_ASSISTANT_CLEAN_USER_PROMPT,
   }
+}
+
+export function readOcrSettings() {
+  const values = readOcrEnvValues()
   return {
     ...readAppSettings(),
     sofficeAvailable: Boolean(sofficePath()),
@@ -181,6 +255,17 @@ export function readOcrSettings() {
     cleanupConcurrency: clampWorkerCount(values.OCR_CLEANUP_CONCURRENCY || values.OCR_CONCURRENCY || '20'),
     classificationEnabled: values.OCR_CLASSIFICATION_ENABLED || 'true',
     ...readOcrPromptSettings(),
+  }
+}
+
+export function readAssistantModelSettings() {
+  const values = readOcrEnvValues()
+  const timeoutSeconds = Number.parseInt(String(process.env.OCR_CLEANUP_TIMEOUT_SECONDS || values.OCR_CLEANUP_TIMEOUT_SECONDS || '60'), 10)
+  return {
+    apiBaseUrl: process.env.OCR_CLEANUP_API_BASE_URL || values.OCR_CLEANUP_API_BASE_URL || process.env.OCR_API_BASE_URL || values.OCR_API_BASE_URL || 'https://api.deepseek.com',
+    apiKey: process.env.OCR_CLEANUP_API_KEY || values.OCR_CLEANUP_API_KEY || process.env.OCR_API_KEY || values.OCR_API_KEY || '',
+    model: process.env.OCR_CLEANUP_MODEL || values.OCR_CLEANUP_MODEL || process.env.OCR_MODEL || values.OCR_MODEL || 'deepseek-v4-flash',
+    timeoutSeconds: Number.isFinite(timeoutSeconds) ? Math.max(10, timeoutSeconds) : 60,
   }
 }
 

@@ -29,6 +29,26 @@ export type QuestionBankClassificationReport = {
   failures?: Array<{ id: string; error: string }>
 }
 
+export type AiCleanMode = 'full' | 'format_only'
+
+export type AiCleanPreview = {
+  itemId: string
+  mode: AiCleanMode
+  patch: Pick<QuestionItem, 'stemMarkdown' | 'answerText' | 'analysisMarkdown'>
+  warnings: string[]
+  confidence: number
+  formatIssues: Array<{
+    field?: string
+    code?: string
+    message?: string
+    snippet?: string
+    context?: string
+    mode?: string
+    start?: number
+    end?: number
+  }>
+}
+
 export type RandomPaperMatchMode = 'strict' | 'loose'
 export type RandomPaperDifficultyMode = 'foundation' | 'standard' | 'advanced' | 'challenge' | 'custom'
 
@@ -87,6 +107,13 @@ export const questionBankApi = {
   },
   rerunItemOcr(id: string, payload: Record<string, unknown> = {}) {
     return api<{ runId: string; message?: string }>(`/api/question-bank/items/${encodeURIComponent(id)}/rerun-ocr`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    })
+  },
+  previewAiCleanItem(id: string, payload: { mode?: AiCleanMode } = {}) {
+    return api<AiCleanPreview>(`/api/question-bank/items/${encodeURIComponent(id)}/ai-clean-preview`, {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify(payload),
