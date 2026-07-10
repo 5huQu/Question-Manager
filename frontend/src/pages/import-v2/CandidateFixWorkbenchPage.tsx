@@ -1,10 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { LoaderCircle } from 'lucide-react'
-import { importV2Api } from '@/api/importV2'
-import { pdfSlicerApi } from '@/api/pdfSlicer'
-import { Button } from '@/components/ui'
-import { BBoxCanvas, type BBoxCanvasBox } from '@/components/questions/BBoxCanvas'
+import type { BBoxCanvasBox } from '@/components/questions/BBoxCanvas'
 import type { BBox } from '@/types'
 import {
   displayRectToSegment,
@@ -20,7 +17,9 @@ import {
 import { ManualFixInspector } from '@/components/import-v2/manual-fix/ManualFixInspector'
 import { ManualFixHeader } from '@/components/import-v2/manual-fix/ManualFixHeader'
 import { ManualFixViewerToolbar } from '@/components/import-v2/manual-fix/ManualFixViewerToolbar'
+import { ManualFixDocumentViewer } from '@/components/import-v2/manual-fix/ManualFixDocumentViewer'
 import type { ManualFixRegion as Region, ManualFixSegment as Segment, ManualFixTab } from '@/components/import-v2/manual-fix/types'
+import { useCandidateFixSession } from '@/hooks/useCandidateFixSession'
 
 interface SourceProfile {
   pageCount?: number
@@ -38,12 +37,8 @@ export default function CandidateFixWorkbenchPage() {
   const sourceDocumentId = sourceDocumentIdFromPath || sourceDocumentIdFromQuery
   const navigate = useNavigate()
 
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [finalizing, setFinalizing] = useState(false)
+  const { loading, saving, finalizing, candidate, session, loadError, saveError, textDirty, setTextDirty, saveDraft, saveRegions, finalize } = useCandidateFixSession(sourceDocumentId, candidateId)
   const [activeInspectorTab, setActiveInspectorTab] = useState<ManualFixTab>('content')
-  const [candidate, setCandidate] = useState<any>(null)
-  const [session, setSession] = useState<any>(null)
 
   // Markdown Texts
   const [stemMarkdown, setStemMarkdown] = useState('')
@@ -76,62 +71,37 @@ export default function CandidateFixWorkbenchPage() {
   const pdfName = activeProfile?.pdfName || '原始 PDF 文件'
   const sourceProfileEntries = Object.entries(sourceProfiles)
 
-  // Load candidate and restore manual-fix session
+  // Restore editor-local state after the controller has loaded the candidate/session.
   useEffect(() => {
-    if (!candidateId || !sourceDocumentId) return
-    loadCandidateAndSession(sourceDocumentId, candidateId)
-  }, [candidateId, sourceDocumentId])
-
-  async function loadCandidateAndSession(nextSourceDocumentId: string, nextCandidateId: string) {
-    try {
-      setLoading(true)
-      // 1. 获取 Candidate 信息
-      const data = await importV2Api.listCandidates(nextSourceDocumentId)
-      const currentCandidate = data.items.find(item => item.id === nextCandidateId)
-      if (!currentCandidate) {
-        throw new Error('未找到当前候选题目。')
-      }
-      setCandidate(currentCandidate)
-      setStemMarkdown(currentCandidate.stemMarkdown || '')
-      setAnswerText(currentCandidate.answerText || '')
-      setAnalysisMarkdown(currentCandidate.analysisMarkdown || '')
-      setFigures(currentCandidate.figures || [])
-
-      // 2. 创建或恢复修正 Session
-      const sess = await importV2Api.createManualFixSession(nextCandidateId)
-      setSession(sess)
-      setRegions(sess.regions || [])
-
-      // 3. 从 Session Profile 里获取 PDF 基本信息
-      const profiles = JSON.parse(sess.sourceProfileJson || '{}')
-      setSourceProfiles(profiles)
-      setActiveSourceDocumentId(currentCandidate.sourceDocumentId)
+    if (!candidate || !session) return
+    setStemMarkdown(candidate.stemMarkdown || '')
+    setAnswerText(candidate.answerText || '')
+    setAnalysisMarkdown(candidate.analysisMarkdown || '')
+    setFigures(candidate.figures || [])
+    setRegions(session.regions || [])
+    let profiles: Record<string, SourceProfile> = {}
+    try { profiles = JSON.parse(session.sourceProfileJson || '{}') } catch { /* fall back to the candidate source */ }
+    setSourceProfiles(profiles)
+    setActiveSourceDocumentId(candidate.sourceDocumentId)
 
       // 4. 进入编辑时默认定位到题干选区开始处，而不是题图位置。
-      const initialTarget = initialQuestionRegion(sess.regions || [])
+      const initialTarget = initialQuestionRegion(session.regions || [])
       const initialRegion = initialTarget?.region
       const initialSegment = initialTarget?.segment
-      const fallbackRegion = (sess.regions || []).find((r: any) => r.segments && r.segments.length > 0)
+      const fallbackRegion = (session.regions || []).find((r: any) => r.segments && r.segments.length > 0)
       const fallbackSegment = fallbackRegion?.segments?.[0]
       const targetRegion = initialRegion || fallbackRegion
       const targetSegment = initialSegment || fallbackSegment
       if (targetRegion && targetSegment) {
         setSelectedRegionId(targetRegion.id)
-        setActiveSourceDocumentId(targetRegion.sourceRunId || currentCandidate.sourceDocumentId)
+        setActiveSourceDocumentId(targetRegion.sourceRunId || candidate.sourceDocumentId)
         setCurrentPage(targetSegment.page)
-        setInitialFocusTarget({ sourceRunId: targetRegion.sourceRunId || currentCandidate.sourceDocumentId, page: targetSegment.page, regionId: targetRegion.id })
+        setInitialFocusTarget({ sourceRunId: targetRegion.sourceRunId || candidate.sourceDocumentId, page: targetSegment.page, regionId: targetRegion.id })
       } else {
         setCurrentPage(1)
-        setInitialFocusTarget({ sourceRunId: currentCandidate.sourceDocumentId, page: 1 })
+        setInitialFocusTarget({ sourceRunId: candidate.sourceDocumentId, page: 1 })
       }
-    } catch (err) {
-      console.error(err)
-      window.alert('加载手动修正会话失败：' + (err instanceof Error ? err.message : String(err)))
-      navigateBack()
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [candidate?.id, session?.id])
 
   function initialQuestionRegion(regionList: Region[]) {
     return regionList
@@ -163,7 +133,8 @@ export default function CandidateFixWorkbenchPage() {
     setCurrentPage((page) => Math.min(maxPages, Math.max(1, page)))
   }, [activeSourceDocumentId, maxPages])
 
-  function navigateBack() {
+  function navigateBack(skipUnsavedCheck = false) {
+    if (!skipUnsavedCheck && textDirty && !window.confirm('内容尚未保存，确定离开当前页面吗？')) return
     const currentSourceDocumentId = candidate?.sourceDocumentId || sourceDocumentId
     if (currentSourceDocumentId && candidateId) {
       navigate(`/tools/import/documents/${encodeURIComponent(currentSourceDocumentId)}/candidates/${encodeURIComponent(candidateId)}`)
@@ -173,6 +144,13 @@ export default function CandidateFixWorkbenchPage() {
       navigate('/tools/import')
     }
   }
+
+  useEffect(() => {
+    if (!textDirty) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [textDirty])
 
   // Double columns layout helper
   function getPageImageRef(page: number) {
@@ -405,6 +383,7 @@ export default function CandidateFixWorkbenchPage() {
     setStemMarkdown((current) => removeFigureMarkersByIds(current, removedFigureIds))
     setAnswerText((current) => removeFigureMarkersByIds(current, removedFigureIds))
     setAnalysisMarkdown((current) => removeFigureMarkersByIds(current, removedFigureIds))
+    if (removedFigureIds.size > 0) setTextDirty(true)
     if (selectedRegionId && removedRegionIds.has(selectedRegionId)) {
       setSelectedRegionId(null)
       setRect({ x: 0, y: 0, width: 0, height: 0 })
@@ -414,83 +393,27 @@ export default function CandidateFixWorkbenchPage() {
   // Auto-save draft region coordinates
   useEffect(() => {
     if (!session || regions.length === 0 || loading) return
-    const timer = setTimeout(async () => {
-      try {
-        setSaving(true)
-        const updated = await pdfSlicerApi.saveAnnotationRegions(session.id, normalizedRegionsForSave(), session.revision)
-        setSession(updated)
-      } catch (err) {
-        console.error('Draft autosave failed:', err)
-      } finally {
-        setSaving(false)
-      }
-    }, 1200)
+    const timer = setTimeout(() => { void saveRegions(normalizedRegionsForSave()) }, 1200)
     return () => clearTimeout(timer)
+  // Region changes are the autosave trigger; session revision updates must not restart the timer.
   }, [regions])
 
   // Save drafts manually
   async function handleSaveDraft() {
     if (!session) return
     try {
-      setSaving(true)
-      const updated = await pdfSlicerApi.saveAnnotationRegions(session.id, normalizedRegionsForSave(), session.revision)
-      setSession(updated)
-      if (candidateId) {
-        const updatedCandidate = await importV2Api.updateCandidate(candidateId, {
-          stemMarkdown,
-          answerText,
-          analysisMarkdown,
-          figures,
-        })
-        setCandidate(updatedCandidate.candidate)
-        setFigures(updatedCandidate.candidate.figures || [])
-      }
-      window.alert('草稿保存成功！')
+      const result = await saveDraft(normalizedRegionsForSave(), { stemMarkdown, answerText, analysisMarkdown, figures })
+      if (result) setFigures(result.candidate.figures || [])
     } catch (err) {
-      window.alert('保存草稿失败：' + (err instanceof Error ? err.message : String(err)))
-    } finally {
-      setSaving(false)
+      console.error('保存草稿失败：', err)
     }
   }
 
   // Finalize manual correction
   async function handleFinalizeFix() {
     if (!session) return
-    try {
-      setFinalizing(true)
-      // Save regions draft first
-      const saved = await pdfSlicerApi.saveAnnotationRegions(session.id, normalizedRegionsForSave(), session.revision)
-      setSession(saved)
-      if (candidateId) {
-        const updated = await importV2Api.updateCandidate(candidateId, {
-          stemMarkdown,
-          answerText,
-          analysisMarkdown,
-          figures,
-        })
-        setCandidate(updated.candidate)
-        setFigures(updated.candidate.figures || [])
-      }
-
-      // Post finalize with payload containing edited Markdown texts
-      const finalizeUrl = `/api/tools/pdf-slicer/annotation-sessions/${encodeURIComponent(session.id)}/finalize`
-      const res = await fetch(finalizeUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stemMarkdown, answerText, analysisMarkdown })
-      })
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.error || '提交裁剪与校对失败。')
-      }
-
-      window.alert('手动修正保存成功！')
-      navigateBack()
-    } catch (err) {
-      window.alert('提交修正失败：' + (err instanceof Error ? err.message : String(err)))
-    } finally {
-      setFinalizing(false)
-    }
+    const done = await finalize(normalizedRegionsForSave(), { stemMarkdown, answerText, analysisMarkdown, figures })
+    if (done) navigateBack(true)
   }
 
   // Add new region helper
@@ -549,26 +472,16 @@ export default function CandidateFixWorkbenchPage() {
 
   function handleDeleteFigure(figure: any) {
     if (!window.confirm('确定删除这张题图吗？相关正文占位符也会一并移除。')) return
-    const ids = [figure.id, figure.blockId, figure.sourceBlockId].filter(Boolean).map(String)
-    const matchesFigureRegion = (region: Region) => {
-      if (region.kind !== 'shared_answer_key') return false
-      const regionFigureIds = (region.questionKeys || []).map(String)
-      if (ids.some((id) => regionFigureIds.includes(id))) return true
-      const bbox = Array.isArray(figure.bbox) ? figure.bbox.map(Number) : null
-      const segment = region.segments[0]
-      if (!bbox || !segment || Number(segment.page) !== Number(figure.pageNo || 0)) return false
-      const regionBbox = [segment.x, segment.y, segment.x + segment.width, segment.y + segment.height]
-      return regionBbox.every((value, index) => Math.abs(value - bbox[index]) < 0.01)
-    }
     setFigures((current) => current.filter((item) => item !== figure && item.id !== figure.id))
-    setRegions((current) => current.filter((region) => !matchesFigureRegion(region)))
-    if (selectedRegionId && regions.some((region) => region.id === selectedRegionId && matchesFigureRegion(region))) {
+    setRegions((current) => current.filter((region) => !regionMatchesFigure(region, figure)))
+    if (selectedRegionId && regions.some((region) => region.id === selectedRegionId && regionMatchesFigure(region, figure))) {
       setSelectedRegionId(null)
       setRect({ x: 0, y: 0, width: 0, height: 0 })
     }
     setStemMarkdown((current) => removeFigureMarkers(current, figure))
     setAnswerText((current) => removeFigureMarkers(current, figure))
     setAnalysisMarkdown((current) => removeFigureMarkers(current, figure))
+    setTextDirty(true)
   }
 
   // Helpers for mapping regions to Canvas Boxes
@@ -582,14 +495,14 @@ export default function CandidateFixWorkbenchPage() {
           let boxClass = 'border-zinc-400 bg-zinc-100/10'
           let labelClass = 'bg-zinc-500'
           if (region.kind === 'question') {
-            boxClass = 'border-blue-500 bg-blue-100/15'
-            labelClass = 'bg-blue-600'
+            boxClass = 'border-zinc-900 bg-zinc-100/15 dark:border-zinc-100 dark:bg-zinc-800/15'
+            labelClass = 'bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900'
           } else if (region.kind === 'solution') {
-            boxClass = 'border-emerald-500 bg-emerald-100/15'
-            labelClass = 'bg-emerald-600'
+            boxClass = 'border-amber-600 bg-amber-100/15 dark:border-amber-500 dark:bg-amber-950/15'
+            labelClass = 'bg-amber-700 dark:bg-amber-600'
           } else {
-            boxClass = 'border-purple-500 bg-purple-100/15'
-            labelClass = 'bg-purple-600'
+            boxClass = 'border-zinc-500 border-dashed bg-zinc-100/10 dark:border-zinc-400 dark:bg-zinc-800/10'
+            labelClass = 'bg-zinc-600 dark:bg-zinc-500'
           }
 
           return {
@@ -626,75 +539,20 @@ export default function CandidateFixWorkbenchPage() {
     )
   }
 
+  if (loadError || !candidate || !session) {
+    return <div className="rounded-lg border border-red-200 bg-red-50/30 p-4 text-sm text-red-800 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400">加载手动修正会话失败：{loadError || '未找到可用的修正会话。'}</div>
+  }
+
   return (
     <div className="flex flex-col gap-4 animate-fade-in">
-      <ManualFixHeader candidate={candidate} pdfName={pdfName} saving={saving} finalizing={finalizing} onBack={navigateBack} onSaveDraft={handleSaveDraft} onFinalize={handleFinalizeFix} />
+      <ManualFixHeader candidate={candidate} pdfName={pdfName} saving={saving} finalizing={finalizing} textDirty={textDirty} saveError={saveError} onBack={() => navigateBack()} onSaveDraft={handleSaveDraft} onFinalize={handleFinalizeFix} />
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 h-[calc(100vh-7rem)] min-h-[680px] items-stretch overflow-hidden">
         {/* 左侧：PDF 渲染展示与划框区域 (7格) */}
         <div className="xl:col-span-7 flex flex-col border rounded-xl bg-zinc-50/50 dark:bg-zinc-955 overflow-hidden shadow-sm">
           <ManualFixViewerToolbar pageBrowseMode={pageBrowseMode} regionView={regionView} sourceProfiles={sourceProfileEntries} activeSourceDocumentId={activeSourceDocumentId} currentPage={currentPage} maxPages={maxPages} onBrowseModeChange={setPageBrowseMode} onRegionViewChange={handleRegionViewChange} onSourceChange={(sourceId) => { setActiveSourceDocumentId(sourceId); setCurrentPage(1); setRect({ x: 0, y: 0, width: 0, height: 0 }); setSelectedRegionId(null) }} onPageChange={(page) => { setCurrentPage(Math.min(maxPages, Math.max(1, page))); setRect({ x: 0, y: 0, width: 0, height: 0 }); setSelectedRegionId(null) }} />
 
-          {/* 划框 Canvas 滚动区域 */}
-          <div ref={scrollAreaRef} className="flex-1 overflow-auto p-4">
-            {candidate && pageBrowseMode === 'manual' ? (
-              <div className="mx-auto w-full max-w-[800px]">
-                <div
-                  ref={(node) => { pageContainerRefs.current.set(currentPage, node) }}
-                  className="scroll-mt-4"
-                >
-                  <BBoxCanvas
-                    key={`${activeSourceDocumentId}:${currentPage}`}
-                    imageUrl={`/api/import-flow-v2/source-documents/${activeSourceDocumentId || candidate.sourceDocumentId}/pages/${currentPage}`}
-                    boxes={canvasBoxesForPage(currentPage)}
-                    selectedBoxId={selectedBoxIdForPage(currentPage)}
-                    onSelectBoxId={handleSelectBoxId}
-                    rect={rect}
-                    onRectChange={(nextRect) => handleRectChange(nextRect, currentPage)}
-                    onDeleteSelectedBox={handleDeleteSelected}
-                    naturalSizeReady={setNaturalSize}
-                    imageRef={getPageImageRef(currentPage)}
-                  />
-                </div>
-              </div>
-            ) : null}
-            {candidate && pageBrowseMode === 'continuous' ? (
-              <div className="mx-auto flex w-full max-w-[800px] flex-col gap-5">
-                {pageNumbers.map((page) => (
-                  <div
-                    key={`${activeSourceDocumentId}:${page}`}
-                    ref={(node) => { pageContainerRefs.current.set(page, node) }}
-                    className="scroll-mt-4"
-                  >
-                    <div className="mb-2 flex items-center justify-between text-[11px] text-zinc-500">
-                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">第 {page} 页</span>
-                      <button
-                        type="button"
-                        onClick={() => focusPage(page, { scroll: true })}
-                        className="rounded border border-zinc-200 bg-white px-2 py-1 font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
-                      >
-                        设为当前页
-                      </button>
-                    </div>
-                    <BBoxCanvas
-                      key={`${activeSourceDocumentId}:${page}`}
-                      imageUrl={`/api/import-flow-v2/source-documents/${activeSourceDocumentId || candidate.sourceDocumentId}/pages/${page}`}
-                      boxes={canvasBoxesForPage(page)}
-                      selectedBoxId={selectedBoxIdForPage(page)}
-                      onSelectBoxId={handleSelectBoxId}
-                      rect={currentPage === page ? rect : { x: 0, y: 0, width: 0, height: 0 }}
-                      onRectChange={(nextRect) => handleRectChange(nextRect, page)}
-                      onDeleteSelectedBox={handleDeleteSelected}
-                      naturalSizeReady={(size) => {
-                        if (currentPage === page) setNaturalSize(size)
-                      }}
-                      imageRef={getPageImageRef(page)}
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          <ManualFixDocumentViewer candidate={candidate} activeSourceDocumentId={activeSourceDocumentId} currentPage={currentPage} pageBrowseMode={pageBrowseMode} pageNumbers={pageNumbers} rect={rect} scrollAreaRef={scrollAreaRef} pageContainerRefs={pageContainerRefs} getPageImageRef={getPageImageRef} canvasBoxesForPage={canvasBoxesForPage} selectedBoxIdForPage={selectedBoxIdForPage} onSelectBoxId={handleSelectBoxId} onRectChange={handleRectChange} onDeleteSelected={handleDeleteSelected} onNaturalSizeReady={(size, page) => { if (currentPage === page) setNaturalSize(size) }} onFocusPage={(page) => focusPage(page, { scroll: true })} />
         </div>
 
         <ManualFixInspector
@@ -707,9 +565,9 @@ export default function CandidateFixWorkbenchPage() {
           figures={figures}
           regions={regions}
           selectedRegionId={selectedRegionId}
-          onStemChange={setStemMarkdown}
-          onAnswerChange={setAnswerText}
-          onAnalysisChange={setAnalysisMarkdown}
+          onStemChange={(value) => { setStemMarkdown(value); setTextDirty(true) }}
+          onAnswerChange={(value) => { setAnswerText(value); setTextDirty(true) }}
+          onAnalysisChange={(value) => { setAnalysisMarkdown(value); setTextDirty(true) }}
           onAddRegion={handleAddNewRegion}
           onDeleteSelected={handleDeleteSelected}
           onRegionNoteChange={(note) => setRegions((current) => current.map((region) => region.id === selectedRegionId ? { ...region, note } : region))}

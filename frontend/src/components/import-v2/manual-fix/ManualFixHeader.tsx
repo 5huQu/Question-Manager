@@ -6,12 +6,14 @@ interface Props {
   pdfName: string
   saving: boolean
   finalizing: boolean
+  textDirty: boolean
+  saveError: string
   onBack: () => void
   onSaveDraft: () => void
   onFinalize: () => void
 }
 
-export function ManualFixHeader({ candidate, pdfName, saving, finalizing, onBack, onSaveDraft, onFinalize }: Props) {
+export function ManualFixHeader({ candidate, pdfName, saving, finalizing, textDirty, saveError, onBack, onSaveDraft, onFinalize }: Props) {
   return (
     <header className="flex items-center justify-between border-b border-zinc-200 pb-3 dark:border-zinc-800">
       <div className="flex min-w-0 items-center gap-3">
@@ -24,7 +26,7 @@ export function ManualFixHeader({ candidate, pdfName, saving, finalizing, onBack
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {saving && <span className="inline-flex items-center gap-1 text-[11px] text-zinc-400"><LoaderCircle className="size-3.5 animate-spin" />选区保存中…</span>}
+        {saveError ? <span className="max-w-52 truncate text-[11px] text-red-700 dark:text-red-400" title={saveError}>保存失败：{saveError}</span> : saving ? <span className="inline-flex items-center gap-1 text-[11px] text-zinc-400"><LoaderCircle className="size-3.5 animate-spin" />保存中…</span> : <span className={`text-[11px] ${textDirty ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'}`}>{textDirty ? '内容未保存' : '已保存'}</span>}
         <Button variant="outline" size="sm" icon={Save} onClick={onSaveDraft} disabled={saving || finalizing}>保存草稿</Button>
         <Button size="sm" icon={Save} onClick={onFinalize} disabled={finalizing}>{finalizing ? '正在提交…' : '完成修正'}</Button>
       </div>
