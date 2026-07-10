@@ -211,6 +211,14 @@ try {
   const directCommit = await commitQuestionCandidate(directResult.items[0].id, { skipAutoClassification: true })
   assert.equal(directCommit.item.sourceRunId, '')
   assert.equal(directCommit.item.importSourceId, directSource.id)
+  assert.throws(
+    () => parseCandidatesForOcrDocument(directOcr.id),
+    /已有题目入库/,
+    're-parsing must not delete a committed candidate',
+  )
+  const preservedDirectCandidate = listQuestionCandidatesForSource(directSource.id, {}).items.find((item) => item.id === directResult.items[0].id)
+  assert.equal(preservedDirectCandidate?.status, 'committed')
+  assert.equal(getQuestion(directCommit.item.id)?.id, directCommit.item.id)
   const directJob = ensureSingleDocumentImportJob(directSource.id)
   assert.equal(directJob.importJob.mode, 'single_document')
   const directQuestions = listImportJobQuestions(directJob.importJob.id)
@@ -218,6 +226,29 @@ try {
   assert.equal(directQuestions.items[0].id, directCommit.item.id)
   const resolvedLegacy = resolveImportJobForLegacyRunId(`ifv2:${directSource.id}`)
   assert.equal(resolvedLegacy.importJob.id, directJob.importJob.id)
+
+  const rollbackSource = makeSourceDocument('src_commit_rollback', 'Commit Rollback Source')
+  const rollbackMarkdown = '1. 事务测试题\n答案：A'
+  const rollbackOcr = makeOcrDocument('ocr_commit_rollback', rollbackSource.id, rollbackMarkdown, blocks(rollbackMarkdown, [
+    ['1. 事务测试题', 'b_rollback_stem'],
+    ['答案：A', 'b_rollback_answer'],
+  ]))
+  const rollbackCandidate = parseCandidatesForOcrDocument(rollbackOcr.id).items[0]
+  db.exec(`
+    CREATE TRIGGER fail_candidate_commit_for_test
+    BEFORE UPDATE ON question_candidates
+    WHEN OLD.id = '${rollbackCandidate.id}' AND NEW.status = 'committed'
+    BEGIN
+      SELECT RAISE(ABORT, 'forced candidate update failure');
+    END
+  `)
+  await assert.rejects(
+    () => commitQuestionCandidate(rollbackCandidate.id, { skipAutoClassification: true }),
+    /forced candidate update failure/,
+  )
+  db.exec('DROP TRIGGER fail_candidate_commit_for_test')
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM question_bank_items WHERE import_source_id = ?').get(rollbackSource.id).count, 0)
+  assert.notEqual(listQuestionCandidatesForSource(rollbackSource.id, {}).items[0]?.status, 'committed')
 
   console.log('5. Listing candidates recalculates stale persisted validation issues...')
   const staleSource = makeSourceDocument('src_live_validation', 'Live Validation Source')

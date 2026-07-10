@@ -35,6 +35,22 @@ function candidateStatusCounts(candidates: QuestionCandidate[]) {
   }
 }
 
+function withImmediateTransaction<T>(operation: () => T): T {
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    const result = operation()
+    db.exec('COMMIT')
+    return result
+  } catch (error) {
+    try {
+      db.exec('ROLLBACK')
+    } catch {
+      // Preserve the original failure if rollback itself cannot run.
+    }
+    throw error
+  }
+}
+
 function normalizeListLimit(value: unknown, fallback = 500) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return fallback
@@ -169,14 +185,21 @@ function attachParserDiagnostics(
 
 export function parseCandidatesForOcrDocument(id: string, body: Record<string, unknown> = {}) {
   const document = loadOcrDocument(id)
+  const existingCandidates = candidateRepo.listQuestionCandidates({ ocrDocumentId: id, limit: 1000, offset: 0 })
+  if (existingCandidates.some((candidate) => candidate.status === 'committed')) {
+    throw new RouteError(409, '该 OCR 文档已有题目入库。为避免题库记录与候选记录失去对应关系，不能直接重新解析。')
+  }
   const config = parserConfigForRequest(body)
   const candidates = attachParserDiagnostics(document, parseQuestionCandidates(document, { config }), config)
   const metadata = sourceMetadata(document.sourceDocumentId)
-  candidateRepo.deleteQuestionCandidatesForOcrDocument(id)
-  const saved = candidates.map((candidate) => candidateRepo.createQuestionCandidate({ ...candidate, ...metadata })).filter(Boolean) as QuestionCandidate[]
-  revalidateAllCandidatesForSourceDocument(document.sourceDocumentId)
+  const saved = withImmediateTransaction(() => {
+    candidateRepo.deleteQuestionCandidatesForOcrDocument(id)
+    const created = candidates.map((candidate) => candidateRepo.createQuestionCandidate({ ...candidate, ...metadata })).filter(Boolean) as QuestionCandidate[]
+    revalidateAllCandidatesForSourceDocument(document.sourceDocumentId)
+    sourceRepo.updateSourceDocument(document.sourceDocumentId, { status: created.some((item) => item.status !== 'ready') ? 'partially_parsed' : 'parsed' })
+    return created
+  })
   const finalCandidates = liveValidateCandidates(candidateRepo.listQuestionCandidates({ sourceDocumentId: document.sourceDocumentId }))
-  sourceRepo.updateSourceDocument(document.sourceDocumentId, { status: saved.some((item) => item.status !== 'ready') ? 'partially_parsed' : 'parsed' })
   return { ...candidateStatusCounts(finalCandidates), items: finalCandidates, diagnostics: getOcrFigureDiagnostics(id, finalCandidates) }
 }
 
@@ -222,40 +245,43 @@ export async function commitQuestionCandidate(id: string, options: { skipAutoCla
   if (!candidate.stemMarkdown.trim()) throw new RouteError(400, '题干为空，不能入库。')
   const difficultyScore10 = normalizeDifficultyScore10(candidate.difficultyScore10)
   const importJobContext = importJobContextForSource(candidate.sourceDocumentId)
-  const item = createQuestion({
-    questionNo: candidate.questionNo,
-    questionType: normalizeQuestionType(candidate.questionType || inferQuestionType(candidate.stemMarkdown, candidate.answerText), candidate.stemMarkdown, candidate.answerText),
-    difficultyScore: 0,
-    difficultyScore10,
-    difficultyLabel: candidate.difficultyLabel || difficultyLabel10(difficultyScore10),
-    chapter: candidate.knowledgePoints[0] || '待整理',
-    knowledgePoints: normalizeTags(candidate.knowledgePoints),
-    solutionMethods: normalizeTags(candidate.solutionMethods),
-    sourceTitle: importJobContext?.sourceTitle || sourceTitle(candidate.sourceDocumentId),
-    province: candidate.province,
-    city: candidate.city,
-    paperTitle: candidate.paperTitle,
-    batchName: candidate.batchName,
-    stage: candidate.stage,
-    subject: candidate.subject,
-    paperKind: candidate.paperKind,
-    examYear: candidate.examYear,
-    sourceOrg: candidate.sourceOrg,
-    importSourceId: importJobContext?.importSourceId || candidate.sourceDocumentId,
-    bankStatus: 'ready',
-    stemMarkdown: candidate.stemMarkdown,
-    answerText: candidate.answerText,
-    analysisMarkdown: candidate.analysisMarkdown,
-    figures: figuresForQuestionBank(candidate.figures),
-    sourceRunId: '',
+  const { item, committedCandidate } = withImmediateTransaction(() => {
+    const createdItem = createQuestion({
+      questionNo: candidate.questionNo,
+      questionType: normalizeQuestionType(candidate.questionType || inferQuestionType(candidate.stemMarkdown, candidate.answerText), candidate.stemMarkdown, candidate.answerText),
+      difficultyScore: 0,
+      difficultyScore10,
+      difficultyLabel: candidate.difficultyLabel || difficultyLabel10(difficultyScore10),
+      chapter: candidate.knowledgePoints[0] || '待整理',
+      knowledgePoints: normalizeTags(candidate.knowledgePoints),
+      solutionMethods: normalizeTags(candidate.solutionMethods),
+      sourceTitle: importJobContext?.sourceTitle || sourceTitle(candidate.sourceDocumentId),
+      province: candidate.province,
+      city: candidate.city,
+      paperTitle: candidate.paperTitle,
+      batchName: candidate.batchName,
+      stage: candidate.stage,
+      subject: candidate.subject,
+      paperKind: candidate.paperKind,
+      examYear: candidate.examYear,
+      sourceOrg: candidate.sourceOrg,
+      importSourceId: importJobContext?.importSourceId || candidate.sourceDocumentId,
+      bankStatus: 'ready',
+      stemMarkdown: candidate.stemMarkdown,
+      answerText: candidate.answerText,
+      analysisMarkdown: candidate.analysisMarkdown,
+      figures: figuresForQuestionBank(candidate.figures),
+      sourceRunId: '',
+    })
+    if (!createdItem) throw new RouteError(500, '入库失败。')
+    const updatedCandidate = candidateRepo.updateQuestionCandidate(id, {
+      status: 'committed',
+      committedQuestionId: createdItem.id,
+      committedAt: nowIso(),
+    })
+    if (!updatedCandidate) throw new RouteError(500, '题目已创建，但候选题入库状态更新失败。')
+    return { item: createdItem, committedCandidate: updatedCandidate }
   })
-  if (!item) throw new RouteError(500, '入库失败。')
-  const committedCandidate = candidateRepo.updateQuestionCandidate(id, {
-    status: 'committed',
-    committedQuestionId: item.id,
-    committedAt: nowIso(),
-  })
-  if (!committedCandidate) throw new RouteError(500, '题目已创建，但候选题入库状态更新失败。')
   const classificationReports = options.skipAutoClassification ? null : await maybeClassifyCommittedImportJobs([item])
   return { candidate: committedCandidate, item, classificationReports }
 }

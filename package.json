@@ -21,13 +21,14 @@
     "verify:python-runtime": "node scripts/verify-python-runtime.mjs",
     "verify:packaged-python": "node scripts/verify-packaged-python.mjs",
     "test:updates": "node scripts/update-manifest.test.mjs",
+    "test:frontend": "vitest run --config frontend/vitest.config.ts",
     "test:ocr-normalizer": "npm run build:server && node server/scripts/ocr-document-normalizer.test.mjs",
     "test:question-parser": "npm run build:server && node server/scripts/question-parser.test.mjs",
     "desktop": "npm run build && npm run prepare:python-runtime && electron .",
     "pack:desktop": "npm run build && npm run prepare:python-runtime && electron-builder --dir && npm run verify:packaged-python",
     "pack:windows-installer": "npm run pack:desktop && electron-builder --win nsis --x64 --publish never",
     "test:math-render": "node server/scripts/validate_math_render.test.mjs",
-    "test:routes": "npm run build:server && node server/scripts/route-contract.test.mjs && node server/scripts/import-job.service.test.mjs && node server/scripts/source-document-ocr-task.test.mjs && node server/scripts/quick-actions.test.mjs && node server/scripts/ai-cleaner.service.test.mjs",
+    "test:routes": "npm run build:server && node server/scripts/route-contract.test.mjs && node server/scripts/import-job.service.test.mjs && node server/scripts/source-document-ocr-task.test.mjs && node server/scripts/quick-actions.test.mjs && node server/scripts/ai-cleaner.service.test.mjs && node server/scripts/candidate-manual-fix.test.mjs",
     "test:smoke": "node server/scripts/smoke.test.mjs",
     "start": "node server/dist/index.js"
   },
@@ -120,7 +121,9 @@
     "@types/react-dom": "^19.2.3",
     "electron": "^42.4.1",
     "electron-builder": "^26.15.3",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.0",
-    "typescript": "~6.0.2"
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.10"
   }
 }

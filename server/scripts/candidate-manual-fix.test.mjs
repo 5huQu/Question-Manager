@@ -120,7 +120,7 @@ try {
       questionLabel: '题图',
       segments: [{ page: 2, x: 0.2, y: 0.2, width: 0.4, height: 0.3 }],
       sortOrder: 2,
-      note: 'stem'
+      note: 'analysis'
     }
   ]
 
@@ -153,12 +153,13 @@ try {
   const updatedCandidate = db.prepare('SELECT * FROM question_candidates WHERE id = ?').get(candidateId)
   
   assert.match(updatedCandidate.stem_markdown, /1\. 计算 \$1\+1\$。/)
-  assert.match(updatedCandidate.stem_markdown, /<!-- DOC2X_FIGURE:fig_manual_/) // Verify figure placeholder auto-appended
   assert.match(updatedCandidate.analysis_markdown, /解析：1 加 1 的结果为 2。/)
+  assert.doesNotMatch(updatedCandidate.stem_markdown, /<!-- DOC2X_FIGURE:fig_manual_/) // Analysis figures should not be appended to stem.
+  assert.match(updatedCandidate.analysis_markdown, /<!-- DOC2X_FIGURE:fig_manual_/) // Verify figure placeholder auto-appended to analysis.
   
   const figures = JSON.parse(updatedCandidate.figures_json)
   assert.equal(figures.length, 1)
-  assert.equal(figures[0].usage, 'stem')
+  assert.equal(figures[0].usage, 'analysis')
   assert.equal(figures[0].sourceDocumentId, docId)
   assert.equal(figures[0].pageNo, 2)
   assert.deepEqual(figures[0].bbox, [0.2, 0.2, 0.6, 0.5])

@@ -550,7 +550,8 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
 
     let stemMarkdown = payload?.stemMarkdown !== undefined ? payload.stemMarkdown : candidate.stem_markdown
     const answerText = payload?.answerText !== undefined ? payload.answerText : candidate.answer_text
-    const analysisMarkdown = payload?.analysisMarkdown !== undefined ? payload.analysisMarkdown : candidate.analysis_markdown
+    let analysisMarkdown = payload?.analysisMarkdown !== undefined ? payload.analysisMarkdown : candidate.analysis_markdown
+    const appendFigureMarker = (markdown: string, figureId: string) => `${String(markdown || '').trim()}\n<!-- DOC2X_FIGURE:${figureId} -->\n`
 
     const figureRegions = regions.filter(r => r.kind === 'shared_answer_key')
     for (const r of figureRegions) {
@@ -572,6 +573,7 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
 
       if (oldFigureId && currentFigures.some(f => f.id === oldFigureId)) {
         const updatedFig = currentFigures.find(f => f.id === oldFigureId)!
+        updatedFig.usage = (r.note as any) || updatedFig.usage || 'stem'
         updatedFig.pageNo = pageNo
         updatedFig.bbox = bbox
         updatedFig.path = relativePath
@@ -589,7 +591,11 @@ export function finalizeSession(sessionId: string, payload?: { stemMarkdown?: st
         }
         newFigures.push(newFig)
         nextRegionFigureIds.set(r.id, newFigId)
-        stemMarkdown = stemMarkdown.trim() + `\n<!-- DOC2X_FIGURE:${newFigId} -->\n`
+        if (newFig.usage === 'analysis') {
+          analysisMarkdown = appendFigureMarker(analysisMarkdown, newFigId)
+        } else {
+          stemMarkdown = appendFigureMarker(stemMarkdown, newFigId)
+        }
       }
     }
 

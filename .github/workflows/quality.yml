@@ -1,0 +1,62 @@
+name: Quality Checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: server/python/runtime-requirements.txt
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Python runtime dependencies
+        run: python -m pip install -r server/python/runtime-requirements.txt
+
+      - name: Build application
+        run: npm run build
+
+      - name: Run frontend tests
+        run: npm run test:frontend
+
+      - name: Run backend route and service tests
+        run: npm run test:routes
+
+      - name: Run parser and OCR normalizer tests
+        run: |
+          npm run test:question-parser
+          npm run test:ocr-normalizer
+
+      - name: Run math rendering and smoke tests
+        run: |
+          npm run test:math-render
+          npm run test:smoke
+
+      - name: Run Python unit tests
+        env:
+          PYTHONPATH: server/python
+        run: python -m unittest discover -s server/python/tests -p 'test_*.py' -v
