@@ -48,6 +48,8 @@ import { stripAssetPrefix } from '../../utils/ocr-helpers.js'
 import { stripLeadingQuestionNo } from '../../utils/question-type.js'
 import { validateQuestionMarkdown } from '../../utils/validation.js'
 import type { QuestionRow } from '../../types/index.js'
+import type { PaperLayoutDraft, QuestionLayout, ChoiceLayoutOverride } from './paper-layout.js'
+import { figureLayoutFor, questionLayoutFor } from './paper-layout.js'
 
 /**
  * Collection-shaped object with the minimum fields needed for export.
@@ -313,12 +315,13 @@ export function buildCollectionLatex(
 
 // ── Collection worksheet PDF ──────────────────────────────────────────────
 
-function buildCollectionWorksheetLatex(
+export function buildCollectionWorksheetLatex(
   collection: ExportCollection,
   variant: ExportVariant,
   figuresDir: string,
   adjustments: Map<string, number>,
   documentClass = 'qbank-worksheet',
+  layoutDraft?: PaperLayoutDraft,
 ) {
   const specs = new Map<string, WorksheetFigureSpec>()
   const scorePlan = buildWorksheetScorePlan(collection as any)
@@ -352,7 +355,7 @@ function buildCollectionWorksheetLatex(
         )}}`,
       )
     }
-    lines.push(worksheetQuestionLatex(entry, index, variant, collection.id, figuresDir, adjustments, specs))
+    lines.push(worksheetQuestionLatex(entry, index, variant, collection.id, figuresDir, adjustments, specs, questionLayoutFor(layoutDraft, entry.relationId || entry.item?.id)))
   })
   lines.push('\\end{document}', '')
   return { content: lines.join('\n\n'), specs }
@@ -366,6 +369,7 @@ function worksheetQuestionLatex(
   figuresDir: string,
   adjustments: Map<string, number>,
   specs: Map<string, WorksheetFigureSpec>,
+  layout?: QuestionLayout,
 ) {
   const lines = [`\\begin{examquestion}{${index + 1}}`]
   const { prompt, choices } = splitChoiceStemForExport(entry.item.stemMarkdown)
@@ -403,11 +407,19 @@ function worksheetQuestionLatex(
       ) || '（题干待补充）',
     ),
   )
+  const figuresWithoutMarkers = figuresWithoutInlineMarkers(entry.item.stemMarkdown, stemFigures)
+  appendFigures(
+    figuresWithoutMarkers.filter((figure) => String(figure.usage || 'stem') !== 'options' && figureLayoutFor(layout, figure)?.placement !== 'after-choices'),
+    'stem',
+  )
   if (choices.length) {
-    lines.push(worksheetChoicesLatex(choices, stemFigures))
+    lines.push(worksheetChoicesLatex(choices, stemFigures, layout?.choiceLayout))
   }
-
-  appendFigures(figuresWithoutInlineMarkers(entry.item.stemMarkdown, stemFigures), 'stem')
+  appendFigures(figuresWithoutMarkers.filter((figure) => figureLayoutFor(layout, figure)?.placement === 'after-choices'), 'stem')
+  appendFigures(
+    figuresWithoutMarkers.filter((figure) => String(figure.usage || '') === 'options'),
+    'options',
+  )
   if (variant === 'teacher') {
     const solutionFigures = analysisFigures(entry)
     lines.push('\\begin{solutionbox}')
@@ -494,10 +506,10 @@ function worksheetInlineFigureLines(figure: Record<string, any>) {
   ]
 }
 
-function worksheetChoicesLatex(choices: string[], figures: Array<Record<string, any>> = []) {
+function worksheetChoicesLatex(choices: string[], figures: Array<Record<string, any>> = [], override: ChoiceLayoutOverride = 'auto') {
   const rendered = choices.map((choice) => worksheetChoiceLatex(choice, figures))
   if (rendered.length === 4) {
-    const layout = qbankChoiceLayout(choices)
+    const layout = override === 'auto' ? qbankChoiceLayout(choices) : override
     if (layout === 'four')
       return `\\qbankchoicesfour{${rendered[0]}}{${rendered[1]}}{${rendered[2]}}{${rendered[3]}}`
     if (layout === 'two')
@@ -559,6 +571,7 @@ export function exportCollectionWorksheetPdf(
   collection: ExportCollection,
   variant: ExportVariant,
   documentClass = 'qbank-worksheet',
+  layoutDraft?: PaperLayoutDraft,
 ) {
   if (!collection.questions.length) throw new Error('当前试题篮没有题目，无法导出。')
   assertCollectionExportable(collection, exportFieldsForVariant(variant))
@@ -576,13 +589,13 @@ export function exportCollectionWorksheetPdf(
   const texPath = path.join(exportRoot, `${baseName}.tex`)
   const adjustments = new Map<string, number>()
   for (let iteration = 0; iteration < worksheetMaxLayoutIterations; iteration += 1) {
-    const rendered = buildCollectionWorksheetLatex(collection, variant, figuresDir, adjustments, documentClass)
+    const rendered = buildCollectionWorksheetLatex(collection, variant, figuresDir, adjustments, documentClass, layoutDraft)
     fs.writeFileSync(texPath, rendered.content, 'utf8')
     compileWorksheetTex(texPath)
     const telemetry = parseWorksheetFigureTelemetry(texPath.replace(/\.tex$/, '.log'))
     if (!optimizeWorksheetFigures(telemetry, rendered.specs, adjustments)) break
   }
-  const rendered = buildCollectionWorksheetLatex(collection, variant, figuresDir, adjustments, documentClass)
+  const rendered = buildCollectionWorksheetLatex(collection, variant, figuresDir, adjustments, documentClass, layoutDraft)
   fs.writeFileSync(texPath, rendered.content, 'utf8')
   compileWorksheetTex(texPath)
   return path.join(exportRoot, `${baseName}.pdf`)

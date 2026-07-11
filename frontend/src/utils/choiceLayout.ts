@@ -1,18 +1,37 @@
 export type ChoiceLayout = 'quad' | 'double' | 'single'
 
-function normalizedChoiceLength(value: string) {
-  return String(value || '')
-    .replace(/\$\$?([\s\S]*?)\$\$?/g, '$1')
-    .replace(/[*_`~|\\{}]/g, '')
+function requiresSingleColumn(value: string) {
+  const source = String(value || '').replace(/\r\n?/g, '\n')
+  return /\n\s*\n|\$\$|\\\[|\\begin\s*\{|!\[[^\]]*\]\(|<img\b|^\s*\|.*\|\s*$/im.test(source)
+}
+
+function visualChoiceWidth(value: string) {
+  const plain = String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n+/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\\(?:left|right|displaystyle|textstyle|quad|qquad)\b|\\[,;!]/g, '')
+    .replace(/\\(?:frac|dfrac|tfrac|sqrt|overline|underline|vec|hat|bar)\b/g, '')
+    .replace(/\\[a-zA-Z]+/g, 'α')
+    .replace(/[\$*_`~{}]/g, '')
     .replace(/\s+/g, '')
-    .length
+
+  return Array.from(plain).reduce((width, character) => {
+    if (/\p{Script=Han}/u.test(character)) return width + 1
+    if (/[A-Z]/.test(character)) return width + 0.7
+    if (/[a-z0-9]/.test(character)) return width + 0.55
+    if (/[=+\-×÷<>≤≥]/.test(character)) return width + 0.7
+    return width + 0.8
+  }, 0)
 }
 
 export function choiceLayoutForTexts(values: string[], forceSingle = false): ChoiceLayout {
   if (forceSingle || values.length !== 4) return 'single'
-  if (values.some((value) => /\n|\$\$|\|[^\n]*\||!\[[^\]]*\]\(/.test(String(value || '')))) return 'single'
+  if (values.some(requiresSingleColumn)) return 'single'
 
-  const lengths = values.map(normalizedChoiceLength)
+  const lengths = values.map(visualChoiceWidth)
   const maxLength = Math.max(...lengths, 0)
   const totalLength = lengths.reduce((sum, length) => sum + length, 0)
   if (maxLength <= 18 && totalLength <= 72) return 'quad'

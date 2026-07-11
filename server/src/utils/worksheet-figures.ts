@@ -213,11 +213,36 @@ export function worksheetSectionTitle(name: string, score: WorksheetSectionScore
 
 export function qbankChoiceLayout(choices: string[]) {
   if (choices.length !== 4) return 'one'
-  if (choices.some((choice) => /\n|\$\$|\|[^\n]*\||!\[[^\]]*\]\(/.test(String(choice || '')))) return 'one'
-  const plainChoices = choices.map((choice) => questionPlainText(choice).replace(/\$+/g, '').replace(/\s+/g, ''))
-  const maxLength = Math.max(...plainChoices.map((choice) => choice.length), 0)
-  const totalLength = plainChoices.reduce((sum, choice) => sum + choice.length, 0)
-  if (maxLength <= 18 && totalLength <= 72) return 'four'
-  if (maxLength <= 38 && totalLength <= 152) return 'two'
+  if (choices.some(qbankChoiceRequiresSingleColumn)) return 'one'
+  const widths = choices.map(qbankChoiceVisualWidth)
+  const maxWidth = Math.max(...widths, 0)
+  const totalWidth = widths.reduce((sum, width) => sum + width, 0)
+  if (maxWidth <= 18 && totalWidth <= 72) return 'four'
+  if (maxWidth <= 38 && totalWidth <= 152) return 'two'
   return 'one'
+}
+
+function qbankChoiceRequiresSingleColumn(choice: string) {
+  const source = String(choice || '').replace(/\r\n?/g, '\n')
+  return /\n\s*\n|\$\$|\\\[|\\begin\s*\{|!\[[^\]]*\]\(|<img\b|^\s*\|.*\|\s*$/im.test(source)
+}
+
+/** Approximate printed em width, ignoring LaTeX/Markdown source-only syntax. */
+function qbankChoiceVisualWidth(choice: string) {
+  const plain = questionPlainText(String(choice || '').replace(/\r\n?/g, '\n').replace(/\n+/g, ' '))
+    .replace(/\\(?:left|right|displaystyle|textstyle|quad|qquad)\b|\\[,;!]/g, '')
+    .replace(/\\(?:frac|dfrac|tfrac|sqrt|overline|underline|vec|hat|bar)\b/g, '')
+    .replace(/\\[a-zA-Z]+/g, 'α')
+    .replace(/[\$*_`~{}]/g, '')
+    .replace(/\s+/g, '')
+
+  let width = 0
+  for (const character of plain) {
+    if (/\p{Script=Han}/u.test(character)) width += 1
+    else if (/[A-Z]/.test(character)) width += 0.7
+    else if (/[a-z0-9]/.test(character)) width += 0.55
+    else if (/[=+\-×÷<>≤≥]/.test(character)) width += 0.7
+    else width += 0.8
+  }
+  return width
 }

@@ -24,6 +24,7 @@
     "test:frontend": "vitest run --config frontend/vitest.config.ts",
     "test:ocr-normalizer": "npm run build:server && node server/scripts/ocr-document-normalizer.test.mjs",
     "test:question-parser": "npm run build:server && node server/scripts/question-parser.test.mjs",
+    "test:choice-layout": "npm run build:server && node server/scripts/choice-layout.test.mjs",
     "desktop": "npm run build && npm run prepare:python-runtime && electron .",
     "pack:desktop": "npm run build && npm run prepare:python-runtime && electron-builder --dir && npm run verify:packaged-python",
     "pack:windows-installer": "npm run pack:desktop && electron-builder --win nsis --x64 --publish never",

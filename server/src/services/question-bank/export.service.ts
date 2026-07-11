@@ -6,13 +6,15 @@ import { normalizeExportFormat, collectionExportItems } from './collections.js'
 import { normalizeExportVariant } from './export-records.js'
 import { buildCollectionMarkdown, buildCollectionLatex, exportCollectionWorksheetPdf } from './export.js'
 import { RouteError } from '../../utils/http-error.js'
+import { normalizePaperLayoutDraft } from './paper-layout.js'
 
 export function exportCollection(collection: NonNullable<ReturnType<typeof import('../../db/collections.js').getCollection>>, body: Record<string, any>) {
   const variant = normalizeExportVariant(body?.variant)
+  const layoutDraft = body?.layoutDraft === undefined ? undefined : normalizePaperLayoutDraft(body.layoutDraft)
   if (body?.format === 'pdf') {
     try {
       const template = body?.template === 'exam' ? 'exam' : 'worksheet'
-      const pdfPath = exportCollectionWorksheetPdf(collection, variant, template === 'exam' ? 'qbank-exam' : 'qbank-worksheet')
+      const pdfPath = exportCollectionWorksheetPdf(collection, variant, template === 'exam' ? 'qbank-exam' : 'qbank-worksheet', layoutDraft)
       const relativePath = assetPathFor(pdfPath)
       const record = createExportRecord({
         sourceType: 'collection',
