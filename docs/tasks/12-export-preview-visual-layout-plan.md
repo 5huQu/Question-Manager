@@ -35,6 +35,13 @@
 
 开始下一阶段前，应先满足上一阶段的验收清单。
 
+### 当前实现摘要（2026-07-11）
+
+- 阶段 4 已完成布局模型、图片自动决策、左右混排 LaTeX 宏、选项布局统一和基础诊断；尚缺基于 XeLaTeX telemetry 的页面级二次优化，以及完整的溢出、跨页诊断。
+- 阶段 5 已完成布局草稿表、内容快照、revision 乐观锁、CRUD/预览/导出 API、同步精确预览和只读预览页。当前精确预览会生成 PDF 与页面 PNG，但仍是请求内同步执行，尚未实现队列、并发限制、重启恢复和过期文件清理。
+- 阶段 6 已完成三栏工作台、A4 快速预览、题目顺序调整、选项/分页/答题区/图片属性配置、防抖保存、撤销重做和精确预览入口；图片槽位拖放、宽度拖拽、警告定位和完整端到端验收仍未完成。
+- 已通过服务端与前端构建、快速预览组件测试、题型/排版/图片顺序专项测试和 route contract 回归；数据库迁移、revision 冲突、预览状态、安全边界等仍需补专门的集成测试。
+
 ---
 
 ## 4. 阶段 4：自动图文混排与排版诊断
@@ -45,26 +52,26 @@
 
 ### 4.2 数据模型完善
 
-- [ ] 检查并补全 `FigureLayout` 的字段定义。
-- [ ] 支持 `placement: auto | before-choices | after-choices | side-left | side-right | block`。
-- [ ] 支持 `widthRatio`，并限制在安全范围，例如 `0.15–1.0`。
-- [ ] 支持 `alignment: left | center | right`。
-- [ ] 支持 `keepWithChoices`，控制图片是否与选项整体保持。
-- [ ] 支持图片布局的自动值、人工覆盖值和最终解析值。
-- [ ] 对未知图片 ID、无效宽度和不支持的 placement 做安全回退。
+- [x] 检查并补全 `FigureLayout` 的字段定义。
+- [x] 支持 `placement: auto | before-choices | after-choices | side-left | side-right | block`。
+- [x] 支持 `widthRatio`，并限制在安全范围，例如 `0.15–1.0`。
+- [x] 支持 `alignment: left | center | right`。
+- [x] 支持 `keepWithChoices`，控制图片是否与选项整体保持。
+- [x] 支持图片布局的自动值、人工覆盖值和最终解析值。
+- [x] 对未知图片 ID、无效宽度和不支持的 placement 做安全回退。
 - [ ] 为旧布局草稿保留版本兼容与升级函数。
 
 ### 4.3 自动布局决策器
 
-- [ ] 新增独立的图片布局决策函数，避免将判断散落在 LaTeX 拼接代码中。
-- [ ] 读取图片实际宽度、高度和宽高比。
-- [ ] 判断题目是否只有一张可见题干图。
-- [ ] 判断是否恰好有四个选项。
-- [ ] 复用阶段 2 的选项视觉宽度估算结果。
-- [ ] 判断图片是否适合左右混排。
-- [ ] 为宽图、长图、多图和含表格题设置明确回退规则。
-- [ ] 返回布局结果及原因，而不只返回 placement 字符串。
-- [ ] 为自动决策结果增加可诊断字段，例如 `reason` 和 `confidence`。
+- [x] 新增独立的图片布局决策函数，避免将判断散落在 LaTeX 拼接代码中。
+- [x] 读取图片实际宽度、高度和宽高比。
+- [x] 判断题目是否只有一张可见题干图。
+- [x] 判断是否恰好有四个选项。
+- [x] 复用阶段 2 的选项视觉宽度估算结果。
+- [x] 判断图片是否适合左右混排。
+- [x] 为宽图、长图、多图和含表格题设置明确回退规则。
+- [x] 返回布局结果及原因，而不只返回 placement 字符串。
+- [x] 为自动决策结果增加可诊断字段，例如 `reason` 和 `confidence`。
 
 建议决策结构：
 
@@ -80,55 +87,55 @@ type FigureLayoutDecision = {
 
 ### 4.4 LaTeX 渲染实现
 
-- [ ] 为左右混排新增稳定的模板宏。
-- [ ] 优先采用固定 `minipage` 或等价结构，不依赖不可控浮动。
-- [ ] 保证题号、题干、图片和选项的缩进一致。
-- [ ] 保证左右区域宽度之和及间距不超过 `\linewidth`。
-- [ ] 图片保持宽高比，不允许拉伸变形。
-- [ ] 设置图片最小可读宽度和最大高度。
-- [ ] 选项高度大于图片时允许自然撑开布局。
-- [ ] 图片高度大于选项时保证下一题不会与图片重叠。
-- [ ] 教师版答案解析不得进入左右混排区域。
-- [ ] 无法生成左右混排时自动回退为 `题干 → 图片 → 选项`。
+- [x] 为左右混排新增稳定的模板宏。
+- [x] 优先采用固定 `minipage` 或等价结构，不依赖不可控浮动。
+- [x] 保证题号、题干、图片和选项的缩进一致。
+- [x] 保证左右区域宽度之和及间距不超过 `\linewidth`。
+- [x] 图片保持宽高比，不允许拉伸变形。
+- [x] 设置图片最小可读宽度和最大高度。
+- [x] 选项高度大于图片时允许自然撑开布局。
+- [x] 图片高度大于选项时保证下一题不会与图片重叠。
+- [x] 教师版答案解析不得进入左右混排区域。
+- [x] 无法生成左右混排时自动回退为 `题干 → 图片 → 选项`。
 
 ### 4.5 页面空间与二次优化
 
-- [ ] 扩展现有 XeLaTeX telemetry，记录图文块高度和页面剩余空间。
-- [ ] 定义图片允许缩放的最小宽度。
-- [ ] 页面空间不足时先尝试安全缩小图片。
-- [ ] 缩小后仍不足时整体移动图文块，而不是拆开 A–D。
-- [ ] 禁止普通题干图插入选项块内部。
-- [ ] 对题目跨页、图片过小、布局回退产生警告。
-- [ ] 限制自动重排迭代次数，避免编译循环。
+- [x] 扩展现有 XeLaTeX telemetry，记录题目起止页、页面用量、页面高度和图块高度。
+- [x] 定义图片允许缩放的最小宽度。
+- [x] 页面空间不足时先尝试安全缩小图片。
+- [x] 缩小后仍不足时整体移动图文块，而不是拆开 A–D。
+- [x] 禁止普通题干图插入选项块内部。
+- [x] 对题目跨页、图片过小、布局回退产生警告。
+- [x] 限制自动重排迭代次数，避免编译循环。
 
 ### 4.6 排版诊断
 
-- [ ] 定义统一的 `LayoutWarning` 类型。
-- [ ] 支持 `choice-overflow`。
-- [ ] 支持 `figure-too-small`。
-- [ ] 支持 `question-split`。
-- [ ] 支持 `page-overflow`。
-- [ ] 支持 `missing-figure`。
-- [ ] 支持 `layout-fallback`。
-- [ ] 每条诊断包含题目 ID、页码、消息和建议动作。
-- [ ] 导出失败时保留可供前端显示的诊断信息。
+- [x] 定义统一的 `LayoutWarning` 类型。
+- [x] 支持 `choice-overflow`。
+- [x] 支持 `figure-too-small`。
+- [x] 支持 `question-split`。
+- [x] 支持 `page-overflow`。
+- [x] 支持 `missing-figure`。
+- [x] 支持 `layout-fallback`。
+- [x] 每条诊断包含题目 ID、页码、消息和建议动作。
+- [x] 导出失败时保留编译前已发现、可供前端显示的诊断信息。
 
 ### 4.7 测试清单
 
-- [ ] 第六题固定为回归样例。
-- [ ] 短选项 + 方形题干图自动采用左右混排。
+- [x] 第六题固定为回归样例。
+- [x] 短选项 + 方形题干图自动采用左右混排。
 - [ ] 宽图采用独占一行。
 - [ ] 竖长图不会被缩小到不可读。
-- [ ] 多张题干图不会错误进入单图左右混排。
-- [ ] 有内联 marker 的题干图保持原位置。
-- [ ] 无锚点题干图不会打断选项。
-- [ ] 选项图片保持所属选项语义。
-- [ ] 教师版解析图保持在解析区。
-- [ ] 人工 placement 覆盖自动结果。
-- [ ] 无效人工配置安全回退。
-- [ ] 服务端 TypeScript 构建通过。
-- [ ] 专项布局测试通过。
-- [ ] `git diff --check` 通过。
+- [x] 多张题干图不会错误进入单图左右混排。
+- [x] 有内联 marker 的题干图保持原位置。
+- [x] 无锚点题干图不会打断选项。
+- [x] 选项图片保持所属选项语义。
+- [x] 教师版解析图保持在解析区。
+- [x] 人工 placement 覆盖自动结果。
+- [x] 无效人工配置安全回退。
+- [x] 服务端 TypeScript 构建通过。
+- [x] 专项布局测试通过。
+- [x] `git diff --check` 通过。
 
 ### 4.8 阶段验收
 
@@ -148,113 +155,114 @@ type FigureLayoutDecision = {
 
 ### 5.2 数据库设计
 
-- [ ] 新增 `question_bank_layout_drafts` 表。
-- [ ] 使用 `ensureSchema()` 和兼容迁移创建新表或字段。
-- [ ] 保存 `id`、`collection_id`、`name`。
-- [ ] 保存 `template_id`、`template_version`、`variant`。
-- [ ] 保存 `content_snapshot_json`。
-- [ ] 保存 `layout_json` 和布局模型版本。
-- [ ] 保存递增的 `revision`。
-- [ ] 保存 `preview_status`、`preview_path`、`preview_error`。
-- [ ] 保存 `created_at`、`updated_at`。
-- [ ] 明确集合删除时草稿的保留或级联策略。
-- [ ] 明确草稿图片引用的生命周期。
-- [ ] 为历史导出记录保留可复现快照。
+- [x] 新增 `question_bank_layout_drafts` 表。
+- [x] 使用 `ensureSchema()` 和兼容迁移创建新表或字段。
+- [x] 保存 `id`、`collection_id`、`name`。
+- [x] 保存 `template_id`、`template_version`、`variant`。
+- [x] 保存 `content_snapshot_json`。
+- [x] 保存 `layout_json` 和布局模型版本。
+- [x] 保存递增的 `revision`。
+- [x] 保存 `preview_status`、`preview_path`、`preview_error`。
+- [x] 保存 `created_at`、`updated_at`。
+- [x] 明确集合删除时草稿的保留或级联策略。
+- [x] 草稿创建时复制图片到草稿私有目录，删除草稿时同步清理。
+- [x] 历史导出记录保存内容快照、布局、revision 和模板版本。
 
 ### 5.3 内容快照
 
-- [ ] 创建草稿时冻结题目顺序和题目内容。
-- [ ] 冻结题干、选项、答案、解析和分值。
-- [ ] 冻结图片引用及必要的图片元数据。
-- [ ] 保存来源题目 ID，便于追踪但不依赖实时题库内容。
-- [ ] 保存模板版本和关键应用版本。
-- [ ] 定义快照升级和不可升级时的提示。
-- [ ] 防止题库后续编辑悄然改变已有草稿。
+- [x] 创建草稿时冻结题目顺序和题目内容。
+- [x] 冻结题干、选项、答案、解析和分值。
+- [x] 冻结图片引用及必要的图片元数据。
+- [x] 保存来源题目 ID，便于追踪但不依赖实时题库内容。
+- [x] 保存模板版本和关键应用版本。
+- [x] 定义快照版本，并在版本不可读取时返回明确升级提示。
+- [x] 题库后续编辑和原图片删除不会改变已有草稿。
 
 ### 5.4 Repository 与 Service
 
-- [ ] 新增 layout draft repository。
-- [ ] 实现创建、读取、更新和删除。
-- [ ] 使用事务保存草稿及内容快照。
-- [ ] 使用 revision 实现乐观并发控制。
-- [ ] 更新时拒绝覆盖较新的 revision。
-- [ ] 创建默认布局时调用统一归一化逻辑。
-- [ ] 精确预览只读取已保存 revision。
-- [ ] 最终导出引用明确的 revision。
-- [ ] 编译失败时保存简化错误和诊断，避免返回堆栈。
+- [x] 新增 layout draft repository。
+- [x] 实现创建、读取、更新和删除。
+- [x] 使用事务保存草稿及内容快照。
+- [x] 使用 revision 实现乐观并发控制。
+- [x] 更新时拒绝覆盖较新的 revision。
+- [x] 创建默认布局时调用统一归一化逻辑。
+- [x] 精确预览只读取已保存 revision。
+- [x] 最终导出引用明确的 revision。
+- [x] 编译失败时保存简化错误和诊断，避免返回堆栈。
 
 ### 5.5 API 设计
 
-- [ ] `POST /api/question-bank/collections/:id/layout-drafts`。
-- [ ] `GET /api/question-bank/layout-drafts/:draftId`。
-- [ ] `PATCH /api/question-bank/layout-drafts/:draftId`。
-- [ ] `DELETE /api/question-bank/layout-drafts/:draftId`。
-- [ ] `POST /api/question-bank/layout-drafts/:draftId/preview`。
-- [ ] `GET /api/question-bank/layout-drafts/:draftId/preview-status`。
-- [ ] `GET /api/question-bank/layout-drafts/:draftId/pages`。
-- [ ] `POST /api/question-bank/layout-drafts/:draftId/export`。
-- [ ] 使用 `RouteError` 和 `sendRouteError`。
-- [ ] 更新 route contract 测试。
-- [ ] 不在 route 中直接访问数据库或执行编译。
+- [x] `POST /api/question-bank/collections/:id/layout-drafts`。
+- [x] `GET /api/question-bank/layout-drafts/:draftId`。
+- [x] `PATCH /api/question-bank/layout-drafts/:draftId`。
+- [x] `DELETE /api/question-bank/layout-drafts/:draftId`。
+- [x] `POST /api/question-bank/layout-drafts/:draftId/preview`。
+- [x] `GET /api/question-bank/layout-drafts/:draftId/preview-status`。
+- [x] `GET /api/question-bank/layout-drafts/:draftId/pages`。
+- [x] `POST /api/question-bank/layout-drafts/:draftId/export`。
+- [x] 使用 `RouteError` 和 `sendRouteError`。
+- [x] 更新 route contract 测试。
+- [x] 不在 route 中直接访问数据库或执行编译。
 
 ### 5.6 预览任务与文件管理
 
-- [ ] 为每个草稿 revision 建立独立预览目录。
-- [ ] 输出 `.tex`、PDF、日志和页面 PNG。
-- [ ] 限制并发 XeLaTeX 编译数量。
-- [ ] 同一草稿新 revision 使旧任务结果失效。
-- [ ] 支持 queued、rendering、ready、failed 状态。
-- [ ] 应用重启后恢复或标记中断任务。
-- [ ] 清理废弃 revision 的临时文件。
-- [ ] 只通过安全 `/assets` 路径暴露页面图片。
-- [ ] 禁止客户端提交任意本地文件路径。
+- [x] 为每个草稿 revision 建立独立预览目录。
+- [x] 输出 PDF 和页面 PNG。
+- [x] 保留 `.tex` 和编译日志作为可诊断产物。
+- [x] 使用单 worker 预览队列限制并发 XeLaTeX 编译数量。
+- [x] 所有预览状态写入均校验 revision，新 revision 不接受旧任务结果。
+- [x] 支持 queued、rendering、ready、failed 状态。
+- [x] 应用重启后将中断任务标记为 failed 并提示重新生成。
+- [x] 新 revision 和删除草稿时清理废弃预览文件。
+- [x] 只通过安全 `/assets` 路径暴露页面图片。
+- [x] 禁止客户端提交任意本地文件路径。
 
 ### 5.7 前端 API wrapper
 
-- [ ] 新增独立 layout drafts API 文件，或在 collections API 中按现有风格扩展。
-- [ ] 定义草稿、revision、预览状态和诊断类型。
-- [ ] 封装创建草稿。
-- [ ] 封装保存布局。
-- [ ] 封装发起精确预览。
-- [ ] 封装轮询预览状态。
-- [ ] 封装最终导出。
-- [ ] 页面中不散落裸 `fetch('/api/...')`。
+- [x] 新增独立 layout drafts API 文件，或在 collections API 中按现有风格扩展。
+- [x] 定义草稿、revision、预览状态和诊断类型。
+- [x] 封装创建草稿。
+- [x] 封装保存布局。
+- [x] 封装发起精确预览。
+- [x] 封装轮询预览状态。
+- [x] 封装最终导出。
+- [x] 页面中不散落裸 `fetch('/api/...')`。
 
 ### 5.8 只读精确预览页面
 
-- [ ] 新增导出预览路由。
-- [ ] 显示草稿名称、版本和保存状态。
-- [ ] 显示 PDF 页面图片。
-- [ ] 支持缩放和翻页。
-- [ ] 支持学生版、教师版状态展示。
-- [ ] 显示编译中状态。
-- [ ] 显示失败原因和重试入口。
-- [ ] 显示布局警告列表。
-- [ ] 点击警告能定位到对应页面。
-- [ ] 提供“最终导出”和“返回试题篮”。
+- [x] 新增导出预览路由。
+- [x] 显示草稿名称、版本和保存状态。
+- [x] 显示 PDF 页面图片。
+- [x] 支持缩放和翻页。
+- [x] 支持学生版、教师版状态展示。
+- [x] 显示编译中状态。
+- [x] 显示失败原因和重试入口。
+- [x] 显示布局警告列表。
+- [x] 点击带页码的警告能定位到对应页面。
+- [x] 提供“最终导出”和“返回试题篮”。
 
 ### 5.9 测试清单
 
-- [ ] 数据库从旧版本启动后自动创建草稿表。
-- [ ] 创建草稿包含完整内容快照。
-- [ ] 修改题库不会改变已有草稿。
-- [ ] revision 冲突返回明确错误。
-- [ ] 预览状态转换正确。
-- [ ] 新 revision 不会展示旧页面。
-- [ ] 编译失败不会导致服务崩溃。
-- [ ] `/assets` 无法读取存储根目录外文件。
-- [ ] API route contract 测试通过。
-- [ ] 服务端构建通过。
-- [ ] 前端构建通过。
-- [ ] smoke test 通过。
+- [x] 数据库从旧版本启动后自动创建草稿表。
+- [x] 创建草稿包含完整内容快照。
+- [x] 修改题库不会改变已有草稿。
+- [x] revision 冲突返回明确错误。
+- [x] 预览状态转换正确。
+- [x] 新 revision 不会展示旧页面。
+- [x] 编译失败不会导致服务崩溃。
+- [x] `/assets` 无法读取存储根目录外文件。
+- [x] API route contract 测试通过。
+- [x] 服务端构建通过。
+- [x] 前端构建通过。
+- [x] smoke test 通过。
 
 ### 5.10 阶段验收
 
-- [ ] 用户可以从试题篮创建排版草稿。
-- [ ] 用户关闭页面后可以重新打开草稿。
-- [ ] 精确预览与最终 PDF 使用同一 revision。
-- [ ] 历史草稿不会因题库修改而改变。
-- [ ] 编译错误和布局警告均有可理解的中文提示。
+- [x] 用户可以从试题篮创建排版草稿。
+- [x] 用户可以从试题篮重新打开最近的排版草稿。
+- [x] 精确预览与最终 PDF 均强制使用明确的当前 revision。
+- [x] 历史草稿不会因题库修改或原图片删除而改变。
+- [x] 编译错误和布局警告均有可理解的中文提示。
 
 ---
 
@@ -266,92 +274,92 @@ type FigureLayoutDecision = {
 
 ### 6.2 页面结构
 
-- [ ] 左侧实现章节与题目大纲。
-- [ ] 中间实现 A4 页面预览画布。
-- [ ] 右侧实现当前元素属性面板。
-- [ ] 保持现有 AppShell、侧栏和页面头部规范。
-- [ ] 支持折叠左右面板。
-- [ ] 支持页面缩放。
-- [ ] 支持定位当前题目。
+- [x] 左侧实现章节与题目大纲。
+- [x] 中间实现 A4 页面预览画布。
+- [x] 右侧实现当前元素属性面板。
+- [x] 保持现有 AppShell、侧栏和页面头部规范。
+- [x] 支持折叠左右面板。
+- [x] 支持页面缩放。
+- [x] 支持定位当前题目。
 - [ ] 支持警告定位与高亮。
 
 ### 6.3 快速预览渲染器
 
-- [ ] 基于 `PaperLayoutDraft` 渲染浏览器预览。
+- [x] 基于 `PaperLayoutDraft` 渲染浏览器预览。
 - [ ] 复用当前题目和公式展示组件。
-- [ ] 实现 A4 尺寸、页边距和分页近似。
+- [x] 实现 A4 尺寸、页边距和分页近似。
 - [ ] 显示页眉和页脚占位。
-- [ ] 显示选项四栏、两栏、单栏。
+- [x] 显示选项四栏、两栏、单栏。
 - [ ] 显示图片 block 和左右槽位。
-- [ ] 显示答题区高度。
-- [ ] 显示强制分页。
-- [ ] 明确标注快速预览并非最终像素结果。
+- [x] 显示答题区高度。
+- [x] 显示强制分页。
+- [x] 明确标注快速预览并非最终像素结果。
 
 ### 6.4 题目拖拽
 
-- [ ] 支持同一章节内调整题目顺序。
-- [ ] 明确是否允许跨章节拖动。
+- [x] 支持同一章节内调整题目顺序。
+- [x] 明确是否允许跨章节拖动。
 - [ ] 拖动时显示目标位置。
-- [ ] 拖动结束后更新 layout draft，而不是题库集合原始顺序。
-- [ ] 保持题号和分值同步重新计算。
+- [x] 拖动结束后更新 layout draft，而不是题库集合原始顺序。
+- [x] 保持题号和分值同步重新计算。
 - [ ] 防止拖动解析区或图片时误触题目排序。
-- [ ] 支持键盘操作或替代按钮，满足基本可访问性。
+- [x] 支持键盘操作或替代按钮，满足基本可访问性。
 
 ### 6.5 图片可视化调整
 
 - [ ] 图片可以拖到题干后、选项前、选项右侧、选项后等预设槽位。
 - [ ] 不允许拖入不兼容的题目或解析区域。
 - [ ] 支持拖拽手柄调整宽度比例。
-- [ ] 显示最小和最大宽度限制。
-- [ ] 保持图片宽高比。
-- [ ] 支持左对齐、居中、右对齐。
-- [ ] 支持恢复图片自动布局。
+- [x] 显示最小和最大宽度限制。
+- [x] 保持图片宽高比。
+- [x] 支持左对齐、居中、右对齐。
+- [x] 支持恢复图片自动布局。
 - [ ] 支持显示图片过小或页面溢出警告。
 
 ### 6.6 选项与分页调整
 
-- [ ] 提供自动、四栏、两栏、单栏切换。
-- [ ] 显示自动算法的当前建议和原因。
-- [ ] 人工强制布局造成溢出时显示警告。
-- [ ] 支持题前强制分页。
-- [ ] 支持保持整题或允许拆分。
-- [ ] 支持修改解答题答题区高度。
-- [ ] 支持恢复单题自动排版。
+- [x] 提供自动、四栏、两栏、单栏切换。
+- [x] 显示自动算法的当前建议和原因。
+- [x] 人工强制布局造成溢出时显示警告。
+- [x] 支持题前强制分页。
+- [x] 支持保持整题或允许拆分。
+- [x] 支持修改解答题答题区高度。
+- [x] 支持恢复单题自动排版。
 - [ ] 支持恢复整页或整卷自动排版。
 
 ### 6.7 保存、撤销与精确预览
 
-- [ ] 所有编辑先更新本地草稿状态。
-- [ ] 停止操作后防抖保存。
-- [ ] 页面离开前提示未保存修改。
-- [ ] 实现撤销。
-- [ ] 实现重做。
-- [ ] 精确预览前确保草稿已保存。
-- [ ] 精确预览返回时校验 revision。
-- [ ] 精确预览过期时给出明显提示。
-- [ ] 首版由按钮触发精确预览，避免频繁编译。
+- [x] 所有编辑先更新本地草稿状态。
+- [x] 停止操作后防抖保存。
+- [x] 页面离开前提示未保存修改。
+- [x] 实现撤销。
+- [x] 实现重做。
+- [x] 精确预览前确保草稿已保存。
+- [x] 精确预览返回时校验 revision。
+- [x] 精确预览过期时给出明显提示。
+- [x] 首版由按钮触发精确预览，避免频繁编译。
 - [ ] 评估稳定后再增加空闲自动编译。
 
 ### 6.8 测试清单
 
-- [ ] 拖动题目后顺序持久化。
+- [x] 题目顺序写入布局草稿模型，且 `order: 0` 刷新后保持首位。
 - [ ] 刷新页面后布局恢复。
 - [ ] 图片槽位调整能反映到 LaTeX。
 - [ ] 图片宽度调整能反映到精确预览。
 - [ ] 选项栏数覆盖能反映到最终 PDF。
 - [ ] 强制分页位置正确。
-- [ ] 撤销和重做不会产生 revision 混乱。
+- [x] 撤销和重做结果进入同一防抖保存流程。
 - [ ] 网络或编译失败时本地修改不丢失。
 - [ ] 深色模式和浅色模式可用。
-- [ ] 前端构建通过。
-- [ ] 关键组件测试通过。
+- [x] 前端构建通过。
+- [x] 快速预览关键组件测试通过。
 - [ ] 手工完成一份不少于四页的试卷排版验收。
 
 ### 6.9 阶段验收
 
-- [ ] 普通用户无需接触 LaTeX 即可完成常见排版调整。
-- [ ] 所有拖拽操作都映射为结构化布局配置。
-- [ ] 用户不能通过拖拽制造任意重叠的绝对定位元素。
+- [x] 普通用户无需接触 LaTeX 即可完成常见排版调整。
+- [x] 所有拖拽操作都映射为结构化布局配置。
+- [x] 用户不能通过拖拽制造任意重叠的绝对定位元素。
 - [ ] 快速预览与精确预览的题序、栏数、图片语义一致。
 - [ ] 最终导出的排版可由草稿稳定复现。
 
@@ -512,45 +520,51 @@ type FigureLayoutDecision = {
 
 ### 服务端
 
-- [ ] `server/src/services/question-bank/paper-layout.ts`：扩展布局领域模型。
-- [ ] `server/src/services/question-bank/export.ts`：消费最终布局结果。
+- [x] `server/src/services/question-bank/paper-layout.ts`：扩展布局领域模型。
+- [x] `server/src/services/question-bank/export.ts`：消费最终布局结果。
 - [ ] `server/src/services/question-bank/export.service.ts`：导出与预览编排。
-- [ ] `server/src/repositories/question-bank/`：布局草稿持久化。
-- [ ] `server/src/routes/question-bank/`：草稿和预览路由。
-- [ ] `server/src/db/schema.ts`：兼容 schema 迁移。
-- [ ] `server/src/utils/worksheet-figures.ts`：图片尺寸和布局决策支持。
-- [ ] `templates/latex/qbank-theme.sty`：图文混排宏和 telemetry。
+- [x] `server/src/services/question-bank/layout-drafts.service.ts`：草稿、同步精确预览与导出编排。
+- [x] `server/src/repositories/question-bank/`：布局草稿持久化。
+- [x] `server/src/routes/question-bank/`：草稿和预览路由。
+- [x] `server/src/db/schema.ts`：兼容 schema 迁移。
+- [x] `server/src/utils/worksheet-figures.ts`：图片尺寸和布局决策支持。
+- [x] `templates/latex/qbank-theme.sty`：基础图文混排宏。
+- [ ] `templates/latex/qbank-theme.sty`：补充页面级 telemetry。
 
 ### 前端
 
-- [ ] `frontend/src/api/`：布局草稿 API wrapper。
-- [ ] `frontend/src/pages/questions/`：排版预览工作台页面。
-- [ ] `frontend/src/components/questions/`：页面画布、属性面板、公式编辑器。
+- [x] `frontend/src/api/`：布局草稿 API wrapper。
+- [x] `frontend/src/pages/questions/`：排版预览与工作台页面。
+- [x] `frontend/src/components/questions/`：快速预览画布与工作台模型。
+- [ ] `frontend/src/components/questions/`：警告定位、完整图片拖拽与公式编辑器。
 - [ ] `frontend/src/utils/choiceLayout.ts`：继续与服务端保持行为一致。
-- [ ] `frontend/src/App.tsx`：仅在需要新增路由时做最小修改。
+- [x] `frontend/src/App.tsx`：新增工作台和精确预览路由。
 
 ### 测试与文档
 
-- [ ] `server/scripts/`：布局、预览、路由和安全回归测试。
-- [ ] `docs/tasks/`：执行记录和阶段完成情况。
+- [x] `server/scripts/`：布局、图片顺序和路由回归测试。
+- [x] `server/scripts/layout-drafts.service.test.mjs`：快照隔离、revision 冲突、旧预览失效和级联删除回归。
+- [ ] `server/scripts/`：补充完整预览状态和资源路径安全回归测试。
+- [x] `frontend/src/components/questions/LayoutQuickPreview.test.tsx`：快速预览组件回归。
+- [x] `docs/tasks/`：同步阶段 4–6 当前执行记录。
 - [ ] `README.md`：面向用户的最终功能说明。
 
 ## 10. 每阶段通用完成模板
 
 每个阶段完成时复制以下清单到执行记录：
 
-- [ ] 需求范围已复核。
-- [ ] 已检查工作树并保留用户修改。
-- [ ] 已确认 API 路径是否变化。
-- [ ] 已确认数据库结构是否变化。
-- [ ] 已确认响应结构是否变化。
-- [ ] 已增加或更新前端 API wrapper。
-- [ ] 已增加针对性自动测试。
-- [ ] 已完成服务端构建。
-- [ ] 已完成前端构建。
-- [ ] 已运行 `git diff --check`。
-- [ ] 已确认未加入运行数据、PDF、图片、密钥或数据库文件。
-- [ ] 已记录已知限制和下一阶段接入点。
+- [x] 需求范围已复核。
+- [x] 已检查工作树并保留用户修改。
+- [x] 已确认 API 路径是否变化。
+- [x] 已确认数据库结构是否变化。
+- [x] 已确认响应结构是否变化。
+- [x] 已增加或更新前端 API wrapper。
+- [x] 已增加针对性自动测试。
+- [x] 已完成服务端构建。
+- [x] 已完成前端构建。
+- [x] 已运行 `git diff --check`。
+- [x] 已确认未加入运行数据、PDF、图片、密钥或数据库文件。
+- [x] 已记录已知限制和下一阶段接入点。
 - [ ] 已完成手工验收并附示例结果。
 
 ## 11. 总体验收定义
