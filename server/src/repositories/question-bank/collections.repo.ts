@@ -146,6 +146,12 @@ export function clearCollectionItemsAndRefresh(collectionId: string) {
   }
 }
 
+export function replaceCollectionItems(collectionId:string, items:Array<{id:string;questionId:string;sortOrder:number;score:number;sectionName:string;createdAt:string}>, title?:string){
+  const insert=db.prepare('INSERT INTO question_bank_collection_items (id,collection_id,question_id,sort_order,score,section_name,created_at) VALUES (?,?,?,?,?,?,?)')
+  try{db.exec('BEGIN');clearCollectionItems(collectionId);for(const item of items)insert.run(item.id,collectionId,item.questionId,item.sortOrder,item.score,item.sectionName,item.createdAt);if(title)db.prepare('UPDATE question_bank_collections SET title=?,updated_at=? WHERE id=?').run(title,new Date().toISOString(),collectionId);refreshCollectionScore(collectionId);db.exec('COMMIT')}
+  catch(error){db.exec('ROLLBACK');throw error}
+}
+
 export function reorderCollectionItems(collectionId: string, items: Array<{ relationId: string; sortOrder: number }>, updatedAt: string) {
   const update = db.prepare('UPDATE question_bank_collection_items SET sort_order = ? WHERE id = ? AND collection_id = ?')
   try {

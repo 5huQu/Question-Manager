@@ -26,6 +26,7 @@ export function mapExportRecord(row: ExportRecordRow) {
     path: row.path,
     url: row.url,
     items: parseJson<ExportRecordItemSnapshot[]>(row.items_json || '[]', []),
+    snapshot: parseJson<Record<string, unknown>>(row.snapshot_json || '{}', {}),
     contentLength: Number(row.content_length || 0),
     questionCount: Number(row.question_count || 0),
     status: row.status,
@@ -249,6 +250,7 @@ export function createExportRecord(input: {
   path?: string
   url?: string
   items?: ExportRecordItemSnapshot[]
+  snapshot?: Record<string, unknown>
   contentLength?: number
   questionCount?: number
   status?: 'succeeded' | 'failed'
@@ -258,8 +260,8 @@ export function createExportRecord(input: {
   const now = nowIso()
   db.prepare(`
     INSERT INTO question_bank_export_records
-      (id, source_type, collection_id, run_id, import_job_id, title, format, variant, filename, path, url, items_json, content_length, question_count, status, error, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, source_type, collection_id, run_id, import_job_id, title, format, variant, filename, path, url, items_json, snapshot_json, content_length, question_count, status, error, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.sourceType,
@@ -273,6 +275,7 @@ export function createExportRecord(input: {
     input.path || '',
     input.url || '',
     JSON.stringify(input.items || []),
+    JSON.stringify(input.snapshot || {}),
     Math.max(0, Math.floor(Number(input.contentLength || 0))),
     Math.max(0, Math.floor(Number(input.questionCount || 0))),
     input.status || 'succeeded',

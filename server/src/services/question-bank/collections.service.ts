@@ -99,6 +99,15 @@ export function clearCollectionItems(id: string) {
   return repo.getCollection(id)
 }
 
+export function replaceCollectionItems(id:string,body:Record<string,any>){
+  if(!repo.collectionExists(id))throw new RouteError(404,'试题篮不存在。')
+  const ids=Array.isArray(body.questionIds)?[...new Set(body.questionIds.map(String).filter(Boolean))]:[]
+  const questions=ids.map((questionId)=>getQuestion(questionId))
+  if(questions.some((item)=>!item))throw new RouteError(404,'批次中存在已删除题目，无法替换试题篮。')
+  const now=nowIso();repo.replaceCollectionItems(id,questions.map((question,index)=>({id:createId('rel'),questionId:question!.id,sortOrder:index,score:defaultScore(question!.questionType),sectionName:'',createdAt:now})),String(body.title||'').trim()||undefined)
+  return repo.getCollection(id)
+}
+
 export function reorderCollectionItems(id: string, body: Record<string, any>) {
   if (!repo.collectionExists(id)) throw new RouteError(404, '试题篮不存在。')
   const items = Array.isArray(body?.items) ? body.items : []

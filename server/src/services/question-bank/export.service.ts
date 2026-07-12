@@ -26,6 +26,7 @@ export function exportCollection(collection: NonNullable<ReturnType<typeof impor
         path: relativePath,
         url: `/assets/${relativePath}`,
         items: collectionExportItems(collection),
+        snapshot: body?.reproducibleSnapshot,
         contentLength: exportRecordFileSize(relativePath),
         questionCount: collection.questionCount,
       })
@@ -47,6 +48,7 @@ export function exportCollection(collection: NonNullable<ReturnType<typeof impor
     variant,
     filename,
     items: collectionExportItems(collection),
+    snapshot: body?.reproducibleSnapshot,
     contentLength: Buffer.byteLength(content, 'utf8'),
     questionCount: collection.questionCount,
   })

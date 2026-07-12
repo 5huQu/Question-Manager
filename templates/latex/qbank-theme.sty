@@ -227,13 +227,30 @@
   \begin{enumerate}[label=\textbf{\Alph*.},leftmargin=2.2em,itemsep=0.15em,topsep=0.25em]
 }{\end{enumerate}}
 
-\newenvironment{examquestion}[1]{%
+% Stable, non-floating figure/choice composition. Both minipages remain in one
+% vertical block, so a figure can never land between individual choices.
+\newcommand{\qbankchoiceswithfigure}[3]{%
+  \par\addvspace{0.25em}\noindent
+  \ifstrequal{#1}{left}{%
+    \begin{minipage}[t]{0.40\linewidth}\centering #2\end{minipage}\hfill
+    \begin{minipage}[t]{0.56\linewidth}#3\end{minipage}%
+  }{%
+    \begin{minipage}[t]{0.56\linewidth}#3\end{minipage}\hfill
+    \begin{minipage}[t]{0.40\linewidth}\centering #2\end{minipage}%
+  }%
+  \par\addvspace{0.1em}%
+}
+
+\newcommand*\qbank@currentquestion{}
+\newenvironment{examquestion}[2]{%
   % Reserve only a question start. A fixed full-question reservation creates
   % false page breaks for questions that would otherwise fit.
   \Needspace{4\baselineskip}%
   \par\addvspace{0.45em}\noindent
+  \gdef\qbank@currentquestion{#2}%
+  \typeout{QBANKQUESTION phase=start id=#2 page=\thepage\space pagetotal=\the\pagetotal\space pagegoal=\the\pagegoal}%
   \textbf{\normalsize\color{brandink}#1.}\hspace{0.4em}\small\ignorespaces
-}{\par\vspace{0.2em}}
+}{\par\typeout{QBANKQUESTION phase=end id=\qbank@currentquestion\space page=\thepage\space pagetotal=\the\pagetotal\space pagegoal=\the\pagegoal}\vspace{0.2em}}
 
 %% 标题与下一题开头联合分页，避免标题孤悬页尾。
 \newcommand{\examsectionstart}[1]{%

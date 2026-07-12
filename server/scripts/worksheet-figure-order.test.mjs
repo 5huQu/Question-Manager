@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import { storageRoot } from '../dist/config.js'
 import { buildCollectionWorksheetLatex } from '../dist/services/question-bank/export.js'
+import { decideWorksheetFigureLayout } from '../dist/utils/worksheet-figures.js'
 
 fs.mkdirSync(storageRoot, { recursive: true })
 const tempDir = fs.mkdtempSync(path.join(storageRoot, 'qbank-worksheet-figures-'))
@@ -45,12 +46,34 @@ try {
 
   const student = buildCollectionWorksheetLatex(collection, 'student', figuresDir, new Map()).content
   const stemFigureIndex = student.indexOf('q1-stem-unanchored')
-  const choicesIndex = student.indexOf('\\qbankchoicesfour')
+  const choicesIndex = student.indexOf('\\begin{qbankchoicesone}')
   const optionFigureIndex = student.indexOf('q1-option-unanchored')
   assert.ok(stemFigureIndex >= 0, `应输出无锚点题干图：${student.match(/\\qbankfigure[^\n]*/g)?.join(' | ')}`)
   assert.ok(stemFigureIndex < choicesIndex, '无锚点题干图应位于完整选项块之前')
   assert.ok(choicesIndex < optionFigureIndex, '无锚点选项图应保留在选项块之后')
   assert.equal(student.includes('q1-analysis-unanchored'), false, '学生版不应输出解析图')
+  assert.ok(student.includes('\\qbankchoiceswithfigure{right}'), '单张方形题干图和短选项应自动采用右侧混排')
+
+  const decision = decideWorksheetFigureLayout({
+    questionId: 'question-1', figureId: 'stem-unanchored', imagePath: stemFigurePath,
+    stemFigureCount: 1, hasInlineMarker: false, choices: ['-1', '-0.5', '0', '0.5'],
+  })
+  assert.equal(decision.placement, 'side-right', '第六题类样例应得到确定性的右侧图片布局')
+  assert.equal(decision.layout.resolved, 'side-right')
+  assert.ok(decision.reason.includes('短选项'))
+
+  const multiple = decideWorksheetFigureLayout({
+    questionId: 'question-1', figureId: 'stem-unanchored', imagePath: stemFigurePath,
+    stemFigureCount: 2, hasInlineMarker: false, choices: ['甲', '乙', '丙', '丁'],
+  })
+  assert.equal(multiple.placement, 'block', '多图题不得自动进入单图左右混排')
+
+  const invalidManual = decideWorksheetFigureLayout({
+    questionId: 'question-1', figureId: 'missing', stemFigureCount: 1, hasInlineMarker: false,
+    choices: ['甲', '乙', '丙', '丁'], requested: { figureId: 'missing', placement: 'side-left' },
+  })
+  assert.equal(invalidManual.placement, 'block', '缺失图片的人工左右布局应安全回退')
+  assert.equal(invalidManual.warnings.some((warning) => warning.code === 'layout-fallback'), true)
 
   const inlineCollection = structuredClone(collection)
   inlineCollection.questions[0].item.stemMarkdown =
@@ -64,6 +87,44 @@ try {
     '有锚点题干图不应重复追加',
   )
   assert.ok(inline.indexOf('q1-analysis-unanchored') > inline.indexOf('\\begin{solutionbox}'), '解析图应保留在解析区域')
+
+  const blockCollection = structuredClone(collection)
+  const blockRendered = buildCollectionWorksheetLatex(blockCollection, 'student', figuresDir, new Map(), undefined, {
+    version: 1,
+    questions: [{ relationId: 'relation-1', choiceLayout: 'auto', figures: [{ figureId: 'stem-unanchored', placement: 'block' }] }],
+  })
+  const block = blockRendered.content
+  assert.equal(block.includes('\\qbankchoiceswithfigure'), false, '人工 block 应覆盖自动左右混排')
+  assert.ok(block.includes('\\begin{samepage}') && block.includes('\\end{samepage}'), '块级题干图和 A-D 应作为整体分页')
+
+  const overflowCollection = structuredClone(collection)
+  overflowCollection.questions[0].item.stemMarkdown = '题干\nA. 这是一个明显不适合四栏展示的很长很长的选项内容\nB. 第二个很长选项\nC. 第三个很长选项\nD. 第四个很长选项'
+  const overflow = buildCollectionWorksheetLatex(overflowCollection, 'student', figuresDir, new Map(), undefined, {
+    version: 1,
+    questions: [{ relationId: 'relation-1', choiceLayout: 'four', figures: [] }],
+  })
+  assert.equal(overflow.warnings.some((warning) => warning.code === 'choice-overflow'), true, '强制四栏的长选项应产生诊断')
+
+  const pagedCollection = structuredClone(collection)
+  pagedCollection.questions.push({ ...structuredClone(collection.questions[0]), relationId: 'relation-2', sortOrder: 2, sectionName: '解答题', item: { ...structuredClone(collection.questions[0].item), id: 'question-2', serialNo: 2 } })
+  const paged = buildCollectionWorksheetLatex(pagedCollection, 'student', figuresDir, new Map(), undefined, {
+    version: 1,
+    questions: [
+      { relationId: 'relation-1', choiceLayout: 'auto', figures: [] },
+      { relationId: 'relation-2', choiceLayout: 'auto', figures: [], pageBreakBefore: true },
+    ],
+  }).content
+  assert.ok(paged.indexOf('\\newpage') < paged.indexOf('\\begin{examquestion}{2}'), '题前强制分页必须传递到最终 LaTeX')
+  assert.ok(paged.lastIndexOf('\\newpage') < paged.indexOf('解答题'), '新章节首题分页时必须先换页再输出章节标题，避免标题孤悬空白页')
+
+  const equalizedPaged = buildCollectionWorksheetLatex(pagedCollection, 'student', figuresDir, new Map(), undefined, {
+    version: 1,
+    questions: [
+      { relationId: 'relation-1', choiceLayout: 'auto', figures: [] },
+      { relationId: 'relation-2', choiceLayout: 'auto', figures: [], equalizedPageBreakBefore: true },
+    ],
+  }).content
+  assert.ok(equalizedPaged.lastIndexOf('\\newpage') < equalizedPaged.indexOf('解答题'), '等高排版的隐式分页也必须带着章节标题一起换页')
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true })
 }

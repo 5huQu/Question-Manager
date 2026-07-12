@@ -193,6 +193,7 @@ export type ExportRecordRow = {
   path: string
   url: string
   items_json: string
+  snapshot_json: string
   content_length: number
   question_count: number
   status: string

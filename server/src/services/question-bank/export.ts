@@ -30,6 +30,9 @@ import {
   qbankChoiceLayout,
   worksheetMaxLayoutIterations,
   parseWorksheetFigureTelemetry,
+  parseWorksheetQuestionTelemetry,
+  worksheetTelemetryWarnings,
+  decideWorksheetFigureLayout,
   WorksheetFigureSpec,
 } from '../../utils/worksheet-figures.js'
 import {
@@ -48,7 +51,8 @@ import { stripAssetPrefix } from '../../utils/ocr-helpers.js'
 import { stripLeadingQuestionNo } from '../../utils/question-type.js'
 import { validateQuestionMarkdown } from '../../utils/validation.js'
 import type { QuestionRow } from '../../types/index.js'
-import type { PaperLayoutDraft, QuestionLayout, ChoiceLayoutOverride } from './paper-layout.js'
+import type { PaperLayoutDraft, QuestionLayout, ChoiceLayoutOverride, LayoutWarning } from './paper-layout.js'
+import { templateRenderSpec } from './template-render-spec.js'
 import { figureLayoutFor, questionLayoutFor } from './paper-layout.js'
 
 /**
@@ -323,7 +327,9 @@ export function buildCollectionWorksheetLatex(
   documentClass = 'qbank-worksheet',
   layoutDraft?: PaperLayoutDraft,
 ) {
+  const renderSpec = templateRenderSpec(documentClass === 'qbank-exam' ? 'exam' : 'worksheet')
   const specs = new Map<string, WorksheetFigureSpec>()
+  const warnings: LayoutWarning[] = []
   const scorePlan = buildWorksheetScorePlan(collection as any)
   const appSettings = readAppSettings()
   const brandName =
@@ -335,6 +341,8 @@ export function buildCollectionWorksheetLatex(
   const brandTagline = `${brandName} ｜ 高中数学`
   const lines = [
     `\\documentclass{${documentClass}}`,
+    `\\geometry{a4paper,top=${renderSpec.page.marginTopMm}mm,bottom=${renderSpec.page.marginBottomMm}mm,left=${renderSpec.page.marginLeftMm}mm,right=${renderSpec.page.marginRightMm}mm,headheight=26pt,headsep=10pt,footskip=22pt}`,
+    `\\setlength{\\parskip}{${renderSpec.typography.questionGapMm.toFixed(1)}mm}`,
     `\\setbrandname{${markdownToExamLatex(brandName, false)}}`,
     '\\setbrandmark{Q}',
     `\\setbrandtagline{${markdownToExamLatex(brandTagline, false)}}`,
@@ -346,6 +354,12 @@ export function buildCollectionWorksheetLatex(
   collection.questions.forEach((entry, index) => {
     const key = worksheetEntryKey(entry, index)
     const sectionName = scorePlan.entrySections.get(key) || ''
+    const questionLayout = questionLayoutFor(layoutDraft, entry.relationId || entry.item?.id)
+    // A page break belongs to the question and therefore must happen before
+    // its section heading. Emitting the heading first leaves an orphaned
+    // heading (and often an almost empty page) when the first question in a
+    // section uses equalized-page pagination.
+    if ((questionLayout?.pageBreakBefore || questionLayout?.equalizedPageBreakBefore) && index > 0) lines.push('\\newpage')
     if (sectionName && sectionName !== currentSection) {
       currentSection = sectionName
       lines.push(
@@ -355,10 +369,11 @@ export function buildCollectionWorksheetLatex(
         )}}`,
       )
     }
-    lines.push(worksheetQuestionLatex(entry, index, variant, collection.id, figuresDir, adjustments, specs, questionLayoutFor(layoutDraft, entry.relationId || entry.item?.id)))
+    if (!(questionLayout?.pageBreakBefore || questionLayout?.equalizedPageBreakBefore) && questionLayout?.keepTogether !== false) lines.push('\\Needspace{8\\baselineskip}')
+    lines.push(worksheetQuestionLatex(entry, index, variant, collection.id, figuresDir, adjustments, specs, questionLayout, warnings))
   })
   lines.push('\\end{document}', '')
-  return { content: lines.join('\n\n'), specs }
+  return { content: lines.join('\n\n'), specs, warnings }
 }
 
 function worksheetQuestionLatex(
@@ -370,13 +385,18 @@ function worksheetQuestionLatex(
   adjustments: Map<string, number>,
   specs: Map<string, WorksheetFigureSpec>,
   layout?: QuestionLayout,
+  warnings: LayoutWarning[] = [],
 ) {
-  const lines = [`\\begin{examquestion}{${index + 1}}`]
+  const questionId = safeName(String(entry.relationId || entry.item?.id || index + 1))
+  const lines = [`\\begin{examquestion}{${index + 1}}{${questionId}}`]
   const { prompt, choices } = splitChoiceStemForExport(entry.item.stemMarkdown)
   const stemFigures = questionFigures(entry)
-  const registerFigure = (figure: Record<string, any>, figureIndex: number, usage: string) => {
+  const registerFigure = (figure: Record<string, any>, figureIndex: number, usage: string, requestedWidth?: number) => {
       const sourcePath = figureAbsolutePath(figure)
-      if (!sourcePath || !fs.existsSync(sourcePath)) return ''
+      if (!sourcePath || !fs.existsSync(sourcePath)) {
+        warnings.push({ code: 'missing-figure', questionId, figureId: String(figure.id || figure.blockId || figureIndex + 1), message: '题目引用的图片文件不存在。', suggestion: '请重新绑定或上传图片后再导出。' })
+        return ''
+      }
       const extension = path.extname(sourcePath).toLowerCase() || '.png'
       const figureId = worksheetFigureId(collectionId, entry, figure, figureIndex, usage)
       // The full collection-prefixed figure id is longer than safeName's
@@ -387,7 +407,7 @@ function worksheetQuestionLatex(
       if (!fs.existsSync(outputPath)) fs.copyFileSync(sourcePath, outputPath)
       const limits = worksheetFigureWidthLimits(sourcePath)
       specs.set(figureId, { id: figureId, sourcePath, outputName, ...limits })
-      const width = adjustments.get(figureId) ?? limits.defaultWidth
+      const width = adjustments.get(figureId) ?? requestedWidth ?? limits.defaultWidth
       return `\\qbankfigure{${figureId}}{${width.toFixed(4)}}{figures/${outputName}}`
   }
   const appendFigures = (figures: Array<Record<string, any>>, usage: string) => {
@@ -408,14 +428,43 @@ function worksheetQuestionLatex(
     ),
   )
   const figuresWithoutMarkers = figuresWithoutInlineMarkers(entry.item.stemMarkdown, stemFigures)
-  appendFigures(
-    figuresWithoutMarkers.filter((figure) => String(figure.usage || 'stem') !== 'options' && figureLayoutFor(layout, figure)?.placement !== 'after-choices'),
-    'stem',
-  )
-  if (choices.length) {
-    lines.push(worksheetChoicesLatex(choices, stemFigures, layout?.choiceLayout))
+  const unanchoredStemFigures = figuresWithoutMarkers.filter((figure) => String(figure.usage || 'stem') !== 'options')
+  const sideFigure = unanchoredStemFigures.length === 1 ? unanchoredStemFigures[0] : undefined
+  const sideDecision = sideFigure ? decideWorksheetFigureLayout({
+    questionId,
+    figureId: String(sideFigure.id || sideFigure.blockId || 'figure'),
+    imagePath: figureAbsolutePath(sideFigure),
+    stemFigureCount: unanchoredStemFigures.length,
+    hasInlineMarker: false,
+    choices,
+    requested: figureLayoutFor(layout, sideFigure),
+  }) : undefined
+  if (sideDecision) warnings.push(...sideDecision.warnings)
+  const useSideLayout = Boolean(sideFigure && sideDecision && (sideDecision.placement === 'side-left' || sideDecision.placement === 'side-right'))
+
+  if (useSideLayout && sideFigure && sideDecision) {
+    // Inside the fixed 40% minipage, use almost all local width. The decision's
+    // widthRatio describes the page-level slot rather than a nested fraction.
+    const figureLatex = registerFigure(sideFigure, Math.max(0, stemFigures.indexOf(sideFigure)), 'stem', 0.95)
+    if (figureLatex) {
+      lines.push(`\\qbankchoiceswithfigure{${sideDecision.placement === 'side-left' ? 'left' : 'right'}}{${figureLatex}}{${worksheetChoicesLatex(choices, stemFigures, 'one')}}`)
+    } else {
+      lines.push(worksheetChoicesLatex(choices, stemFigures, layout?.choiceLayout))
+    }
+  } else {
+    const keepFigureWithChoices = unanchoredStemFigures.length === 1 && choices.length === 4
+    if (keepFigureWithChoices) lines.push('\\begin{samepage}')
+    appendFigures(unanchoredStemFigures.filter((figure) => {
+      const placement = figureLayoutFor(layout, figure)?.placement
+      return placement !== 'after-choices'
+    }), 'stem')
+    if (choices.length) {
+      if (layout?.choiceLayout === 'four' && qbankChoiceLayout(choices) !== 'four') warnings.push({ code: 'choice-overflow', questionId, message: '选项内容不适合强制四栏，可能超出栏宽。', suggestion: '改为自动、两栏或单栏布局。' })
+      lines.push(worksheetChoicesLatex(choices, stemFigures, layout?.choiceLayout))
+    }
+    if (keepFigureWithChoices) lines.push('\\end{samepage}')
+    appendFigures(unanchoredStemFigures.filter((figure) => figureLayoutFor(layout, figure)?.placement === 'after-choices'), 'stem')
   }
-  appendFigures(figuresWithoutMarkers.filter((figure) => figureLayoutFor(layout, figure)?.placement === 'after-choices'), 'stem')
   appendFigures(
     figuresWithoutMarkers.filter((figure) => String(figure.usage || '') === 'options'),
     'options',
@@ -436,10 +485,10 @@ function worksheetQuestionLatex(
     )
     lines.push('\\end{solutionbox}')
   } else if (
-    normalizeQuestionType(entry.item.questionType, entry.item.stemMarkdown, entry.item.answerText) === '解答题' &&
-    !stemFigures.length
+    normalizeQuestionType(entry.item.questionType, entry.item.stemMarkdown, entry.item.answerText) === '解答题'
   ) {
-    lines.push('\\nobreak\\begin{answerarea}{4.2cm}\\end{answerarea}')
+    const answerAreaHeight = Math.min(Math.max(Number(layout?.answerAreaHeight ?? layout?.equalizedAnswerAreaHeight ?? 4.2), 0), 30)
+    if (answerAreaHeight > 0) lines.push(`\\nobreak\\begin{answerarea}{${answerAreaHeight.toFixed(1)}cm}\\end{answerarea}`)
   }
   lines.push('\\end{examquestion}')
   return lines.join('\n')
@@ -573,6 +622,15 @@ export function exportCollectionWorksheetPdf(
   documentClass = 'qbank-worksheet',
   layoutDraft?: PaperLayoutDraft,
 ) {
+  return exportCollectionWorksheetPdfWithDiagnostics(collection, variant, documentClass, layoutDraft).pdfPath
+}
+
+export function exportCollectionWorksheetPdfWithDiagnostics(
+  collection: ExportCollection,
+  variant: ExportVariant,
+  documentClass = 'qbank-worksheet',
+  layoutDraft?: PaperLayoutDraft,
+) {
   if (!collection.questions.length) throw new Error('当前试题篮没有题目，无法导出。')
   assertCollectionExportable(collection, exportFieldsForVariant(variant))
   const exportRoot = path.join(storageRoot, 'output', 'pdf', 'collection-exports', safeName(collection.id))
@@ -588,17 +646,29 @@ export function exportCollectionWorksheetPdf(
   const baseName = `${safeName(collection.title || '练习单')}-${templateName}-${variant === 'teacher' ? 'teacher' : 'student'}`
   const texPath = path.join(exportRoot, `${baseName}.tex`)
   const adjustments = new Map<string, number>()
-  for (let iteration = 0; iteration < worksheetMaxLayoutIterations; iteration += 1) {
+  let knownWarnings: LayoutWarning[] = []
+  try {
+    for (let iteration = 0; iteration < worksheetMaxLayoutIterations; iteration += 1) {
+      const rendered = buildCollectionWorksheetLatex(collection, variant, figuresDir, adjustments, documentClass, layoutDraft)
+      knownWarnings = rendered.warnings
+      fs.writeFileSync(texPath, rendered.content, 'utf8')
+      compileWorksheetTex(texPath)
+      const telemetry = parseWorksheetFigureTelemetry(texPath.replace(/\.tex$/, '.log'))
+      if (!optimizeWorksheetFigures(telemetry, rendered.specs, adjustments)) break
+    }
     const rendered = buildCollectionWorksheetLatex(collection, variant, figuresDir, adjustments, documentClass, layoutDraft)
+    knownWarnings = rendered.warnings
     fs.writeFileSync(texPath, rendered.content, 'utf8')
     compileWorksheetTex(texPath)
-    const telemetry = parseWorksheetFigureTelemetry(texPath.replace(/\.tex$/, '.log'))
-    if (!optimizeWorksheetFigures(telemetry, rendered.specs, adjustments)) break
+    const logPath = texPath.replace(/\.tex$/, '.log')
+    const questionTelemetry = parseWorksheetQuestionTelemetry(logPath)
+    const warnings = [...rendered.warnings, ...worksheetTelemetryWarnings(questionTelemetry, parseWorksheetFigureTelemetry(logPath), rendered.specs)]
+    const uniqueWarnings = [...new Map(warnings.map((warning) => [`${warning.code}:${warning.questionId}:${warning.figureId || ''}:${warning.page || ''}`, warning])).values()]
+    return { pdfPath: path.join(exportRoot, `${baseName}.pdf`), texPath, logPath, warnings: uniqueWarnings, questionTelemetry }
+  } catch (error) {
+    if (error && typeof error === 'object') Object.assign(error, { layoutWarnings: knownWarnings })
+    throw error
   }
-  const rendered = buildCollectionWorksheetLatex(collection, variant, figuresDir, adjustments, documentClass, layoutDraft)
-  fs.writeFileSync(texPath, rendered.content, 'utf8')
-  compileWorksheetTex(texPath)
-  return path.join(exportRoot, `${baseName}.pdf`)
 }
 
 export function exportQuestionSetPdf(input: {

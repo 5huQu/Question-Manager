@@ -26,10 +26,13 @@ import { mountExportRecordsRoutes } from './routes/question-bank/export-records.
 import { mountActivityDashboardRoutes } from './routes/dashboard/activity.js'
 import { mountQuickActionsRoutes } from './routes/question-bank/quick-actions.js'
 import { mountImportFlowV2Routes } from './routes/import-flow-v2.js'
+import { mountLayoutDraftRoutes } from './routes/question-bank/layout-drafts.js'
+import { recoverInterruptedLayoutPreviews } from './services/question-bank/layout-drafts.service.js'
 
 // Initialize schema before any route handles requests
 ensureSchema()
 recoverInterruptedRuns()
+recoverInterruptedLayoutPreviews()
 
 // Mount all route groups
 mountHealthRoutes(app)
@@ -50,6 +53,7 @@ mountExportRecordsRoutes(app)
 mountActivityDashboardRoutes(app)
 mountQuickActionsRoutes(app)
 mountImportFlowV2Routes(app)
+mountLayoutDraftRoutes(app)
 
 // Re-export for Electron and smoke tests
 export { app, startServer, closeDatabase }

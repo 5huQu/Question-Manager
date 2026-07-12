@@ -3,6 +3,7 @@ import { sendRouteError } from '../errors.js'
 import {
   addCollectionItem,
   clearCollectionItems,
+  replaceCollectionItems,
   createCollection,
   deleteCollection,
   deleteCollectionItem,
@@ -86,6 +87,7 @@ export function mountQuestionBankCollectionsRoutes(app: Express) {
       sendRouteError(res, error)
     }
   })
+  app.put('/api/question-bank/collections/:id/items',(req,res)=>{try{res.json(replaceCollectionItems(decodeURIComponent(req.params.id),req.body||{}))}catch(error){sendRouteError(res,error)}})
 
   app.patch('/api/question-bank/collections/:id/reorder', (req, res) => {
     try {

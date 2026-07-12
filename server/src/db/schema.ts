@@ -330,11 +330,35 @@ export function ensureSchema() {
       path TEXT NOT NULL DEFAULT '',
       url TEXT NOT NULL DEFAULT '',
       items_json TEXT NOT NULL DEFAULT '[]',
+      snapshot_json TEXT NOT NULL DEFAULT '{}',
       content_length INTEGER NOT NULL DEFAULT 0,
       question_count INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'succeeded',
       error TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS question_bank_layout_drafts (
+      id TEXT PRIMARY KEY,
+      collection_id TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '',
+      template_id TEXT NOT NULL DEFAULT 'worksheet',
+      template_version TEXT NOT NULL DEFAULT '1',
+      variant TEXT NOT NULL DEFAULT 'student',
+      content_snapshot_json TEXT NOT NULL DEFAULT '{}',
+      layout_json TEXT NOT NULL DEFAULT '{}',
+      layout_version INTEGER NOT NULL DEFAULT 1,
+      revision INTEGER NOT NULL DEFAULT 1,
+      preview_revision INTEGER NOT NULL DEFAULT 0,
+      preview_status TEXT NOT NULL DEFAULT 'idle',
+      preview_path TEXT NOT NULL DEFAULT '',
+      preview_pages_json TEXT NOT NULL DEFAULT '[]',
+      preview_question_pages_json TEXT NOT NULL DEFAULT '{}',
+      preview_warnings_json TEXT NOT NULL DEFAULT '[]',
+      preview_error TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (collection_id) REFERENCES question_bank_collections(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_runs_created_at ON pdf_slicer_runs(created_at DESC);
@@ -344,6 +368,7 @@ export function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_qb_export_records_created_at ON question_bank_export_records(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_qb_export_records_collection ON question_bank_export_records(collection_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_qb_export_records_run ON question_bank_export_records(run_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_qb_layout_drafts_collection ON question_bank_layout_drafts(collection_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_source_documents_updated_at ON source_documents(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_source_documents_status ON source_documents(status, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_import_jobs_updated_at ON import_jobs(updated_at DESC);
@@ -354,7 +379,9 @@ export function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_question_candidates_source ON question_candidates(source_document_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_question_candidates_ocr ON question_candidates(ocr_document_id, question_no);
     CREATE INDEX IF NOT EXISTS idx_question_candidates_status ON question_candidates(status, updated_at DESC);
-		  `)
+  `)
+  ensureColumn('question_bank_layout_drafts', 'preview_warnings_json', "TEXT NOT NULL DEFAULT '[]'")
+  ensureColumn('question_bank_export_records', 'snapshot_json', "TEXT NOT NULL DEFAULT '{}'")
 
   // -- Migration columns for pdf_slicer_runs --
   ensureColumn('pdf_slicer_runs', 'paper_title', "TEXT NOT NULL DEFAULT ''")
@@ -440,6 +467,7 @@ export function ensureSchema() {
   db.exec('CREATE INDEX IF NOT EXISTS idx_qb_export_records_import_job ON question_bank_export_records(import_job_id, created_at DESC)')
   ensureColumn('question_bank_collection_items', 'score', "REAL NOT NULL DEFAULT 0")
   ensureColumn('question_bank_collection_items', 'section_name', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_bank_layout_drafts', 'preview_question_pages_json', "TEXT NOT NULL DEFAULT '{}'")
   ensureColumn('pdf_slicer_review_items', 'segments_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('pdf_slicer_review_items', 'text_regions_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('pdf_slicer_review_items', 'figures_json', "TEXT NOT NULL DEFAULT '[]'")

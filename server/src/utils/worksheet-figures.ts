@@ -11,6 +11,7 @@ import { normalizeQuestionType, exportQuestionType, sectionOrdinal } from './que
 import { defaultExamZhScoreConfig } from './exam-zh.js'
 import { firstExecutable, xelatexPath } from '../services/settings/tools.js'
 import { pythonCommand } from '../services/settings/python.js'
+import type { FigureLayout, LayoutWarning, ResolvedFigureLayout, ResolvedFigurePlacement } from '../services/question-bank/paper-layout.js'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,36 @@ export type WorksheetFigureTelemetry = {
   height: number
   depth: number
   width: number
+}
+
+export type WorksheetQuestionTelemetry = {
+  id: string
+  startPage: number
+  endPage: number
+  endPageTotal: number
+  pageGoal: number
+}
+
+export type FigureLayoutDecision = {
+  placement: ResolvedFigurePlacement
+  widthRatio: number
+  alignment: 'left' | 'center' | 'right'
+  keepWithChoices: boolean
+  source: 'auto' | 'manual'
+  reason: string
+  confidence: number
+  layout: ResolvedFigureLayout
+  warnings: LayoutWarning[]
+}
+
+export type FigureLayoutDecisionInput = {
+  questionId: string
+  figureId: string
+  imagePath?: string
+  stemFigureCount: number
+  hasInlineMarker: boolean
+  choices: string[]
+  requested?: FigureLayout
 }
 
 type WorksheetSectionScore = {
@@ -62,6 +93,69 @@ export function worksheetFigureWidthLimits(imagePath: string) {
   return { defaultWidth: 0.30, minWidth: 0.24 }
 }
 
+/** Deterministic, side-effect-free decision used by PDF and browser previews. */
+export function decideWorksheetFigureLayout(input: FigureLayoutDecisionInput): FigureLayoutDecision {
+  const warnings: LayoutWarning[] = []
+  let aspect: number | undefined
+  if (input.imagePath && fs.existsSync(input.imagePath)) {
+    try {
+      const size = imageDimensions(input.imagePath)
+      if (size.width > 0 && size.height > 0) aspect = size.width / size.height
+    } catch {
+      // Invalid metadata is handled by the block fallback below.
+    }
+  }
+  if (aspect === undefined) {
+    warnings.push({
+      code: input.imagePath ? 'layout-fallback' : 'missing-figure',
+      questionId: input.questionId,
+      figureId: input.figureId,
+      message: input.imagePath ? '无法读取图片尺寸，已使用独占一行布局。' : '图片文件不存在，无法计算图文混排。',
+      suggestion: '请检查图片文件后刷新排版预览。',
+    })
+  }
+
+  const shortChoices = input.choices.length === 4 && qbankChoiceLayout(input.choices) === 'four'
+  const suitableAspect = aspect !== undefined && aspect >= 0.72 && aspect <= 1.65
+  const auto: ResolvedFigurePlacement = !input.hasInlineMarker && input.stemFigureCount === 1 && shortChoices && suitableAspect
+    ? 'side-right'
+    : 'block'
+  const requested = input.requested?.placement
+  const override = requested && requested !== 'auto' ? requested : undefined
+  let resolved = override || auto
+  let source: 'auto' | 'manual' = override ? 'manual' : 'auto'
+  let reason = auto === 'side-right'
+    ? '单张方形题干图与四个短选项适合左右混排。'
+    : input.hasInlineMarker
+      ? '图片已有题干内联锚点，不参与自动左右混排。'
+      : input.stemFigureCount !== 1
+        ? '仅单张题干图可以自动左右混排。'
+        : !shortChoices
+          ? '选项数量或宽度不适合左右混排。'
+          : '图片宽高比不适合左右混排。'
+
+  if ((resolved === 'side-left' || resolved === 'side-right') && (input.hasInlineMarker || input.stemFigureCount !== 1 || input.choices.length !== 4 || aspect === undefined)) {
+    warnings.push({ code: 'layout-fallback', questionId: input.questionId, figureId: input.figureId, message: '当前图片无法安全执行左右混排，已回退为独占一行。', suggestion: '请使用单张无锚点题干图，或选择图片独占一行。' })
+    resolved = 'block'
+    source = override ? 'manual' : 'auto'
+    reason = '不满足稳定左右混排约束，安全回退为独占一行。'
+  }
+
+  const side = resolved === 'side-left' || resolved === 'side-right'
+  const widthRatio = input.requested?.widthRatio ?? (side ? 0.38 : input.imagePath ? worksheetFigureWidthLimits(input.imagePath).defaultWidth : 0.3)
+  return {
+    placement: resolved,
+    widthRatio: Math.min(1, Math.max(0.15, widthRatio)),
+    alignment: input.requested?.alignment || (side ? (resolved === 'side-left' ? 'left' : 'right') : 'center'),
+    keepWithChoices: input.requested?.keepWithChoices ?? side,
+    source,
+    reason,
+    confidence: auto === 'side-right' ? 0.9 : aspect === undefined ? 0.45 : 0.8,
+    layout: { auto, override, resolved },
+    warnings,
+  }
+}
+
 export function worksheetFigureId(collectionId: string, entry: any, figure: Record<string, any>, index: number, usage: string) {
   const questionKey = safeName(String(entry.item.serialNo || entry.item.id || index + 1))
   const figureKey = safeName(String(figure.id || `fig${index + 1}`))
@@ -87,6 +181,49 @@ export function parseWorksheetFigureTelemetry(logPath: string) {
       width: Number(match[7]),
     }]
   })
+}
+
+export function parseWorksheetQuestionTelemetry(logPath: string) {
+  if (!fs.existsSync(logPath)) return [] as WorksheetQuestionTelemetry[]
+  const text = fs.readFileSync(logPath, 'utf8')
+  const compact = text.replace(/\s+/g, '')
+  const records = [...compact.matchAll(/QBANKQUESTIONphase=(start|end)id=(.+?)page=(\d+)pagetotal=([0-9.]+)ptpagegoal=([0-9.]+)pt/g)]
+  const starts = new Map<string, { page: number }>()
+  const result: WorksheetQuestionTelemetry[] = []
+  for (const match of records) {
+    const [, phase, id, pageText, totalText, goalText] = match
+    const page = Number(pageText)
+    if (phase === 'start') starts.set(id, { page })
+    else {
+      const start = starts.get(id)
+      if (start) result.push({ id, startPage: start.page, endPage: page, endPageTotal: Number(totalText), pageGoal: Number(goalText) })
+    }
+  }
+  return result
+}
+
+export function worksheetTelemetryWarnings(
+  questions: WorksheetQuestionTelemetry[],
+  figures: WorksheetFigureTelemetry[],
+  specs: Map<string, WorksheetFigureSpec>,
+): LayoutWarning[] {
+  const warnings: LayoutWarning[] = []
+  for (const record of questions) {
+    if (record.endPage > record.startPage) warnings.push({ code: 'question-split', questionId: record.id, page: record.startPage, message: '题目内容跨页显示。', suggestion: '启用整题保持，或在本题前强制分页。' })
+    if (record.pageGoal < 100000 && record.endPageTotal > record.pageGoal + 1) warnings.push({ code: 'page-overflow', questionId: record.id, page: record.endPage, message: '题目内容超过页面正文区域。', suggestion: '缩小图片、减少答题区高度或在本题前分页。' })
+  }
+  for (const record of figures) {
+    const spec = specs.get(record.id)
+    if (!spec || record.pageGoal > 100000) continue
+    const remaining = record.pageGoal - record.pageTotal
+    const needed = record.height + record.depth
+    if (needed > remaining && record.width <= spec.minWidth + 0.0005) warnings.push({ code: 'figure-too-small', questionId: questionIdFromFigureId(record.id), figureId: record.id, message: '图片已达到最小可读宽度，当前页面仍无法容纳。', suggestion: '将图文块整体移到下一页，或手工调整图片布局。' })
+  }
+  return warnings
+}
+
+function questionIdFromFigureId(id: string) {
+  return id.match(/-q([^-]+)-/)?.[1] || id
 }
 
 export function optimizeWorksheetFigures(
