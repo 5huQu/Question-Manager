@@ -162,6 +162,7 @@ const expectedRoutes = new Set([
   'GET /api/question-bank/layout-drafts/:draftId',
   'PATCH /api/question-bank/layout-drafts/:draftId',
   'DELETE /api/question-bank/layout-drafts/:draftId',
+  'POST /api/question-bank/layout-drafts/:draftId/refresh-content',
   'POST /api/question-bank/layout-drafts/:draftId/preview',
   'GET /api/question-bank/layout-drafts/:draftId/preview-status',
   'GET /api/question-bank/layout-drafts/:draftId/pages',
