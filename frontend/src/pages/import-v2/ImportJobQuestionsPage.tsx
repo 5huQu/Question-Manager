@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Database, LoaderCircle, RefreshCcw, Tags } from 'lucide-react'
+import { Database, LoaderCircle, RefreshCcw, Replace, Tags } from 'lucide-react'
 import { collectionsApi } from '@/api/collections'
 import { importV2Api, type ImportV2JobQuestionsResponse } from '@/api/importV2'
 import { learningTagsApi } from '@/api/learningTags'
 import { questionBankApi } from '@/api/questionBank'
-import { ImportJobExportDialog } from '@/components/import-v2/ImportJobExportDialog'
-import { getActiveCollectionId, basketUpdatedEvent } from '@/components/QuestionBasket'
+import { getActiveCollectionId, basketUpdatedEvent, notifyBasketUpdated } from '@/components/QuestionBasket'
 import { WorkbenchQuestionCard } from '@/components/questions/WorkbenchQuestionCard'
 import { Button, Empty, Input, SelectFilter } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
@@ -18,7 +17,7 @@ export function ImportJobQuestionsPage() {
   const navigate = useNavigate()
   const decodedJobId = decodeURIComponent(jobId)
   const [localItems, setLocalItems] = useState<QuestionItem[]>([])
-  const [exportOpen, setExportOpen] = useState(false)
+  const [replacingBasket, setReplacingBasket] = useState(false)
   const [classifying, setClassifying] = useState(false)
   const [query, setQuery] = useState('')
   const [stage, setStage] = useState('')
@@ -88,6 +87,15 @@ export function ImportJobQuestionsPage() {
     }
   }
 
+  async function replaceBasket(){
+    if(!localItems.length||replacingBasket)return
+    if(!window.confirm(`将用本批次的 ${localItems.length} 道题替换当前试卷篮中的全部题目，是否继续？`))return
+    setReplacingBasket(true)
+    try{await collectionsApi.replaceItems(activeBasketId,{questionIds:localItems.map((item)=>item.id),title:data?.importJob.paperTitle||data?.importJob.title||'导入批次试卷'});notifyBasketUpdated();await basket.reload();alert(`已将 ${localItems.length} 道题替换到当前试卷篮。`)}
+    catch(error){alert(error instanceof Error?error.message:String(error))}
+    finally{setReplacingBasket(false)}
+  }
+
   if (loading) return <Empty text="读取中..." />
   if (error || !data) return <Empty text={error || '导入批次不存在或无题目数据'} />
 
@@ -133,7 +141,7 @@ export function ImportJobQuestionsPage() {
           >
             {classifying ? '分类中...' : '数据分类'}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setExportOpen(true)}>导出批次</Button>
+          <Button size="sm" variant="outline" icon={replacingBasket?LoaderCircle:Replace} disabled={replacingBasket||!items.length} onClick={replaceBasket}>{replacingBasket?'替换中...':'替换到试卷篮'}</Button>
           <Button
             size="sm"
             variant="outline"
@@ -147,7 +155,6 @@ export function ImportJobQuestionsPage() {
           <Button size="sm" variant="outline" onClick={reload} icon={RefreshCcw}>刷新</Button>
         </div>
       </div>
-      {exportOpen ? <ImportJobExportDialog importJob={importJob} onClose={() => setExportOpen(false)} /> : null}
 
       <div className="grid gap-2 rounded-xl border border-zinc-200 bg-white p-4 text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 sm:grid-cols-2 lg:grid-cols-6">
         <Input className="h-9 border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 focus-visible:ring-1 focus-visible:ring-zinc-950 dark:focus-visible:ring-zinc-300" placeholder="搜索本批次题目..." value={query} onChange={(event) => setQuery(event.target.value)} />

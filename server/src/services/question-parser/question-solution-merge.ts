@@ -5,6 +5,7 @@ import { figuresForRange, sourceRefsForRange } from './figure-linker.js'
 import { statusForIssues } from './candidate-validator.js'
 import type { SolutionMatch } from './solution-matcher.js'
 import { cleanOcrPresentationMarkdown } from './presentation-cleanup.js'
+import { inferQuestionType } from '../../utils/question-type.js'
 
 function hasText(value: string | undefined) {
   return Boolean(String(value || '').trim())
@@ -114,6 +115,14 @@ export function mergeQuestionCandidatesWithSolutions(
       } else {
         next.answerText = solutionAnswer
       }
+    }
+
+    // Question-only documents do not contain the answer yet, so choice
+    // candidates initially default to single choice. Re-run inference after
+    // the separated solution has supplied the evidence needed to distinguish
+    // single-choice from multiple-choice questions.
+    if (solutionAnswer) {
+      next.questionType = inferQuestionType(next.stemMarkdown, next.answerText, next.questionType || '解答题')
     }
 
     if (solutionAnalysis) {

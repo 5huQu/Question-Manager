@@ -26,6 +26,33 @@ export function hasFourChoiceOptions(value: string) {
   return matches.slice(0, 4).map((match) => match[1]).join('') === 'ABCD'
 }
 
+/**
+ * A four-option choice question must contain actual option content, not merely
+ * the letters A-D in a geometric diagram, an answer, or a piece of prose.
+ *
+ * OCR often emits inline choices on one line, so `normalizeChoiceMarkers()` is
+ * still useful here. Inline markers, however, require a selection prompt to
+ * be considered reliable; line-separated A/B/C/D markers are structured
+ * enough on their own.
+ */
+export function hasReliableFourChoiceOptions(value: string) {
+  const normalized = normalizeChoiceMarkers(value)
+  const markerPattern = /(?:^|\n)[ \t]*([A-D])\s*[.．、:：]\s*/g
+  const matches = Array.from(normalized.matchAll(markerPattern))
+  if (matches.length < 4 || matches.slice(0, 4).map((match) => match[1]).join('') !== 'ABCD') return false
+
+  const firstFour = matches.slice(0, 4)
+  const optionContents = firstFour.map((match, index) => {
+    const start = (match.index || 0) + match[0].length
+    const end = index < firstFour.length - 1 ? (firstFour[index + 1].index || normalized.length) : normalized.length
+    return normalized.slice(start, end).trim()
+  })
+  if (optionContents.some((content) => !content)) return false
+
+  const hasLineSeparatedMarkers = firstFour.every((match) => match[0].startsWith('\n') || (match.index || 0) === 0)
+  return hasLineSeparatedMarkers || hasSelectionPrompt(normalized)
+}
+
 export function selectedChoiceLetters(answer: string) {
   const cleaned = String(answer || '')
     .replace(/【?答案】?/g, '')
@@ -39,13 +66,23 @@ export function selectedChoiceLetters(answer: string) {
 }
 
 export function hasChoiceAnswerCue(stem: string, answer: string) {
-  return selectedChoiceLetters(answer).size > 0 && /[（(]\s*(?:　|\s|\\quad)*[）)]|选择|下列|则/.test(stem)
+  return hasExplicitChoiceAnswer(answer) && hasSelectionPrompt(stem)
 }
 
 export function hasOpenEndedCue(stem: string, answer: string) {
+  const text = `${stem}\n${answer}`
   return /(?:^|[^\d])[(（]\s*[1-9]\s*[)）]/.test(stem)
     || /(?:^|[^\d])[(（]\s*[1-9]\s*[)）]/.test(answer)
-    || /证明见解析|答案见解析|过程见解析|证明[:：]|求证|求面|求.*方程/.test(`${stem}\n${answer}`)
+    || /证明见解析|答案见解析|过程见解析|证明[:：]|求证|证明|求值|求解|计算|作图|求(?:[^\n，。；;]{0,24})(?:最小|最大|范围|长度|面积|体积|方程|坐标|轨迹)/.test(text)
+}
+
+function hasSelectionPrompt(stem: string) {
+  return /[（(]\s*(?:　|\s|\\quad)*[）)]|(?:下列|以下|其中).{0,24}(?:是|为|正确|错误|不正确|符合|属于)|选择|选出|选项|单选|多选/.test(stem)
+}
+
+function hasExplicitChoiceAnswer(answer: string) {
+  const source = String(answer || '').toUpperCase()
+  return /(?:答案|故选|正确选项|选项)\s*(?:为|是|：|:)?\s*[A-D](?![A-Z])/.test(source)
 }
 
 export function hasBlankCue(stem: string) {
@@ -57,26 +94,26 @@ export function hasBlankCue(stem: string) {
 // ---------------------------------------------------------------------------
 
 export function inferQuestionType(stem: string, answer: string, fallback = '解答题') {
-  if (hasFourChoiceOptions(stem)) {
+  // Open-ended signals take precedence. This protects multi-part geometry and
+  // proof questions whose OCR result or analysis happens to contain A-D.
+  if (hasOpenEndedCue(stem, answer)) return '解答题'
+  if (hasReliableFourChoiceOptions(stem)) {
     const selected = selectedChoiceLetters(answer)
     if (!selected.size) return '单选题'
     return selected.size > 1 ? '多选题' : '单选题'
   }
-  if (hasOpenEndedCue(stem, answer)) return '解答题'
   if (hasBlankCue(stem)) return '填空题'
   if (hasChoiceAnswerCue(stem, answer)) {
     const selected = selectedChoiceLetters(answer)
     if (!selected.size) return '单选题'
     return selected.size > 1 ? '多选题' : '单选题'
   }
-  const selected = selectedChoiceLetters(answer)
-  if (selected.size > 0 && selected.size <= 4) return selected.size > 1 ? '多选题' : '单选题'
   return fallback
 }
 
 function normalizeQuestionType(value: string, stem = '', answer = '') {
   const raw = String(value || '').trim()
-  if ((/单选|单项选择|多选|多项选择|选择/.test(raw)) && !hasFourChoiceOptions(stem) && hasOpenEndedCue(stem, answer)) return '解答题'
+  if ((/单选|单项选择|多选|多项选择|选择/.test(raw)) && hasOpenEndedCue(stem, answer)) return '解答题'
   if (/多选|多项选择/.test(raw)) return '多选题'
   if (/单选|单项选择/.test(raw)) return '单选题'
   if (/填空/.test(raw)) return '填空题'

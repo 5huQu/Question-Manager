@@ -4,7 +4,10 @@ import { clamp01, normalizeDisplayRect, parseBBox } from './crop'
 
 export function parseChoiceQuestion(value: string): ParsedChoiceQuestion | null {
   const normalized = normalizeChoiceMarkers(value)
-  const matches = Array.from(normalized.matchAll(/(?:^|\n)[ \t]*([A-D])\s*[.．、:：]\s*/g))
+  let matches = Array.from(normalized.matchAll(/(?:^|\n)[ \t]*([A-D])\s*[.．、:：]\s*/g))
+  if (matches.length !== 4) {
+    matches = Array.from(normalized.matchAll(/(?:^|\s)([A-D])\s*[.．、:：]\s*/g))
+  }
   if (matches.length < 4) return null
   const firstFour = matches.slice(0, 4)
   if (firstFour.map((match) => match[1]).join('') !== 'ABCD') return null

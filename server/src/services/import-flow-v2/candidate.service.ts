@@ -244,11 +244,15 @@ export async function commitQuestionCandidate(id: string, options: { skipAutoCla
   }
   if (!candidate.stemMarkdown.trim()) throw new RouteError(400, '题干为空，不能入库。')
   const difficultyScore10 = normalizeDifficultyScore10(candidate.difficultyScore10)
+  const inferredQuestionType = inferQuestionType(candidate.stemMarkdown, candidate.answerText, candidate.questionType || '解答题')
+  const questionType = candidate.questionType === '单选题' && inferredQuestionType === '多选题'
+    ? inferredQuestionType
+    : normalizeQuestionType(candidate.questionType || inferredQuestionType, candidate.stemMarkdown, candidate.answerText)
   const importJobContext = importJobContextForSource(candidate.sourceDocumentId)
   const { item, committedCandidate } = withImmediateTransaction(() => {
     const createdItem = createQuestion({
       questionNo: candidate.questionNo,
-      questionType: normalizeQuestionType(candidate.questionType || inferQuestionType(candidate.stemMarkdown, candidate.answerText), candidate.stemMarkdown, candidate.answerText),
+      questionType,
       difficultyScore: 0,
       difficultyScore10,
       difficultyLabel: candidate.difficultyLabel || difficultyLabel10(difficultyScore10),

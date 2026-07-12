@@ -1062,4 +1062,43 @@ assert.match(ocrSpacedFormulaCandidates[0].stemMarkdown, /x _ \{1\} \+ x _ \{2\}
   assert.equal(mergedCandidates[0].analysisMarkdown, analysisFormula)
 }
 
+// Test G: separated answers refine the provisional choice-question type
+{
+  const questionDocument = {
+    ...ocrDocument,
+    id: 'ocr_separated_choice_questions_test',
+    markdown: [
+      '1. 下列说法正确的是',
+      'A. 甲 B. 乙 C. 丙 D. 丁',
+      '',
+      '2. 下列结论成立的是',
+      'A. 子 B. 丑 C. 寅 D. 卯',
+    ].join('\n'),
+    pages: [],
+    assets: [],
+  }
+  const solutionDocument = {
+    ...ocrDocument,
+    id: 'ocr_separated_choice_solutions_test',
+    markdown: [
+      '1. 答案：AC',
+      '解析：甲、丙正确。',
+      '',
+      '2. 答案：B',
+      '解析：乙正确。',
+    ].join('\n'),
+    pages: [],
+    assets: [],
+  }
+  const questionCandidates = parseQuestionCandidates(questionDocument, { now: '2026-07-11T00:00:00.000Z' })
+  assert.deepEqual(questionCandidates.map((candidate) => candidate.questionType), ['单选题', '单选题'])
+
+  const mergedCandidates = mergeQuestionCandidatesWithSolutions(
+    questionCandidates,
+    parseSolutionDocument(solutionDocument),
+    solutionDocument,
+  )
+  assert.deepEqual(mergedCandidates.map((candidate) => candidate.questionType), ['多选题', '单选题'])
+}
+
 console.log('question parser ok')
