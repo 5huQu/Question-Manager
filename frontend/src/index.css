@@ -246,9 +246,54 @@ body {
   margin-bottom: 0;
 }
 
+/* Fixed print geometry for the template workbench. These scoped rules must
+   not respond to the application viewport; the preview always measures an
+   A4 content box, even when the surrounding workspace is narrow. */
+.template-preview-root .template-question-line {
+  margin-bottom: 0.18rem;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.template-preview-root .choice-options,
+.template-preview-root .choice-options-quad,
+.template-preview-root .choice-options-double {
+  margin-top: 0.22rem;
+  padding-top: 0;
+  border-top: 0;
+  gap: 0.18rem 1rem;
+}
+
+.template-preview-root .choice-options-quad {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.template-preview-root .choice-options-double {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.template-preview-root .choice-options-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.template-preview-root .choice-option {
+  grid-template-columns: 1.35em minmax(0, 1fr);
+  column-gap: 0.25em;
+  line-height: 1.25;
+}
+
+.template-preview-root .markdown-content > p,
+.template-preview-root .choice-markdown > p {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
 @media (max-width: 900px) {
   .choice-options-quad {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .template-preview-root .choice-options-quad {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
@@ -257,6 +302,12 @@ body {
   .choice-options-quad,
   .choice-options-double {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .template-preview-root .choice-options-quad {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .template-preview-root .choice-options-double {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

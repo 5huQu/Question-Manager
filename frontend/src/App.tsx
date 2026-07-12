@@ -23,6 +23,9 @@ const QuestionCreatePage = lazy(() => import('@/pages/questions/QuestionCreatePa
 const QuestionDetailPage = lazy(() => import('@/pages/questions/QuestionDetailPage'))
 const RunQuestionsPage = lazy(() => import('@/pages/questions/RunQuestionsPage'))
 const MarkdownPreviewPage = lazy(() => import('@/pages/questions/MarkdownPreviewPage'))
+const LayoutWorkbenchPage = lazy(() => import('@/pages/questions/LayoutWorkbenchPage'))
+const LayoutDraftsPage = lazy(() => import('@/pages/questions/LayoutDraftsPage'))
+const LayoutDraftPreviewPage = lazy(() => import('@/pages/questions/LayoutDraftPreviewPage'))
 const PendingBankPage = lazy(() => import('@/pages/PendingBankPage'))
 const LearningTagsPage = lazy(() => import('@/pages/LearningTagsPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
@@ -200,6 +203,9 @@ export default function App() {
                 <Route path="/questions/basket" element={<QuestionBasket mode="page" />} />
                 <Route path="/questions/:id" element={<QuestionDetailPage />} />
                 <Route path="/questions/collections/:id/markdown-preview" element={<MarkdownPreviewPage />} />
+                <Route path="/questions/collections/:id/layout-drafts/:draftId" element={<LayoutWorkbenchPage />} />
+                <Route path="/questions/layout-drafts" element={<LayoutDraftsPage />} />
+                <Route path="/questions/layout-drafts/:draftId/preview" element={<LayoutDraftPreviewPage />} />
                 <Route path="/learning-tags" element={<LearningTagsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/exports" element={<ExportRecordsPage />} />

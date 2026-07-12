@@ -50,6 +50,9 @@ export const collectionsApi = {
   clearItems(collectionId: string) {
     return api(`/api/question-bank/collections/${encodeURIComponent(collectionId)}/items`, { method: 'DELETE' })
   },
+  replaceItems(collectionId:string,payload:{questionIds:string[];title?:string}){
+    return api<Basket>(`/api/question-bank/collections/${encodeURIComponent(collectionId)}/items`,{method:'PUT',headers:jsonHeaders,body:JSON.stringify(payload)})
+  },
   reorder(collectionId: string, items: Array<{ relationId?: string; sortOrder: number }>) {
     return api<Basket>(`/api/question-bank/collections/${encodeURIComponent(collectionId)}/reorder`, {
       method: 'PATCH',

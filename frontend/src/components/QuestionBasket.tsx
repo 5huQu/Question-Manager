@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, Download, FilePlus2, GripVertical, Trash2, ChevronUp, ShoppingBag, Award, Clock, Hash, Maximize2, ArrowUp, ArrowDown, ListChecks, Settings2, FileDown, FileText, FileCode2, Sparkles, HelpCircle } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { collectionsApi } from '../api/collections'
+import { layoutDraftsApi } from '../api/layoutDrafts'
 import { useAsync } from '../hooks/useAsync'
 import type { Basket, CollectionExport, CollectionSummary, QuestionItem, BasketQuestion } from '../types'
 import { Button, Empty, Badge } from './ui'
@@ -65,6 +66,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
   const active = useAsync<Basket>(() => {
     return collectionsApi.getCollection(activeId)
   }, [activeId])
+  const layoutDrafts = useAsync(() => layoutDraftsApi.list(activeId), [activeId])
 
   useEffect(() => {
     if (active.data) {
@@ -157,6 +159,17 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
       }
     } catch (error) {
       alert(error instanceof Error ? error.message : String(error))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function createLayoutDraft() {
+    if (exporting || !active.data?.questionCount) return
+    setExporting(true)
+    try {
+      const response = await layoutDraftsApi.create(activeId, { variant: pageVariant, templateId: 'exam' })
+      navigate(`/questions/collections/${encodeURIComponent(activeId)}/layout-drafts/${encodeURIComponent(response.draftId)}`)
     } finally {
       setExporting(false)
     }
@@ -359,6 +372,18 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
           </div>
 
           <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
+            {layoutDrafts.data?.items[0] ? <button
+              onClick={() => navigate(`/questions/collections/${encodeURIComponent(activeId)}/layout-drafts/${encodeURIComponent(layoutDrafts.data!.items[0].id)}`)}
+              className="mb-2 w-full text-xs text-zinc-600 underline underline-offset-2 dark:text-zinc-400"
+            >继续上次排版：{layoutDrafts.data.items[0].name}</button> : null}
+            <button
+              onClick={() => void createLayoutDraft()}
+              disabled={exporting || !active.data?.questionCount}
+              className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-md border border-zinc-300 bg-white py-2.5 text-xs font-semibold text-zinc-800 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+            >
+              <Settings2 className="size-3.5" />
+              排版并预览
+            </button>
             <button
               onClick={() => exportCollection(pageExportFormat === 'Markdown' ? 'markdown' : 'pdf', pageVariant, 'exam')}
               disabled={exporting}

@@ -156,10 +156,11 @@ export function QuestionDocumentMarkdownContent({ content, className = '' }: { c
   )
 }
 
-export function ChoiceOptions({ options, figures = [] }: { options: ChoiceOption[]; figures?: QuestionFigure[] }) {
-  const layout = choiceLayoutForTexts(options.map((option) => option.content), figures.some((figure) => Boolean(figure.path)))
+export function ChoiceOptions({ options, figures = [], layout: layoutOverride }: { options: ChoiceOption[]; figures?: QuestionFigure[]; layout?: 'four' | 'two' | 'one' }) {
+  const layout = layoutOverride || choiceLayoutForTexts(options.map((option) => option.content), figures.some((figure) => Boolean(figure.path)))
+  const layoutClass = layout === 'four' ? 'quad' : layout === 'two' ? 'double' : layout === 'one' ? 'single' : layout
   return (
-    <div className={`choice-options choice-options-${layout}`} data-layout={layout}>
+    <div className={`choice-options choice-options-${layoutClass}`} data-layout={layout}>
       {options.map((option) => (
         <div className="choice-option" key={option.label}>
           <span className="choice-label">{option.label}</span>
