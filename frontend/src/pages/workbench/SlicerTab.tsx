@@ -46,7 +46,7 @@ export function SlicerTab({ dashboard, reload }: { dashboard: Dashboard | null; 
   const runs = dashboard?.runs ?? []
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] h-[calc(100vh-9rem)] min-h-[580px] overflow-hidden">
+    <div className="grid h-auto min-h-0 gap-4 overflow-visible lg:h-[calc(100vh-9rem)] lg:min-h-[580px] lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden">
       {/* Upload Panel */}
       <div className="h-full overflow-auto">
         <Panel title="批量上传 PDF / DOC / DOCX">

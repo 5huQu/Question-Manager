@@ -2166,7 +2166,7 @@ export default function ImportV2Page() {
 
       {/* ── 模块 4-8：题目核对区 (生成完题目后展示) ── */}
       {activeStepTab === 'review' && questions.length > 0 && showCheckArea && (
-        <div ref={checkAreaRef} className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-12rem)] min-h-[700px] items-stretch">
+        <div ref={checkAreaRef} className="flex h-auto min-h-0 flex-col items-stretch gap-4 lg:h-[calc(100vh-12rem)] lg:min-h-[700px] lg:flex-row">
           {/* 左侧：题目列表卡片栏 (35% 宽度) */}
           <div className="w-full lg:w-[35%] shrink-0 flex flex-col border rounded-xl bg-white dark:bg-zinc-955 overflow-hidden shadow-sm">
             {/* 分类过滤器 */}

@@ -76,6 +76,7 @@
       ]
     },
     "nsis": {
+      "include": "installer/custom.nsh",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,

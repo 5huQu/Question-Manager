@@ -157,6 +157,11 @@ export default function App() {
     )
   }
 
+  const fluidContent = location.pathname.startsWith('/questions')
+    || location.pathname.startsWith('/tools')
+    || location.pathname === '/learning-tags'
+    || location.pathname === '/exports'
+
   return (
     <SidebarProvider className={`h-screen overflow-hidden bg-background text-[var(--app-body-text)] text-foreground transition-colors duration-150 ${darkMode ? 'dark' : ''}`}>
       <AppSidebar
@@ -172,7 +177,7 @@ export default function App() {
             : undefined
         } />
         <div className="flex-1 overflow-auto">
-          <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 md:p-6">
+          <div className={`flex w-full flex-col gap-6 p-4 md:p-6 ${fluidContent ? 'max-w-none' : 'mx-auto max-w-7xl'}`}>
             <Suspense fallback={
               <div className="flex h-[50vh] items-center justify-center">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-950 border-t-transparent dark:border-zinc-50" />

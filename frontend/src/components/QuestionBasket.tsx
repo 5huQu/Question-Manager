@@ -183,8 +183,8 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
   // Render Page Mode
   if (mode === 'page') {
     return (
-      <div className="mock-page-root flex h-[calc(100vh-6rem)] overflow-hidden bg-zinc-50/20 dark:bg-zinc-950 relative select-none">
-        <main className="flex-1 flex flex-col overflow-hidden border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50/10">
+      <div className="mock-page-root relative flex min-h-[calc(100vh-6rem)] flex-col overflow-auto bg-zinc-50/20 select-none xl:h-[calc(100vh-6rem)] xl:flex-row xl:overflow-hidden dark:bg-zinc-950">
+        <main className="flex min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden border-b border-zinc-200 bg-zinc-50/10 xl:min-h-0 xl:border-b-0 xl:border-r dark:border-zinc-800">
           <div className="h-12 shrink-0 border-b border-zinc-200 bg-white flex items-center justify-between px-4 dark:bg-zinc-900 dark:border-zinc-800">
             <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
               试题大纲与分值分配 ({active.data?.questions.length ?? 0} 道试题)
@@ -290,7 +290,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
           </div>
         </main>
 
-        <aside className="w-[360px] shrink-0 border-l border-zinc-200 bg-white p-5 flex flex-col justify-between overflow-y-auto dark:border-zinc-800 dark:bg-zinc-950 text-left">
+        <aside className="flex w-full shrink-0 flex-col justify-between overflow-y-auto bg-white p-5 text-left xl:w-[360px] xl:border-l xl:border-zinc-200 dark:border-zinc-800 dark:bg-zinc-950">
           <div className="space-y-5">
             <div className="flex items-center justify-between border-b border-zinc-100 pb-3 dark:border-zinc-800">
               <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-600 uppercase tracking-wider flex items-center gap-1.5">

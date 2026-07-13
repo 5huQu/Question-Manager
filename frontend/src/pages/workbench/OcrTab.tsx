@@ -9,7 +9,7 @@ export function OcrTab({ dashboard, mockLogs }: { dashboard: Dashboard | null; m
   const ocrJobs = useAsync<OcrJobs>(() => ocrApi.getJobs(), [])
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] h-[calc(100vh-9rem)] min-h-[580px] overflow-hidden">
+    <div className="grid h-auto min-h-0 gap-4 overflow-visible lg:h-[calc(100vh-9rem)] lg:min-h-[580px] lg:grid-cols-[minmax(0,1fr)_340px] lg:overflow-hidden">
       {/* Slices Pending OCR or Queue */}
       <div className="h-full overflow-auto space-y-4 pr-1 pb-4">
         <Panel title="当前识别任务" actions={

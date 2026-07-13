@@ -547,9 +547,9 @@ export default function CandidateFixWorkbenchPage() {
     <div className="flex flex-col gap-4 animate-fade-in">
       <ManualFixHeader candidate={candidate} pdfName={pdfName} saving={saving} finalizing={finalizing} textDirty={textDirty} saveError={saveError} onBack={() => navigateBack()} onSaveDraft={handleSaveDraft} onFinalize={handleFinalizeFix} />
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 h-[calc(100vh-7rem)] min-h-[680px] items-stretch overflow-hidden">
+      <div className="grid h-auto grid-cols-1 items-stretch gap-5 overflow-visible xl:h-[calc(100vh-7rem)] xl:min-h-[680px] xl:grid-cols-12 xl:overflow-hidden">
         {/* 左侧：PDF 渲染展示与划框区域 (7格) */}
-        <div className="xl:col-span-7 flex flex-col border rounded-xl bg-zinc-50/50 dark:bg-zinc-955 overflow-hidden shadow-sm">
+        <div className="flex min-h-[640px] flex-col overflow-hidden rounded-xl border bg-zinc-50/50 shadow-sm xl:col-span-7 xl:min-h-0 dark:bg-zinc-955">
           <ManualFixViewerToolbar pageBrowseMode={pageBrowseMode} regionView={regionView} sourceProfiles={sourceProfileEntries} activeSourceDocumentId={activeSourceDocumentId} currentPage={currentPage} maxPages={maxPages} onBrowseModeChange={setPageBrowseMode} onRegionViewChange={handleRegionViewChange} onSourceChange={(sourceId) => { setActiveSourceDocumentId(sourceId); setCurrentPage(1); setRect({ x: 0, y: 0, width: 0, height: 0 }); setSelectedRegionId(null) }} onPageChange={(page) => { setCurrentPage(Math.min(maxPages, Math.max(1, page))); setRect({ x: 0, y: 0, width: 0, height: 0 }); setSelectedRegionId(null) }} />
 
           <ManualFixDocumentViewer candidate={candidate} activeSourceDocumentId={activeSourceDocumentId} currentPage={currentPage} pageBrowseMode={pageBrowseMode} pageNumbers={pageNumbers} rect={rect} scrollAreaRef={scrollAreaRef} pageContainerRefs={pageContainerRefs} getPageImageRef={getPageImageRef} canvasBoxesForPage={canvasBoxesForPage} selectedBoxIdForPage={selectedBoxIdForPage} onSelectBoxId={handleSelectBoxId} onRectChange={handleRectChange} onDeleteSelected={handleDeleteSelected} onNaturalSizeReady={(size, page) => { if (currentPage === page) setNaturalSize(size) }} onFocusPage={(page) => focusPage(page, { scroll: true })} />

@@ -68,7 +68,9 @@ export function runQuestionBatchClassification(scope: QuestionBatchClassificatio
         resolve(parseJson<QuestionBatchClassificationReport>(stdout.trim(), fallback))
         return
       }
-      reject(new Error(`题目分类异常退出：code=${code ?? 'null'} signal=${signal ?? 'null'}${stderr.trim() ? `；${stderr.trim()}` : ''}`))
+      const report = parseJson<QuestionBatchClassificationReport>(stdout.trim(), fallback)
+      const detail = stderr.trim() || report.failures[0]?.error || ''
+      reject(new Error(`题目分类异常退出：code=${code ?? 'null'} signal=${signal ?? 'null'}${detail ? `；${detail}` : ''}`))
     })
   })
 }

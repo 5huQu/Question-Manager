@@ -36,14 +36,37 @@
   ItalicFont=texgyreheros-italic.otf,
   BoldItalicFont=texgyreheros-bolditalic.otf
 ]
-\setCJKmainfont{Songti SC}[
-  BoldFont=Songti SC Bold,
-  ItalicFont=Kaiti SC
-]
-\setCJKsansfont{PingFang SC}[
-  BoldFont=Heiti SC
-]
-\setCJKmonofont{Kaiti SC}
+%% Apple 字体不随应用分发；优先使用本机字体，并回退到 Windows / TeX Live 字体。
+\IfFontExistsTF{Songti SC}{
+  \setCJKmainfont{Songti SC}[AutoFakeBold=2.5,AutoFakeSlant=.2]
+}{
+  \IfFontExistsTF{SimSun}{
+    \setCJKmainfont{SimSun}[AutoFakeBold=2.5,AutoFakeSlant=.2]
+  }{
+    \setCJKmainfont{FandolSong-Regular.otf}[
+      BoldFont=FandolSong-Bold.otf,
+      AutoFakeSlant=.2
+    ]
+  }
+}
+\IfFontExistsTF{PingFang SC}{
+  \setCJKsansfont{PingFang SC}[AutoFakeBold=2.5]
+}{
+  \IfFontExistsTF{SimHei}{
+    \setCJKsansfont{SimHei}[AutoFakeBold=2.5]
+  }{
+    \setCJKsansfont{FandolHei-Regular.otf}[BoldFont=FandolHei-Bold.otf]
+  }
+}
+\IfFontExistsTF{Kaiti SC}{
+  \setCJKmonofont{Kaiti SC}
+}{
+  \IfFontExistsTF{KaiTi}{
+    \setCJKmonofont{KaiTi}
+  }{
+    \setCJKmonofont{FandolKai-Regular.otf}
+  }
+}
 
 \allowdisplaybreaks
 \setlength{\parindent}{0pt}

@@ -413,7 +413,7 @@ export default function PendingBankPage() {
       : `共 ${items.length} 题`
 
   return (
-    <section className="mock-page-root flex h-[calc(100vh-8rem)] min-h-[900px] flex-col overflow-hidden bg-zinc-50/30 p-0 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
+    <section className="mock-page-root flex min-h-[900px] flex-col bg-zinc-50/30 p-0 text-zinc-950 xl:h-[calc(100vh-8rem)] xl:overflow-hidden dark:bg-zinc-950 dark:text-zinc-50">
       {/* Header */}
       <div className="shrink-0 space-y-4">
         <div className="flex flex-col gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800 sm:flex-row sm:items-start sm:justify-between">
@@ -449,9 +449,9 @@ export default function PendingBankPage() {
       ) : null}
 
       {/* Main content: left list + right preview */}
-      <div className="mt-3 flex min-h-0 flex-1 gap-3">
+      <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3 xl:flex-row">
         {/* Left: Question list */}
-        <div className="flex w-[38%] min-w-[280px] shrink-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
+        <div className="flex min-h-[420px] w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-950 shadow-sm xl:min-h-0 xl:w-[38%] xl:min-w-[280px] dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
           <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/50 px-4 py-2.5 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/10 dark:text-zinc-400">
             <button
               onClick={selectAll}
