@@ -491,6 +491,16 @@ export const importV2Api = {
       body: JSON.stringify({ candidate, expectedContentRevision }),
     })
   },
+  uploadCandidateFigure(candidateId: string, file: File, usage: 'stem' | 'analysis' | 'options' = 'stem', optionLabel?: string) {
+    const body = new FormData()
+    body.append('file', file)
+    body.append('usage', usage)
+    if (optionLabel) body.append('optionLabel', optionLabel)
+    return api<{ figure: ImportV2Candidate['figures'][number]; candidate: ImportV2Candidate }>(
+      `/api/import-flow-v2/candidates/${encodeURIComponent(candidateId)}/figures/upload`,
+      { method: 'POST', body },
+    )
+  },
   resolveUnplacedFigure(candidateId: string, blockId: string, payload: {
     action: 'assign' | 'ignore'
     targetCandidateId?: string

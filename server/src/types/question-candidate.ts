@@ -30,6 +30,8 @@ export type CandidateFigure = {
   id: string
   usage: CandidateFigureUsage
   path: string
+  origin?: 'manual_upload' | string
+  originalName?: string
   sourceDocumentId?: string
   blockId?: string
   sourceBlockId?: string

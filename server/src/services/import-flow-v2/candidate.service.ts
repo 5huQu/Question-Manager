@@ -1,4 +1,8 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import type { Express } from 'express'
 import { db } from '../../db/connection.js'
+import { dataDir } from '../../config.js'
 import { createQuestion, getQuestion } from '../../db/questions.js'
 import * as sourceRepo from '../../repositories/source-documents.repo.js'
 import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
@@ -6,7 +10,8 @@ import * as candidateRepo from '../../repositories/question-candidates.repo.js'
 import type { OCRBBox, OCRDocument } from '../../types/ocr-document.js'
 import type { CandidateFigure, CandidateFigureUsage, CandidateParseDiagnostic, CandidateSourceRef, QuestionCandidate, QuestionCandidateStatus, UpdateQuestionCandidateInput } from '../../types/question-candidate.js'
 import { RouteError } from '../../utils/http-error.js'
-import { nowIso } from '../../utils/ids.js'
+import { createId, nowIso } from '../../utils/ids.js'
+import { imageExtension } from '../../utils/figure-helpers.js'
 import { difficultyLabel10, normalizeDifficultyScore10 } from '../../utils/search.js'
 import { inferQuestionType, normalizeQuestionType } from '../../utils/question-type.js'
 import { normalizeTags } from '../tags/tag-libraries.js'
@@ -326,6 +331,48 @@ export function updateQuestionCandidate(id: string, body: Record<string, unknown
   })
   if (!finalUpdated) throw new RouteError(404, '候选题不存在。')
   return { candidate: finalUpdated }
+}
+
+export function uploadCandidateFigure(id: string, file: Express.Multer.File | undefined, body: Record<string, unknown>) {
+  const candidate = candidateRepo.getQuestionCandidate(id)
+  if (!candidate) throw new RouteError(404, '候选题不存在。')
+  if (candidate.status === 'committed') throw new RouteError(409, '该候选题已入库，不能再上传题图。')
+  if (!file) throw new RouteError(400, '请上传一个图片文件。')
+  if (!String(file.mimetype || '').startsWith('image/')) throw new RouteError(400, '只能上传图片文件。')
+
+  const requestedUsage = String(body.usage || 'stem')
+  const usage: CandidateFigureUsage = ['stem', 'analysis', 'options'].includes(requestedUsage)
+    ? requestedUsage as CandidateFigureUsage
+    : 'stem'
+  const optionLabel = usage === 'options' && /^[A-D]$/i.test(String(body.optionLabel || ''))
+    ? String(body.optionLabel).toUpperCase()
+    : undefined
+  if (usage === 'options' && !optionLabel) throw new RouteError(400, '请选择图片对应的选项。')
+
+  const figureId = createId('fig')
+  const extension = imageExtension(file.originalname, file.mimetype)
+  const outputRel = path.join('data', 'import-flow-v2', 'candidate-figures', id, `${figureId}${extension}`)
+  const outputPath = path.join(dataDir, 'import-flow-v2', 'candidate-figures', id, `${figureId}${extension}`)
+  const figure: CandidateFigure = {
+    id: figureId,
+    origin: 'manual_upload',
+    originalName: file.originalname,
+    usage,
+    path: outputRel,
+    ...(optionLabel ? { optionLabel } : {}),
+  }
+
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+  fs.writeFileSync(outputPath, file.buffer)
+  try {
+    const updated = candidateRepo.updateQuestionCandidate(id, { figures: [...candidate.figures, figure] })
+    if (!updated) throw new RouteError(409, '题图上传时内容已发生变化，请刷新后重试。')
+    revalidateAllCandidatesForSourceDocument(candidate.sourceDocumentId)
+    return { figure, candidate: candidateRepo.getQuestionCandidate(id) }
+  } catch (error) {
+    fs.rmSync(outputPath, { force: true })
+    throw error
+  }
 }
 
 function escapedPattern(value: string) {

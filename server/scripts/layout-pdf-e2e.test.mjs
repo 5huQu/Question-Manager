@@ -7,6 +7,7 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'question-manager-layout-
 process.env.QUESTION_DATA_DIR = tempRoot
 
 const { closeDatabase } = await import('../dist/index.js')
+const { db } = await import('../dist/db/connection.js')
 const { createQuestion } = await import('../dist/db/questions.js')
 const collections = await import('../dist/services/question-bank/collections.service.js')
 const drafts = await import('../dist/services/question-bank/layout-drafts.service.js')
@@ -68,6 +69,18 @@ try {
   assert.match(previewTex, /\\qbankfigure\{[^}]+\}\{0\.9500\}\{right\}/, '图片对齐覆盖应进入 PDF LaTeX')
   assert.match(previewTex, /\\newpage/, '题前强制分页应进入 PDF LaTeX')
   assert.match(previewTex, /仅当前试卷校订标记/, '试卷内容覆盖应进入 PDF LaTeX')
+
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const job = db.prepare('SELECT status FROM layout_preview_jobs WHERE draft_id=? AND revision=?').get(draft.id, draft.revision)
+    if (job?.status === 'completed') break
+    await new Promise(resolve => setTimeout(resolve, 25))
+  }
+  assert.equal(db.prepare('SELECT status FROM layout_preview_jobs WHERE draft_id=? AND revision=?').get(draft.id, draft.revision)?.status, 'completed', '编译任务应持久化为 completed')
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM layout_preview_cache').get().count, 1, '首次编译应发布一份哈希缓存')
+  const jobCount = db.prepare('SELECT COUNT(*) count FROM layout_preview_jobs').get().count
+  const cachedPreview = drafts.generateLayoutPreview(draft.id, draft.revision)
+  assert.equal(cachedPreview.status, 'ready', '相同输入应同步命中缓存')
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM layout_preview_jobs').get().count, jobCount, '缓存命中不得新增编译任务')
 
   const exported = drafts.exportLayoutDraft(draft.id, { revision: draft.revision, format: 'pdf' })
   assert.equal(exported.exportRecord.snapshot.draftId, draft.id)

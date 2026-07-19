@@ -40,6 +40,7 @@ import {
   renderExamZhPrompt,
   buildRunExamZhLatex,
   exportRunExamZh,
+  exportExamZhQuestionSet,
   splitChoiceStemForExport,
 } from '../../utils/exam-zh.js'
 import { readAppSettings } from '../settings/app-settings.js'
@@ -61,6 +62,53 @@ import { figureLayoutFor, questionLayoutFor } from './paper-layout.js'
  * In index.ts this is `NonNullable<ReturnType<typeof getCollection>>`.
  */
 export type ExportCollection = NonNullable<ReturnType<typeof getCollection>>
+
+function collectionQuestionRows(collection: ExportCollection): QuestionRow[] {
+  return collection.questions.map((entry, index) => {
+    const item = entry.item as Record<string, any>
+    return {
+      id: String(item.id || entry.relationId || `question-${index + 1}`),
+      serial_no: Number(item.serialNo || index + 1),
+      question_no: String(item.questionNo || index + 1),
+      stage: String(item.stage || '高三'),
+      question_type: String(item.questionType || ''),
+      difficulty_score: Number(item.difficultyScore || 0),
+      difficulty_score_10: Number(item.difficultyScore10 || 0),
+      difficulty_label: String(item.difficultyLabel || ''),
+      chapter: String(item.chapter || ''),
+      knowledge_points_json: JSON.stringify(item.knowledgePoints || []),
+      solution_methods_json: JSON.stringify(item.solutionMethods || []),
+      source_title: String(item.sourceTitle || ''),
+      province: String(item.province || ''),
+      city: String(item.city || ''),
+      paper_title: String(item.paperTitle || ''),
+      batch_name: String(item.batchName || ''),
+      subject: String(item.subject || ''),
+      paper_kind: item.paperKind || 'unknown',
+      exam_year: Number(item.examYear || 0),
+      source_org: String(item.sourceOrg || ''),
+      import_source_id: String(item.importSourceId || ''),
+      bank_status: item.bankStatus || 'ready',
+      stem_markdown: String(item.stemMarkdown || ''),
+      answer_text: String(item.answerText || ''),
+      analysis_markdown: String(item.analysisMarkdown || ''),
+      content_revision: Number(item.contentRevision || 1),
+      total_score: Number(entry.score || item.totalScore || 0),
+      scoring_rubric_json: JSON.stringify(item.scoringRubric || []),
+      search_text: String(item.searchText || ''),
+      slice_image_path: String(item.sliceImagePath || ''),
+      figures_json: JSON.stringify(item.figures || []),
+      source_run_id: String(item.sourceRunId || ''),
+      source_solution_run_id: String(item.sourceSolutionRunId || ''),
+      merge_status: String(item.mergeStatus || ''),
+      merge_note: String(item.mergeNote || ''),
+      format_review_required: item.needsFormatReview ? 1 : 0,
+      format_review_reasons_json: JSON.stringify(item.formatIssue ? [item.formatIssue] : []),
+      created_at: String(item.createdAt || collection.createdAt || ''),
+      updated_at: String(item.updatedAt || collection.updatedAt || ''),
+    } as QuestionRow
+  })
+}
 
 // ---------------------------------------------------------------------------
 // Local helpers still in index.ts (not yet extracted to utils)
@@ -828,6 +876,23 @@ export function exportCollectionWorksheetPdfWithDiagnostics(
 ) {
   if (!collection.questions.length) throw new Error('当前试题篮没有题目，无法导出。')
   assertCollectionExportable(collection, exportFieldsForVariant(variant))
+  if (documentClass === 'qbank-exam' && readAppSettings().examExportTemplate === 'examch') {
+    const result = exportExamZhQuestionSet({
+      id: collection.id,
+      title: collection.title || '综合试卷',
+      rows: collectionQuestionRows(collection),
+      format: 'pdf',
+      variant,
+      watermarkText: readAppSettings().examWatermark,
+    })
+    return {
+      pdfPath: result.path,
+      texPath: result.texPath,
+      logPath: result.logPath,
+      warnings: [] as LayoutWarning[],
+      questionTelemetry: [],
+    }
+  }
   const exportRoot = path.join(storageRoot, 'output', 'pdf', 'collection-exports', safeName(collection.id))
   const figuresDir = path.join(exportRoot, 'figures')
   fs.mkdirSync(figuresDir, { recursive: true })
@@ -879,6 +944,16 @@ export function exportQuestionSetPdf(input: {
   bindingRunId?: string
 }) {
   if (!input.rows.length) throw new Error('当前题组没有题目，无法导出。')
+  if (input.template === 'exam' && readAppSettings().examExportTemplate === 'examch') {
+    return exportExamZhQuestionSet({
+      id: input.id,
+      title: input.title,
+      rows: input.rows,
+      format: 'pdf',
+      variant: input.variant,
+      watermarkText: readAppSettings().examWatermark,
+    })
+  }
   const collection = buildQuestionSetWorksheetCollection({
     id: input.id,
     title: input.title,

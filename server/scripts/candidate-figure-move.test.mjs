@@ -8,7 +8,7 @@ process.env.QUESTION_DATA_DIR = tempRoot
 
 const { closeDatabase } = await import('../dist/index.js')
 const { importOCRDocumentJson } = await import('../dist/services/import-flow-v2/ocr-document.service.js')
-const { moveCandidateFigure } = await import('../dist/services/import-flow-v2/candidate.service.js')
+const { moveCandidateFigure, uploadCandidateFigure } = await import('../dist/services/import-flow-v2/candidate.service.js')
 const candidateRepo = await import('../dist/repositories/question-candidates.repo.js')
 
 try {
@@ -110,6 +110,25 @@ try {
   assert.equal(changedUsage.targetCandidate.figures[0].usage, 'analysis')
   assert.doesNotMatch(changedUsage.targetCandidate.stemMarkdown, /DOC2X_FIGURE:asset_figure_q6/)
   assert.match(changedUsage.targetCandidate.analysisMarkdown, /第六题解析。[\s\S]*DOC2X_FIGURE:asset_figure_q6/)
+
+  const uploadResult = uploadCandidateFigure(target.id, {
+    originalname: 'supplement.png',
+    mimetype: 'image/png',
+    buffer: Buffer.from('mock-image'),
+  }, { usage: 'stem' })
+  assert.equal(uploadResult.figure.origin, 'manual_upload')
+  assert.equal(uploadResult.figure.originalName, 'supplement.png')
+  assert.equal(uploadResult.figure.usage, 'stem')
+  assert.equal(uploadResult.candidate.figures.some((figure) => figure.id === uploadResult.figure.id), true)
+  assert.equal(fs.existsSync(path.join(tempRoot, uploadResult.figure.path)), true)
+  assert.throws(
+    () => uploadCandidateFigure(target.id, {
+      originalname: 'notes.txt',
+      mimetype: 'text/plain',
+      buffer: Buffer.from('not-an-image'),
+    }, {}),
+    (error) => error?.status === 400,
+  )
 
   assert.throws(
     () => moveCandidateFigure(target.id, 'asset_figure_q6', {

@@ -139,10 +139,17 @@ try {
   assert.equal(finished.status, 'failed', '空草稿编译失败应落库而不是导致服务崩溃')
   assert.match(finished.error, /题目|导出/)
 
-  draftRepo.setPreviewState(created.id, updated.revision, 'rendering', '', [], [], '')
+  const cancelBase = drafts.updateLayoutDraft(created.id, { revision: updated.revision, name: '取消旧预览' })
+  assert.equal(drafts.generateLayoutPreview(created.id, cancelBase.revision).status, 'queued')
+  const superseded = drafts.updateLayoutDraft(created.id, { revision: cancelBase.revision, name: '新 revision' })
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const cancelledJob = db.prepare('SELECT status FROM layout_preview_jobs WHERE draft_id=? AND revision=?').get(created.id, cancelBase.revision)
+  assert.equal(cancelledJob?.status, 'cancelled', 'revision 更新必须取消旧预览任务')
+
+  draftRepo.setPreviewState(created.id, superseded.revision, 'rendering', '', [], [], '')
   drafts.recoverInterruptedLayoutPreviews()
   assert.equal(drafts.getPreviewStatus(created.id).status, 'failed')
-  assert.match(drafts.getPreviewStatus(created.id).error, /退出|重新生成/)
+  assert.match(drafts.getPreviewStatus(created.id).error, /中断|不存在|重新生成/)
 
   const outside = path.join(os.tmpdir(), `qbank-outside-${Date.now()}.txt`)
   fs.writeFileSync(outside, 'private')

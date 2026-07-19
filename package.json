@@ -29,6 +29,7 @@
     "test:choice-layout": "npm run build:server && node server/scripts/choice-layout.test.mjs",
     "test:layout-drafts": "npm run build:server && node server/scripts/layout-drafts.service.test.mjs",
     "test:layout-pdf-e2e": "npm run build:server && node server/scripts/layout-pdf-e2e.test.mjs",
+    "test:examzh-export": "npm run build:server && node server/scripts/examzh-export-setting.test.mjs",
     "desktop": "npm run build && npm run prepare:python-runtime && electron .",
     "pack:desktop": "npm run build && npm run prepare:python-runtime && electron-builder --dir && npm run verify:packaged-python",
     "pack:windows-installer": "npm run pack:desktop && electron-builder --win nsis --x64 --publish never",

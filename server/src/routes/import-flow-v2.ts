@@ -20,6 +20,7 @@ import {
   uploadSourceDocument,
   updateSourceDocument,
   updateQuestionCandidate,
+  uploadCandidateFigure,
   moveCandidateFigure,
   resolveCandidateUnplacedFigure,
   renderSourceDocumentPage,
@@ -369,6 +370,18 @@ export function mountImportFlowV2Routes(app: Express) {
   app.patch('/api/import-flow-v2/candidates/:id', (req, res) => {
     try {
       res.json(updateQuestionCandidate(decodeURIComponent(String(req.params.id || '')), req.body || {}))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/import-flow-v2/candidates/:id/figures/upload', upload.single('file'), (req, res) => {
+    try {
+      res.status(201).json(uploadCandidateFigure(
+        decodeURIComponent(String(req.params.id || '')),
+        req.file,
+        req.body || {},
+      ))
     } catch (error) {
       sendRouteError(res, error)
     }

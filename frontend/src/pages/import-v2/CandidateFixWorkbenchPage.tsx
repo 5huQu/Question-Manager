@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { LoaderCircle } from 'lucide-react'
+import { importV2Api } from '@/api/importV2'
 import type { BBoxCanvasBox } from '@/components/questions/BBoxCanvas'
 import type { BBox } from '@/types'
 import {
@@ -75,6 +76,8 @@ export default function CandidateFixWorkbenchPage() {
   })
   const [figures, setFigures] = useState<any[]>([])
   const [figureDirty, setFigureDirty] = useState(false)
+  const [uploadingFigure, setUploadingFigure] = useState(false)
+  const [figureUploadError, setFigureUploadError] = useState('')
   const textDirty = contentDraft.dirty || figureDirty
 
   // Annotation Region state
@@ -552,6 +555,29 @@ export default function CandidateFixWorkbenchPage() {
     setFigureDirty(true)
   }
 
+  function handleAddFigureRegion() {
+    handleAddNewRegion('shared_answer_key')
+    setActiveInspectorTab('regions')
+  }
+
+  async function handleUploadFigure(file: File) {
+    if (!candidateId) return
+    if (!file.type.startsWith('image/')) {
+      setFigureUploadError('只能上传图片文件。')
+      return
+    }
+    setUploadingFigure(true)
+    setFigureUploadError('')
+    try {
+      const result = await importV2Api.uploadCandidateFigure(candidateId, file)
+      setFigures((current) => current.some((figure) => figure.id === result.figure.id) ? current : [...current, result.figure])
+    } catch (error) {
+      setFigureUploadError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setUploadingFigure(false)
+    }
+  }
+
   // Helpers for mapping regions to Canvas Boxes
   function canvasBoxesForPage(page: number): BBoxCanvasBox[] {
     return regions.flatMap((region, idx) => {
@@ -662,6 +688,10 @@ export default function CandidateFixWorkbenchPage() {
           onUpdateFigure={handleUpdateFigure}
           onAssignTrailingOptions={handleAssignTrailingOptions}
           onDeleteFigure={handleDeleteFigure}
+          onAddFigureRegion={handleAddFigureRegion}
+          onUploadFigure={handleUploadFigure}
+          uploadingFigure={uploadingFigure}
+          figureUploadError={figureUploadError}
         />
       </div>
     </div>

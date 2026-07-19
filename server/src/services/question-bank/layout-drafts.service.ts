@@ -1,7 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawnSync } from 'node:child_process'
-import { dataDir } from '../../config.js'
+import os from 'node:os'
+import { createHash } from 'node:crypto'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { dataDir, layoutPreviewCacheMaxEntries, layoutPreviewConcurrency, layoutPreviewLeaseMs, layoutPreviewPollMs, sourceRoot } from '../../config.js'
 import { createId, nowIso, safeName } from '../../utils/ids.js'
 import { assetPathFor } from '../../utils/paths.js'
 import { resolveStoragePath } from '../../utils/paths.js'
@@ -21,8 +24,11 @@ import { syncQuestionBankItemToOcrDraft } from '../../utils/ocr-helpers.js'
 
 function parseJson(value: unknown, fallback: any) { try { return JSON.parse(String(value || '')) } catch { return fallback } }
 const contentSnapshotVersion = 1
-const previewQueue: Array<{ id: string; revision: number }> = []
-let previewWorkerRunning = false
+const previewRendererVersion = 'layout-preview-v3'
+const previewWorkerOwner = `${os.hostname()}:${process.pid}:${Math.random().toString(36).slice(2,8)}`
+const activePreviewWorkers = new Map<string,{draftId:string;child:ChildProcess;leaseTimer:NodeJS.Timeout}>()
+let previewQueueTimer:NodeJS.Timeout|undefined
+let previewPumpScheduled=false
 type ContentOverride = { questionId: string; baseContentRevision: number; stemMarkdown: string; answerText: string; analysisMarkdown: string }
 type ContentOverrides = Record<string, ContentOverride>
 
@@ -87,6 +93,32 @@ function contentFingerprint(value: any): string {
   return `{${Object.keys(value).sort().filter((key) => !['snapshotVersion', 'path', 'sourcePath'].includes(key)).map((key) => `${JSON.stringify(key)}:${contentFingerprint(value[key])}`).join(',')}}`
 }
 
+function stableJson(value:any):string{
+  if(Array.isArray(value))return `[${value.map(stableJson).join(',')}]`
+  if(!value||typeof value!=='object')return JSON.stringify(value)
+  return `{${Object.keys(value).sort().map((key)=>`${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`
+}
+
+function previewInputHash(row:repo.LayoutDraftRow){
+  const frozen=parseJson(row.content_snapshot_json,{})
+  const snapshot=effectiveSnapshot(frozen,parseJson(row.content_overrides_json,{}))
+  const layout=normalizePaperLayoutDraft(parseJson(row.layout_json,{}))
+  const hash=createHash('sha256')
+  hash.update(previewRendererVersion)
+  hash.update(stableJson({snapshot,layout,templateId:row.template_id,templateVersion:row.template_version,layoutVersion:row.layout_version}))
+  const assetPaths=new Set<string>()
+  for(const entry of snapshot.questions||[])for(const figure of entry.item?.figures||[]){
+    const resolved=resolveStoragePath(String(figure.path||figure.sourcePath||''))
+    if(resolved&&fs.existsSync(resolved)&&fs.statSync(resolved).isFile())assetPaths.add(resolved)
+  }
+  for(const asset of [...assetPaths].sort()){hash.update(path.basename(asset));hash.update(fs.readFileSync(asset))}
+  for(const template of ['qbank-theme.sty','qbank-exam.cls','qbank-worksheet.cls']){
+    const templatePath=path.join(sourceRoot,'templates','latex',template)
+    if(fs.existsSync(templatePath))hash.update(fs.readFileSync(templatePath))
+  }
+  return hash.digest('hex')
+}
+
 function assertSnapshotSupported(snapshot: any) {
   const version = Number(snapshot?.snapshotVersion || 1)
   if (version !== contentSnapshotVersion) throw new RouteError(409, `草稿内容快照版本 ${version} 暂不支持，请使用兼容版本升级后重试。`)
@@ -100,6 +132,35 @@ function previewVariantAt(dir:string,variant:'student'|'teacher'){
   const pdf=path.join(dir,`${variant}.pdf`)
   const pages=fs.existsSync(dir)?fs.readdirSync(dir).filter((name)=>new RegExp(`^${variant}-page-\\d+\\.png$`).test(name)).sort((a,b)=>Number(a.match(/\d+/)?.[0]||0)-Number(b.match(/\d+/)?.[0]||0)).map((name)=>`/assets/${assetPathFor(path.join(dir,name))}`):[]
   return {pdfUrl:fs.existsSync(pdf)?`/assets/${assetPathFor(pdf)}`:'',pages,pageImages:pages,pageCount:pages.length}
+}
+type PreviewCacheMetadata={warnings:any[];questionPages:Record<string,any>}
+function previewCacheDir(inputHash:string){return path.join(dataDir,'layout-preview-cache',inputHash)}
+function previewRevisionDir(id:string,revision:number){return path.join(dataDir,'layout-previews',safeName(id),`r${revision}`)}
+function validPreviewArtifacts(dir:string){return fs.existsSync(path.join(dir,'student.pdf'))&&fs.existsSync(path.join(dir,'teacher.pdf'))&&previewVariantAt(dir,'student').pageCount>0&&previewVariantAt(dir,'teacher').pageCount>0}
+function restorePreviewCache(row:repo.LayoutDraftRow,revision:number,inputHash:string){
+  const cached=repo.getPreviewCache(inputHash)
+  if(!cached||cached.renderer_version!==previewRendererVersion)return false
+  const source=resolveStoragePath(String(cached.artifact_path||''))
+  if(!source||!validPreviewArtifacts(source)){repo.deletePreviewCache(inputHash);return false}
+  const target=previewRevisionDir(row.id,revision)
+  fs.rmSync(target,{recursive:true,force:true});fs.mkdirSync(path.dirname(target),{recursive:true});fs.cpSync(source,target,{recursive:true})
+  const metadata=parseJson(cached.metadata_json,{warnings:[],questionPages:{}}) as PreviewCacheMetadata
+  const primary=previewVariantAt(target,row.variant==='teacher'?'teacher':'student')
+  repo.setPreviewState(row.id,revision,'ready',assetPathFor(path.join(target,`${row.variant==='teacher'?'teacher':'student'}.pdf`)),primary.pages.map((url)=>url.replace(/^\/assets\//,'')),metadata.warnings||[],'',metadata.questionPages||{})
+  repo.touchPreviewCache(inputHash);cleanupPreviewRevisions(row.id,revision)
+  return true
+}
+function publishPreviewCache(dir:string,inputHash:string,metadata:PreviewCacheMetadata){
+  const target=previewCacheDir(inputHash)
+  if(!fs.existsSync(target)){
+    const temporary=`${target}.tmp-${process.pid}-${Date.now()}`
+    fs.mkdirSync(path.dirname(target),{recursive:true});fs.cpSync(dir,temporary,{recursive:true})
+    try{fs.renameSync(temporary,target)}catch{fs.rmSync(temporary,{recursive:true,force:true})}
+  }
+  repo.upsertPreviewCache({inputHash,rendererVersion:previewRendererVersion,artifactPath:assetPathFor(target),metadataJson:JSON.stringify(metadata)})
+  for(const stale of repo.prunePreviewCache(layoutPreviewCacheMaxEntries)){
+    fs.rmSync(resolveStoragePath(String(stale.artifact_path||'')),{recursive:true,force:true});repo.deletePreviewCache(String(stale.input_hash))
+  }
 }
 function cleanupPreviewRevisions(id:string,keepRevision:number){
   previewRevisionDirs(id).filter((entry)=>entry.revision!==keepRevision).forEach((entry)=>fs.rmSync(entry.dir,{recursive:true,force:true}))
@@ -135,6 +196,7 @@ export function updateLayoutDraft(id: string, body: Record<string, any>) {
   const overrides=mergeContentEdits(snapshot,parseJson(row.content_overrides_json,{}),body.contentEdits)
   const result=repo.updateLayoutDraft(id,revision,[body.name==null?row.name:String(body.name).trim(),body.templateId==='exam'?'exam':row.template_id,body.variant==='teacher'?'teacher':body.variant==='student'?'student':row.variant,JSON.stringify(layout),paperLayoutDraftVersion,JSON.stringify(overrides),nowIso()])
   if(!result.changes) throw new RouteError(409,'草稿版本冲突，请刷新后重试。')
+  cancelStalePreviewTasks(id)
   return getLayoutDraft(id)
 }
 /**
@@ -160,6 +222,7 @@ export function refreshLayoutDraftContent(id: string, requestedRevision?: unknow
   const snapshot = snapshotAssets(collection, id)
   const result = repo.refreshLayoutDraftContentSnapshot(id, revision, JSON.stringify(snapshot), JSON.stringify(overrides), nowIso())
   if (!result.changes) throw new RouteError(409, '草稿已在其他页面更新，请刷新后重试。')
+  cancelStalePreviewTasks(id)
   return { draft: getLayoutDraft(id), changed: true, preservedOverrides: Object.keys(overrides).length, conflicts }
 }
 
@@ -180,12 +243,13 @@ export function syncLayoutContentToBank(id:string,relationId:string,body:Record<
   const nextSnapshot=JSON.parse(JSON.stringify(snapshot));const entry=(nextSnapshot.questions||[]).find((question:any)=>String(question.relationId||'')===relationId);if(!entry?.item)throw new RouteError(404,'排版草稿题目快照不存在。');entry.item={...entry.item,stemMarkdown:updatedItem.stemMarkdown,answerText:updatedItem.answerText,analysisMarkdown:updatedItem.analysisMarkdown,contentRevision:updatedItem.contentRevision,needsFormatReview:updatedItem.needsFormatReview,bankStatus:updatedItem.bankStatus,updatedAt:updatedItem.updatedAt}
   const nextOverrides={...overrides};delete nextOverrides[relationId]
   try{const result=repo.syncContentOverrideToBank({draftId:id,revision,questionId:override.questionId,expectedContentRevision:expected,stemMarkdown:override.stemMarkdown,answerText:override.answerText,analysisMarkdown:override.analysisMarkdown,searchText:buildSearchText(override.stemMarkdown,override.answerText,override.analysisMarkdown,[String(current.sourceTitle||''),String(current.chapter||''),(current.knowledgePoints||[]).join(' '),(current.solutionMethods||[]).join(' ')]),formatReviewRequired:issues.length?1:0,formatReviewJson:review,bankStatus:String(updatedItem.bankStatus),contentSnapshotJson:JSON.stringify(nextSnapshot),contentOverridesJson:JSON.stringify(nextOverrides),updatedAt:String(updatedItem.updatedAt)});if(!result.questionChanges){const concurrent=repo.getQuestionBankItemRow(override.questionId);throwContentConflict(expected,concurrent?mapQuestion(concurrent as any):current)}}catch(error){if(error instanceof Error&&error.message==='layout_revision_conflict')throw new RouteError(409,'草稿已在其他页面更新，请刷新后重试。');throw error}
+  cancelStalePreviewTasks(id)
   const finalRow=repo.getQuestionBankItemRow(override.questionId);if(!finalRow)throw new RouteError(404,'题库原题不存在。');const item=mapQuestion(finalRow as any)
   const warnings:Array<{code:string;message:string}>=[];try{syncQuestionBankItemToOcrDraft(item)}catch(error){warnings.push({code:'ocr_draft_sync_failed',message:error instanceof Error?error.message:String(error)})}
   return {draft:getLayoutDraft(id),item,warnings}
 }
 function throwContentConflict(expected:number,current:any):never{throw new RouteError(409,'内容已在其他页面更新，请刷新后重试。',undefined,{error:'content_revision_conflict',message:'内容已在其他页面更新，请刷新后重试。',expectedContentRevision:expected,actualContentRevision:Number(current.contentRevision||1),current})}
-export function deleteLayoutDraft(id:string){ if(!repo.getLayoutDraft(id)) throw new RouteError(404,'排版草稿不存在。'); repo.deleteLayoutDraft(id); fs.rmSync(path.join(dataDir,'layout-previews',safeName(id)),{recursive:true,force:true}); fs.rmSync(path.join(dataDir,'layout-drafts',safeName(id)),{recursive:true,force:true}); return {deleted:true} }
+export function deleteLayoutDraft(id:string){ if(!repo.getLayoutDraft(id)) throw new RouteError(404,'排版草稿不存在。'); cancelStalePreviewTasks(id); repo.deleteLayoutDraft(id); fs.rmSync(path.join(dataDir,'layout-previews',safeName(id)),{recursive:true,force:true}); fs.rmSync(path.join(dataDir,'layout-drafts',safeName(id)),{recursive:true,force:true}); return {deleted:true} }
 function cleanError(error: unknown){ return (error instanceof Error?error.message:String(error)).replace(/(?:[A-Za-z]:)?[\\/][^\s:]+/g,'[文件]').slice(0,500) }
 function renderPdfPages(pdfPath:string,prefix:string){
   const directory=path.dirname(prefix);const basename=path.basename(prefix)
@@ -203,18 +267,70 @@ function renderPdfPages(pdfPath:string,prefix:string){
 export function generateLayoutPreview(id:string, requestedRevision?:unknown){
   const row=repo.getLayoutDraft(id); if(!row) throw new RouteError(404,'排版草稿不存在。'); const revision=Number(requestedRevision??row.revision)
   if(revision!==row.revision) throw new RouteError(409,'只能预览当前草稿版本。')
-  if(row.preview_status==='queued'||row.preview_status==='rendering') return getLayoutDraft(id).preview
+  const inputHash=previewInputHash(row)
+  if(row.preview_status==='queued'||row.preview_status==='rendering'){
+    const active=repo.listActivePreviewJobs().find((job)=>job.draft_id===id&&Number(job.revision)===revision&&job.input_hash===inputHash)
+    if(active)return getLayoutDraft(id).preview
+  }
+  cancelStalePreviewTasks(id)
+  if(restorePreviewCache(row,revision,inputHash))return getLayoutDraft(id).preview
   repo.setPreviewProgress(id,revision,'queued')
-  previewQueue.push({id,revision}); void runPreviewQueue()
+  repo.enqueuePreviewJob({id:createId('layoutpreview'),draftId:id,revision,inputHash,now:nowIso()})
+  schedulePreviewPump()
   return getLayoutDraft(id).preview
 }
-async function runPreviewQueue(){
-  if(previewWorkerRunning)return; previewWorkerRunning=true
-  try { while(previewQueue.length){ const task=previewQueue.shift()!; await Promise.resolve(); renderLayoutPreview(task.id,task.revision) } }
-  finally { previewWorkerRunning=false }
+
+function workerScriptCommand(){
+  const sourceMode=import.meta.url.endsWith('.ts')
+  const script=fileURLToPath(new URL(sourceMode?'../../workers/layout-preview.worker.ts':'../../workers/layout-preview.worker.js',import.meta.url))
+  return sourceMode?{command:process.execPath,args:['--import','tsx',script]}:{command:process.execPath,args:[script]}
 }
-function renderLayoutPreview(id:string, revision:number){
-  const row=repo.getLayoutDraft(id); if(!row||row.revision!==revision)return
+
+function launchPreviewWorker(job:repo.LayoutPreviewJobRow){
+  const command=workerScriptCommand()
+  const child=spawn(command.command,[...command.args,String(job.id),previewWorkerOwner],{cwd:sourceRoot,env:process.env,stdio:['ignore','ignore','inherit']})
+  const leaseTimer=setInterval(()=>repo.renewPreviewJobLease(String(job.id),previewWorkerOwner,new Date(Date.now()+layoutPreviewLeaseMs).toISOString()),Math.max(10_000,Math.floor(layoutPreviewLeaseMs/3)))
+  leaseTimer.unref()
+  activePreviewWorkers.set(String(job.id),{draftId:String(job.draft_id),child,leaseTimer})
+  child.on('exit',(code,signal)=>{
+    clearInterval(leaseTimer);activePreviewWorkers.delete(String(job.id))
+    const current=repo.getPreviewJob(String(job.id))
+    if(current?.status==='rendering'&&current.lease_owner===previewWorkerOwner){
+      const message=`PDF 预览 worker 异常退出（${signal||code||'unknown'}）。`
+      repo.finishPreviewJob(String(job.id),previewWorkerOwner,'failed',message)
+      const draft=repo.getLayoutDraft(String(job.draft_id));if(draft&&Number(draft.revision)===Number(job.revision))repo.setPreviewFailure(String(job.draft_id),Number(job.revision),message)
+    }
+    schedulePreviewPump()
+  })
+}
+
+function pumpPreviewQueue(){
+  previewPumpScheduled=false
+  try{
+    while(activePreviewWorkers.size<layoutPreviewConcurrency){
+      const job=repo.claimNextPreviewJob(previewWorkerOwner,new Date(Date.now()+layoutPreviewLeaseMs).toISOString(),layoutPreviewConcurrency)
+      if(!job)break
+      launchPreviewWorker(job)
+    }
+  }catch{
+    // The database may already be closed during process/test shutdown.
+  }
+}
+function schedulePreviewPump(){if(previewPumpScheduled)return;previewPumpScheduled=true;setImmediate(pumpPreviewQueue)}
+function startPreviewQueuePolling(){
+  if(previewQueueTimer)return
+  previewQueueTimer=setInterval(schedulePreviewPump,layoutPreviewPollMs);previewQueueTimer.unref();schedulePreviewPump()
+}
+function cancelStalePreviewTasks(draftId:string){
+  repo.cancelPreviewJobsForDraft(draftId)
+  for(const worker of activePreviewWorkers.values())if(worker.draftId===draftId)worker.child.kill('SIGTERM')
+}
+
+function assertPreviewJobCurrent(jobId:string,owner:string){if(!repo.previewJobIsCurrent(jobId,owner))throw new Error('preview_cancelled')}
+
+function renderLayoutPreview(id:string, revision:number,inputHash:string,jobId:string,owner:string){
+  const row=repo.getLayoutDraft(id); if(!row||row.revision!==revision)return 'cancelled' as const
+  assertPreviewJobCurrent(jobId,owner)
   repo.setPreviewProgress(id,revision,'rendering')
   try {
     const frozen=parseJson(row.content_snapshot_json,null); if(!frozen) throw new Error('内容快照无效'); assertSnapshotSupported(frozen)
@@ -225,6 +341,7 @@ function renderLayoutPreview(id:string, revision:number){
     const questionNos=new Map<string,string>();orderedQuestions.forEach((entry:any,index:number)=>{const no=String(index+1);questionNos.set(String(entry.item?.id||''),no);questionNos.set(String(entry.relationId||entry.id||''),no);questionNos.set(safeName(String(entry.relationId||entry.item?.id||index+1)),no)})
     const warnings:any[]=[];const questionPages:Record<string,Record<string,{startPage:number;endPage:number}>>={student:{},teacher:{}};let primaryTarget='';let primaryPages:string[]=[]
     for(const variant of ['student','teacher'] as const){
+      assertPreviewJobCurrent(jobId,owner)
       let result: ReturnType<typeof exportCollectionWorksheetPdfWithDiagnostics>
       try {
         result=exportCollectionWorksheetPdfWithDiagnostics(snapshot,variant,template,layout)
@@ -241,11 +358,25 @@ function renderLayoutPreview(id:string, revision:number){
       warnings.push(...result.warnings.map((warning:any)=>({...warning,questionNo:questionNos.get(String(warning.questionId||''))||'',variant,source:'pdf'})))
       if(variant===row.variant){primaryTarget=target;primaryPages=pages}
     }
+    assertPreviewJobCurrent(jobId,owner)
     repo.setPreviewState(id,revision,'ready',assetPathFor(primaryTarget),primaryPages,warnings,'',questionPages)
+    publishPreviewCache(dir,inputHash,{warnings,questionPages})
     cleanupPreviewRevisions(id,revision)
-  } catch(error){ const message=cleanError(error); const warnings=error&&typeof error==='object'&&Array.isArray((error as any).layoutWarnings)?(error as any).layoutWarnings:[]; repo.setPreviewFailure(id,revision,message,warnings) }
+    return 'completed' as const
+  } catch(error){
+    if(error instanceof Error&&error.message==='preview_cancelled'){fs.rmSync(previewRevisionDir(id,revision),{recursive:true,force:true});return 'cancelled' as const}
+    const message=cleanError(error); const warnings=error&&typeof error==='object'&&Array.isArray((error as any).layoutWarnings)?(error as any).layoutWarnings:[]; repo.setPreviewFailure(id,revision,message,warnings)
+    return 'failed' as const
+  }
 }
-export function recoverInterruptedLayoutPreviews(){ repo.markInterruptedPreviewsFailed() }
+export function executeLayoutPreviewJob(jobId:string,owner:string){
+  const job=repo.getPreviewJob(jobId)
+  if(!job||job.status!=='rendering'||job.lease_owner!==owner)return {status:'cancelled'}
+  const status=renderLayoutPreview(String(job.draft_id),Number(job.revision),String(job.input_hash),jobId,owner)
+  repo.finishPreviewJob(jobId,owner,status,status==='failed'?'PDF 预览编译失败。':'')
+  return {status}
+}
+export function recoverInterruptedLayoutPreviews(){repo.failOrphanedPreviewStates();startPreviewQueuePolling()}
 export function getPreviewStatus(id:string){ return getLayoutDraft(id).preview }
 export function getPreviewPages(id:string){ const draft=getLayoutDraft(id); return {revision:draft.preview.revision,displayRevision:draft.preview.displayRevision,status:draft.preview.status,pages:draft.preview.pages,pdfUrl:draft.preview.pdfUrl} }
 export function exportLayoutDraft(id:string,body:Record<string,any>){ const row=repo.getLayoutDraft(id); if(!row) throw new RouteError(404,'排版草稿不存在。'); if(Number(body.revision)!==row.revision) throw new RouteError(409,'只能导出当前草稿版本。'); const frozen=parseJson(row.content_snapshot_json,{}); const overrides=parseJson(row.content_overrides_json,{});const snapshot=effectiveSnapshot(frozen,overrides); const layout=parseJson(row.layout_json,{}); assertSnapshotSupported(snapshot); return exportCollection(snapshot,{...body,variant:row.variant,template:row.template_id,layoutDraft:layout,reproducibleSnapshot:{draftId:id,revision:row.revision,templateId:row.template_id,templateVersion:row.template_version,layoutVersion:row.layout_version,contentSnapshot:frozen,contentOverrides:overrides,effectiveContentSnapshot:snapshot,layout}}) }

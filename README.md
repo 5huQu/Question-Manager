@@ -167,6 +167,12 @@ build-and-install-windows.cmd
 | `QUESTION_DATA_DIR` | SQLite、上传文件、题图、OCR 草稿和导出文件的根目录。 |
 | `PYTHON_PATH` | 源码开发使用的 Python 可执行文件。 |
 | `XELATEX_PATH` / `SOFFICE_PATH` | 外部导出工具路径。 |
+| `LAYOUT_PREVIEW_CONCURRENCY` | PDF 预览全局最大并发数，默认 `1`。共享同一 SQLite 的服务实例会通过租约共同遵守该上限。 |
+| `LAYOUT_PREVIEW_POLL_MS` | 持久化预览队列轮询间隔，默认 `750` 毫秒。 |
+| `LAYOUT_PREVIEW_LEASE_MS` | worker 编译租约时长，默认 `600000` 毫秒；实例异常退出后任务可被其他实例恢复。 |
+| `LAYOUT_PREVIEW_CACHE_MAX_ENTRIES` | 按内容哈希保留的 PDF 预览缓存数量，默认 `50`。 |
+
+PDF 精确预览使用 SQLite 持久化队列。草稿内容、布局、模板文件或题图字节变化会生成新的 SHA-256；相同输入直接复用学生版/教师版 PDF 与页面图。草稿 revision 更新时，旧的排队或编译任务会被标记为取消。多进程部署必须让各实例共享同一 `QUESTION_DATA_DIR`，才能共享 SQLite 队列、缓存目录与预览制品。
 | `OCR_PROVIDER` | `glm` 或 `doc2x`。 |
 | `GLM_OCR_API_BASE_URL` / `GLM_OCR_API_KEY` / `GLM_OCR_MODEL` | GLM-OCR 配置。 |
 | `DOC2X_API_BASE_URL` / `DOC2X_API_KEY` / `DOC2X_MODEL` | Doc2X 配置。 |

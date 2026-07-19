@@ -55,6 +55,8 @@ function inspector(overrides: Partial<React.ComponentProps<typeof ManualFixInspe
     onUpdateFigure: vi.fn(),
     onAssignTrailingOptions: vi.fn(),
     onDeleteFigure: vi.fn(),
+    onAddFigureRegion: vi.fn(),
+    onUploadFigure: vi.fn(),
     ...overrides,
   }
   act(() => root.render(<ManualFixInspector {...props} />))
@@ -101,8 +103,12 @@ describe('ManualFixInspector', () => {
   })
 
   it('题图为空时展示明确的空状态', () => {
-    inspector({ activeTab: 'figures', figures: [] })
+    const onAddFigureRegion = vi.fn()
+    inspector({ activeTab: 'figures', figures: [], onAddFigureRegion })
     expect(container.textContent).toContain('当前题目暂无题图')
+    expect(container.textContent).toContain('上传题图')
+    click('框选题图')
+    expect(onAddFigureRegion).toHaveBeenCalledOnce()
   })
 
   it('可把题图改成指定选项图，并批量指定最后四张', () => {
@@ -143,7 +149,7 @@ describe('ManualFixInspector', () => {
 function inspectorProps(overrides: Partial<React.ComponentProps<typeof ManualFixInspector>> = {}): React.ComponentProps<typeof ManualFixInspector> {
   return {
     activeTab: 'content', onTabChange: vi.fn(), candidate: {}, stemMarkdown: '', answerText: '', analysisMarkdown: '', figures: [], regions: [], selectedRegionId: null,
-    onStemChange: vi.fn(), onAnswerChange: vi.fn(), onAnalysisChange: vi.fn(), onAddRegion: vi.fn(), onDeleteSelected: vi.fn(), onRegionNoteChange: vi.fn(), onCleanHeaderFooter: vi.fn(), onLocateFigure: vi.fn(), onUpdateFigure: vi.fn(), onAssignTrailingOptions: vi.fn(), onDeleteFigure: vi.fn(),
+    onStemChange: vi.fn(), onAnswerChange: vi.fn(), onAnalysisChange: vi.fn(), onAddRegion: vi.fn(), onDeleteSelected: vi.fn(), onRegionNoteChange: vi.fn(), onCleanHeaderFooter: vi.fn(), onLocateFigure: vi.fn(), onUpdateFigure: vi.fn(), onAssignTrailingOptions: vi.fn(), onDeleteFigure: vi.fn(), onAddFigureRegion: vi.fn(), onUploadFigure: vi.fn(),
     ...overrides,
   }
 }

@@ -1,4 +1,5 @@
-import { AlertTriangle, FileText, Image, Layers, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, FileText, FileUp, Image, ImagePlus, Layers, LoaderCircle, Plus, Trash2 } from 'lucide-react'
+import { useRef } from 'react'
 import { Button } from '@/components/ui'
 import { QuestionContentEditor, type QuestionEditorConflict } from '@/components/questions/editor'
 import type { QuestionContentDraft } from '@/types/questionContent'
@@ -31,6 +32,10 @@ interface Props {
   onUpdateFigure: (figure: any, usage: 'stem' | 'analysis' | 'options', optionLabel?: string) => void
   onAssignTrailingOptions: () => void
   onDeleteFigure: (figure: any) => void
+  onAddFigureRegion: () => void
+  onUploadFigure: (file: File) => void | Promise<void>
+  uploadingFigure?: boolean
+  figureUploadError?: string
 }
 
 const tabs: Array<{ value: ManualFixTab; label: string; icon: typeof FileText }> = [
@@ -49,6 +54,7 @@ function problemSummary(candidate: any) {
 }
 
 export function ManualFixInspector(props: Props) {
+  const figureInputRef = useRef<HTMLInputElement | null>(null)
   const selectedRegion = props.regions.find((region) => region.id === props.selectedRegionId)
   return (
     <aside className="xl:col-span-5 flex min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
@@ -133,44 +139,75 @@ export function ManualFixInspector(props: Props) {
           </div>
         )}
 
-        {props.activeTab === 'figures' && (props.figures.length ? (
-          <div className="space-y-3">
-            {props.figures.length >= 4 ? (
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/30">
-                <p className="text-xs leading-5 text-zinc-500">图片型选择题可快速指定最后四张图片。</p>
-                <Button size="xs" variant="outline" onClick={props.onAssignTrailingOptions}>后四张设为 A-D</Button>
+        {props.activeTab === 'figures' && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-[13px] font-medium text-zinc-500">补充题图</p>
+              <p className="text-xs leading-5 text-zinc-500">在左侧拖出范围后框选，或从本地上传一张图片。</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button size="sm" variant="outline" icon={ImagePlus} onClick={props.onAddFigureRegion}>框选题图</Button>
+                <Button size="sm" variant="outline" icon={props.uploadingFigure ? LoaderCircle : FileUp} disabled={props.uploadingFigure} onClick={() => figureInputRef.current?.click()}>{props.uploadingFigure ? '上传中...' : '上传题图'}</Button>
+                <input
+                  ref={figureInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    event.target.value = ''
+                    if (file) void props.onUploadFigure(file)
+                  }}
+                />
               </div>
-            ) : null}
-            {props.figures.map((figure, index) => {
-              const path = String(figure.path || '')
-              const renderable = path && !path.trim().startsWith('<')
-              const usage = figure.usage === 'analysis' ? 'analysis' : figure.usage === 'options' || figure.usage === 'option' ? 'options' : 'stem'
-              return (
-                <div key={figure.id || `${path}-${index}`} className="flex flex-col gap-3 rounded-lg border border-zinc-200 p-3 hover:bg-zinc-50/50 sm:flex-row sm:items-center dark:border-zinc-800 dark:hover:bg-zinc-900/30">
-                  <button type="button" onClick={() => props.onLocateFigure(figure)} className="flex w-full min-w-0 flex-1 items-center gap-3 text-left">
-                    <span className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-zinc-200 bg-white text-[10px] text-zinc-400 dark:border-zinc-800">
-                      {renderable ? <img src={assetUrl(path)} alt={`题图 ${index + 1}`} className="h-full w-full object-contain" /> : '内联资源'}
-                    </span>
-                    <span className="min-w-0"><span className="block text-sm font-medium">题图 {index + 1}</span><span className="mt-1 block text-xs text-zinc-500">{usage === 'analysis' ? '解析图' : usage === 'options' ? `选项 ${figure.optionLabel || '未指定'}` : '题干图'}{figure.pageNo ? ` · 第 ${figure.pageNo} 页` : ''}</span></span>
-                  </button>
-                  <div className="flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto">
-                    <select aria-label={`题图 ${index + 1} 类型`} value={usage} onChange={(event) => props.onUpdateFigure(figure, event.target.value as 'stem' | 'analysis' | 'options', usage === 'options' ? figure.optionLabel || 'A' : undefined)} className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-xs outline-none focus:border-zinc-900 dark:border-zinc-800 dark:bg-zinc-950">
-                      <option value="stem">题干图</option>
-                      <option value="options">选项图</option>
-                      <option value="analysis">解析图</option>
-                    </select>
-                    {usage === 'options' ? (
-                      <select aria-label={`题图 ${index + 1} 选项`} value={String(figure.optionLabel || 'A').toUpperCase()} onChange={(event) => props.onUpdateFigure(figure, 'options', event.target.value)} className="h-8 w-14 rounded-md border border-zinc-200 bg-white px-2 text-xs outline-none focus:border-zinc-900 dark:border-zinc-800 dark:bg-zinc-950">
-                        {['A', 'B', 'C', 'D'].map((label) => <option key={label} value={label}>{label}</option>)}
-                      </select>
-                    ) : null}
-                    <Button size="xs" variant="outline" icon={Trash2} onClick={() => props.onDeleteFigure(figure)}>删除</Button>
-                  </div>
+              {props.figureUploadError ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-400">{props.figureUploadError}</p> : null}
+            </div>
+            <div className="border-t border-zinc-100 pt-4 dark:border-zinc-900">
+              {props.figures.length ? (
+                <div className="space-y-3">
+                  {props.figures.length >= 4 ? (
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+                      <p className="text-xs leading-5 text-zinc-500">图片型选择题可快速指定最后四张图片。</p>
+                      <Button size="xs" variant="outline" onClick={props.onAssignTrailingOptions}>后四张设为 A-D</Button>
+                    </div>
+                  ) : null}
+                  {props.figures.map((figure, index) => {
+                    const path = String(figure.path || '')
+                    const renderable = path && !path.trim().startsWith('<')
+                    const usage = figure.usage === 'analysis' ? 'analysis' : figure.usage === 'options' || figure.usage === 'option' ? 'options' : 'stem'
+                    return (
+                      <div key={figure.id || `${path}-${index}`} className="flex flex-col gap-3 rounded-lg border border-zinc-200 p-3 hover:bg-zinc-50/50 sm:flex-row sm:items-center dark:border-zinc-800 dark:hover:bg-zinc-900/30">
+                        <button type="button" onClick={() => props.onLocateFigure(figure)} className="flex w-full min-w-0 flex-1 items-center gap-3 text-left">
+                          <span className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-zinc-200 bg-white text-[10px] text-zinc-400 dark:border-zinc-800">
+                            {renderable ? <img src={assetUrl(path)} alt={`题图 ${index + 1}`} className="h-full w-full object-contain" /> : '内联资源'}
+                          </span>
+                          <span className="min-w-0"><span className="block text-sm font-medium">题图 {index + 1}</span><span className="mt-1 block text-xs text-zinc-500">{usage === 'analysis' ? '解析图' : usage === 'options' ? `选项 ${figure.optionLabel || '未指定'}` : '题干图'}{figure.pageNo ? ` · 第 ${figure.pageNo} 页` : ''}</span></span>
+                        </button>
+                        <div className="flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto">
+                          <select aria-label={`题图 ${index + 1} 类型`} value={usage} onChange={(event) => props.onUpdateFigure(figure, event.target.value as 'stem' | 'analysis' | 'options', usage === 'options' ? figure.optionLabel || 'A' : undefined)} className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-xs outline-none focus:border-zinc-900 dark:border-zinc-800 dark:bg-zinc-950">
+                            <option value="stem">题干图</option>
+                            <option value="options">选项图</option>
+                            <option value="analysis">解析图</option>
+                          </select>
+                          {usage === 'options' ? (
+                            <select aria-label={`题图 ${index + 1} 选项`} value={String(figure.optionLabel || 'A').toUpperCase()} onChange={(event) => props.onUpdateFigure(figure, 'options', event.target.value)} className="h-8 w-14 rounded-md border border-zinc-200 bg-white px-2 text-xs outline-none focus:border-zinc-900 dark:border-zinc-800 dark:bg-zinc-950">
+                              {['A', 'B', 'C', 'D'].map((label) => <option key={label} value={label}>{label}</option>)}
+                            </select>
+                          ) : null}
+                          <Button size="xs" variant="outline" icon={Trash2} onClick={() => props.onDeleteFigure(figure)}>删除</Button>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              )
-            })}
+              ) : (
+                <div className="rounded-xl border border-dashed border-zinc-200 p-12 text-center dark:border-zinc-800">
+                  <Image className="mx-auto mb-3 size-8 text-zinc-300 dark:text-zinc-700" />
+                  <p className="text-xs text-zinc-400">当前题目暂无题图</p>
+                </div>
+              )}
+            </div>
           </div>
-        ) : <div className="rounded-xl border border-dashed border-zinc-200 p-12 text-center dark:border-zinc-800"><Image className="mx-auto mb-3 size-8 text-zinc-300 dark:text-zinc-700"/><p className="text-xs text-zinc-400">当前题目暂无题图</p></div>)}
+        )}
       </div>
     </aside>
   )

@@ -364,6 +364,33 @@ export function ensureSchema() {
       FOREIGN KEY (collection_id) REFERENCES question_bank_collections(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS layout_preview_jobs (
+      id TEXT PRIMARY KEY,
+      draft_id TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      input_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      lease_owner TEXT NOT NULL DEFAULT '',
+      lease_expires_at TEXT NOT NULL DEFAULT '',
+      error TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      started_at TEXT NOT NULL DEFAULT '',
+      completed_at TEXT NOT NULL DEFAULT '',
+      FOREIGN KEY (draft_id) REFERENCES question_bank_layout_drafts(id) ON DELETE CASCADE,
+      UNIQUE(draft_id, revision)
+    );
+
+    CREATE TABLE IF NOT EXISTS layout_preview_cache (
+      input_hash TEXT PRIMARY KEY,
+      renderer_version TEXT NOT NULL,
+      artifact_path TEXT NOT NULL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      last_used_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_runs_created_at ON pdf_slicer_runs(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_runs_ocr_status ON pdf_slicer_runs(ocr_status);
     CREATE INDEX IF NOT EXISTS idx_qb_updated_at ON question_bank_items(updated_at DESC);
@@ -372,6 +399,10 @@ export function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_qb_export_records_collection ON question_bank_export_records(collection_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_qb_export_records_run ON question_bank_export_records(run_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_qb_layout_drafts_collection ON question_bank_layout_drafts(collection_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_layout_preview_jobs_status ON layout_preview_jobs(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_layout_preview_jobs_draft ON layout_preview_jobs(draft_id, revision DESC);
+    CREATE INDEX IF NOT EXISTS idx_layout_preview_jobs_lease ON layout_preview_jobs(status, lease_expires_at);
+    CREATE INDEX IF NOT EXISTS idx_layout_preview_cache_used ON layout_preview_cache(last_used_at DESC);
     CREATE INDEX IF NOT EXISTS idx_source_documents_updated_at ON source_documents(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_source_documents_status ON source_documents(status, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_import_jobs_updated_at ON import_jobs(updated_at DESC);

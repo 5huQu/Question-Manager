@@ -383,23 +383,47 @@ export function exportRunExamZh(
     return leftNo - rightNo
   })
   if (!rows.length) throw new Error('当前批次暂无已入库题目，无法导出。')
-  const outDir = path.join(storageRoot, 'output', 'pdf', 'batch-exports', safeName(runId))
+  return exportExamZhQuestionSet({
+    id: runId,
+    title: options.title || run.paperTitle || run.pdfName || runId,
+    rows,
+    ...options,
+  })
+}
+
+export function exportExamZhQuestionSet(input: {
+  id: string
+  title: string
+  rows: QuestionRow[]
+  format?: 'latex' | 'pdf'
+  scoreConfig?: ExamZhScoreConfig
+  watermarkText?: string
+  variant?: ExportVariant
+}) {
+  const variant = input.variant || 'student'
+  if (!input.rows.length) throw new Error('当前题组没有题目，无法导出。')
+  const rows = [...input.rows].sort((left, right) => {
+    const leftNo = paperQuestionNo(mapQuestion(left), 0)
+    const rightNo = paperQuestionNo(mapQuestion(right), 0)
+    return leftNo - rightNo
+  })
+  const outDir = path.join(storageRoot, 'output', 'pdf', 'examzh-exports', safeName(input.id))
   fs.mkdirSync(outDir, { recursive: true })
-  const baseName = `${safeName(options.title || run.paperTitle || run.pdfName || runId)}-examzh-${variant}`
+  const baseName = `${safeName(input.title || input.id)}-examzh-${variant}`
   const texPath = path.join(outDir, `${baseName}.tex`)
   fs.writeFileSync(
     texPath,
     buildRunExamZhLatex(
-      run,
+      {},
       rows,
-      options.title || run.paperTitle || run.pdfName,
+      input.title,
       variant,
-      options.scoreConfig,
-      options.watermarkText || '',
+      input.scoreConfig,
+      input.watermarkText || '',
     ),
     'utf8'
   )
-  if (options.format === 'pdf') {
+  if (input.format === 'pdf') {
     for (let i = 0; i < 2; i += 1) {
       execFileSync(xelatexPath(), ['-interaction=nonstopmode', '-halt-on-error', path.basename(texPath)], {
         cwd: outDir,
@@ -407,7 +431,7 @@ export function exportRunExamZh(
         maxBuffer: 1024 * 1024 * 10,
       })
     }
-    return { path: path.join(outDir, `${baseName}.pdf`), format: 'pdf' as const }
+    return { path: path.join(outDir, `${baseName}.pdf`), texPath, logPath: path.join(outDir, `${baseName}.log`), format: 'pdf' as const }
   }
-  return { path: texPath, format: 'latex' as const }
+  return { path: texPath, texPath, logPath: path.join(outDir, `${baseName}.log`), format: 'latex' as const }
 }
