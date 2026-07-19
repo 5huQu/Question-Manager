@@ -287,7 +287,6 @@ export function OverviewTab({
                 key={question.id}
                 question={question}
                 isInBasket={basketIds.has(question.id)}
-                onOpen={() => navigate(`/questions/${encodeURIComponent(question.id)}`)}
               />
             ))}
             {!questions.length ? (
@@ -376,11 +375,9 @@ function HeatmapCell({ day }: { day: ActivityHeatmapDay }) {
 function WorkbenchQuestionPreview({
   question,
   isInBasket,
-  onOpen,
 }: {
   question: QuestionItem
   isInBasket: boolean
-  onOpen: () => void
 }) {
   const [showAnalysis, setShowAnalysis] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -403,8 +400,7 @@ function WorkbenchQuestionPreview({
 
   return (
     <div
-      onClick={onOpen}
-      className="group relative flex cursor-pointer select-none flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-5 text-left transition-all duration-150 hover:border-zinc-300 dark:border-zinc-800 dark:bg-card dark:hover:border-zinc-700"
+      className="group relative flex select-none flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-5 text-left transition-all duration-150 hover:border-zinc-300 dark:border-zinc-800 dark:bg-card dark:hover:border-zinc-700"
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">

@@ -26,6 +26,8 @@ const { closeDatabase } = await import('../dist/index.js')
 const { db } = await import('../dist/db/connection.js')
 const { createOrRestoreCandidateManualFixSession, renderSourceDocumentPage } = await import('../dist/services/import-flow-v2/import-flow-v2.service.js')
 const { saveRegions, finalizeSession, getSession } = await import('../dist/services/pdf-slicer/annotations.service.js')
+const candidateService = await import('../dist/services/import-flow-v2/candidate.service.js')
+const candidateRepo = await import('../dist/repositories/question-candidates.repo.js')
 
 try {
   // 1. Mock DB data
@@ -177,6 +179,22 @@ try {
 
   // Verify status is updated to ready because errors are cleared
   assert.equal(updatedCandidate.status, 'ready')
+
+  const beforeEdit = candidateRepo.getQuestionCandidate(candidateId)
+  const edited = candidateService.updateQuestionCandidate(candidateId, {
+    expectedContentRevision: beforeEdit.contentRevision,
+    answerText: '新答案',
+  }).candidate
+  assert.equal(edited.contentRevision, beforeEdit.contentRevision + 1)
+  assert.throws(
+    () => candidateService.updateQuestionCandidate(candidateId, { expectedContentRevision: beforeEdit.contentRevision, answerText: '过期答案' }),
+    (error) => error?.status === 409 && error?.body?.actualContentRevision === edited.contentRevision,
+  )
+  candidateRepo.updateQuestionCandidate(candidateId, { status: 'committed', committedQuestionId: 'qb_committed' })
+  assert.throws(
+    () => candidateService.updateQuestionCandidate(candidateId, { expectedContentRevision: edited.contentRevision, stemMarkdown: '禁止修改' }),
+    (error) => error?.status === 409 && error?.body?.error === 'candidate_committed' && error?.body?.committedQuestionId === 'qb_committed',
+  )
   
   const finalizedSession = getSession(session.id)
   assert.equal(finalizedSession.status, 'finalized')

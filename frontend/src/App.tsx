@@ -20,7 +20,6 @@ const PdfSlicerPage = lazy(() => import('@/pages/pdf-slicer/PdfSlicerPage'))
 const OcrQueuePage = lazy(() => import('@/pages/ocr/OcrQueuePage'))
 const QuestionBankPage = lazy(() => import('@/pages/questions/QuestionBankPage'))
 const QuestionCreatePage = lazy(() => import('@/pages/questions/QuestionCreatePage'))
-const QuestionDetailPage = lazy(() => import('@/pages/questions/QuestionDetailPage'))
 const RunQuestionsPage = lazy(() => import('@/pages/questions/RunQuestionsPage'))
 const MarkdownPreviewPage = lazy(() => import('@/pages/questions/MarkdownPreviewPage'))
 const LayoutWorkbenchPage = lazy(() => import('@/pages/questions/LayoutWorkbenchPage'))
@@ -34,6 +33,7 @@ const SetupPage = lazy(() => import('@/pages/SetupPage').then(module => ({ defau
 const QuestionBasket = lazy(() => import('@/components/QuestionBasket').then(module => ({ default: module.QuestionBasket })))
 const AnnotationWorkbenchPage = lazy(() => import('@/pages/pdf-slicer/AnnotationWorkbenchPage'))
 const CandidateFixWorkbenchPage = lazy(() => import('@/pages/import-v2/CandidateFixWorkbenchPage'))
+const QuestionEditorMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/QuestionEditorMockPage')) : null
 
 function NavigateToWorkbench() {
   const navigate = useNavigate()
@@ -206,7 +206,6 @@ export default function App() {
                 <Route path="/questions" element={<QuestionBankPage />} />
                 <Route path="/questions/new" element={<QuestionCreatePage />} />
                 <Route path="/questions/basket" element={<QuestionBasket mode="page" />} />
-                <Route path="/questions/:id" element={<QuestionDetailPage />} />
                 <Route path="/questions/collections/:id/markdown-preview" element={<MarkdownPreviewPage />} />
                 <Route path="/questions/collections/:id/layout-drafts/:draftId" element={<LayoutWorkbenchPage />} />
                 <Route path="/questions/layout-drafts" element={<LayoutDraftsPage />} />
@@ -218,6 +217,7 @@ export default function App() {
                 <Route path="/tools/pdf-slicer/runs/:runId/pending-bank" element={<PendingBankPage />} />
                 <Route path="/tools/pdf-slicer/batches/:batchId/annotate" element={<AnnotationWorkbenchPage />} />
                 <Route path="/tools/import/candidates/:candidateId/manual-fix" element={<LegacyCandidateFixRedirect />} />
+                {QuestionEditorMockPage ? <Route path="/mock/question-editor" element={<QuestionEditorMockPage />} /> : null}
 
               </Routes>
             </Suspense>

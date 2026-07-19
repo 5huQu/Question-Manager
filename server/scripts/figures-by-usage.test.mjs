@@ -11,7 +11,7 @@ const mockCandidateFigures = [
   { id: 'fig_stem_2', usage: 'question', path: 'b.png', pageNo: 1, bbox: [0, 0, 10, 10] },
   { id: 'fig_stem_3', usage: '', path: 'c.png', pageNo: 1, bbox: [0, 0, 10, 10] },
   { id: 'fig_analysis', usage: 'analysis', path: 'd.png', pageNo: 2, bbox: [0, 0, 10, 10] },
-  { id: 'fig_options', usage: 'options', path: 'e.png', pageNo: 2, bbox: [0, 0, 10, 10] },
+  { id: 'fig_options', usage: 'options', optionLabel: 'b', path: 'e.png', pageNo: 2, bbox: [0, 0, 10, 10] },
 ]
 
 const bankedFigures = figuresForQuestionBank(mockCandidateFigures)
@@ -35,7 +35,8 @@ assert.equal(bankedFigures[3].category, 'analysis')
 
 // usage === 'options' should stay 'options'
 assert.equal(bankedFigures[4].usage, 'options')
-assert.equal(bankedFigures[4].category, 'question')
+assert.equal(bankedFigures[4].category, 'options')
+assert.equal(bankedFigures[4].optionLabel, 'B')
 
 console.log('figuresForQuestionBank tests passed.')
 

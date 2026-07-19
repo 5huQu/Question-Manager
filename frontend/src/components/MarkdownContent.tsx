@@ -5,6 +5,7 @@ import rehypeKatex from 'rehype-katex'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
+import { normalizeLatexMathDelimiters } from '@/utils/mathMarkdown'
 
 export const MarkdownContent = memo(function MarkdownContent({ content, className = '' }: { content: string; className?: string }) {
   return (
@@ -50,7 +51,7 @@ export function plainTextLength(value: string) {
 }
 
 export function normalizeMarkdownForRender(value: string) {
-  return normalizeMarkdownTables(normalizeHtmlTables(stripDoc2xNoiseComments(String(value || ''))))
+  return normalizeMarkdownTables(normalizeHtmlTables(normalizeLatexMathDelimiters(stripDoc2xNoiseComments(String(value || '')))))
 }
 
 export function stripDoc2xNoiseComments(value: string) {

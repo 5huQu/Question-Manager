@@ -106,6 +106,7 @@ export type QuestionRow = {
   stem_markdown: string
   answer_text: string
   analysis_markdown: string
+  content_revision: number
   total_score: number
   scoring_rubric_json: string
   search_text: string

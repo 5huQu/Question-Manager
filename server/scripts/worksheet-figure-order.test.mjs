@@ -4,7 +4,8 @@ import path from 'node:path'
 
 import { storageRoot } from '../dist/config.js'
 import { buildCollectionWorksheetLatex } from '../dist/services/question-bank/export.js'
-import { decideWorksheetFigureLayout } from '../dist/utils/worksheet-figures.js'
+import { decideWorksheetFigureLayout, worksheetAnswerLatex } from '../dist/utils/worksheet-figures.js'
+import { splitChoiceStemForExport } from '../dist/utils/exam-zh.js'
 
 fs.mkdirSync(storageRoot, { recursive: true })
 const tempDir = fs.mkdtempSync(path.join(storageRoot, 'qbank-worksheet-figures-'))
@@ -46,21 +47,21 @@ try {
 
   const student = buildCollectionWorksheetLatex(collection, 'student', figuresDir, new Map()).content
   const stemFigureIndex = student.indexOf('q1-stem-unanchored')
-  const choicesIndex = student.indexOf('\\begin{qbankchoicesone}')
+  const choicesIndex = Math.max(student.indexOf('\\qbankchoicesfour'), student.indexOf('\\qbankchoicestwo'), student.indexOf('\\begin{qbankchoicesone}'))
   const optionFigureIndex = student.indexOf('q1-option-unanchored')
   assert.ok(stemFigureIndex >= 0, `应输出无锚点题干图：${student.match(/\\qbankfigure[^\n]*/g)?.join(' | ')}`)
   assert.ok(stemFigureIndex < choicesIndex, '无锚点题干图应位于完整选项块之前')
   assert.ok(choicesIndex < optionFigureIndex, '无锚点选项图应保留在选项块之后')
   assert.equal(student.includes('q1-analysis-unanchored'), false, '学生版不应输出解析图')
-  assert.ok(student.includes('\\qbankchoiceswithfigure{right}'), '单张方形题干图和短选项应自动采用右侧混排')
+  assert.ok(student.includes('\\qbankchoiceswithfigure{right}{0.38}'), '单图选择题应自动使用左侧纵向选项、右侧题图布局')
 
   const decision = decideWorksheetFigureLayout({
     questionId: 'question-1', figureId: 'stem-unanchored', imagePath: stemFigurePath,
     stemFigureCount: 1, hasInlineMarker: false, choices: ['-1', '-0.5', '0', '0.5'],
   })
-  assert.equal(decision.placement, 'side-right', '第六题类样例应得到确定性的右侧图片布局')
+  assert.equal(decision.placement, 'side-right', '单图选择题样例应得到确定性的选项右侧布局')
   assert.equal(decision.layout.resolved, 'side-right')
-  assert.ok(decision.reason.includes('短选项'))
+  assert.ok(decision.reason.includes('纵向排列'))
 
   const multiple = decideWorksheetFigureLayout({
     questionId: 'question-1', figureId: 'stem-unanchored', imagePath: stemFigurePath,
@@ -76,6 +77,7 @@ try {
   assert.equal(invalidManual.warnings.some((warning) => warning.code === 'layout-fallback'), true)
 
   const inlineCollection = structuredClone(collection)
+  inlineCollection.questions[0].item.figures[0].blockId = 'source-block-stem'
   inlineCollection.questions[0].item.stemMarkdown =
     '题干前<!-- DOC2X_FIGURE:stem-unanchored -->题干后\nA. 甲\nB. 乙\nC. 丙\nD. 丁'
   const inline = buildCollectionWorksheetLatex(inlineCollection, 'teacher', figuresDir, new Map()).content
@@ -87,6 +89,60 @@ try {
     '有锚点题干图不应重复追加',
   )
   assert.ok(inline.indexOf('q1-analysis-unanchored') > inline.indexOf('\\begin{solutionbox}'), '解析图应保留在解析区域')
+
+  const consecutiveAnchored = structuredClone(collection)
+  consecutiveAnchored.questions[0].item.stemMarkdown = '题干<!-- DOC2X_FIGURE:figure-a --><!-- DOC2X_FIGURE:figure-b -->\nA. 甲\nB. 乙\nC. 丙\nD. 丁'
+  consecutiveAnchored.questions[0].item.figures = [
+    { id: 'figure-a', usage: 'stem', path: path.relative(storageRoot, stemFigurePath) },
+    { id: 'figure-b', usage: 'stem', path: path.relative(storageRoot, optionFigurePath) },
+  ]
+  const consecutive = buildCollectionWorksheetLatex(consecutiveAnchored, 'student', figuresDir, new Map()).content
+  assert.match(consecutive, /\\begin\{qbankfiguregrid\}\{2\}[\s\S]*figure-a[\s\S]*figure-b[\s\S]*\\end\{qbankfiguregrid\}/, '连续锚点图之间只有空白时也应自动并排')
+
+  const boundaryFigure = structuredClone(collection)
+  boundaryFigure.questions[0].item.stemMarkdown = '题干文字\n<!-- DOC2X_FIGURE:stem-unanchored -->\nA. 甲\nB. 乙\nC. 丙\nD. 丁'
+  const boundary = buildCollectionWorksheetLatex(boundaryFigure, 'student', figuresDir, new Map()).content
+  assert.match(boundary, /\\qbankchoiceswithfigure\{right\}[\s\S]*stem-unanchored[\s\S]*\\begin\{qbankchoicesone\}/, '题干与选项之间的单图锚点应进入选项右侧而非单独占行')
+
+  const labelledFigures = structuredClone(collection)
+  labelledFigures.questions[0].item.stemMarkdown = [
+    '实验题干',
+    '<!-- DOC2X_FIGURE:figure-a -->', '图甲',
+    '<!-- DOC2X_FIGURE:figure-b -->', '图乙',
+    'A. 甲', 'B. 乙', 'C. 丙', 'D. 丁',
+  ].join('\n')
+  labelledFigures.questions[0].item.figures = [
+    { id: 'figure-a', usage: 'stem', path: path.relative(storageRoot, stemFigurePath) },
+    { id: 'figure-b', usage: 'stem', path: path.relative(storageRoot, optionFigurePath) },
+  ]
+  const grouped = buildCollectionWorksheetLatex(labelledFigures, 'student', figuresDir, new Map()).content
+  assert.match(grouped, /\\begin\{qbankfiguregrid\}\{2\}[\s\S]*图甲\}\{0\.625\}[\s\S]*图乙\}\{0\.625\}[\s\S]*\\end\{qbankfiguregrid\}/, '连续带标签题图应自动组成紧凑图组并保留单图宽度')
+
+  const splitWithTail = splitChoiceStemForExport('题干\nA. 甲\nB. 乙\nC. 丙\nD. 丁\n（2）后续小问')
+  assert.equal(splitWithTail.choices[3], '丁')
+  assert.equal(splitWithTail.trailingContent, '（2）后续小问', '选择项后的后续小问不应被吞入选项 D')
+
+  const imageChoiceCollection = structuredClone(collection)
+  imageChoiceCollection.questions[0].item.stemMarkdown = [
+    '图片选择题',
+    'A. <!-- DOC2X_FIGURE:option-a -->',
+    'B. <!-- DOC2X_FIGURE:option-b -->',
+    'C. <!-- DOC2X_FIGURE:option-c -->',
+    'D. <!-- DOC2X_FIGURE:option-d -->',
+  ].join('\n')
+  imageChoiceCollection.questions[0].item.figures = ['a', 'b', 'c', 'd'].map((label) => ({
+    id: `option-${label}`,
+    blockId: `source-block-option-${label}`,
+    usage: 'options',
+    optionLabel: label.toUpperCase(),
+    path: path.relative(storageRoot, optionFigurePath),
+  }))
+  const imageChoice = buildCollectionWorksheetLatex(imageChoiceCollection, 'student', figuresDir, new Map()).content
+  assert.equal((imageChoice.match(/\\includegraphics\[width=0\.625\\linewidth,height=2\.8cm/g) || []).length, 4, 'A-D 图片应各自在选项单元格中按紧凑尺寸输出一次')
+  assert.equal((imageChoice.match(/^\\qbankfigure.*option-/gm) || []).length, 0, '已内联的选项图不应在题干后重复追加')
+
+  const mixedAnswer = worksheetAnswerLatex('(1) 3.664 (2) D E \\( \\frac{k}{1-k} \\)')
+  assert.doesNotMatch(mixedAnswer, /^\$[\s\S]*\\\(/, '含显式数学定界符的混合答案不应再次整体包裹数学环境')
 
   const blockCollection = structuredClone(collection)
   const blockRendered = buildCollectionWorksheetLatex(blockCollection, 'student', figuresDir, new Map(), undefined, {

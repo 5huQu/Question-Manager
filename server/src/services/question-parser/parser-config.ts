@@ -13,10 +13,10 @@ import {
 
 const configPath = path.join(dataDir, 'config', 'import-flow-v2-parser.json')
 const presetsPath = path.join(dataDir, 'config', 'import-flow-v2-parser-presets.json')
-const listKeys = ['sectionHeadings', 'documentNoteKeywords', 'solutionSectionKeywords', 'primaryQuestionPatterns', 'subQuestionPatterns', 'figureKeywords', 'metadataBlockKeywords'] as const
+const listKeys = ['sectionHeadings', 'documentNoteKeywords', 'lectureNonQuestionSectionKeywords', 'solutionSectionKeywords', 'primaryQuestionPatterns', 'subQuestionPatterns', 'figureKeywords', 'metadataBlockKeywords'] as const
 const solutionBindingStrategies: SolutionBindingStrategy[] = ['heading_then_question', 'question_then_heading', 'auto']
 const metadataBlockPolicies: MetadataBlockPolicy[] = ['ignore', 'append_to_analysis', 'store_as_note']
-const answerTablePolicies: AnswerTablePolicy[] = ['fill_empty_only', 'override_metadata_like_answer', 'prefer_table_for_choice_questions']
+const answerTablePolicies: AnswerTablePolicy[] = ['disabled', 'fill_empty_only', 'override_metadata_like_answer', 'prefer_table_for_choice_questions']
 
 export type ImportParserPreset = {
   id: string
@@ -78,9 +78,18 @@ function builtinParserPresets(): ImportParserPreset[] {
     },
     {
       id: 'mixed_inline_solution',
-      name: '题干答案混排',
-      description: '题干中直接带答案、解析标记时使用自动推荐策略。',
+      name: '题干答案混排 · 有答案表',
+      description: '题干中直接带答案、解析标记，同时允许答案汇总表补充空缺。',
       config: normalizeParserConfig({ ...defaultParserConfig, solutionBindingStrategy: 'auto' }),
+      createdAt: now,
+      updatedAt: now,
+      builtIn: true,
+    },
+    {
+      id: 'mixed_inline_solution_no_answer_table',
+      name: '题干答案混排 · 无答案表',
+      description: '题干中直接带答案、解析标记，完全关闭答案表检测、遮罩和合并。',
+      config: normalizeParserConfig({ ...defaultParserConfig, solutionBindingStrategy: 'auto', answerTablePolicy: 'disabled' }),
       createdAt: now,
       updatedAt: now,
       builtIn: true,

@@ -3,7 +3,7 @@ import type { PaperKind } from '../utils/import-metadata.js'
 
 export type QuestionCandidateStatus = 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked' | 'committed'
 
-export type CandidateFigureUsage = 'stem' | 'analysis' | 'option' | 'unknown'
+export type CandidateFigureUsage = 'stem' | 'analysis' | 'options' | 'unknown'
 
 export type CandidateSourceRefKind = 'stem' | 'answer' | 'analysis' | 'figure' | 'unknown'
 
@@ -20,6 +20,7 @@ export type CandidateIssueCode =
   | 'possible_cross_page'
   | 'formula_parse_error'
   | 'markdown_render_error'
+  | 'possible_presentation_noise'
   | 'manual_review_required'
   | 'image_download_failed'
 
@@ -35,6 +36,7 @@ export type CandidateFigure = {
   pageNo?: number
   bbox?: OCRBBox
   inlineMarker?: string
+  optionLabel?: string
 }
 
 export type CandidateSourceRef = {
@@ -50,6 +52,7 @@ export type CandidateIssue = {
   severity: CandidateIssueSeverity
   message: string
   relatedBlockIds?: string[]
+  relatedFigures?: CandidateFigure[]
 }
 
 export type CandidateParseDiagnostic = {
@@ -69,6 +72,7 @@ export type QuestionCandidate = {
   stemMarkdown: string
   answerText: string
   analysisMarkdown: string
+  contentRevision?: number
   questionType?: string
   difficultyScore10?: number
   difficultyLabel?: string
@@ -103,6 +107,7 @@ export type QuestionCandidateRow = {
   stem_markdown: string
   answer_text: string
   analysis_markdown: string
+  content_revision: number
   question_type: string
   difficulty_score_10: number
   difficulty_label: string
@@ -162,6 +167,7 @@ export type CreateQuestionCandidateInput = {
 }
 
 export type UpdateQuestionCandidateInput = Partial<{
+  expectedContentRevision: number
   ocrDocumentId: string
   questionNo: string
   stemMarkdown: string

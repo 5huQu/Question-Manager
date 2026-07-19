@@ -7,6 +7,7 @@ const strategyOptions: Array<{ value: SolutionBindingStrategy; label: string }> 
 ]
 
 const answerTableOptions: Array<{ value: AnswerTablePolicy; label: string }> = [
+  { value: 'disabled', label: '关闭答案表检测' },
   { value: 'fill_empty_only', label: '只填空缺' },
   { value: 'override_metadata_like_answer', label: '覆盖说明块答案' },
   { value: 'prefer_table_for_choice_questions', label: '小题优先答案表' },

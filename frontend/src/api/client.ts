@@ -1,5 +1,16 @@
 export const jsonHeaders = { 'Content-Type': 'application/json' }
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public payload: Record<string, unknown> = {},
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 declare global {
   interface Window {
     questionWorkbench?: {
@@ -69,7 +80,7 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(apiUrl(url), init)
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(payload.error || payload.message || `HTTP ${response.status}`)
+    throw new ApiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload)
   }
   return payload as T
 }

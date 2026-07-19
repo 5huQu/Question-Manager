@@ -41,6 +41,24 @@ function markdownForDoc2xBlock(type: OCRBlockType, content: string, src: string)
   return content
 }
 
+const DOC2X_MEANLESS_COMMENT_RE = /<!--\s*Meanless\s*:[\s\S]*?-->/gi
+
+function stripDoc2xMeanlessComments(value: string) {
+  let count = 0
+  const markdown = String(value || '').replace(DOC2X_MEANLESS_COMMENT_RE, () => {
+    count += 1
+    return ''
+  })
+  return { markdown, count }
+}
+
+function isDoc2xBoilerplateBlock(rawBlock: unknown) {
+  const block = asRecord(rawBlock)
+  const attributes = asRecord(block.attributes)
+  const value = attributes.is_boilerplate ?? block.is_boilerplate
+  return value === true || value === 1 || String(value || '').toLowerCase() === 'true'
+}
+
 function normalizeDoc2xBlock(
   rawBlock: unknown,
   pageNo: number,
@@ -77,14 +95,17 @@ function normalizeDoc2xBlock(
   return draft
 }
 
-function normalizeDoc2xPage(rawPage: unknown, pageIndex: number, sourceDocumentId: string): NormalizedPageDraft {
+function normalizeDoc2xPage(rawPage: unknown, pageIndex: number, sourceDocumentId: string) {
   const page = asRecord(rawPage)
   const layout = asRecord(page.layout)
   const pageNo = doc2xPageNo(page, pageIndex + 1)
-  const markdown = stringFrom(page.md ?? page.markdown ?? page.content)
+  const cleanedMarkdown = stripDoc2xMeanlessComments(stringFrom(page.md ?? page.markdown ?? page.content))
+  const markdown = cleanedMarkdown.markdown
   const rawBlocks = asArray(layout.blocks ?? page.blocks)
+  const contentBlocks = rawBlocks.filter((block) => !isDoc2xBoilerplateBlock(block))
+  const boilerplateBlockCount = rawBlocks.length - contentBlocks.length
   const blocks = rawBlocks.length
-    ? rawBlocks.map((block, blockIndex) => normalizeDoc2xBlock(block, pageNo, blockIndex, sourceDocumentId))
+    ? contentBlocks.map((block, blockIndex) => normalizeDoc2xBlock(block, pageNo, blockIndex, sourceDocumentId))
     : [{
         id: stableNormalizerId('doc2x_page_text', [sourceDocumentId, pageNo, markdown]),
         type: 'text' as const,
@@ -92,22 +113,33 @@ function normalizeDoc2xPage(rawPage: unknown, pageIndex: number, sourceDocumentI
         markdown,
       }]
   return {
-    pageNo,
-    width: numberFrom(page.width ?? page.page_width ?? layout.width ?? layout.page_width),
-    height: numberFrom(page.height ?? page.page_height ?? layout.height ?? layout.page_height),
-    markdown,
-    blocks,
+    page: {
+      pageNo,
+      width: numberFrom(page.width ?? page.page_width ?? layout.width ?? layout.page_width),
+      height: numberFrom(page.height ?? page.page_height ?? layout.height ?? layout.page_height),
+      markdown,
+      blocks,
+    } satisfies NormalizedPageDraft,
+    meanlessCommentCount: cleanedMarkdown.count,
+    boilerplateBlockCount,
   }
 }
 
 export function normalizeDoc2xOCRDocument(payload: unknown, options: OCRDocumentNormalizerOptions): OCRDocument {
   const root = asRecord(payload)
-  const pages = doc2xPages(root).map((page, pageIndex) => normalizeDoc2xPage(page, pageIndex, options.sourceDocumentId))
+  const normalizedPages = doc2xPages(root).map((page, pageIndex) => normalizeDoc2xPage(page, pageIndex, options.sourceDocumentId))
+  const pages = normalizedPages.map((item) => item.page)
+  const meanlessCommentCount = normalizedPages.reduce((sum, item) => sum + item.meanlessCommentCount, 0)
+  const boilerplateBlockCount = normalizedPages.reduce((sum, item) => sum + item.boilerplateBlockCount, 0)
   const data = asRecord(root.data)
   const result = asRecord(data.result)
   return createNormalizedOCRDocument('doc2x', options, pages, {
     source: 'doc2x_json',
     code: root.code ?? '',
     taskId: stringFrom(root.task_id ?? root.taskId ?? result.task_id ?? result.taskId),
+    boilerplateCleanup: {
+      meanlessCommentCount,
+      boilerplateBlockCount,
+    },
   })
 }

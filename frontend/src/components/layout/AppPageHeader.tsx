@@ -24,7 +24,6 @@ function routeMeta(pathname: string): RouteMeta {
   if (pathname === '/questions/layout-drafts') return { section: '题库', title: '排版草稿' }
   if (pathname.includes('/markdown-preview')) return { section: '题库', title: 'Markdown 预览' }
   if (pathname.includes('/layout-drafts/')) return { section: '题库', title: '试卷排版' }
-  if (pathname.startsWith('/questions/') && pathname !== '/questions') return { section: '题库', title: '题目详情' }
   if (pathname === '/questions') return { section: '题库', title: '主库' }
   if (pathname === '/learning-tags') return { section: '题库', title: '学习标签库' }
   if (pathname === '/exports') return { section: '题库', title: '导出记录' }

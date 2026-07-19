@@ -71,8 +71,12 @@ export function listQuestionBankItems(filters: {
   return { items: rows.map(mapQuestion), totalItems, page, pageSize: filters.pageSize, totalPages, basket: getBasket() }
 }
 
-export function updateQuestionBankItem(id: string, values: SqlValue[]) {
-  db.prepare(`
+export function updateQuestionBankItem(id: string, values: SqlValue[], options: {
+  expectedContentRevision?: number
+  contentChanged?: boolean
+  figures?: Array<Record<string, unknown>>
+} = {}) {
+  const statement = db.prepare(`
     UPDATE question_bank_items SET
       question_no = COALESCE(?, question_no),
       stage = COALESCE(?, stage),
@@ -93,9 +97,28 @@ export function updateQuestionBankItem(id: string, values: SqlValue[]) {
       format_review_required = ?,
       format_review_reasons_json = ?,
       bank_status = CASE WHEN ? AND bank_status = 'ready' THEN 'blocked' ELSE COALESCE(?, bank_status) END,
+      content_revision = content_revision + ?,
       updated_at = ?
-    WHERE id = ?
-  `).run(...values, id)
+    WHERE id = ?${options.expectedContentRevision === undefined ? '' : ' AND content_revision = ?'}
+  `)
+  try {
+    db.exec('BEGIN IMMEDIATE')
+    const result = statement.run(
+      ...values.slice(0, -1),
+      options.contentChanged ? 1 : 0,
+      values.at(-1)!,
+      id,
+      ...(options.expectedContentRevision === undefined ? [] : [options.expectedContentRevision]),
+    )
+    if (result.changes && options.figures) {
+      db.prepare('UPDATE question_bank_items SET figures_json = ? WHERE id = ?').run(JSON.stringify(options.figures), id)
+    }
+    db.exec('COMMIT')
+    return result
+  } catch (error) {
+    if (db.isTransaction) db.exec('ROLLBACK')
+    throw error
+  }
 }
 
 export function deleteQuestionBankItem(id: string) {

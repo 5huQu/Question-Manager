@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { BookOpen, Calendar, Check, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Crop, Grid, List, LoaderCircle, PencilLine, PlusSquare, Search, ShoppingBag, Tag, Tags, Trash2, X } from 'lucide-react'
 import { questionBankApi } from '@/api/questionBank'
 import { learningTagsApi } from '@/api/learningTags'
@@ -106,12 +105,6 @@ export function WorkbenchQuestionCard({
               框选题图
             </button>
           ) : null}
-          <Link
-            to={`/questions/${encodeURIComponent(item.id)}`}
-            className={btnOutlineClass}
-          >
-            详情
-          </Link>
           <button
             type="button"
             onClick={() => onDelete(item.id)}
@@ -195,7 +188,7 @@ export function WorkbenchQuestionCard({
         </div>
       </div>
 
-      {editing ? <EditDialog draft={draft} setDraft={setDraft} onClose={() => setEditing(false)} onSave={saveEditedQuestion} /> : null}
+      {editing ? <EditDialog draft={draft} setDraft={setDraft} onClose={() => setEditing(false)} onSave={saveEditedQuestion} onManageFigures={() => { setEditing(false); setCropOpen(true) }} /> : null}
       {cropOpen ? <FigureCropDialog question={item} onClose={closeCropDialog} onDelete={deleteFigure} onSave={addFigure} onUpdate={updateFigure} /> : null}
     </article>
   )
@@ -298,13 +291,6 @@ function QuestionBankDraftCard({
             <PencilLine className="size-3.5" />
             编辑
           </button>
-          <Link
-            to={`/questions/${encodeURIComponent(item.id)}`}
-            onClick={(event) => event.stopPropagation()}
-            className={btnOutlineClass}
-          >
-            详情
-          </Link>
           <span className="ml-1 shrink-0 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">#{item.serialNo ?? item.questionNo ?? item.id.slice(0, 6)}</span>
         </div>
       </div>

@@ -95,11 +95,11 @@ export const questionBankApi = {
       body: JSON.stringify(item),
     })
   },
-  updateItem(id: string, item: Partial<QuestionItem>) {
+  updateItem(id: string, item: Partial<QuestionItem>, expectedContentRevision?: number) {
     return api<QuestionItem>(`/api/question-bank/items/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: jsonHeaders,
-      body: JSON.stringify({ item }),
+      body: JSON.stringify({ item, expectedContentRevision }),
     })
   },
   deleteItem(id: string) {

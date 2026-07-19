@@ -6,18 +6,43 @@ export const LIVE_VALIDATION_ISSUE_CODES = new Set<CandidateIssue['code']>([
   'missing_stem',
   'missing_answer',
   'missing_analysis',
+  'possible_cross_page',
+  'possible_presentation_noise',
+])
+
+// These diagnostics are mirrors of candidate issues rather than independent
+// parser findings. Always rebuild them from the current issue list so a
+// resolved review action cannot leave a stale warning behind.
+const ISSUE_MIRRORED_DIAGNOSTIC_CODES = new Set<CandidateIssue['code']>([
+  'unplaced_figure',
 ])
 
 function issue(code: CandidateIssue['code'], severity: CandidateIssue['severity'], message: string): CandidateIssue {
   return { code, severity, message }
 }
 
+const RESIDUAL_PRESENTATION_LINE_RE = /^(?:#{1,6}\s*)?(?:第\s*(?:I{1,4}|IV|V|[一二三四五六七八九十]+)\s*卷|第\s*[0-9０-９]+\s*页\s*[,，、/／]?\s*共\s*[0-9０-９]+\s*页|[一二三四五六七八九十百千万]+[、.．](?:(?:单项|多项|单选|多选|非)?选择题|填空题|解答题|计算题|实验题|选做题)|.*(?:答题卡上作答|画在试卷上无效))/i
+
+function hasResidualPresentationNoise(value: string) {
+  return String(value || '').split(/\r?\n/).some((line) => RESIDUAL_PRESENTATION_LINE_RE.test(line.trim()))
+}
+
+function hasLikelyTruncatedEnding(value: string) {
+  const visible = String(value || '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!visible || /[。！？；;：:?？）)】\]”"』」]$/.test(visible)) return false
+  return /(?:需要将|应将|将|使|与|和|或|由|在|为|调)$/.test(visible)
+}
+
 export function validateQuestionCandidate(candidate: QuestionCandidate, duplicateQuestionNos: Set<string>): CandidateIssue[] {
   const issues: CandidateIssue[] = [...candidate.issues]
-  if (!candidate.questionNo.trim()) {
+  const isLecture = candidate.paperKind === 'lecture'
+  if (!isLecture && !candidate.questionNo.trim()) {
     issues.push(issue('missing_question_no', 'error', '未识别到题号。'))
   }
-  if (candidate.questionNo && duplicateQuestionNos.has(candidate.questionNo)) {
+  if (!isLecture && candidate.questionNo && duplicateQuestionNos.has(candidate.questionNo)) {
     issues.push(issue('duplicate_question_no', 'error', '同一份资料中识别到重复题号。'))
   }
   if (!candidate.stemMarkdown.trim()) {
@@ -28,6 +53,12 @@ export function validateQuestionCandidate(candidate: QuestionCandidate, duplicat
   }
   if (!candidate.analysisMarkdown.trim()) {
     issues.push(issue('missing_analysis', 'warning', '未匹配到解析。'))
+  }
+  if ([candidate.stemMarkdown, candidate.answerText, candidate.analysisMarkdown].some(hasResidualPresentationNoise)) {
+    issues.push(issue('possible_presentation_noise', 'warning', '检测到疑似页码、卷别、题型标题或答题说明，请人工复核。'))
+  }
+  if (hasLikelyTruncatedEnding(candidate.stemMarkdown)) {
+    issues.push(issue('possible_cross_page', 'warning', '题干结尾疑似被分页或分区标题截断，请对照原文复核。'))
   }
   return issues
 }
@@ -57,6 +88,7 @@ function strategySnapshot(candidate: Pick<QuestionCandidate, 'parserConfigSnapsh
 
 function isStaleParseDiagnostic(candidate: QuestionCandidate, diagnostic: CandidateParseDiagnostic) {
   if (LIVE_VALIDATION_ISSUE_CODES.has(diagnostic.code as CandidateIssue['code'])) return true
+  if (ISSUE_MIRRORED_DIAGNOSTIC_CODES.has(diagnostic.code as CandidateIssue['code'])) return true
   const isStrategySuggestion = diagnostic.code === 'question_before_solution_heading' || diagnostic.code === 'solution_heading_without_following_question'
   if (isStrategySuggestion && (candidate.answerText.trim() || candidate.analysisMarkdown.trim())) return true
   if (

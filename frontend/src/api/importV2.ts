@@ -83,6 +83,8 @@ export type ImportV2CandidateIssue = {
   code: string
   severity: 'warning' | 'error'
   message: string
+  relatedBlockIds?: string[]
+  relatedFigures?: ImportV2Candidate['figures']
 }
 
 export type ImportV2CandidateParseDiagnostic = {
@@ -99,6 +101,7 @@ export type SolutionBindingStrategy = 'heading_then_question' | 'question_then_h
 export type MetadataBlockPolicy = 'ignore' | 'append_to_analysis' | 'store_as_note'
 
 export type AnswerTablePolicy =
+  | 'disabled'
   | 'fill_empty_only'
   | 'override_metadata_like_answer'
   | 'prefer_table_for_choice_questions'
@@ -107,6 +110,7 @@ export type ImportFlowV2ParserConfig = {
   version: number
   sectionHeadings: string[]
   documentNoteKeywords: string[]
+  lectureNonQuestionSectionKeywords: string[]
   solutionSectionKeywords: string[]
   primaryQuestionPatterns: string[]
   subQuestionPatterns: string[]
@@ -222,7 +226,7 @@ export type ImportV2Candidate = {
   difficultyLabel?: string
   knowledgePoints: string[]
   solutionMethods: string[]
-  figures: Array<{ id: string; usage: string; path: string; sourceDocumentId?: string; pageNo?: number; blockId?: string; sourceBlockId?: string; bbox?: [number, number, number, number]; inlineMarker?: string; optionLabel?: string }>
+  figures: Array<{ id: string; usage: 'stem' | 'analysis' | 'options' | 'unknown'; path: string; sourceDocumentId?: string; pageNo?: number; blockId?: string; sourceBlockId?: string; bbox?: [number, number, number, number]; inlineMarker?: string; optionLabel?: string }>
   sourceRefs: Array<{ sourceDocumentId?: string; pageNo: number; blockIds: string[]; kind: string }>
   status: 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked' | 'committed'
   province: string
@@ -241,6 +245,7 @@ export type ImportV2Candidate = {
   parserConfigSnapshot: Record<string, unknown>
   createdAt: string
   updatedAt: string
+  contentRevision?: number
 }
 
 export type OcrFigureDiagnostics = {
@@ -372,7 +377,7 @@ export const importV2Api = {
   getMarkdownPreview(ocrDocumentId: string) {
     return api<MarkdownPreviewResponse>('/api/import-flow-v2/ocr-documents/' + encodeURIComponent(ocrDocumentId) + '/markdown-preview')
   },
-  getParserPreview(ocrDocumentId: string, payload: { config?: Partial<ImportFlowV2ParserConfig>; focusQuestionNo?: string; candidateId?: string } = {}) {
+  getParserPreview(ocrDocumentId: string, payload: { config?: Partial<ImportFlowV2ParserConfig>; focusQuestionNo?: string; candidateId?: string; candidateIds?: string[] } = {}) {
     return api<ParserPreviewResponse>('/api/import-flow-v2/ocr-documents/' + encodeURIComponent(ocrDocumentId) + '/parser-preview', {
       method: 'POST',
       headers: jsonHeaders,
@@ -387,6 +392,24 @@ export const importV2Api = {
     body.append('file', file)
     if (metadata) body.append('metadata', JSON.stringify(metadata))
     return api<{ sourceDocument: ImportV2SourceDocument }>('/api/import-flow-v2/source-documents/upload', {
+      method: 'POST',
+      body,
+    })
+  },
+  importDoc2xPackage(file: File, metadata?: Partial<ImportV2SourceDocument>) {
+    const body = new FormData()
+    body.append('file', file)
+    if (metadata) body.append('metadata', JSON.stringify(metadata))
+    return api<{
+      sourceDocument: ImportV2SourceDocument
+      ocrDocument: ImportV2OcrDocument
+      package: {
+        markdownFileName: string
+        imageCount: number
+        meanlessCommentCount: number
+        unreferencedImageCount: number
+      }
+    }>('/api/import-flow-v2/source-documents/import-doc2x-package', {
       method: 'POST',
       body,
     })
@@ -461,12 +484,42 @@ export const importV2Api = {
   listCandidates(sourceDocumentId: string) {
     return api<{ items: ImportV2Candidate[]; diagnostics?: OcrFigureDiagnostics }>('/api/import-flow-v2/source-documents/' + encodeURIComponent(sourceDocumentId) + '/candidates')
   },
-  updateCandidate(candidateId: string, candidate: Partial<ImportV2Candidate>) {
+  updateCandidate(candidateId: string, candidate: Partial<ImportV2Candidate>, expectedContentRevision?: number) {
     return api<{ candidate: ImportV2Candidate }>('/api/import-flow-v2/candidates/' + encodeURIComponent(candidateId), {
       method: 'PATCH',
       headers: jsonHeaders,
-      body: JSON.stringify({ candidate }),
+      body: JSON.stringify({ candidate, expectedContentRevision }),
     })
+  },
+  resolveUnplacedFigure(candidateId: string, blockId: string, payload: {
+    action: 'assign' | 'ignore'
+    targetCandidateId?: string
+    usage?: 'stem' | 'analysis'
+  }) {
+    return api<{ sourceCandidate: ImportV2Candidate; targetCandidate: ImportV2Candidate }>(
+      `/api/import-flow-v2/candidates/${encodeURIComponent(candidateId)}/unplaced-figures/${encodeURIComponent(blockId)}/resolve`,
+      {
+        method: 'POST',
+        headers: jsonHeaders,
+        body: JSON.stringify(payload),
+      },
+    )
+  },
+  moveCandidateFigure(candidateId: string, figureId: string, payload: {
+    targetCandidateId: string
+    usage: 'stem' | 'analysis' | 'options'
+    optionLabel?: string
+    sourceExpectedContentRevision?: number
+    targetExpectedContentRevision?: number
+  }) {
+    return api<{ sourceCandidate: ImportV2Candidate; targetCandidate: ImportV2Candidate }>(
+      `/api/import-flow-v2/candidates/${encodeURIComponent(candidateId)}/figures/${encodeURIComponent(figureId)}/move`,
+      {
+        method: 'POST',
+        headers: jsonHeaders,
+        body: JSON.stringify(payload),
+      },
+    )
   },
   commitCandidate(candidateId: string) {
     return api<{ candidate: ImportV2Candidate; item: unknown; classificationReports?: unknown }>('/api/import-flow-v2/candidates/' + encodeURIComponent(candidateId) + '/commit', {
@@ -475,6 +528,13 @@ export const importV2Api = {
   },
   commitCandidates(candidateIds: string[]) {
     return api<{ success: number; failed: number; items: unknown[]; errors: Array<{ id: string; error: string }>; classificationReports?: unknown }>('/api/import-flow-v2/candidates/commit', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ candidateIds }),
+    })
+  },
+  skipCandidates(candidateIds: string[]) {
+    return api<{ success: number; skippedIds: string[] }>('/api/import-flow-v2/candidates/skip', {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify({ candidateIds }),

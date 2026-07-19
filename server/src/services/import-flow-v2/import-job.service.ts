@@ -140,7 +140,8 @@ function attachParserDiagnostics(
   candidates: QuestionCandidate[],
   config: ImportFlowV2ParserConfig,
 ) {
-  const preview = buildParserPreview(diagnosticDocument, { config })
+  const isLecture = candidates.some((candidate) => candidate.paperKind === 'lecture')
+  const preview = isLecture ? { diagnostics: [] } : buildParserPreview(diagnosticDocument, { config })
   const diagnosticsByQuestion = new Map<string, CandidateParseDiagnostic[]>()
   for (const diagnostic of preview.diagnostics) {
     if (!diagnostic.questionNo) continue
@@ -236,7 +237,8 @@ export function parseCandidatesForImportJob(id: string, body: Record<string, unk
     const questionSource = requireSourceDocument(questionDocument.sourceDocumentId)
     const questionOcrRecord = latestOcrDocumentForSource(questionSource.id)
     const questionOcrDocument = loadOcrDocument(questionOcrRecord.id)
-    let candidates = parseQuestionCandidates(questionOcrDocument, { config })
+    const candidateMetadata = metadataForCandidates(importJob, questionSource)
+    let candidates = parseQuestionCandidates(questionOcrDocument, { config, paperKind: candidateMetadata.paperKind })
     let diagnosticDocument = questionOcrDocument
 
     if (importJob.mode === 'separated_documents') {

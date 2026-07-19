@@ -1,0 +1,82 @@
+\documentclass[UTF8,12pt]{ctexart}
+
+\usepackage[a4paper,top=22mm,bottom=24mm,left=22mm,right=22mm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{fontspec}
+\usepackage{unicode-math}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+
+\setCJKmainfont{Songti SC}
+\setmainfont{Times New Roman}
+\setmathfont{STIX Two Math}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+\setlength{\headheight}{15pt}
+\linespread{1.18}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{gray}错题本}
+\fancyhead[R]{\small\color{gray}2026·昆明高二市统测}
+\fancyfoot[C]{\small\color{gray}\thepage}
+\renewcommand{\headrulewidth}{0pt}
+
+\newcommand{\notebooksection}[1]{%
+  \vspace{0.8em}%
+  {\fontsize{13.5pt}{17pt}\selectfont\bfseries #1\par}%
+  \vspace{0.22em}%
+  \hrule height 0.55pt
+  \vspace{0.65em}%
+}
+
+\newcommand{\questionnumber}[1]{%
+  {\bfseries #1.}\hspace{0.65em}%
+}
+
+\newcommand{\subquestion}[1]{%
+  \par\vspace{0.35em}#1\par
+}
+
+\begin{document}
+
+\notebooksection{一、单选题}
+
+\questionnumber{1}
+函数 $f(x)=\sin x-\dfrac{x}{2}$ 在区间 $[0,2\pi]$ 上的极大值点为（\quad）
+
+\vspace{0.55em}
+\begin{tabularx}{\textwidth}{@{}XXXX@{}}
+A. $\dfrac{\pi}{3}$ &
+B. $\dfrac{2\pi}{3}$ &
+C. $\dfrac{4\pi}{3}$ &
+D. $\dfrac{5\pi}{3}$
+\end{tabularx}
+
+\notebooksection{二、填空题}
+
+\questionnumber{2}
+已知抛物线 $C:y^2=2px\,(p>0)$ 的焦点为 $F$，点 $P$ 在 $C$ 上，$P$ 在 $C$ 准线上的投影为 $Q$。若 $|FQ|=|FP|=4$，则 $p=$ \underline{\hspace{3.2em}}。
+
+\notebooksection{三、解答题}
+
+\questionnumber{3}
+某校际足球赛小组赛中，4 支球队进行单循环赛（即每支球队都会和同组的另外 3 支球队比赛一场）。每场比赛胜者积 3 分，负者积 0 分，平局各积 1 分。已知球队 A 在小组赛中每场比赛胜的概率为 $\dfrac{3}{5}$，平局的概率为 $\dfrac{1}{5}$，输的概率为 $\dfrac{1}{5}$。设所有球队的每场比赛结果相互独立。
+
+\subquestion{（1）求球队 A 在小组赛中总积分 $X$ 不低于 7 分的概率；}
+
+\subquestion{（2）若小组赛根据组内各球队总积分及其他相关信息确定组内唯一的一个第一名。据以往经验，若球队 A 总积分 $X\geq 7$，则获得小组第一名的概率为 $\dfrac{35}{36}$；若总积分 $X=6$，则获得小组第一名的概率为 $\dfrac{10}{27}$。求球队 A 在小组赛中总积分不低于 6 分且获得小组第一名的概率。}
+
+\vspace{1.2em}
+\questionnumber{4}
+$\triangle ABC$ 的内角 $A,B,C$ 所对的边分别为 $a,b,c$，面积为 $S$，且
+\[
+  \cos 2A+\cos 2B-\cos 2C=1-S.
+\]
+
+\subquestion{（1）求证：$C$ 为锐角；}
+
+\subquestion{（2）若 $\dfrac{a}{\sin A}=2$，求 $c$。}
+
+\end{document}

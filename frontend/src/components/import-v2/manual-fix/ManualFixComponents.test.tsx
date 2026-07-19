@@ -52,6 +52,8 @@ function inspector(overrides: Partial<React.ComponentProps<typeof ManualFixInspe
     onRegionNoteChange: vi.fn(),
     onCleanHeaderFooter: vi.fn(),
     onLocateFigure: vi.fn(),
+    onUpdateFigure: vi.fn(),
+    onAssignTrailingOptions: vi.fn(),
     onDeleteFigure: vi.fn(),
     ...overrides,
   }
@@ -102,12 +104,46 @@ describe('ManualFixInspector', () => {
     inspector({ activeTab: 'figures', figures: [] })
     expect(container.textContent).toContain('当前题目暂无题图')
   })
+
+  it('可把题图改成指定选项图，并批量指定最后四张', () => {
+    const onUpdateFigure = vi.fn()
+    const onAssignTrailingOptions = vi.fn()
+    inspector({
+      activeTab: 'figures',
+      figures: [1, 2, 3, 4].map((index) => ({ id: `figure-${index}`, path: `figure-${index}.png`, usage: index === 1 ? 'stem' : 'options', optionLabel: String.fromCharCode(64 + index) })),
+      onUpdateFigure,
+      onAssignTrailingOptions,
+    })
+    click('后四张设为 A-D')
+    expect(onAssignTrailingOptions).toHaveBeenCalledOnce()
+    const typeSelect = container.querySelector<HTMLSelectElement>('select[aria-label="题图 1 类型"]')!
+    act(() => {
+      typeSelect.value = 'options'
+      typeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateFigure).toHaveBeenCalledWith(expect.objectContaining({ id: 'figure-1' }), 'options', undefined)
+  })
+
+  it('内容面板使用紧凑统一编辑器，并展示恢复与版本状态', () => {
+    inspector({ candidate: { id: 'candidate-1' }, contentRevision: 4, recoveredDraft: true, contentDirty: true })
+    expect(container.textContent).toContain('修正题目内容')
+    expect(container.textContent).toContain('已恢复这道候选题上次未保存的本地内容')
+    expect(container.textContent).toContain('版本 4')
+    expect(container.textContent).toContain('有未保存修改')
+    expect(container.querySelector('textarea')).toBeNull()
+  })
+
+  it('已入库冲突保留本地稿并指向题库', () => {
+    inspector({ conflict: { message: '候选题已入库', committedQuestionId: 'question-9' } })
+    expect(container.textContent).toContain('本地修改仍已保留')
+    expect(container.querySelector<HTMLAnchorElement>('a')?.getAttribute('href')).toBe('/questions')
+  })
 })
 
 function inspectorProps(overrides: Partial<React.ComponentProps<typeof ManualFixInspector>> = {}): React.ComponentProps<typeof ManualFixInspector> {
   return {
     activeTab: 'content', onTabChange: vi.fn(), candidate: {}, stemMarkdown: '', answerText: '', analysisMarkdown: '', figures: [], regions: [], selectedRegionId: null,
-    onStemChange: vi.fn(), onAnswerChange: vi.fn(), onAnalysisChange: vi.fn(), onAddRegion: vi.fn(), onDeleteSelected: vi.fn(), onRegionNoteChange: vi.fn(), onCleanHeaderFooter: vi.fn(), onLocateFigure: vi.fn(), onDeleteFigure: vi.fn(),
+    onStemChange: vi.fn(), onAnswerChange: vi.fn(), onAnalysisChange: vi.fn(), onAddRegion: vi.fn(), onDeleteSelected: vi.fn(), onRegionNoteChange: vi.fn(), onCleanHeaderFooter: vi.fn(), onLocateFigure: vi.fn(), onUpdateFigure: vi.fn(), onAssignTrailingOptions: vi.fn(), onDeleteFigure: vi.fn(),
     ...overrides,
   }
 }

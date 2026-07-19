@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronLeft, ChevronRight, Download, FilePlus2, GripVertical, Trash2, ChevronUp, ShoppingBag, Award, Clock, Hash, Maximize2, ArrowUp, ArrowDown, ListChecks, Settings2, FileDown, FileText, FileCode2, Sparkles, HelpCircle } from 'lucide-react'
+import { BookOpen, Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, FilePlus2, GripVertical, Trash2, ChevronUp, ShoppingBag, Award, Clock, Hash, Maximize2, ArrowUp, ArrowDown, ListChecks, Settings2, FileDown, FileText, FileCode2, Sparkles, HelpCircle } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { collectionsApi } from '../api/collections'
 import { layoutDraftsApi } from '../api/layoutDrafts'
@@ -7,9 +7,14 @@ import { useAsync } from '../hooks/useAsync'
 import type { Basket, CollectionExport, CollectionSummary, QuestionItem, BasketQuestion } from '../types'
 import { Button, Empty, Badge } from './ui'
 import { QuestionMarkdownContent } from './questions/QuestionContent'
+import { richBlocksPlainText } from './RichContent'
+import { difficultyLabel10, displaySource } from '../utils/questionDisplay'
 
 const activeBasketStorageKey = 'question-manager.activeCollectionId'
 export const basketUpdatedEvent = 'question-basket-updated'
+
+const basketCardOutlineButtonClass = 'inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-700 shadow-xs transition-all hover:bg-zinc-50 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950 disabled:opacity-30 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50'
+const basketCardDangerButtonClass = 'inline-flex h-7 items-center gap-1.5 rounded-md border border-red-200 bg-red-50/20 px-2.5 text-xs font-medium text-red-700 shadow-xs transition-all hover:bg-red-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-950 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400 dark:hover:bg-red-950/30'
 
 export function getActiveCollectionId() {
   return localStorage.getItem(activeBasketStorageKey) || 'basket'
@@ -56,8 +61,9 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
   const [localTitle, setLocalTitle] = useState('')
   const [localSubtitle, setLocalSubtitle] = useState('')
   const [localTimeLimit, setLocalTimeLimit] = useState<string | number>('')
-  const [pageExportFormat, setPageExportFormat] = useState<'Markdown' | 'PDF'>('Markdown')
-  const [pageVariant, setPageVariant] = useState<'student' | 'teacher'>('teacher')
+  const [pageExportFormat, setPageExportFormat] = useState<'Markdown' | 'PDF' | 'LaTeX'>('Markdown')
+  const [pageVariant, setPageVariant] = useState<'student' | 'teacher' | 'error_notebook'>('teacher')
+  const [expandedQuestionIds, setExpandedQuestionIds] = useState<Set<string>>(() => new Set())
 
   const collections = useAsync<{ items: CollectionSummary[] }>(() => {
     return collectionsApi.listCollections()
@@ -142,7 +148,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
     notifyBasketUpdated()
   }
 
-  async function exportCollection(format: 'markdown' | 'pdf', variant: 'student' | 'teacher', template: 'worksheet' | 'exam' = 'worksheet') {
+  async function exportCollection(format: 'markdown' | 'latex' | 'pdf', variant: 'student' | 'teacher' | 'error_notebook', template: 'worksheet' | 'exam' = 'worksheet') {
 
     if (format === 'markdown') {
       setCollapsed(true)
@@ -156,6 +162,15 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
       if (payload.format === 'pdf' && payload.url) {
         window.open(payload.url, '_blank', 'noopener,noreferrer')
         return
+      }
+      if (payload.content) {
+        const blob = new Blob([payload.content], { type: format === 'latex' ? 'application/x-tex;charset=utf-8' : 'text/markdown;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = payload.filename
+        link.click()
+        URL.revokeObjectURL(url)
       }
     } catch (error) {
       alert(error instanceof Error ? error.message : String(error))
@@ -214,50 +229,110 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
               </div>
             ) : (
               <div className="space-y-3 pb-16">
-                {active.data.questions.map((entry, index) => (
-                  <div
-                    key={entry.relationId || entry.item.id}
-                    draggable
-                    onDragStart={(event) => {
-                      setDraggedIndex(index)
-                      event.dataTransfer.effectAllowed = 'move'
-                    }}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDragEnd={() => setDraggedIndex(null)}
-                    onDrop={async (event) => {
-                      event.preventDefault()
-                      if (draggedIndex === null || draggedIndex === index) return
-                      const questions = active.data?.questions ?? []
-                      const next = [...questions]
-                      const [item] = next.splice(draggedIndex, 1)
-                      next.splice(index, 0, item)
-                      await collectionsApi.reorder(activeId, next.map((question, order) => ({ relationId: question.relationId, sortOrder: order })))
-                      notifyBasketUpdated()
-                      setDraggedIndex(null)
-                    }}
-                    className={`border border-zinc-200 bg-white rounded-lg p-4 dark:border-zinc-800 dark:bg-zinc-900/30 flex items-start gap-4 text-left group hover:border-zinc-300 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 cursor-grab active:cursor-grabbing ${draggedIndex === index ? 'opacity-40 border-dashed border-zinc-400 bg-zinc-50 dark:bg-zinc-900/10' : ''}`}
-                  >
-                    <div className="flex flex-col items-center gap-1.5 pt-0.5 shrink-0 select-none">
-                      <span className="flex size-6 items-center justify-center rounded bg-zinc-900 text-xs font-mono font-bold text-white dark:bg-zinc-100 dark:text-zinc-950">
-                        {index + 1}
-                      </span>
-                      <div className="text-zinc-300 dark:text-zinc-700 mt-2 opacity-50 group-hover:opacity-100 transition-opacity">
-                        <GripVertical className="size-4" />
-                      </div>
-                    </div>
+                {active.data.questions.map((entry, index) => {
+                  const itemKey = entry.relationId || entry.item.id
+                  const showAnalysis = expandedQuestionIds.has(itemKey)
+                  const stem = entry.item.stemMarkdown || richBlocksPlainText(entry.item.problemBlocks)
+                  const answer = entry.item.answerText || richBlocksPlainText(entry.item.answerBlocks)
+                  const analysis = entry.item.analysisMarkdown || richBlocksPlainText(entry.item.analysisBlocks)
+                  const chapter = entry.item.chapter || entry.item.knowledgePoints?.[0] || '未分类'
+                  const date = entry.item.updatedAt ? new Date(entry.item.updatedAt).toLocaleDateString() : ''
 
-                    <div className="flex-1 min-w-0 space-y-2">
-                      <div className="flex items-center justify-between text-[10px] text-zinc-400 dark:text-zinc-500 font-mono">
-                        <span>{entry.item.questionType} · {entry.item.chapter || '未分类'} · {entry.item.difficultyLabel || '难度待定'}</span>
-                        <span>ID: #{entry.item.id}</span>
+                  return (
+                    <article
+                      key={itemKey}
+                      draggable
+                      onDragStart={(event) => {
+                        if ((event.target as HTMLElement).closest('button, input')) {
+                          event.preventDefault()
+                          return
+                        }
+                        setDraggedIndex(index)
+                        event.dataTransfer.effectAllowed = 'move'
+                      }}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDragEnd={() => setDraggedIndex(null)}
+                      onDrop={async (event) => {
+                        event.preventDefault()
+                        if (draggedIndex === null || draggedIndex === index) return
+                        const questions = active.data?.questions ?? []
+                        const next = [...questions]
+                        const [item] = next.splice(draggedIndex, 1)
+                        next.splice(index, 0, item)
+                        await collectionsApi.reorder(activeId, next.map((question, order) => ({ relationId: question.relationId, sortOrder: order })))
+                        notifyBasketUpdated()
+                        setDraggedIndex(null)
+                      }}
+                      className={`group relative flex cursor-grab flex-col gap-3 rounded-lg border bg-white p-5 text-left transition-all duration-150 active:cursor-grabbing dark:bg-zinc-950 ${
+                        draggedIndex === index
+                          ? 'border-dashed border-zinc-400 bg-zinc-50 opacity-40 dark:border-zinc-600 dark:bg-zinc-900/10'
+                          : 'border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
+                          <GripVertical className="size-4 shrink-0 text-zinc-300 transition-colors group-hover:text-zinc-500 dark:text-zinc-700 dark:group-hover:text-zinc-500" />
+                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <span className="inline-flex items-center rounded bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold text-white dark:bg-zinc-100 dark:text-zinc-900">第 {index + 1} 题</span>
+                            {[entry.item.questionType || '未设题型', entry.item.stage || '未设学段', chapter].map((tag) => (
+                              <span key={tag} className="inline-flex items-center rounded bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                                {tag}
+                              </span>
+                            ))}
+                            <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold ${String(difficultyLabel10(entry.item)).includes('难') ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'}`}>
+                              难度: {difficultyLabel10(entry.item)}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="ml-1 shrink-0 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">
+                          #{entry.item.serialNo ?? entry.item.questionNo ?? entry.item.id.slice(0, 6)}
+                        </span>
                       </div>
-                      <div className="text-xs text-zinc-900 dark:text-zinc-100 leading-relaxed font-sans max-h-24 overflow-hidden text-ellipsis cursor-pointer" onClick={() => navigate(`/questions/${encodeURIComponent(entry.item.id)}`)}>
-                        <QuestionMarkdownContent content={stripLeadingQuestionNo(entry.item.stemMarkdown || '未命名题目', entry.item.questionNo)} />
+
+                      <div className="select-text font-sans text-xs leading-relaxed text-zinc-900 dark:text-zinc-100">
+                        <QuestionMarkdownContent
+                          content={stripLeadingQuestionNo(stem || '题干为空', entry.item.questionNo)}
+                          figures={entry.item.figures}
+                        />
                       </div>
-                      <div className="flex items-center justify-between pt-2.5 border-t border-zinc-100 dark:border-zinc-800 mt-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">设定分值:</span>
-                          <div className="flex items-center border border-zinc-200 dark:border-zinc-800 rounded bg-white dark:bg-zinc-900 px-1 py-0.5">
+
+                      {entry.item.knowledgePoints?.length ? (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {entry.item.knowledgePoints.map((knowledgePoint) => (
+                            <span key={knowledgePoint} className="inline-flex items-center rounded border border-zinc-200/60 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:border-zinc-800/80 dark:bg-zinc-900/30 dark:text-zinc-400">
+                              {knowledgePoint}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      <div className={`grid transition-all duration-300 ease-in-out ${showAnalysis ? 'mt-2 grid-rows-[1fr] opacity-100' : 'pointer-events-none grid-rows-[0fr] opacity-0'}`}>
+                        <div className="overflow-hidden">
+                          <div className="space-y-3 rounded border-t border-zinc-200 bg-zinc-50/50 p-3 pt-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+                            <div>
+                              <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【答案】</span>
+                              <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                                <QuestionMarkdownContent content={answer || '暂无答案'} figures={entry.item.figures} />
+                              </div>
+                            </div>
+                            <div>
+                              <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【解析】</span>
+                              <div className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+                                <QuestionMarkdownContent content={analysis || '暂无解析'} figures={entry.item.figures} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className={`mt-1 flex flex-wrap items-center justify-between gap-3 pt-3 ${showAnalysis ? '' : 'border-t border-zinc-200 dark:border-zinc-800'}`}>
+                        <div className="flex items-center gap-3 text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
+                          {date ? <span className="flex items-center gap-1"><Calendar className="size-3" />{date}</span> : null}
+                          <span className="flex items-center gap-1"><BookOpen className="size-3" />{displaySource(entry.item.sourceTitle || '') || '高中数学专项试卷'}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                          <label className="flex h-7 items-center gap-1 rounded-md border border-zinc-200 bg-white px-2 text-[10px] font-medium text-zinc-500 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                            分值
                             <input
                               type="number"
                               min="1"
@@ -265,26 +340,36 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                               value={entry.score || ''}
                               placeholder={String(getDefaultScore(entry.item.questionType))}
                               onChange={(event) => entry.relationId && patchItem(entry.relationId, { score: Number(event.target.value || 0) })}
-                              className="w-10 border-none bg-transparent text-center font-mono text-xs font-semibold text-zinc-800 dark:text-zinc-200 focus:ring-0 p-0 outline-none"
+                              className="w-8 border-0 bg-transparent p-0 text-center font-mono text-xs font-semibold text-zinc-800 outline-none focus:ring-0 dark:text-zinc-200"
                             />
-                            <span className="text-[9px] text-zinc-400 font-medium px-1">分</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => entry.relationId && moveItem(entry.relationId, -1)} disabled={index === 0} className="p-1 rounded text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 disabled:opacity-20 dark:hover:bg-zinc-800" title="上移">
+                            分
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedQuestionIds((current) => {
+                              const next = new Set(current)
+                              if (next.has(itemKey)) next.delete(itemKey)
+                              else next.add(itemKey)
+                              return next
+                            })}
+                            className={basketCardOutlineButtonClass}
+                          >
+                            {showAnalysis ? <><ChevronUp className="size-3.5" />收起解析</> : <><ChevronDown className="size-3.5" />查看解析</>}
+                          </button>
+                          <button type="button" onClick={() => entry.relationId && moveItem(entry.relationId, -1)} disabled={index === 0} className={basketCardOutlineButtonClass} title="上移">
                             <ArrowUp className="size-3.5" />
                           </button>
-                          <button onClick={() => entry.relationId && moveItem(entry.relationId, 1)} disabled={index === activeQuestions.length - 1} className="p-1 rounded text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 disabled:opacity-20 dark:hover:bg-zinc-800" title="下移">
+                          <button type="button" onClick={() => entry.relationId && moveItem(entry.relationId, 1)} disabled={index === activeQuestions.length - 1} className={basketCardOutlineButtonClass} title="下移">
                             <ArrowDown className="size-3.5" />
                           </button>
-                          <button onClick={() => entry.relationId && removeItem(entry.relationId)} className="p-1 rounded text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors" title="从试题篮移出">
-                            <Trash2 className="size-3.5" />
+                          <button type="button" onClick={() => entry.relationId && removeItem(entry.relationId)} className={basketCardDangerButtonClass}>
+                            <Trash2 className="size-3.5" />移出试题篮
                           </button>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
+                    </article>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -336,9 +421,10 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
 
             <label className="space-y-1.5 block">
               <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">答案及解析排版</span>
-              <select value={pageVariant} onChange={(event) => setPageVariant(event.target.value as 'student' | 'teacher')} className="w-full text-xs border border-zinc-200 dark:border-zinc-800 rounded bg-white dark:bg-zinc-900 px-2.5 py-1.5 text-zinc-800 dark:text-zinc-200 outline-none cursor-pointer">
+              <select value={pageVariant} onChange={(event) => setPageVariant(event.target.value as 'student' | 'teacher' | 'error_notebook')} className="w-full text-xs border border-zinc-200 dark:border-zinc-800 rounded bg-white dark:bg-zinc-900 px-2.5 py-1.5 text-zinc-800 dark:text-zinc-200 outline-none cursor-pointer">
                 <option value="student">不显示 (学生版)</option>
                 <option value="teacher">显示详尽解析 (教师版)</option>
+                <option value="error_notebook">错题本（按题型紧凑排版）</option>
               </select>
             </label>
 
@@ -353,8 +439,8 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                   <FileText className={`size-5 ${pageExportFormat === 'PDF' ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}`} />
                   <span className="text-[10px]">PDF 电子卷</span>
                 </button>
-                <button type="button" disabled className="flex flex-col items-center gap-1.5 p-2.5 border rounded-lg border-zinc-200 bg-zinc-50 text-zinc-300 dark:border-zinc-800 dark:bg-zinc-900/40">
-                  <FileCode2 className="size-5" />
+                <button type="button" onClick={() => setPageExportFormat('LaTeX')} className={`flex flex-col items-center gap-1.5 p-2.5 border rounded-lg transition-colors ${pageExportFormat === 'LaTeX' ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900/60 font-semibold' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800'}`}>
+                  <FileCode2 className={`size-5 ${pageExportFormat === 'LaTeX' ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}`} />
                   <span className="text-[10px]">LaTeX 源码</span>
                 </button>
               </div>
@@ -378,14 +464,15 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
             >继续上次排版：{layoutDrafts.data.items[0].name}</button> : null}
             <button
               onClick={() => void createLayoutDraft()}
-              disabled={exporting || !active.data?.questionCount}
+              disabled={exporting || !active.data?.questionCount || pageVariant === 'error_notebook'}
+              title={pageVariant === 'error_notebook' ? '错题本使用固定紧凑版式，可直接导出。' : undefined}
               className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-md border border-zinc-300 bg-white py-2.5 text-xs font-semibold text-zinc-800 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
             >
               <Settings2 className="size-3.5" />
               排版并预览
             </button>
             <button
-              onClick={() => exportCollection(pageExportFormat === 'Markdown' ? 'markdown' : 'pdf', pageVariant, 'exam')}
+              onClick={() => exportCollection(pageExportFormat === 'Markdown' ? 'markdown' : pageExportFormat === 'LaTeX' ? 'latex' : 'pdf', pageVariant, 'exam')}
               disabled={exporting}
               className="w-full flex items-center justify-center gap-1.5 rounded-md bg-zinc-900 hover:bg-zinc-800 text-zinc-50 text-xs font-semibold py-2.5 transition-colors disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200 shadow-sm"
             >
@@ -652,13 +739,7 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                     </div>
 
                     <div className="flex-1 min-w-0 flex flex-col gap-3">
-                      <div
-                        className="flex items-start gap-1.5 cursor-pointer hover:opacity-85 transition-opacity"
-                        onClick={() => {
-                          setCollapsed(true)
-                          navigate(`/questions/${encodeURIComponent(entry.item.id)}`)
-                        }}
-                      >
+                      <div className="flex items-start gap-1.5">
                         <span className="font-semibold text-muted-foreground/70 text-xs mt-0.5 shrink-0">{index + 1}.</span>
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <QuestionMarkdownContent

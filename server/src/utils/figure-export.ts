@@ -33,6 +33,18 @@ export function doc2xInlineFigureIds(content: string) {
   return new Set(Array.from(String(content || '').matchAll(DOC2X_FIGURE_MARKER_RE), (match) => match[1]))
 }
 
+export function figureIdentifiers(figure: Record<string, any>) {
+  return Array.from(new Set([figure.id, figure.blockId].filter(Boolean).map(String)))
+}
+
+export function figuresByIdentifier(figures: Array<Record<string, any>>) {
+  const result = new Map<string, Record<string, any>>()
+  for (const figure of figures) {
+    for (const id of figureIdentifiers(figure)) result.set(id, figure)
+  }
+  return result
+}
+
 export function removeDoc2xFigurePlaceholders(content: string) {
   return String(content || '')
     .replace(DOC2X_FIGURE_MARKER_RE, '')
@@ -43,11 +55,11 @@ export function removeDoc2xFigurePlaceholders(content: string) {
 
 export function figuresWithoutInlineMarkers(content: string, figures: Array<Record<string, any>>) {
   const inlineIds = doc2xInlineFigureIds(content)
-  return figures.filter((figure) => !inlineIds.has(String(figure.blockId || figure.id || '')))
+  return figures.filter((figure) => !figureIdentifiers(figure).some((id) => inlineIds.has(id)))
 }
 
 export function markdownWithInlineFigures(content: string, figures: Array<Record<string, any>>) {
-  const figureById = new Map(figures.map((figure) => [String(figure.blockId || figure.id || ''), figure]))
+  const figureById = figuresByIdentifier(figures)
   return String(content || '')
     .replace(DOC2X_FIGURE_MARKER_RE, (_marker, id) => markdownFigureLines(figureById.get(id) ? [figureById.get(id)!] : []).join('\n'))
     .replace(/<!--\s*Media\s*-->/gi, '')
@@ -56,7 +68,7 @@ export function markdownWithInlineFigures(content: string, figures: Array<Record
 }
 
 export function latexWithInlineFigures(content: string, figures: Array<Record<string, any>>) {
-  const figureById = new Map(figures.map((figure) => [String(figure.blockId || figure.id || ''), figure]))
+  const figureById = figuresByIdentifier(figures)
   const source = String(content || '')
   const lines: string[] = []
   let cursor = 0

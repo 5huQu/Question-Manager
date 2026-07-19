@@ -1,5 +1,5 @@
 import { katex } from '../config.js'
-import { normalizeBlocks } from './rich-content.js'
+import { normalizeBlocks, normalizeLatexMathDelimiters } from './rich-content.js'
 
 // ── Rich Content Types ────────────────────────────────────────────
 // These are included here since validateBlocks operates on them.
@@ -31,7 +31,7 @@ export type FormatIssue = {
 export function validateQuestionMarkdown(fields: Record<string, string>): FormatIssue[] {
   const issues: FormatIssue[] = []
   for (const [field, text] of Object.entries(fields)) {
-    const value = String(text || '')
+    const value = normalizeLatexMathDelimiters(String(text || ''))
     const spans = Array.from(value.matchAll(/\$\$([\s\S]*?)\$\$|\$([^$\n]+?)\$/g))
     const consumed = spans.reduce((output, match) => output.slice(0, Number(match.index || 0)) + ' '.repeat(match[0].length) + output.slice(Number(match.index || 0) + match[0].length), value)
     if (/(^|[^\\])\$/.test(consumed)) {

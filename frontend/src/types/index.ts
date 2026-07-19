@@ -59,6 +59,7 @@ export type Dashboard = {
 
 export type QuestionItem = {
   id: string
+  contentRevision?: number
   serialNo: number | null
   questionNo: string
   stage: string

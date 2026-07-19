@@ -4,6 +4,7 @@ import { splitMarkdownByQuestionNumbers } from './markdown-question-splitter.js'
 import { getParserConfig } from './parser-config.js'
 import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
 import {
+  answerTableDetectionEnabled,
   extractSolutionMatches,
   extractInlineAnswerTableEntries,
   firstAnswerTableStart,
@@ -107,7 +108,7 @@ function questionThenHeadingSolutionMatch(markdown: string, chunkBodyStart: numb
   const section = sections[0]
   if (!section) {
     const rawBody = markdown.slice(chunkBodyStart, chunkEnd)
-    const tableStart = firstAnswerTableStart(rawBody)
+    const tableStart = firstAnswerTableStart(rawBody, config)
     const body = tableStart === undefined ? rawBody : rawBody.slice(0, tableStart).trimEnd()
     if (config.metadataBlockPolicy === 'ignore' && metadataOnlySolutionBlock(body, config)) return {}
     return solutionMatchFromWholeDocumentChunk(body, chunkBodyStart, { start: chunkBodyStart, end: chunkBodyStart + body.length })
@@ -169,7 +170,7 @@ function extractWholeDocumentSolutionMatches(markdown: string, config: ImportFlo
   let chunksWithFieldMarkers = 0
 
   for (const chunk of chunks) {
-    const tableStart = firstAnswerTableStart(chunk.body)
+    const tableStart = firstAnswerTableStart(chunk.body, config)
     const body = tableStart === undefined ? chunk.body : chunk.body.slice(0, tableStart).trimEnd()
     if (config.metadataBlockPolicy === 'ignore' && metadataOnlySolutionBlock(body, config)) continue
     const fields = splitQuestionFields(body, chunk.contentStart)
@@ -199,7 +200,11 @@ export type AnswerTableEntry = {
   range?: MarkdownRange
 }
 
-export function extractAnswerTableEntries(markdown: string): AnswerTableEntry[] {
+export function extractAnswerTableEntries(
+  markdown: string,
+  config: ImportFlowV2ParserConfig = getParserConfig(),
+): AnswerTableEntry[] {
+  if (!answerTableDetectionEnabled(config)) return []
   const entries: AnswerTableEntry[] = []
   const source = String(markdown || '')
   const tablePattern = /<table\b[^>]*>([\s\S]*?)<\/table>/gi
@@ -248,9 +253,12 @@ export function extractAnswerTableEntries(markdown: string): AnswerTableEntry[] 
   return entries
 }
 
-export function extractAnswerTable(markdown: string): Map<string, string> {
+export function extractAnswerTable(
+  markdown: string,
+  config: ImportFlowV2ParserConfig = getParserConfig(),
+): Map<string, string> {
   const result = new Map<string, string>()
-  for (const entry of extractAnswerTableEntries(markdown)) {
+  for (const entry of extractAnswerTableEntries(markdown, config)) {
     result.set(entry.questionNo, entry.answerText)
   }
   return result
@@ -265,7 +273,7 @@ export function parseSolutionDocument(
 
   // Step 1: Extract answers from HTML tables (e.g. answer key tables)
   const tableAnswers = new Map<string, AnswerTableEntry>()
-  for (const entry of extractAnswerTableEntries(markdown)) tableAnswers.set(entry.questionNo, entry)
+  for (const entry of extractAnswerTableEntries(markdown, config)) tableAnswers.set(entry.questionNo, entry)
 
   // Step 2: Run normal section-based or fallback extraction
   const solutionSections = findSolutionSections(markdown, config)

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import { BookOpen, Check, Copy, Crop, FileText, Info as InfoIcon, LoaderCircle, RefreshCcw, Sparkles, X } from 'lucide-react'
+import { BookOpen, Check, Copy, Crop, FileText, Image, Info as InfoIcon, LoaderCircle, RefreshCcw, Sparkles, X } from 'lucide-react'
 import { questionBankApi, type AiCleanMode, type AiCleanPreview } from '@/api/questionBank'
+import { ApiError } from '@/api/client'
 import { learningTagsApi } from '@/api/learningTags'
 import { settingsApi } from '@/api/settings'
 import { MarkdownContent } from '@/components/MarkdownContent'
@@ -8,7 +9,10 @@ import { normalizeRichBlocks, richBlocksPlainText } from '@/components/RichConte
 import { Modal } from '@/components/dialogs/Modal'
 import { Badge, Button } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
+import { useQuestionEditorDraft } from '@/hooks/useQuestionEditorDraft'
 import type { OcrSettings, QuestionItem, TagLibraries } from '@/types'
+import type { QuestionContentDraft } from '@/types/questionContent'
+import { QuestionContentEditor, type QuestionEditorConflict } from '@/components/questions/editor'
 import { FigureGallery, QuestionContent, QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import { assetUrl, difficultyBadgeVariant, difficultyLabel10, difficultyLabelFromScore10, figuresByUsage, splitTags } from '@/utils/questionDisplay'
 import { draftAnalysisText, draftAnswerText, draftProblemText, paragraphBlocksFromText } from '@/utils/jsonCleanup'
@@ -31,7 +35,7 @@ function splitIntoBalancedGroups<T>(items: T[], groupCount: number) {
   }).filter((group) => group.length)
 }
 
-export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partial<QuestionItem>; setDraft: Dispatch<SetStateAction<Partial<QuestionItem>>>; onClose: () => void; onSave: (nextDraft?: Partial<QuestionItem>) => Promise<void> }) {
+export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, entityType = 'question' }: { draft: Partial<QuestionItem>; setDraft: Dispatch<SetStateAction<Partial<QuestionItem>>>; onClose: () => void; onSave: (nextDraft?: Partial<QuestionItem>) => Promise<void>; onManageFigures?: () => void; entityType?: string }) {
   const [mode, setMode] = useState<'form' | 'metadata' | 'json'>('form')
   const [aiOpen, setAiOpen] = useState(false)
 	  const [jsonInput, setJsonInput] = useState(() => {
@@ -57,6 +61,29 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
   const [aiCleanLoading, setAiCleanLoading] = useState(false)
   const [aiCleanPreview, setAiCleanPreview] = useState<AiCleanPreview | null>(null)
   const [aiCleanStatus, setAiCleanStatus] = useState('')
+  const [editorConflict, setEditorConflict] = useState<QuestionEditorConflict | null>(null)
+  const initialContent = useMemo<QuestionContentDraft>(() => ({
+    stemMarkdown: draftProblemText(draft),
+    answerText: draftAnswerText(draft),
+    analysisMarkdown: draftAnalysisText(draft),
+  }), [draft.id, draft.contentRevision])
+  const contentDraft = useQuestionEditorDraft({
+    entityType,
+    entityId: String(draft.id || 'new'),
+    initialValue: initialContent,
+    contentRevision: draft.contentRevision,
+  })
+
+  useEffect(() => {
+    if (!contentDraft.hasRecoveredDraft) return
+    setDraft((current) => ({
+      ...current,
+      ...contentDraft.value,
+      problemBlocks: paragraphBlocksFromText(contentDraft.value.stemMarkdown),
+      answerBlocks: paragraphBlocksFromText(contentDraft.value.answerText),
+      analysisBlocks: paragraphBlocksFromText(contentDraft.value.analysisMarkdown),
+    }))
+  }, [contentDraft.hasRecoveredDraft])
 
 	  useEffect(() => {
 	    if (mode === 'form' || mode === 'metadata') {
@@ -100,6 +127,54 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
 
   function updateDraft(patch: Partial<QuestionItem>) {
     setDraft((current) => ({ ...current, ...patch }))
+    if (patch.stemMarkdown !== undefined || patch.answerText !== undefined || patch.analysisMarkdown !== undefined) {
+      contentDraft.setValue((current) => ({
+        stemMarkdown: patch.stemMarkdown ?? current.stemMarkdown,
+        answerText: patch.answerText ?? current.answerText,
+        analysisMarkdown: patch.analysisMarkdown ?? current.analysisMarkdown,
+      }))
+    }
+  }
+
+  function contentPatch(value: QuestionContentDraft): Partial<QuestionItem> {
+    return {
+      ...value,
+      problemBlocks: paragraphBlocksFromText(value.stemMarkdown),
+      answerBlocks: paragraphBlocksFromText(value.answerText),
+      analysisBlocks: paragraphBlocksFromText(value.analysisMarkdown),
+    }
+  }
+
+  async function persist(nextDraft: Partial<QuestionItem>) {
+    setEditorConflict(null)
+    try {
+      await onSave(nextDraft)
+      contentDraft.markSaved({
+        stemMarkdown: draftProblemText(nextDraft),
+        answerText: draftAnswerText(nextDraft),
+        analysisMarkdown: draftAnalysisText(nextDraft),
+      })
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setEditorConflict({
+          message: String(error.payload.message || '题目已被其他操作修改，请核对服务器上的最新内容后再保存。'),
+          actualContentRevision: typeof error.payload.actualContentRevision === 'number' ? error.payload.actualContentRevision : undefined,
+        })
+      }
+      throw error
+    }
+  }
+
+  async function saveContent(value: QuestionContentDraft) {
+    setSaving(true)
+    setSaveStatus('')
+    const nextDraft = { ...draft, ...contentPatch(value) }
+    setDraft(nextDraft)
+    try {
+      await persist(nextDraft)
+    } finally {
+      setSaving(false)
+    }
   }
 
   function setJsonCleanState(ready: boolean, nextDraft: Partial<QuestionItem> | null = null) {
@@ -334,7 +409,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
         return
       }
       const updated = { ...draft, ...next }
-      setDraft(updated)
+      updateDraft(updated)
       setJsonCleanState(true, updated)
       setJsonStatus(`JSON 清洗完成：${status.replace(/[。.]$/, '')}。已自动合并字段，并同步右侧预览。`)
     } catch (error) {
@@ -359,12 +434,12 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
             return
           }
           nextDraft = { ...draft, ...next }
-          setDraft(nextDraft)
+          updateDraft(nextDraft)
           setJsonCleanState(false)
           setJsonStatus(status)
         }
       }
-      await onSave(nextDraft)
+      await persist(nextDraft)
     } catch (error) {
       setSaveStatus(error instanceof Error ? error.message : String(error))
     } finally {
@@ -499,7 +574,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave }: { draft: Partia
       analysisMarkdown: patch.analysisMarkdown,
       analysisBlocks: paragraphBlocksFromText(patch.analysisMarkdown),
     }
-    setDraft(nextDraft)
+    updateDraft(nextDraft)
     setJsonInput(editableJsonFromDraft(nextDraft))
     setJsonCleanState(false)
     setAiCleanStatus('已应用到当前编辑草稿，保存后才会写入题库。')
@@ -560,7 +635,7 @@ Markdown/LaTeX 要求：
       onClose={onClose}
       wide
       locked
-      actions={<Button size="sm" variant="outline" icon={BookOpen} onClick={() => { setMode('json'); setAiOpen(true) }}>AI 辅助</Button>}
+      actions={<div className="flex items-center gap-2">{onManageFigures ? <Button size="sm" variant="outline" icon={Image} onClick={onManageFigures}>管理题图</Button> : null}<Button size="sm" variant="outline" icon={BookOpen} onClick={() => { setMode('json'); setAiOpen(true) }}>AI 辅助</Button></div>}
     >
       <div className="flex h-full min-h-0 flex-col">
         {/* Toggle Mode Bar */}
@@ -651,14 +726,23 @@ Markdown/LaTeX 要求：
             {/* Left Column: Editors */}
             <div className="h-full overflow-y-auto pr-2 space-y-4">
               {mode === 'form' ? (
-                <div className="space-y-4">
-                  {/* Markdown Editors */}
-                  <div className="space-y-4">
-		                    <LabeledTextarea label="题干文本" help="保存为 Markdown 文本；公式可保留模型原生 LaTeX 写法。" minHeight="min-h-48" value={draftProblemText(draft)} onChange={(value) => updateDraft({ stemMarkdown: value, problemBlocks: paragraphBlocksFromText(value) })} />
-		                    <LabeledTextarea label="答案文本" help="保存为答案 Markdown。" minHeight="min-h-24" value={draftAnswerText(draft)} onChange={(value) => updateDraft({ answerText: value, answerBlocks: paragraphBlocksFromText(value) })} />
-		                    <LabeledTextarea label="解析文本" help="保存为解析 Markdown。" minHeight="min-h-48" value={draftAnalysisText(draft)} onChange={(value) => updateDraft({ analysisMarkdown: value, analysisBlocks: paragraphBlocksFromText(value) })} />
-                  </div>
-                </div>
+                <QuestionContentEditor
+                  entityKey={`${entityType}:${String(draft.id || 'new')}`}
+                  value={contentDraft.value}
+                  savedValue={initialContent}
+                  onChange={(value) => {
+                    contentDraft.setValue(value)
+                    setDraft((current) => ({ ...current, ...contentPatch(value) }))
+                    setEditorConflict(null)
+                  }}
+                  onSave={saveContent}
+                  onCancel={onClose}
+                  saving={saving}
+                  dirty={contentDraft.dirty}
+                  contentRevision={draft.contentRevision}
+                  conflict={editorConflict}
+                  className="min-h-[520px]"
+                />
               ) : mode === 'metadata' ? (
                 <div className="space-y-4">
                   {/* Metadata fields */}
@@ -842,7 +926,7 @@ Markdown/LaTeX 要求：
     )}
 
         {/* Footer actions */}
-        <div className="flex flex-none items-center justify-between gap-3 border-t pt-3">
+        <div className={`flex flex-none items-center justify-between gap-3 border-t pt-3 ${mode === 'form' ? 'hidden' : ''}`}>
           <div className="min-w-0 text-xs text-red-600 dark:text-red-400">{saveStatus}</div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onClose}>取消</Button>

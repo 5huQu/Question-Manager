@@ -218,14 +218,31 @@
   \par
 }
 \newsavebox{\qbank@figbox}
-\newcommand{\qbankfigure}[3]{%
+\newcommand{\qbankfigure}[4]{%
   \par\addvspace{0.2em}\noindent
   % Keep diagrams visually comparable: wide figures retain their requested
   % width, while square/tall figures are capped at a common printed height.
-  \sbox{\qbank@figbox}{\includegraphics[width=#2\linewidth,height=120pt,keepaspectratio]{#3}}%
+  \sbox{\qbank@figbox}{\includegraphics[width=#2\linewidth,height=120pt,keepaspectratio]{#4}}%
   \typeout{QBANKFIG id=#1\space page=\thepage\space pagetotal=\the\pagetotal\space pagegoal=\the\pagegoal\space figheight=\the\ht\qbank@figbox\space figdepth=\the\dp\qbank@figbox\space width=#2}%
-  \usebox{\qbank@figbox}%
+  \ifstrequal{#3}{right}{\hfill\usebox{\qbank@figbox}}{\ifstrequal{#3}{left}{\usebox{\qbank@figbox}}{\hfill\usebox{\qbank@figbox}\hfill}}%
   \par\addvspace{0.15em}%
+}
+
+% Consecutive labelled diagrams (图甲/图乙/...) share a compact grid. This
+% mirrors exam-zh's content-aware choice layout: figures keep a readable cap
+% instead of each consuming a full vertical row.
+\newlength{\qbank@gridcellwidth}
+\newenvironment{qbankfiguregrid}[1]{%
+  \par\addvspace{0.25em}\noindent
+  \ifnum#1=3\setlength{\qbank@gridcellwidth}{0.31\linewidth}\else\setlength{\qbank@gridcellwidth}{0.48\linewidth}\fi
+  \centering
+}{\par\addvspace{0.2em}}
+\newcommand{\qbankfiguregridcell}[4]{%
+  \begin{minipage}[t]{\qbank@gridcellwidth}\centering
+    \includegraphics[width=#4\linewidth,height=82pt,keepaspectratio]{#2}\par
+    \vspace{0.08em}{\footnotesize #3}%
+    \typeout{QBANKGRIDFIG id=#1}%
+  \end{minipage}\hfill
 }
 
 %% ---- 题号 / 题目环境（试卷、练习单共用）-----------------------------
@@ -252,14 +269,14 @@
 
 % Stable, non-floating figure/choice composition. Both minipages remain in one
 % vertical block, so a figure can never land between individual choices.
-\newcommand{\qbankchoiceswithfigure}[3]{%
+\newcommand{\qbankchoiceswithfigure}[4]{%
   \par\addvspace{0.25em}\noindent
   \ifstrequal{#1}{left}{%
-    \begin{minipage}[t]{0.40\linewidth}\centering #2\end{minipage}\hfill
-    \begin{minipage}[t]{0.56\linewidth}#3\end{minipage}%
+    \begin{minipage}[t]{#2\linewidth}\vspace{0pt}\centering #3\end{minipage}\hfill
+    \begin{minipage}[t]{\dimexpr0.96\linewidth-#2\linewidth\relax}\vspace{0pt}#4\end{minipage}%
   }{%
-    \begin{minipage}[t]{0.56\linewidth}#3\end{minipage}\hfill
-    \begin{minipage}[t]{0.40\linewidth}\centering #2\end{minipage}%
+    \begin{minipage}[t]{\dimexpr0.96\linewidth-#2\linewidth\relax}\vspace{0pt}#4\end{minipage}\hfill
+    \begin{minipage}[t]{#2\linewidth}\vspace{0pt}\centering #3\end{minipage}%
   }%
   \par\addvspace{0.1em}%
 }

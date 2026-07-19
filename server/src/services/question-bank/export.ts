@@ -15,6 +15,7 @@ import {
   questionPlainText,
   figuresWithoutInlineMarkers,
   doc2xInlineFigureIds,
+  figuresByIdentifier,
 } from '../../utils/figure-export.js'
 import { bindInlineImageReferences } from '../../utils/figure-helpers.js'
 import { markdownToExamLatex as richMarkdownToExamLatex } from '../../utils/rich-content.js'
@@ -90,7 +91,7 @@ function buildQuestionSetWorksheetCollection(input: {
   updatedAt?: string
   rows: QuestionRow[]
   bindingRunId?: string
-  variant: ExportVariant
+  variant: StandardExportVariant
 }) {
   const rows = input.rows
   const sectionNames = collectionSectionNames(rows)
@@ -218,11 +219,124 @@ function markdownQuestionLine(index: number, entry: any, figures: Array<Record<s
 // Public export functions
 // ---------------------------------------------------------------------------
 
-export type ExportVariant = 'student' | 'teacher'
+export type ExportVariant = 'student' | 'teacher' | 'error_notebook'
+type StandardExportVariant = Exclude<ExportVariant, 'error_notebook'>
 
 export function normalizeExportVariant(value: unknown): ExportVariant {
+  if (value === 'error_notebook' || value === 'error-notebook') return 'error_notebook'
   if (value === 'teacher' || value === 'answers') return 'teacher'
   return 'student'
+}
+
+function stripLeadingScore(value: string) {
+  return String(value || '').replace(/^\s*[（(]\s*\d+(?:\.\d+)?\s*分\s*[）)]\s*/, '').trimStart()
+}
+
+function errorNotebookGroups(collection: ExportCollection) {
+  const groups = new Map<string, typeof collection.questions>()
+  collection.questions.forEach((entry) => {
+    const questionType = normalizeQuestionType(entry.item.questionType, entry.item.stemMarkdown, entry.item.answerText)
+    const entries = groups.get(questionType) || []
+    entries.push(entry)
+    groups.set(questionType, entries)
+  })
+  return [...groups.entries()].map(([questionType, entries], index) => ({
+    title: `${sectionOrdinal(index + 1)}、${questionType}`,
+    entries,
+  }))
+}
+
+export function buildCollectionErrorNotebookMarkdown(collection: ExportCollection) {
+  assertCollectionExportable(collection, ['stem'])
+  const lines = [
+    '# 错题本',
+    '',
+    `> 来源：${collection.title || '未命名题集'}  `,
+    `> 题目数量：${collection.questionCount} 题`,
+  ]
+  let questionIndex = 0
+  errorNotebookGroups(collection).forEach((group) => {
+    lines.push('', `## ${group.title}`, '', '---', '')
+    group.entries.forEach((entry) => {
+      questionIndex += 1
+      const stemFigures = questionFigures(entry)
+      const stem = stripLeadingScore(stripLeadingQuestionNo(entry.item.stemMarkdown, entry.item.questionNo))
+      lines.push(`**${questionIndex}.** ${markdownWithInlineFigures(stem || '（题干待补充）', stemFigures)}`, '')
+      lines.push(...markdownFigureLines(figuresWithoutInlineMarkers(stem, stemFigures)), '')
+    })
+  })
+  return lines.join('\n').replace(/\n{4,}/g, '\n\n\n').trim() + '\n'
+}
+
+function errorNotebookQuestionLatex(entry: ExportCollection['questions'][number], index: number) {
+  const originalStem = stripLeadingScore(stripLeadingQuestionNo(entry.item.stemMarkdown, entry.item.questionNo))
+  const { prompt, choices, trailingContent } = splitChoiceStemForExport(originalStem)
+  const stemFigures = questionFigures(entry)
+  const lines = [`\\questionnumber{${index}}`]
+  const renderText = (value: string) => latexWithInlineFigures(value, stemFigures).replace(/_{2,}/g, '\\underline{\\hspace{3.2em}}')
+  if (choices.length === 4) {
+    lines[0] += renderText(prompt || '（题干待补充）')
+    lines.push('\\vspace{0.45em}', '\\begin{tabularx}{\\textwidth}{@{}XXXX@{}}')
+    lines.push(choices.map((choice, choiceIndex) => `${String.fromCharCode(65 + choiceIndex)}. ${renderText(choice)}`).join(' &\n'))
+    lines.push('\\end{tabularx}')
+    if (trailingContent) lines.push(renderText(trailingContent))
+  } else {
+    lines[0] += renderText(originalStem || '（题干待补充）')
+  }
+  lines.push(...latexFigureLines(figuresWithoutInlineMarkers(originalStem, stemFigures)))
+  return lines
+}
+
+export function buildCollectionErrorNotebookLatex(collection: ExportCollection) {
+  assertCollectionExportable(collection, ['stem'])
+  const lines = [
+    '\\documentclass[UTF8,12pt]{ctexart}',
+    '\\usepackage[a4paper,top=22mm,bottom=24mm,left=22mm,right=22mm]{geometry}',
+    '\\usepackage{amsmath}',
+    '\\usepackage{fontspec}',
+    '\\usepackage{unicode-math}',
+    '\\usepackage{graphicx}',
+    '\\usepackage{tabularx}',
+    '\\usepackage{xcolor}',
+    '\\usepackage{fancyhdr}',
+    '\\IfFontExistsTF{Songti SC}{\\setCJKmainfont{Songti SC}}{\\IfFontExistsTF{SimSun}{\\setCJKmainfont{SimSun}}{\\setCJKmainfont{FandolSong-Regular}}}',
+    '\\IfFontExistsTF{Times New Roman}{\\setmainfont{Times New Roman}}{\\setmainfont{TeX Gyre Termes}}',
+    '\\IfFontExistsTF{STIX Two Math}{\\setmathfont{STIX Two Math}}{\\setmathfont{Latin Modern Math}}',
+    '\\setlength{\\parindent}{0pt}',
+    '\\setlength{\\parskip}{0pt}',
+    '\\setlength{\\headheight}{15pt}',
+    '\\linespread{1.18}',
+    '\\pagestyle{fancy}',
+    '\\fancyhf{}',
+    '\\fancyhead[L]{\\small\\color{gray}错题本}',
+    `\\fancyhead[R]{\\small\\color{gray}${escapeLatex(collection.title || '未命名题集')}}`,
+    '\\fancyfoot[C]{\\small\\color{gray}\\thepage}',
+    '\\renewcommand{\\headrulewidth}{0pt}',
+    '\\newcommand{\\notebooksection}[1]{\\vspace{0.8em}{\\fontsize{13.5pt}{17pt}\\selectfont\\bfseries #1\\par}\\vspace{0.22em}\\hrule height 0.55pt\\vspace{0.65em}}',
+    '\\newcommand{\\questionnumber}[1]{{\\bfseries #1.}\\hspace{0.65em}}',
+    '\\begin{document}',
+  ]
+  let questionIndex = 0
+  errorNotebookGroups(collection).forEach((group) => {
+    lines.push(`\\notebooksection{${escapeLatex(group.title)}}`)
+    group.entries.forEach((entry) => {
+      questionIndex += 1
+      lines.push(...errorNotebookQuestionLatex(entry, questionIndex), '\\vspace{0.8em}')
+    })
+  })
+  lines.push('\\end{document}')
+  return lines.join('\n\n') + '\n'
+}
+
+export function exportCollectionErrorNotebookPdf(collection: ExportCollection) {
+  if (!collection.questions.length) throw new Error('当前试题篮没有题目，无法导出。')
+  const exportRoot = path.join(storageRoot, 'output', 'pdf', 'collection-exports', safeName(collection.id))
+  fs.mkdirSync(exportRoot, { recursive: true })
+  const baseName = `${safeName(collection.title || '错题本')}-error-notebook`
+  const texPath = path.join(exportRoot, `${baseName}.tex`)
+  fs.writeFileSync(texPath, buildCollectionErrorNotebookLatex(collection), 'utf8')
+  compileWorksheetTex(texPath)
+  return path.join(exportRoot, `${baseName}.pdf`)
 }
 
 // ── Collection markdown ────────────────────────────────────────────────────
@@ -231,6 +345,7 @@ export function buildCollectionMarkdown(
   collection: ExportCollection,
   variant: ExportVariant,
 ) {
+  if (variant === 'error_notebook') return buildCollectionErrorNotebookMarkdown(collection)
   assertCollectionExportable(collection, exportFieldsForVariant(variant))
   const lines: string[] = []
   lines.push(`# ${collection.title || '未命名试卷'}（${variant === 'teacher' ? '教师版' : '学生版'}）`)
@@ -272,6 +387,7 @@ export function buildCollectionLatex(
   collection: ExportCollection,
   variant: ExportVariant,
 ) {
+  if (variant === 'error_notebook') return buildCollectionErrorNotebookLatex(collection)
   assertCollectionExportable(collection, exportFieldsForVariant(variant))
   const lines: string[] = [
     '\\documentclass[12pt]{ctexart}',
@@ -321,7 +437,7 @@ export function buildCollectionLatex(
 
 export function buildCollectionWorksheetLatex(
   collection: ExportCollection,
-  variant: ExportVariant,
+  variant: StandardExportVariant,
   figuresDir: string,
   adjustments: Map<string, number>,
   documentClass = 'qbank-worksheet',
@@ -351,7 +467,9 @@ export function buildCollectionWorksheetLatex(
   ]
   lines.push('\\begin{document}', '\\qbankmaketitle')
   let currentSection = ''
-  collection.questions.forEach((entry, index) => {
+  const layoutOrder=new Map((layoutDraft?.questions||[]).map((item,index)=>[item.relationId,item.order??index]))
+  const orderedQuestions=collection.questions.map((entry,index)=>({entry,index})).sort((left,right)=>(layoutOrder.get(String(left.entry.relationId||left.entry.item?.id))??left.index)-(layoutOrder.get(String(right.entry.relationId||right.entry.item?.id))??right.index)).map(item=>item.entry)
+  orderedQuestions.forEach((entry, index) => {
     const key = worksheetEntryKey(entry, index)
     const sectionName = scorePlan.entrySections.get(key) || ''
     const questionLayout = questionLayoutFor(layoutDraft, entry.relationId || entry.item?.id)
@@ -379,7 +497,7 @@ export function buildCollectionWorksheetLatex(
 function worksheetQuestionLatex(
   entry: any,
   index: number,
-  variant: ExportVariant,
+  variant: StandardExportVariant,
   collectionId: string,
   figuresDir: string,
   adjustments: Map<string, number>,
@@ -389,8 +507,16 @@ function worksheetQuestionLatex(
 ) {
   const questionId = safeName(String(entry.relationId || entry.item?.id || index + 1))
   const lines = [`\\begin{examquestion}{${index + 1}}{${questionId}}`]
-  const { prompt, choices } = splitChoiceStemForExport(entry.item.stemMarkdown)
+  const { prompt, choices, trailingContent } = splitChoiceStemForExport(entry.item.stemMarkdown)
   const stemFigures = questionFigures(entry)
+  // Doc2X often places a single figure marker exactly between the stem and
+  // option A. Treat that boundary marker as a layout figure so choices can
+  // occupy the space beside it instead of waiting below a full-width row.
+  const boundaryMarker = doc2xInlineFigureIds(prompt).size === 1
+    ? prompt.match(/<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->\s*$/)
+    : null
+  const boundaryFigure = boundaryMarker ? figuresByIdentifier(stemFigures).get(boundaryMarker[1]) : undefined
+  const promptForLayout = boundaryMarker ? prompt.slice(0, boundaryMarker.index).trim() : prompt
   const registerFigure = (figure: Record<string, any>, figureIndex: number, usage: string, requestedWidth?: number) => {
       const sourcePath = figureAbsolutePath(figure)
       if (!sourcePath || !fs.existsSync(sourcePath)) {
@@ -407,49 +533,64 @@ function worksheetQuestionLatex(
       if (!fs.existsSync(outputPath)) fs.copyFileSync(sourcePath, outputPath)
       const limits = worksheetFigureWidthLimits(sourcePath)
       specs.set(figureId, { id: figureId, sourcePath, outputName, ...limits })
-      const width = adjustments.get(figureId) ?? requestedWidth ?? limits.defaultWidth
-      return `\\qbankfigure{${figureId}}{${width.toFixed(4)}}{figures/${outputName}}`
+      // A workbench override is authoritative. Automatic fit iterations may
+      // only adjust figures that are still using template defaults.
+      const width = requestedWidth ?? adjustments.get(figureId) ?? limits.defaultWidth
+      const alignment=figureLayoutFor(layout,figure)?.alignment||'center'
+      return `\\qbankfigure{${figureId}}{${width.toFixed(4)}}{${alignment}}{figures/${outputName}}`
   }
   const appendFigures = (figures: Array<Record<string, any>>, usage: string) => {
-    figures.forEach((figure, figureIndex) => {
-      const latex = registerFigure(figure, figureIndex, usage)
-      if (latex) lines.push(latex)
+    const rendered = figures.flatMap((figure, figureIndex) => {
+      const latex = registerFigure(figure, figureIndex, usage, figureLayoutFor(layout, figure)?.widthRatio)
+      return latex ? [latex] : []
     })
+    const mode = layout?.multiFigureLayout || 'auto'
+    if (rendered.length >= 2 && rendered.length <= 4 && mode !== 'column') lines.push(worksheetFigureGridLatex(rendered))
+    else lines.push(...rendered)
   }
 
-  lines.push(
-    keepSubquestionsTogether(
-      worksheetPromptWithInlineFigures(
-        prompt || entry.item.stemMarkdown,
-        stemFigures,
-        entry.item.questionType,
-        (figure) => registerFigure(figure, Math.max(0, stemFigures.indexOf(figure)), 'stem'),
-      ) || '（题干待补充）',
-    ),
-  )
   const figuresWithoutMarkers = figuresWithoutInlineMarkers(entry.item.stemMarkdown, stemFigures)
   const unanchoredStemFigures = figuresWithoutMarkers.filter((figure) => String(figure.usage || 'stem') !== 'options')
-  const sideFigure = unanchoredStemFigures.length === 1 ? unanchoredStemFigures[0] : undefined
+  const sideFigure = unanchoredStemFigures.length === 1
+    ? unanchoredStemFigures[0]
+    : unanchoredStemFigures.length === 0 && boundaryFigure
+      ? boundaryFigure
+      : undefined
   const sideDecision = sideFigure ? decideWorksheetFigureLayout({
     questionId,
     figureId: String(sideFigure.id || sideFigure.blockId || 'figure'),
     imagePath: figureAbsolutePath(sideFigure),
-    stemFigureCount: unanchoredStemFigures.length,
+    stemFigureCount: 1,
     hasInlineMarker: false,
     choices,
     requested: figureLayoutFor(layout, sideFigure),
   }) : undefined
   if (sideDecision) warnings.push(...sideDecision.warnings)
-  const useSideLayout = Boolean(sideFigure && sideDecision && (sideDecision.placement === 'side-left' || sideDecision.placement === 'side-right'))
+  const explicitWideChoices = layout?.choiceLayout === 'four' || layout?.choiceLayout === 'two'
+  const useSideLayout = Boolean(
+    sideFigure && sideDecision &&
+    (sideDecision.placement === 'side-left' || sideDecision.placement === 'side-right') &&
+    (sideDecision.source === 'manual' || !explicitWideChoices),
+  )
+  if (useSideLayout) lines.unshift('\\Needspace{16\\baselineskip}')
+  const promptLatex = compactWorksheetFigureRuns(keepSubquestionsTogether(
+    worksheetPromptWithInlineFigures(
+      promptForLayout || entry.item.stemMarkdown,
+      stemFigures,
+      entry.item.questionType,
+      (figure) => registerFigure(figure, Math.max(0, stemFigures.indexOf(figure)), 'stem'),
+    ) || '（题干待补充）',
+  ), layout?.multiFigureLayout)
+  lines.push(promptLatex)
 
   if (useSideLayout && sideFigure && sideDecision) {
     // Inside the fixed 40% minipage, use almost all local width. The decision's
     // widthRatio describes the page-level slot rather than a nested fraction.
     const figureLatex = registerFigure(sideFigure, Math.max(0, stemFigures.indexOf(sideFigure)), 'stem', 0.95)
     if (figureLatex) {
-      lines.push(`\\qbankchoiceswithfigure{${sideDecision.placement === 'side-left' ? 'left' : 'right'}}{${figureLatex}}{${worksheetChoicesLatex(choices, stemFigures, 'one')}}`)
+      lines.push(`\\qbankchoiceswithfigure{${sideDecision.placement === 'side-left' ? 'left' : 'right'}}{${sideDecision.widthRatio.toFixed(2)}}{${figureLatex}}{${worksheetChoicesLatex(choices, stemFigures, 'one', layout)}}`)
     } else {
-      lines.push(worksheetChoicesLatex(choices, stemFigures, layout?.choiceLayout))
+      lines.push(worksheetChoicesLatex(choices, stemFigures, layout?.choiceLayout, layout))
     }
   } else {
     const keepFigureWithChoices = unanchoredStemFigures.length === 1 && choices.length === 4
@@ -461,6 +602,13 @@ function worksheetQuestionLatex(
     if (choices.length) {
       if (layout?.choiceLayout === 'four' && qbankChoiceLayout(choices) !== 'four') warnings.push({ code: 'choice-overflow', questionId, message: '选项内容不适合强制四栏，可能超出栏宽。', suggestion: '改为自动、两栏或单栏布局。' })
       lines.push(worksheetChoicesLatex(choices, stemFigures, layout?.choiceLayout))
+    }
+    if (trailingContent) {
+      lines.push(compactWorksheetFigureRuns(keepSubquestionsTogether(
+        worksheetMarkdownWithInlineFigures(trailingContent, stemFigures, true, false, (figure) =>
+          registerFigure(figure, Math.max(0, stemFigures.indexOf(figure)), 'stem'),
+        ),
+      ), layout?.multiFigureLayout))
     }
     if (keepFigureWithChoices) lines.push('\\end{samepage}')
     appendFigures(unanchoredStemFigures.filter((figure) => figureLayoutFor(layout, figure)?.placement === 'after-choices'), 'stem')
@@ -525,7 +673,7 @@ function worksheetInlineFigureLatex(
   renderFigure?: (figure: Record<string, any>) => string,
 ) {
   const source = String(content || '')
-  const figureById = new Map(figures.map((figure) => [String(figure.blockId || figure.id || ''), figure]))
+  const figureById = figuresByIdentifier(figures)
   const lines: string[] = []
   let cursor = 0
   let match: RegExpExecArray | null
@@ -545,6 +693,51 @@ function worksheetInlineFigureLatex(
   return lines.join('\n')
 }
 
+function compactWorksheetFigureRuns(latex: string, mode: QuestionLayout['multiFigureLayout'] = 'auto') {
+  if (mode === 'column') return latex
+  const item = String.raw`\\qbankfigure\{([^{}]+)\}\{([0-9.]+)\}\{(?:left|center|right)\}\{([^{}]+)\}\s*(?:\\par\s*)?((?:图\s*)?[甲乙丙丁戊己庚辛])`
+  const run = new RegExp(`(?:${item}\\s*){2,}`, 'g')
+  const labelled = String(latex || '').replace(run, (block) => {
+    const matcher = new RegExp(item, 'g')
+    const cells: string[] = []
+    let match: RegExpExecArray | null
+    while ((match = matcher.exec(block))) {
+      cells.push(JSON.stringify({ id: match[1], width: Number(match[2]), path: match[3], label: match[4].replace(/\s+/g, '') }))
+    }
+    if (cells.length < 2) return block
+    const columns = cells.length === 3 ? 3 : 2
+    const cellWidth = columns === 3 ? 0.31 : 0.48
+    const rendered = cells.map((cell) => {
+      const parsed = JSON.parse(cell) as { id: string; width: number; path: string; label: string }
+      const scale = Math.min(1, Math.max(0.3, parsed.width / cellWidth))
+      return `\\qbankfiguregridcell{${parsed.id}}{${parsed.path}}{${parsed.label}}{${scale.toFixed(3)}}`
+    })
+    return `\\begin{qbankfiguregrid}{${columns}}\n${rendered.join('\n')}\n\\end{qbankfiguregrid}`
+  })
+  const plainItem = String.raw`\\qbankfigure\{[^{}]+\}\{[0-9.]+\}\{(?:left|center|right)\}\{[^{}]+\}`
+  const plainRun = new RegExp(`(?:${plainItem}\\s*){2,4}`, 'g')
+  return labelled.replace(plainRun, (block) => {
+    const figures = block.match(new RegExp(plainItem, 'g')) || []
+    return figures.length >= 2 ? worksheetFigureGridLatex(figures) : block
+  })
+}
+
+function worksheetFigureGridLatex(figures: string[]) {
+  const item = /\\qbankfigure\{([^{}]+)\}\{([0-9.]+)\}\{(?:left|center|right)\}\{([^{}]+)\}/
+  const parsed = figures.flatMap((latex) => {
+    const match = latex.match(item)
+    return match ? [{ id: match[1], width: Number(match[2]), path: match[3] }] : []
+  })
+  if (parsed.length !== figures.length) return figures.join('\n')
+  const columns = parsed.length === 3 ? 3 : 2
+  const cellWidth = columns === 3 ? 0.31 : 0.48
+  const cells = parsed.map((figure) => {
+    const scale = Math.min(1, Math.max(0.3, figure.width / cellWidth))
+    return `\\qbankfiguregridcell{${figure.id}}{${figure.path}}{}{${scale.toFixed(3)}}`
+  })
+  return `\\begin{qbankfiguregrid}{${columns}}\n${cells.join('\n')}\n\\end{qbankfiguregrid}`
+}
+
 function worksheetInlineFigureLines(figure: Record<string, any>) {
   const sourcePath = figureAbsolutePath(figure)
   if (!sourcePath || !fs.existsSync(sourcePath)) return []
@@ -555,8 +748,8 @@ function worksheetInlineFigureLines(figure: Record<string, any>) {
   ]
 }
 
-function worksheetChoicesLatex(choices: string[], figures: Array<Record<string, any>> = [], override: ChoiceLayoutOverride = 'auto') {
-  const rendered = choices.map((choice) => worksheetChoiceLatex(choice, figures))
+function worksheetChoicesLatex(choices: string[], figures: Array<Record<string, any>> = [], override: ChoiceLayoutOverride = 'auto', layout?: QuestionLayout) {
+  const rendered = choices.map((choice) => worksheetChoiceLatex(choice, figures, layout))
   if (rendered.length === 4) {
     const layout = override === 'auto' ? qbankChoiceLayout(choices) : override
     if (layout === 'four')
@@ -570,10 +763,10 @@ function worksheetChoicesLatex(choices: string[], figures: Array<Record<string, 
 }
 
 /** Render an option marker inside its A/B/C/D cell instead of as a block below the question. */
-function worksheetChoiceLatex(choice: string, figures: Array<Record<string, any>>) {
+function worksheetChoiceLatex(choice: string, figures: Array<Record<string, any>>, layout?: QuestionLayout) {
   const inlineIds = doc2xInlineFigureIds(choice)
   if (!inlineIds.size) return markdownToExamLatex(choice, true).replace(/\n+/g, ' ').trim()
-  const figureById = new Map(figures.map((figure) => [String(figure.blockId || figure.id || ''), figure]))
+  const figureById = figuresByIdentifier(figures)
   let cursor = 0
   let match: RegExpExecArray | null
   const parts: string[] = []
@@ -584,7 +777,9 @@ function worksheetChoiceLatex(choice: string, figures: Array<Record<string, any>
     const figure = figureById.get(match[1])
     const sourcePath = figure ? figureAbsolutePath(figure) : ''
     if (sourcePath && fs.existsSync(sourcePath)) {
-      parts.push(`\\includegraphics[width=0.88\\linewidth,height=3.8cm,keepaspectratio]{\\detokenize{${sourcePath}}}`)
+      const requested = figure ? figureLayoutFor(layout, figure)?.widthRatio : undefined
+      const cellWidth = Math.min(1, Math.max(0.35, (requested ?? 0.3) / 0.48))
+      parts.push(`\\includegraphics[width=${cellWidth.toFixed(3)}\\linewidth,height=2.8cm,keepaspectratio]{\\detokenize{${sourcePath}}}`)
     }
     cursor = match.index + match[0].length
   }
@@ -618,7 +813,7 @@ function markdownToExamLatex(value: string, preserveBreaks = true) {
 
 export function exportCollectionWorksheetPdf(
   collection: ExportCollection,
-  variant: ExportVariant,
+  variant: StandardExportVariant,
   documentClass = 'qbank-worksheet',
   layoutDraft?: PaperLayoutDraft,
 ) {
@@ -627,7 +822,7 @@ export function exportCollectionWorksheetPdf(
 
 export function exportCollectionWorksheetPdfWithDiagnostics(
   collection: ExportCollection,
-  variant: ExportVariant,
+  variant: StandardExportVariant,
   documentClass = 'qbank-worksheet',
   layoutDraft?: PaperLayoutDraft,
 ) {
@@ -645,6 +840,8 @@ export function exportCollectionWorksheetPdfWithDiagnostics(
   const templateName = documentClass === 'qbank-exam' ? 'exam' : 'worksheet'
   const baseName = `${safeName(collection.title || '练习单')}-${templateName}-${variant === 'teacher' ? 'teacher' : 'student'}`
   const texPath = path.join(exportRoot, `${baseName}.tex`)
+  const pdfPath = path.join(exportRoot, `${baseName}.pdf`)
+  fs.rmSync(pdfPath, { force: true })
   const adjustments = new Map<string, number>()
   let knownWarnings: LayoutWarning[] = []
   try {
@@ -664,7 +861,7 @@ export function exportCollectionWorksheetPdfWithDiagnostics(
     const questionTelemetry = parseWorksheetQuestionTelemetry(logPath)
     const warnings = [...rendered.warnings, ...worksheetTelemetryWarnings(questionTelemetry, parseWorksheetFigureTelemetry(logPath), rendered.specs)]
     const uniqueWarnings = [...new Map(warnings.map((warning) => [`${warning.code}:${warning.questionId}:${warning.figureId || ''}:${warning.page || ''}`, warning])).values()]
-    return { pdfPath: path.join(exportRoot, `${baseName}.pdf`), texPath, logPath, warnings: uniqueWarnings, questionTelemetry }
+    return { pdfPath, texPath, logPath, warnings: uniqueWarnings, questionTelemetry }
   } catch (error) {
     if (error && typeof error === 'object') Object.assign(error, { layoutWarnings: knownWarnings })
     throw error
@@ -676,7 +873,7 @@ export function exportQuestionSetPdf(input: {
   title: string
   rows: QuestionRow[]
   template: 'exam' | 'worksheet'
-  variant: ExportVariant
+  variant: StandardExportVariant
   createdAt?: string
   updatedAt?: string
   bindingRunId?: string
@@ -698,7 +895,7 @@ export function exportQuestionSetPdf(input: {
 
 // ── Run worksheet PDF ──────────────────────────────────────────────────────
 
-export function exportRunWorksheetPdf(runId: string, options: { title?: string; variant?: ExportVariant }) {
+export function exportRunWorksheetPdf(runId: string, options: { title?: string; variant?: StandardExportVariant }) {
   const run = getRun(runId)
   if (!run) throw new Error('批次不存在。')
   const rows = db.prepare(`
@@ -722,7 +919,7 @@ export function exportRunWorksheetPdf(runId: string, options: { title?: string; 
 
 // ── Run exam PDF (qbank-exam template) ─────────────────────────────────────
 
-export function exportRunExamPdf(runId: string, options: { title?: string; variant?: ExportVariant }) {
+export function exportRunExamPdf(runId: string, options: { title?: string; variant?: StandardExportVariant }) {
   const variant = options.variant || 'student'
   const run = getRun(runId)
   if (!run) throw new Error('批次不存在。')

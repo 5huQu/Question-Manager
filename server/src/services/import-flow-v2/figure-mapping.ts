@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto'
 import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
 import type { OCRAsset, OCRDocument } from '../../types/ocr-document.js'
 import type { CandidateFigure, QuestionCandidate } from '../../types/question-candidate.js'
-import { assetPathFor } from '../../utils/paths.js'
+import { assetPathFor, resolveStoragePath } from '../../utils/paths.js'
+import { realignOcrDocumentBlockMarkdownOffsets } from '../ocr-providers/ocr-document.normalizer.js'
 import { ensureDir, importDataDir, readJsonFile, readText } from './import-flow-v2.paths.js'
 
 export function bboxRecord(bbox: CandidateFigure['bbox']) {
@@ -18,12 +19,16 @@ export function figuresForQuestionBank(figures: CandidateFigure[]) {
     if (usage === 'question') {
       usage = 'stem'
     }
+    if (usage === 'option') {
+      usage = 'options'
+    }
     return {
       id: figure.id,
       blockId: figure.blockId || figure.sourceBlockId,
       origin: 'import_flow_v2',
       usage,
-      category: usage === 'analysis' ? 'analysis' : 'question',
+      category: usage === 'analysis' ? 'analysis' : usage === 'options' ? 'options' : 'question',
+      optionLabel: usage === 'options' ? String(figure.optionLabel || '').toUpperCase() : '',
       pageNumber: figure.pageNo,
       bbox: bboxRecord(figure.bbox),
       sourcePath: figure.path,
@@ -74,6 +79,56 @@ export function getOcrFigureDiagnostics(ocrDocId: string, candidates: QuestionCa
     unusedAssetsCount,
     failedDownloadCount,
   }
+}
+
+function replaceFigureAssetIds(doc: OCRDocument, replacements: Map<string, string>) {
+  if (!replacements.size) return
+  doc.markdown = String(doc.markdown || '').replace(
+    /<!--\s*DOC2X_FIGURE:([^\s>]+)\s*-->/g,
+    (marker, id: string) => replacements.has(id) ? `<!-- DOC2X_FIGURE:${replacements.get(id)} -->` : marker,
+  )
+  for (const block of doc.pages.flatMap((page) => page.blocks)) {
+    if (block.assetId && replacements.has(block.assetId)) block.assetId = replacements.get(block.assetId)
+  }
+  doc.assets = doc.assets.filter((asset) => !replacements.has(asset.id))
+  realignOcrDocumentBlockMarkdownOffsets(doc)
+}
+
+/**
+ * Content hashing is only a fallback for provider URLs that could not be
+ * matched before download. A marker-only asset is merged only when its bytes
+ * identify exactly one positioned Figure asset; this avoids collapsing two
+ * intentional occurrences of the same illustration on different pages.
+ */
+export function dedupeDoc2xAssetsByContent(doc: OCRDocument) {
+  if (doc.provider !== 'doc2x') return
+  const byDigest = new Map<string, OCRAsset[]>()
+  for (const asset of doc.assets) {
+    if (!asset.path || /^https?:\/\//i.test(asset.path)) continue
+    try {
+      const bytes = fs.readFileSync(resolveStoragePath(asset.path))
+      if (!bytes.length) continue
+      const digest = createHash('sha256').update(bytes).digest('hex')
+      const group = byDigest.get(digest) || []
+      group.push(asset)
+      byDigest.set(digest, group)
+    } catch {
+      // A missing local file is already reported by the download diagnostics.
+    }
+  }
+
+  const replacements = new Map<string, string>()
+  for (const group of byDigest.values()) {
+    if (group.length < 2) continue
+    const positioned = group.filter((asset) => Boolean(asset.sourceBlockId || asset.bbox))
+    if (positioned.length !== 1) continue
+    const preferred = positioned[0]
+    for (const asset of group) {
+      if (asset === preferred || asset.sourceBlockId || asset.bbox) continue
+      replacements.set(asset.id, preferred.id)
+    }
+  }
+  replaceFigureAssetIds(doc, replacements)
 }
 
 export async function localizeRemoteImages(doc: OCRDocument) {
@@ -135,4 +190,6 @@ export async function localizeRemoteImages(doc: OCRDocument) {
       ...failedUrls
     ]))
   }
+
+  dedupeDoc2xAssetsByContent(doc)
 }

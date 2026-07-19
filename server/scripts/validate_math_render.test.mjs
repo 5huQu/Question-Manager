@@ -29,6 +29,22 @@ const validResult = validate(riskyButValidPayload)
 assert.equal(validResult.ok, true)
 assert.deepEqual(validResult.errors, [])
 
+const doc2xDelimiterResult = validate({
+  problem_text: String.raw`已知 \(f\left(x\right)=x^3\)，求 \(f'(x)\)。`,
+  answer: String.raw`\(3x^2\)`,
+  analysis: String.raw`\[f'(x)=3x^2\]`,
+})
+assert.equal(doc2xDelimiterResult.ok, true)
+assert.deepEqual(doc2xDelimiterResult.errors, [])
+
+const brokenDoc2xDelimiterResult = validate({
+  problem_text: String.raw`计算 \(\frac{1}{2}`,
+  answer: '',
+  analysis: '',
+})
+assert.equal(brokenDoc2xDelimiterResult.ok, false)
+assert.equal(brokenDoc2xDelimiterResult.errors[0].code, 'math_delimiter_unclosed')
+
 const rawArrayResult = validate({
   problem_text: '',
   answer: '',

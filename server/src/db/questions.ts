@@ -121,6 +121,7 @@ export function mapQuestion(row: QuestionRow) {
     stemMarkdown,
     answerText,
     analysisMarkdown,
+    contentRevision: Number(row.content_revision || 1),
     totalScore: normalizeTotalScore(row.total_score),
     scoringRubric,
     problemBlocks: paragraphBlock(stemMarkdown),

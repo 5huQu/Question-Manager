@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { pythonRoot, storageRoot, runsRoot, frontendDist } from '../config.js'
 import { normalizeBlocks, inlineMarkdown, blocksToMarkdown, markdownToExamLatex, markdownTableToExamLatex, escapeLatexTextSegment, normalizeUnicodeRomanNumerals, normalizeLatexMathSegment, keepSubquestionsTogether } from './rich-content.js'
-import { questionFigures, analysisFigures, latexFigureLines, latexWithInlineFigures, figureCaptionForExport, markdownWithInlineFigures, removeDoc2xFigurePlaceholders, questionPlainText, doc2xInlineFigureIds, figuresWithoutInlineMarkers } from './figure-export.js'
+import { questionFigures, analysisFigures, latexFigureLines, latexWithInlineFigures, figureCaptionForExport, markdownWithInlineFigures, removeDoc2xFigurePlaceholders, questionPlainText, doc2xInlineFigureIds, figuresWithoutInlineMarkers, figuresByIdentifier } from './figure-export.js'
 import { figureAbsolutePath } from './figure-helpers.js'
 import { parseJson } from './json.js'
 import { normalizeQuestionType, exportQuestionType, paperQuestionNo, stripLeadingQuestionNo, selectedChoiceLetters } from './question-type.js'
@@ -124,7 +124,7 @@ export function renderExamZhPromptWithInlineFigures(
   answer = '',
 ) {
   if (!doc2xInlineFigureIds(prompt).size) return renderExamZhPrompt(prompt, questionType, variant, answer)
-  const figureById = new Map(figures.map((figure) => [String(figure.blockId || figure.id || ''), figure]))
+  const figureById = figuresByIdentifier(figures)
   const lines: string[] = []
   const source = String(prompt || '')
   let cursor = 0
@@ -144,7 +144,7 @@ export function renderExamZhPromptWithInlineFigures(
 
 export function renderExamZhMarkdownWithInlineFigures(content: string, figures: Array<Record<string, any>>) {
   if (!doc2xInlineFigureIds(content).size) return markdownToExamLatex(content, true)
-  const figureById = new Map(figures.map((figure) => [String(figure.blockId || figure.id || ''), figure]))
+  const figureById = figuresByIdentifier(figures)
   const lines: string[] = []
   const source = String(content || '')
   let cursor = 0
@@ -260,7 +260,16 @@ export function splitChoiceStemForExport(stem: string) {
     const end = index + 1 < matches.length ? (matches[index + 1].index || source.length) : source.length
     return source.slice(start, end).trim()
   })
-  return { prompt, choices }
+  // Some experiment/solution questions contain an A-D subquestion followed by
+  // (2), (3), etc. Keep that tail outside choice D so later figures and text
+  // return to the normal question flow.
+  let trailingContent = ''
+  const tailMatch = choices[3]?.match(/(?:\n|\\par\s*)\s*(?=[（(](?:2|3|4|5|6|7|8|9|二|三|四|五|六|七|八|九)[）)])/)
+  if (tailMatch?.index !== undefined) {
+    trailingContent = choices[3].slice(tailMatch.index).replace(/^\s*\\par\s*/, '').trim()
+    choices[3] = choices[3].slice(0, tailMatch.index).trim()
+  }
+  return { prompt, choices, trailingContent }
 }
 
 // ── LaTeX generation (exam-zh document class) ──────────────────────────────────
@@ -318,7 +327,7 @@ export function buildRunExamZhLatex(
     const section = examZhSectionForQuestionType(questionType, scorePlan, emittedSections)
     if (section) lines.push('', section)
     if (paperNo === 16 || paperNo === 18) lines.push('\\newpage')
-    const { prompt, choices } = splitChoiceStemForExport(item.stemMarkdown)
+    const { prompt, choices, trailingContent } = splitChoiceStemForExport(item.stemMarkdown)
     const questionScore = scorePlan.questionScores.get(item.id)
     lines.push('', '\\begin{question}')
     const stemFigures = questionFigures({ item })
@@ -328,6 +337,7 @@ export function buildRunExamZhLatex(
       for (const choice of choices) lines.push(`  \\item ${renderExamZhMarkdownWithInlineFigures(choice, stemFigures)}`)
       lines.push('\\end{choices}')
     }
+    if (trailingContent) lines.push(renderExamZhMarkdownWithInlineFigures(trailingContent, stemFigures))
     lines.push(...examZhFigureLines(figuresWithoutInlineMarkers(item.stemMarkdown, stemFigures)))
     if (questionType === '解答题' && paperNo >= 15 && variant !== 'teacher') {
       lines.push(examZhAnswerBlank(paperNo))

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -6,11 +6,8 @@ import {
   BookOpen,
   Check,
   CheckCircle,
-  CheckSquare,
   Code,
   Copy,
-  Eye,
-  EyeOff,
   FileStack,
   FileText,
   FolderOpen,
@@ -26,10 +23,11 @@ import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { questionBankApi } from '@/api/questionBank'
 import { settingsApi } from '@/api/settings'
 import { Modal } from '@/components/dialogs/Modal'
-import { QuestionContent } from '@/components/questions/QuestionContent'
+import { QuestionContentEditor, splitChoices, type QuestionContentValue } from '@/components/questions/editor'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { Button } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
+import { useQuestionEditorDraft } from '@/hooks/useQuestionEditorDraft'
 import type { Dashboard, QuestionItem, RichBlock, SliceReviewItem } from '@/types'
 import { buildFullPaperOcrPrompt, singleQuestionOcrPrompt } from '@/constants/ocrPrompts'
 import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
@@ -46,7 +44,7 @@ import {
 } from '@/utils/jsonCleanup'
 
 type NoticeType = 'info' | 'success' | 'error'
-type Draft = {
+export type Draft = {
   questionNo: string
   stage: string
   questionType: string
@@ -63,7 +61,30 @@ const sectionClass = 'rounded-xl border border-zinc-200 bg-white text-zinc-950 s
 const sectionHeaderClass = 'flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/50 px-6 py-4 dark:border-zinc-900 dark:bg-zinc-900/10'
 const inputTabClass = 'flex rounded-lg border border-zinc-200/50 bg-zinc-100/80 p-0.5 shadow-sm dark:border-zinc-800/50 dark:bg-zinc-900/80'
 const inputTabButtonClass = (active: boolean) => `flex-1 rounded-md py-1.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${active ? 'bg-white text-zinc-900 shadow-xs border border-zinc-200/20 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-300'}`
-const miniTabClass = (active: boolean) => `rounded-md px-2.5 py-1 text-[10px] font-medium transition-colors ${active ? 'bg-white text-zinc-900 shadow-xs border border-zinc-200/20 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-300'}`
+const EMPTY_SINGLE_CONTENT: QuestionContentValue = { stemMarkdown: '', answerText: '', analysisMarkdown: '' }
+
+export function buildManualQuestionPayload(draft: Draft) {
+  const isChoice = draft.questionType === '单选题' || draft.questionType === '多选题'
+  const structuredStem = splitChoices(draft.problemText)
+  const choiceBlock: RichBlock[] = isChoice
+    ? [{
+      type: 'choices',
+      options: structuredStem.choices.map((choice) => ({
+        label: choice.label,
+        blocks: paragraphBlocksFromText(choice.content),
+      })).filter((option) => option.blocks.length),
+    }]
+    : []
+  return {
+    ...draft,
+    sourceTitle: draft.sourceTitle.trim() || '手动创建',
+    stemMarkdown: draft.problemText,
+    analysisMarkdown: draft.analysisText,
+    problemBlocks: [...paragraphBlocksFromText(isChoice ? structuredStem.body : draft.problemText), ...choiceBlock],
+    answerBlocks: paragraphBlocksFromText(draft.answerText),
+    analysisBlocks: paragraphBlocksFromText(draft.analysisText),
+  }
+}
 
 function questionFromUnknown(question: unknown, fallback: Draft): Draft {
   return {
@@ -95,7 +116,6 @@ export function QuestionCreatePage() {
   const [copied, setCopied] = useState(false)
   const [promptModalOpen, setPromptModalOpen] = useState(false)
   const [importingPaper, setImportingPaper] = useState(false)
-  const [showAnswerPreview, setShowAnswerPreview] = useState(false)
   const [singleJsonText, setSingleJsonText] = useState('')
   const [singleDraft, setSingleDraft] = useState<Draft>({
     questionNo: '',
@@ -106,15 +126,14 @@ export function QuestionCreatePage() {
     answerText: '',
     analysisText: '',
   })
-  const [choiceOptions, setChoiceOptions] = useState({ A: '', B: '', C: '', D: '' })
-  const [choiceAnswers, setChoiceAnswers] = useState({ A: false, B: false, C: false, D: false })
+  const singleContentDraft = useQuestionEditorDraft({
+    entityType: 'question',
+    entityId: 'new',
+    initialValue: EMPTY_SINGLE_CONTENT,
+  })
   const [paperDraft, setPaperDraft] = useState({ sourceTitle: '', stage: '高三', jsonText: '' })
   const [paperImportSource, setPaperImportSource] = useState<'plain' | 'slices'>('plain')
   const [selectedSliceRunId, setSelectedSliceRunId] = useState('')
-  const [stemTab, setStemTab] = useState<'edit' | 'preview'>('edit')
-  const [analysisTab, setAnalysisTab] = useState<'edit' | 'preview'>('edit')
-  const problemTextRef = useRef<HTMLTextAreaElement>(null)
-  const analysisTextRef = useRef<HTMLTextAreaElement>(null)
 
   function setNotice(text: string, type: NoticeType = statusTone(text)) {
     setNoticeText(text)
@@ -250,65 +269,22 @@ export function QuestionCreatePage() {
     setSingleDraft((current) => ({ ...current, ...patch }))
   }
 
-  function insertLatex(type: 'math' | 'block' | 'frac' | 'sqrt' | 'alpha' | 'theta', field: 'problemText' | 'analysisText') {
-    const snippets = {
-      math: '$$',
-      block: '$$\n\n$$',
-      frac: '\\frac{}{}',
-      sqrt: '\\sqrt{}',
-      alpha: '\\alpha',
-      theta: '\\theta',
-    }
-    const snippet = snippets[type]
-    const textarea = field === 'problemText' ? problemTextRef.current : analysisTextRef.current
-    const start = textarea?.selectionStart ?? singleDraft[field].length
-    const end = textarea?.selectionEnd ?? start
-    const nextValue = `${singleDraft[field].slice(0, start)}${snippet}${singleDraft[field].slice(end)}`
-    const cursorOffset = type === 'math' ? 1 : type === 'block' ? 3 : snippet.length
-    setSingleDraft((current) => ({ ...current, [field]: nextValue }))
-    requestAnimationFrame(() => {
-      textarea?.focus()
-      textarea?.setSelectionRange(start + cursorOffset, start + cursorOffset)
-    })
-    setNotice(`已插入 LaTeX 占位符: ${snippet}`, 'info')
-  }
-
-  function toggleAnswer(option: keyof typeof choiceAnswers) {
-    setChoiceAnswers((current) => {
-      const next = { ...current, [option]: !current[option] }
-      const answerText = (['A', 'B', 'C', 'D'] as const).filter((key) => next[key]).join(', ')
-      updateDraft({ answerText })
-      setNotice(answerText ? `已将答案设置为 ${answerText}` : '已清空选择题答案', 'success')
-      return next
-    })
-  }
-
   async function createQuestionFromDraft(draft: Draft) {
-    const isChoice = draft.questionType === '单选题' || draft.questionType === '多选题'
-    const choiceBlock: RichBlock[] = isChoice
-      ? [{
-        type: 'choices',
-        options: ['A', 'B', 'C', 'D'].map((labelText) => ({
-          label: labelText,
-          blocks: paragraphBlocksFromText(choiceOptions[labelText as keyof typeof choiceOptions].trim()),
-        })).filter((option) => option.blocks.length),
-      }]
-      : []
-    const item = await questionBankApi.createItem({
-      ...draft,
-      sourceTitle: draft.sourceTitle.trim() || '手动创建',
-      stemMarkdown: draft.problemText,
-      analysisMarkdown: draft.analysisText,
-      problemBlocks: [...paragraphBlocksFromText(draft.problemText), ...choiceBlock],
-      answerBlocks: paragraphBlocksFromText(draft.answerText),
-      analysisBlocks: paragraphBlocksFromText(draft.analysisText),
-    })
-    navigate(`/questions/${encodeURIComponent(item.id)}`)
+    const item = await questionBankApi.createItem(buildManualQuestionPayload(draft))
+    setNotice(`已创建题目 ${item.serialNo ?? item.questionNo ?? item.id}。`, 'success')
+    navigate('/questions')
   }
 
   async function createSingle(event: FormEvent) {
     event.preventDefault()
-    await createQuestionFromDraft(singleDraft)
+    const content = singleContentDraft.value
+    await createQuestionFromDraft({
+      ...singleDraft,
+      problemText: content.stemMarkdown,
+      answerText: content.answerText,
+      analysisText: content.analysisMarkdown,
+    })
+    singleContentDraft.markSaved(content)
   }
 
   async function createSingleFromJson(event: FormEvent) {
@@ -358,7 +334,7 @@ export function QuestionCreatePage() {
         return
       }
       setNotice(`已导入 ${result.count} 道题。`, 'success')
-      if (result.items[0]?.id) navigate(`/questions/${encodeURIComponent(result.items[0].id)}`)
+      if (result.items[0]?.id) navigate('/questions')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error), 'error')
     } finally {
@@ -403,10 +379,6 @@ export function QuestionCreatePage() {
     await pdfSlicerApi.openRunFolder(selectedSliceRunId)
   }
 
-  const choiceEntries = ['A', 'B', 'C', 'D'] as const
-  const previewBlocks = useMemo(() => paragraphBlocksFromText(singleDraft.problemText), [singleDraft.problemText])
-  const answerPreviewBlocks = useMemo(() => paragraphBlocksFromText(singleDraft.answerText), [singleDraft.answerText])
-  const analysisPreviewBlocks = useMemo(() => paragraphBlocksFromText(singleDraft.analysisText), [singleDraft.analysisText])
   const workspaceTabs = [
     { key: 'single-json', title: 'JSON 单题录入', desc: '手动导入首选', Icon: Code },
     { key: 'single-form', title: '表单录入', desc: '精修单题字段', Icon: PencilLine },
@@ -581,90 +553,39 @@ export function QuestionCreatePage() {
                     </div>
                   </section>
 
-                  <section className={sectionClass}>
-                    <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50/50 px-6 py-4 dark:border-zinc-900 dark:bg-zinc-900/10">
-                      <div className="flex items-center gap-2"><PencilLine className="size-4 text-zinc-500" /><h2 className="text-xs font-bold uppercase tracking-wider">2. 题干与选项设定</h2></div>
-                      <div className="flex rounded-lg border border-zinc-200/50 bg-zinc-100/80 p-0.5 dark:border-zinc-800/50 dark:bg-zinc-900/80">
-                        <button type="button" onClick={() => setStemTab('edit')} className={miniTabClass(stemTab === 'edit')}>编辑</button>
-                        <button type="button" onClick={() => setStemTab('preview')} className={miniTabClass(stemTab === 'preview')}>预览</button>
-                      </div>
+                  {singleContentDraft.hasRecoveredDraft ? (
+                    <div role="status" className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/30 p-4 text-xs text-amber-800 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-400">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                      <span>已恢复本机保存的未完成题目内容{singleContentDraft.recoveredAt ? `（${singleContentDraft.recoveredAt.toLocaleString()}）` : ''}。</span>
                     </div>
-                    <div className="space-y-6 p-6">
-                      {stemTab === 'edit' ? (
-                        <div className="flex flex-col">
-                          <div className="flex flex-wrap gap-1.5 border border-b-0 border-zinc-200 bg-zinc-50/50 p-2 rounded-t-md dark:border-zinc-800 dark:bg-zinc-900/30">
-                            {(['math', 'block', 'frac', 'sqrt', 'alpha', 'theta'] as const).map((type) => (
-                              <button key={type} type="button" onClick={() => insertLatex(type, 'problemText')} className="inline-flex items-center rounded border border-zinc-200 bg-white px-2 py-0.5 font-mono text-[10px] text-zinc-500 transition-colors hover:bg-zinc-55 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100">
-                                {type === 'math' ? '$公式$' : type === 'block' ? '$$区块$$' : type === 'frac' ? '\\frac' : type === 'sqrt' ? '\\sqrt' : type === 'alpha' ? '\\alpha' : '\\theta'}
-                              </button>
-                            ))}
-                          </div>
-                          <textarea ref={problemTextRef} className={`${textareaClass} rounded-t-none border-t-0 h-32 font-mono`} placeholder="请输入题目题干 (支持 Markdown & LaTeX)..." value={singleDraft.problemText} onChange={(e) => updateDraft({ problemText: e.target.value })} />
-                        </div>
-                      ) : (
-                        <div className="min-h-32 rounded-md border border-zinc-200 bg-white p-4 text-sm leading-relaxed dark:border-zinc-800 dark:bg-zinc-950">
-                          {singleDraft.problemText.trim() ? (
-                            <div className="flex gap-2"><span className="font-bold">{singleDraft.questionNo ? `${singleDraft.questionNo}.` : '1.'}</span><div className="min-w-0 flex-1"><QuestionContent blocks={previewBlocks} /></div></div>
-                          ) : <span className="text-xs italic text-zinc-500 dark:text-zinc-400">无内容预览。</span>}
-                        </div>
-                      )}
+                  ) : null}
 
-                      {(singleDraft.questionType === '单选题' || singleDraft.questionType === '多选题') ? (
-                        <div className="space-y-3.5 border-t border-zinc-100 dark:border-zinc-900 pt-5">
-                          <label className={smallLabelClass}>选项列表 (勾选正确答案)</label>
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            {choiceEntries.map((labelText) => (
-                              <div key={labelText} className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white p-2.5 dark:border-zinc-800 dark:bg-zinc-950">
-                                <button type="button" onClick={() => toggleAnswer(labelText)} aria-pressed={choiceAnswers[labelText]} className={`flex size-4 shrink-0 items-center justify-center rounded border border-zinc-300 dark:border-zinc-700 ${choiceAnswers[labelText] ? 'bg-zinc-950 text-white dark:bg-zinc-50 dark:text-zinc-950' : 'bg-white text-transparent hover:bg-zinc-50 dark:bg-zinc-950 dark:hover:bg-zinc-900'}`}><Check className="size-3" /></button>
-                                <span className="text-xs font-bold">{labelText}</span>
-                                <input className="flex h-8 min-w-0 flex-1 border-0 bg-transparent px-2 text-sm outline-none" placeholder={`选项 ${labelText}`} value={choiceOptions[labelText]} onChange={(e) => setChoiceOptions({ ...choiceOptions, [labelText]: e.target.value })} />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  </section>
+                  <QuestionContentEditor
+                    entityKey="question:new"
+                    title="2. 题目内容编辑"
+                    description="统一编辑题干与结构化选项、答案和解析；内容将以 Markdown 入库。"
+                    value={singleContentDraft.value}
+                    onChange={singleContentDraft.setValue}
+                    dirty={singleContentDraft.dirty}
+                    savedValue={EMPTY_SINGLE_CONTENT}
+                    onSave={async (content) => {
+                      await createQuestionFromDraft({
+                        ...singleDraft,
+                        problemText: content.stemMarkdown,
+                        answerText: content.answerText,
+                        analysisText: content.analysisMarkdown,
+                      })
+                      singleContentDraft.markSaved(content)
+                    }}
+                  />
 
-                  <section className={sectionClass}>
-                    <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50/50 px-6 py-4 dark:border-zinc-900 dark:bg-zinc-900/10">
-                      <div className="flex items-center gap-2"><CheckSquare className="size-4 text-zinc-500" /><h2 className="text-xs font-bold uppercase tracking-wider">3. 答案与解析设定</h2></div>
-                      <div className="flex rounded-lg border border-zinc-200/50 bg-zinc-100/80 p-0.5 dark:border-zinc-800/50 dark:bg-zinc-900/80">
-                        <button type="button" onClick={() => setAnalysisTab('edit')} className={miniTabClass(analysisTab === 'edit')}>编辑</button>
-                        <button type="button" onClick={() => setAnalysisTab('preview')} className={miniTabClass(analysisTab === 'preview')}>预览</button>
-                      </div>
-                    </div>
-                    <div className="space-y-6 p-6">
-                      {analysisTab === 'edit' ? (
-                        <>
-                          <label className="space-y-2"><span className={smallLabelClass}>参考答案</span><input className={editorInputClass} placeholder="例: A 或 15" value={singleDraft.answerText} onChange={(e) => updateDraft({ answerText: e.target.value })} /></label>
-                          <div className="space-y-2">
-                            <span className={smallLabelClass}>详细解析 (Markdown & LaTeX)</span>
-                            <div className="flex flex-col">
-                              <div className="flex flex-wrap gap-1.5 border border-b-0 border-zinc-200 bg-zinc-50/50 p-2 rounded-t-md dark:border-zinc-800 dark:bg-zinc-900/30">
-                                {(['math', 'block', 'frac', 'sqrt', 'alpha', 'theta'] as const).map((type) => (
-                                  <button key={type} type="button" onClick={() => insertLatex(type, 'analysisText')} className="inline-flex items-center rounded border border-zinc-200 bg-white px-2.5 py-0.5 font-mono text-[10px] text-zinc-500 transition-colors hover:bg-zinc-55 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100">
-                                    {type === 'math' ? '$公式$' : type === 'block' ? '$$区块$$' : type === 'frac' ? '\\frac' : type === 'sqrt' ? '\\sqrt' : type === 'alpha' ? '\\alpha' : '\\theta'}
-                                  </button>
-                                ))}
-                              </div>
-                              <textarea ref={analysisTextRef} className={`${textareaClass} rounded-t-none border-t-0 h-32 font-mono`} placeholder="请输入详解步骤..." value={singleDraft.analysisText} onChange={(e) => updateDraft({ analysisText: e.target.value })} />
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2"><span className={smallLabelClass}>参考答案预览</span><div className="min-h-24 rounded-md border border-zinc-200 bg-white p-4 text-sm leading-relaxed dark:border-zinc-800 dark:bg-zinc-950">{singleDraft.answerText.trim() ? <QuestionContent blocks={answerPreviewBlocks} /> : <span className="text-xs text-zinc-500 dark:text-zinc-400">暂无答案。</span>}</div></div>
-                          <div className="space-y-2"><span className={smallLabelClass}>详细解析预览</span><div className="min-h-24 rounded-md border border-zinc-200 bg-white p-4 text-sm leading-relaxed dark:border-zinc-800 dark:bg-zinc-950">{singleDraft.analysisText.trim() ? <QuestionContent blocks={analysisPreviewBlocks} /> : <span className="text-xs text-zinc-500 dark:text-zinc-400">暂无解析。</span>}</div></div>
-                        </div>
-                      )}
-                      <button type="button" onClick={() => setShowAnswerPreview((v) => !v)} className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50">
-                        {showAnswerPreview ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}{showAnswerPreview ? '隐藏完整渲染' : '显示完整渲染'}
-                      </button>
-                      {showAnswerPreview ? <div className="grid gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60 md:grid-cols-2"><div className="space-y-2"><span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Answer Render</span><div className="min-h-24 rounded-md border border-zinc-200 bg-white p-4 text-sm leading-relaxed dark:border-zinc-800 dark:bg-zinc-950">{singleDraft.answerText.trim() ? <QuestionContent blocks={answerPreviewBlocks} /> : <span className="text-zinc-500 dark:text-zinc-400">暂无答案。</span>}</div></div><div className="space-y-2"><span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Analysis Render</span><div className="min-h-24 rounded-md border border-zinc-200 bg-white p-4 text-sm leading-relaxed dark:border-zinc-800 dark:bg-zinc-950">{singleDraft.analysisText.trim() ? <QuestionContent blocks={analysisPreviewBlocks} /> : <span className="text-zinc-500 dark:text-zinc-400">暂无解析。</span>}</div></div></div> : null}
-                    </div>
-                  </section>
-                  <div className="flex justify-end gap-3"><Button type="button" variant="outline" onClick={() => { setSingleDraft({ questionNo: '', stage: '高三', questionType: '单选题', sourceTitle: '', problemText: '', answerText: '', analysisText: '' }); setChoiceOptions({ A: '', B: '', C: '', D: '' }); setChoiceAnswers({ A: false, B: false, C: false, D: false }) }}>重置表单</Button><Button type="submit" icon={Check}>保存并入库</Button></div>
+                  <div className="flex justify-end gap-3">
+                    <Button type="button" variant="outline" onClick={() => {
+                      setSingleDraft({ questionNo: '', stage: '高三', questionType: '单选题', sourceTitle: '', problemText: '', answerText: '', analysisText: '' })
+                      singleContentDraft.reset(EMPTY_SINGLE_CONTENT)
+                    }}>重置表单</Button>
+                    <Button type="submit" icon={Check}>保存并入库</Button>
+                  </div>
                 </form>
               ) : (
                 <form className={`${sectionClass} space-y-4 p-5`} onSubmit={createSingleFromJson}>

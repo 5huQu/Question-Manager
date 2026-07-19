@@ -66,6 +66,7 @@ export function mapQuestionCandidate(row: QuestionCandidateRow): QuestionCandida
     stemMarkdown: row.stem_markdown,
     answerText: row.answer_text,
     analysisMarkdown: row.analysis_markdown,
+    contentRevision: Number(row.content_revision || 1),
     questionType: row.question_type || undefined,
     difficultyScore10: row.difficulty_score_10 || undefined,
     difficultyLabel: row.difficulty_label || undefined,
@@ -168,6 +169,8 @@ export function listQuestionCandidates(filters: ListQuestionCandidatesFilters = 
 }
 
 export function updateQuestionCandidate(id: string, input: UpdateQuestionCandidateInput) {
+  const before = getQuestionCandidate(id)
+  if (!before) return null
   const assignments: string[] = []
   const values: SqlValue[] = []
   const add = (column: string, value: SqlValue | undefined) => {
@@ -205,9 +208,17 @@ export function updateQuestionCandidate(id: string, input: UpdateQuestionCandida
   add('parse_diagnostics_json', input.parseDiagnostics === undefined ? undefined : stringifyArray(input.parseDiagnostics))
   add('parser_config_snapshot_json', input.parserConfigSnapshot === undefined ? undefined : JSON.stringify(input.parserConfigSnapshot || {}))
 
-  if (!assignments.length) return getQuestionCandidate(id)
+  if (!assignments.length) return before
+  const contentChanged =
+    (input.stemMarkdown !== undefined && input.stemMarkdown !== before.stemMarkdown) ||
+    (input.answerText !== undefined && input.answerText !== before.answerText) ||
+    (input.analysisMarkdown !== undefined && input.analysisMarkdown !== before.analysisMarkdown)
+  if (contentChanged) assignments.push('content_revision = content_revision + 1')
   add('updated_at', nowIso())
-  db.prepare(`UPDATE question_candidates SET ${assignments.join(', ')} WHERE id = ?`).run(...values, id)
+  const expected = input.expectedContentRevision
+  const result = db.prepare(`UPDATE question_candidates SET ${assignments.join(', ')} WHERE id = ?${expected === undefined ? '' : ' AND content_revision = ?'}`)
+    .run(...values, id, ...(expected === undefined ? [] : [expected]))
+  if (!result.changes) return null
   return getQuestionCandidate(id)
 }
 

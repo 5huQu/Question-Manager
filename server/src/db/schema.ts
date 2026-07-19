@@ -118,6 +118,7 @@ export function ensureSchema() {
       stem_markdown TEXT NOT NULL DEFAULT '',
       answer_text TEXT NOT NULL DEFAULT '',
       analysis_markdown TEXT NOT NULL DEFAULT '',
+      content_revision INTEGER NOT NULL DEFAULT 1,
       total_score REAL NOT NULL DEFAULT 0,
       scoring_rubric_json TEXT NOT NULL DEFAULT '[]',
       search_text TEXT NOT NULL DEFAULT '',
@@ -251,6 +252,7 @@ export function ensureSchema() {
       stem_markdown TEXT NOT NULL DEFAULT '',
       answer_text TEXT NOT NULL DEFAULT '',
       analysis_markdown TEXT NOT NULL DEFAULT '',
+      content_revision INTEGER NOT NULL DEFAULT 1,
       question_type TEXT NOT NULL DEFAULT '',
       difficulty_score_10 INTEGER NOT NULL DEFAULT 0,
       difficulty_label TEXT NOT NULL DEFAULT '',
@@ -346,6 +348,7 @@ export function ensureSchema() {
       template_version TEXT NOT NULL DEFAULT '1',
       variant TEXT NOT NULL DEFAULT 'student',
       content_snapshot_json TEXT NOT NULL DEFAULT '{}',
+      content_overrides_json TEXT NOT NULL DEFAULT '{}',
       layout_json TEXT NOT NULL DEFAULT '{}',
       layout_version INTEGER NOT NULL DEFAULT 1,
       revision INTEGER NOT NULL DEFAULT 1,
@@ -381,6 +384,7 @@ export function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_question_candidates_status ON question_candidates(status, updated_at DESC);
   `)
   ensureColumn('question_bank_layout_drafts', 'preview_warnings_json', "TEXT NOT NULL DEFAULT '[]'")
+  ensureColumn('question_bank_layout_drafts', 'content_overrides_json', "TEXT NOT NULL DEFAULT '{}'")
   ensureColumn('question_bank_export_records', 'snapshot_json', "TEXT NOT NULL DEFAULT '{}'")
 
   // -- Migration columns for pdf_slicer_runs --
@@ -416,6 +420,7 @@ export function ensureSchema() {
   ensureColumn('question_bank_items', 'stem_markdown', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_bank_items', 'answer_text', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_bank_items', 'analysis_markdown', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_bank_items', 'content_revision', 'INTEGER NOT NULL DEFAULT 1')
   ensureColumn('question_bank_items', 'total_score', "REAL NOT NULL DEFAULT 0")
   ensureColumn('question_bank_items', 'scoring_rubric_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('source_documents', 'province', "TEXT NOT NULL DEFAULT ''")
@@ -448,6 +453,7 @@ export function ensureSchema() {
   ensureColumn('question_bank_items', 'import_source_id', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_candidates', 'committed_question_id', "TEXT NOT NULL DEFAULT ''")
   ensureColumn('question_candidates', 'committed_at', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn('question_candidates', 'content_revision', 'INTEGER NOT NULL DEFAULT 1')
   ensureColumn('question_candidates', 'parse_diagnostics_json', "TEXT NOT NULL DEFAULT '[]'")
   ensureColumn('question_candidates', 'parser_config_snapshot_json', "TEXT NOT NULL DEFAULT '{}'")
   ensureColumn('question_bank_items', 'search_text', "TEXT NOT NULL DEFAULT ''")

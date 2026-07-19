@@ -7,6 +7,61 @@ const templateWatermarkPattern = /(学科网|zxxk|原创精品资源|独家享�
 const standalonePageNumberPattern = /^\s*\d{1,3}\s*$/
 const semanticExerciseLabelPattern = /^\s*(?:[【［\[]\s*)?(?:第\s*)?(?:典例|例题|变式|即学即练|即学即练习|课堂练习|限时训练|课后训练|巩固训练|能力提升)\s*(?:\d+|[一二三四五六七八九十]+)?(?:\s*[-—–_·：:、.．]\s*(?:\d+|[一二三四五六七八九十]+))?\s*(?:题)?\s*(?:[】］\]]\s*)?/u
 
+function isEscaped(value: string, index: number) {
+  let slashCount = 0
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === '\\'; cursor -= 1) slashCount += 1
+  return slashCount % 2 === 1
+}
+
+function normalizeMathDelimiterLine(value: string) {
+  let output = ''
+  let codeTicks = 0
+  for (let index = 0; index < value.length;) {
+    if (value[index] === '`') {
+      let end = index + 1
+      while (value[end] === '`') end += 1
+      const count = end - index
+      if (!codeTicks) codeTicks = count
+      else if (codeTicks === count) codeTicks = 0
+      output += value.slice(index, end)
+      index = end
+      continue
+    }
+    if (!codeTicks && value[index] === '\\' && !isEscaped(value, index)) {
+      const delimiter = value[index + 1]
+      if (delimiter === '(' || delimiter === ')') {
+        output += '$'
+        index += 2
+        continue
+      }
+      if (delimiter === '[' || delimiter === ']') {
+        output += '$$'
+        index += 2
+        continue
+      }
+    }
+    output += value[index]
+    index += 1
+  }
+  return output
+}
+
+function normalizeLatexMathDelimiters(value: string) {
+  const lines = String(value || '').split('\n')
+  let fence: { marker: string; length: number } | null = null
+  return lines.map((line) => {
+    const match = line.match(/^\s{0,3}(`{3,}|~{3,})/)
+    if (match) {
+      const marker = match[1][0]
+      const length = match[1].length
+      if (!fence) fence = { marker, length }
+      else if (fence.marker === marker && length >= fence.length) fence = null
+      return line
+    }
+    return fence ? line : normalizeMathDelimiterLine(line)
+  }).join('\n')
+}
+
 // ── Rich inline / block functions ──────────────────────────────────────────────
 
 function textInline(text: unknown): RichInline | null {
@@ -15,6 +70,7 @@ function textInline(text: unknown): RichInline | null {
 }
 
 function inlineMathDelimitersToInlines(text: string): RichInline[] {
+  text = normalizeLatexMathDelimiters(text)
   const inlines: RichInline[] = []
   let cursor = 0
   while (cursor < text.length) {
@@ -244,7 +300,7 @@ function normalizeLatexMathSegment(value: string) {
 }
 
 function markdownTextToExamLatex(value: string, preserveBreaks = true) {
-  const text = String(value || '')
+  const text = normalizeLatexMathDelimiters(value)
     .replace(/【解析】/g, '')
     .replace(/【分析】/g, '')
     .replace(/【详解】/g, '')
@@ -411,6 +467,7 @@ export {
   normalizeInline,
   normalizeInlines,
   normalizeLatexMathSegment,
+  normalizeLatexMathDelimiters,
   normalizeUnicodeRomanNumerals,
   paragraphBlock,
   splitMarkdownTableRow,

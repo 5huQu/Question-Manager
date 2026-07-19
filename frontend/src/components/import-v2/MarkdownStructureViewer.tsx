@@ -9,6 +9,20 @@ type MarkdownStructureViewerProps = {
   tokens: MarkdownStructureToken[]
   focusQuestionNo?: string
   focusKind?: FocusKind
+  scrollAnchor?: MarkdownScrollAnchor
+  onScrollAnchorChange?: (anchor: MarkdownScrollAnchor) => void
+  jumpRequest?: MarkdownQuestionJumpRequest
+  onJumpHandled?: (requestId: number) => void
+}
+
+export type MarkdownScrollAnchor = {
+  lineNo: number
+  lineProgress: number
+}
+
+export type MarkdownQuestionJumpRequest = {
+  questionNo: string
+  requestId: number
 }
 
 function lineText(markdown: string, start: number, end: number) {
@@ -19,7 +33,10 @@ function tokenIntersectsLine(token: MarkdownStructureToken, line: { start: numbe
   return token.start < line.end && token.end > line.start
 }
 
-function tokenTone(tokens: MarkdownStructureToken[], focusQuestionNo?: string, focusKind?: FocusKind) {
+function tokenTone(tokens: MarkdownStructureToken[], currentQuestion: boolean, focusQuestionNo?: string, focusKind?: FocusKind) {
+  if (currentQuestion) {
+    return 'border-l-amber-500 bg-amber-100/85 dark:bg-amber-950/40'
+  }
   if (!tokens.length) return ''
   const focusedKind = focusKind ? `${focusKind}_range` : ''
   if (tokens.some((token) => token.questionNo === focusQuestionNo && (!focusedKind || token.kind === focusedKind))) {
@@ -36,6 +53,38 @@ function tokenTone(tokens: MarkdownStructureToken[], focusQuestionNo?: string, f
   return ''
 }
 
+export function lineBelongsToQuestion(tokens: MarkdownStructureToken[], lineNo: number, questionNo?: string) {
+  if (!questionNo) return false
+  return questionNoForLine(tokens, lineNo) === questionNo
+}
+
+export function questionNoForLine(tokens: MarkdownStructureToken[], lineNo: number) {
+  if (!lineNo) return ''
+  const precedingMarker = tokens
+    .filter((token) => token.kind === 'question_no' && token.questionNo && token.lineStart <= lineNo)
+    .sort((left, right) => right.lineStart - left.lineStart)[0]
+  if (precedingMarker?.questionNo) return precedingMarker.questionNo
+  const containing = tokens
+    .filter((token) => token.questionNo && token.lineStart <= lineNo && token.lineEnd >= lineNo)
+    .sort((left, right) => {
+      const leftRange = left.kind.endsWith('_range') ? 0 : 1
+      const rightRange = right.kind.endsWith('_range') ? 0 : 1
+      return leftRange - rightRange || (left.lineEnd - left.lineStart) - (right.lineEnd - right.lineStart)
+    })[0]
+  if (containing?.questionNo) return containing.questionNo
+  return ''
+}
+
+export function questionStartLine(tokens: MarkdownStructureToken[], questionNo: string) {
+  const questionMarker = tokens
+    .filter((token) => token.kind === 'question_no' && token.questionNo === questionNo)
+    .sort((left, right) => left.lineStart - right.lineStart)[0]
+  if (questionMarker) return questionMarker.lineStart
+  return tokens
+    .filter((token) => token.questionNo === questionNo)
+    .sort((left, right) => left.lineStart - right.lineStart)[0]?.lineStart || 0
+}
+
 function tokenLabel(token: MarkdownStructureToken) {
   return ({
     page_marker: token.label,
@@ -50,9 +99,23 @@ function tokenLabel(token: MarkdownStructureToken) {
   } as Record<MarkdownStructureToken['kind'], string>)[token.kind]
 }
 
-export function MarkdownStructureViewer({ preview, tokens, focusQuestionNo, focusKind }: MarkdownStructureViewerProps) {
+export function MarkdownStructureViewer({
+  preview,
+  tokens,
+  focusQuestionNo,
+  focusKind,
+  scrollAnchor,
+  onScrollAnchorChange,
+  jumpRequest,
+  onJumpHandled,
+}: MarkdownStructureViewerProps) {
   const [query, setQuery] = useState('')
+  const [currentQuestionNo, setCurrentQuestionNo] = useState(focusQuestionNo || '')
   const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map())
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const scrollFrameRef = useRef<number | null>(null)
+  const initialScrollAnchorRef = useRef(scrollAnchor)
+  const restoredPreviewRef = useRef<MarkdownPreviewResponse | null>(null)
 
   const focusedLine = useMemo(() => {
     const focusedKind = focusKind ? `${focusKind}_range` : ''
@@ -68,12 +131,101 @@ export function MarkdownStructureViewer({ preview, tokens, focusQuestionNo, focu
   }, [preview, query])
 
   useEffect(() => {
-    const lineNo = queryLine || focusedLine
+    if (!preview || restoredPreviewRef.current === preview) return undefined
+    restoredPreviewRef.current = preview
+    const anchor = initialScrollAnchorRef.current
+    const lineNo = anchor?.lineNo || focusedLine
     if (!lineNo) return
-    window.setTimeout(() => {
-      lineRefs.current.get(lineNo)?.scrollIntoView({ block: 'center' })
+    const timer = window.setTimeout(() => {
+      const line = lineRefs.current.get(lineNo)
+      const scroller = scrollRef.current
+      if (!line || !scroller) return
+      if (!anchor?.lineNo) {
+        line.scrollIntoView({ block: 'center' })
+        return
+      }
+      scroller.scrollTop = Math.max(0, line.offsetTop + line.offsetHeight * anchor.lineProgress)
     }, 80)
-  }, [focusedLine, queryLine])
+    return () => window.clearTimeout(timer)
+  }, [focusedLine, preview])
+
+  useEffect(() => {
+    if (!queryLine) return undefined
+    const timer = window.setTimeout(() => {
+      lineRefs.current.get(queryLine)?.scrollIntoView({ block: 'center' })
+    }, 80)
+    return () => window.clearTimeout(timer)
+  }, [queryLine])
+
+  useEffect(() => {
+    if (!jumpRequest?.questionNo) return undefined
+    const lineNo = questionStartLine(tokens, jumpRequest.questionNo)
+    if (!lineNo) return undefined
+    const timer = window.setTimeout(() => {
+      const line = lineRefs.current.get(lineNo)
+      const scroller = scrollRef.current
+      if (!line || !scroller) return
+      scroller.scrollTop = Math.max(0, line.offsetTop - 4)
+      setCurrentQuestionNo(jumpRequest.questionNo)
+      onScrollAnchorChange?.({ lineNo, lineProgress: 0 })
+      onJumpHandled?.(jumpRequest.requestId)
+    }, 80)
+    return () => window.clearTimeout(timer)
+  }, [jumpRequest?.requestId])
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current != null) window.cancelAnimationFrame(scrollFrameRef.current)
+  }, [])
+
+  function reportScrollAnchor() {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    if (scrollFrameRef.current != null) window.cancelAnimationFrame(scrollFrameRef.current)
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null
+      const rows = Array.from(scroller.children) as HTMLDivElement[]
+      let low = 0
+      let high = rows.length - 1
+      let visibleIndex = 0
+      while (low <= high) {
+        const middle = Math.floor((low + high) / 2)
+        const row = rows[middle]
+        if (row.offsetTop + row.offsetHeight > scroller.scrollTop) {
+          visibleIndex = middle
+          high = middle - 1
+        } else {
+          low = middle + 1
+        }
+      }
+      const anchorRow = rows[visibleIndex]
+      if (!anchorRow) return
+      const probeTop = scroller.scrollTop + Math.min(scroller.clientHeight * 0.25, 140)
+      let probeIndex = visibleIndex
+      while (probeIndex < rows.length - 1 && rows[probeIndex].offsetTop + rows[probeIndex].offsetHeight <= probeTop) {
+        probeIndex += 1
+      }
+      const probeRow = rows[probeIndex] || anchorRow
+      const anchorLineNo = Number(anchorRow.dataset.lineNo || visibleIndex + 1)
+      const probeLineNo = Number(probeRow.dataset.lineNo || probeIndex + 1)
+      const nextQuestionNo = questionNoForLine(tokens, probeLineNo)
+      setCurrentQuestionNo(nextQuestionNo)
+      onScrollAnchorChange?.({
+        lineNo: anchorLineNo,
+        lineProgress: Math.max(0, Math.min(1, (scroller.scrollTop - anchorRow.offsetTop) / Math.max(1, anchorRow.offsetHeight))),
+      })
+    })
+  }
+
+  function handleScrollKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    if (event.key === 'PageDown' || event.key === 'PageUp') {
+      event.preventDefault()
+      scroller.scrollBy({
+        top: (event.key === 'PageDown' ? 1 : -1) * Math.max(1, scroller.clientHeight - 40),
+      })
+    }
+  }
 
   if (!preview) {
     return (
@@ -96,19 +248,35 @@ export function MarkdownStructureViewer({ preview, tokens, focusQuestionNo, focu
           />
         </div>
         <div className="shrink-0 text-[11px] text-zinc-400">
+          {currentQuestionNo ? (
+            <span className="mr-2 inline-flex h-6 items-center rounded-md border border-amber-200 bg-amber-50 px-2 font-sans font-semibold text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+              当前：第 {currentQuestionNo} 题
+            </span>
+          ) : null}
           {preview.lineOffsets.length} 行
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto font-mono text-[12px] leading-5">
+      <div
+        data-testid="markdown-structure-scroll"
+        ref={scrollRef}
+        tabIndex={0}
+        aria-label="模型识别稿内容"
+        onScroll={reportScrollAnchor}
+        onKeyDown={handleScrollKeyDown}
+        className="min-h-0 flex-1 overflow-auto font-mono text-[12px] leading-5 outline-none"
+      >
         {preview.lineOffsets.map((line) => {
           const text = lineText(preview.markdown, line.start, line.end)
           const lineTokens = tokens.filter((token) => tokenIntersectsLine(token, line))
           const matching = query.trim() && text.toLowerCase().includes(query.trim().toLowerCase())
-          const tone = tokenTone(lineTokens, focusQuestionNo, focusKind)
+          const currentQuestion = lineBelongsToQuestion(tokens, line.lineNo, currentQuestionNo)
+          const tone = tokenTone(lineTokens, currentQuestion, focusQuestionNo, focusKind)
           return (
             <div
               key={line.lineNo}
+              data-line-no={line.lineNo}
+              data-current-question={currentQuestion || undefined}
               ref={(node) => {
                 if (node) lineRefs.current.set(line.lineNo, node)
                 else lineRefs.current.delete(line.lineNo)

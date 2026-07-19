@@ -87,6 +87,7 @@ export type ParserPreviewRequest = {
   config?: Partial<ImportFlowV2ParserConfig>
   focusQuestionNo?: string
   candidateId?: string
+  candidateIds?: string[]
 }
 
 export type ParserPreviewResponse = {
@@ -235,11 +236,12 @@ function containsQuestionSectionHeading(markdown: string, config: ImportFlowV2Pa
   return String(markdown || '').split(/\r?\n/).some((line) => titleMatchesConfiguredSection(normalizeHeadingLine(line), config))
 }
 
-function containsAnswerTable(markdown: string) {
-  return extractAnswerTableEntries(markdown).length > 0
+function containsAnswerTable(markdown: string, config: ImportFlowV2ParserConfig) {
+  return extractAnswerTableEntries(markdown, config).length > 0
 }
 
-function extractAnswerTableEntries(markdown: string): TableAnswerEntry[] {
+function extractAnswerTableEntries(markdown: string, config: ImportFlowV2ParserConfig): TableAnswerEntry[] {
+  if (config.answerTablePolicy === 'disabled') return []
   const entries: TableAnswerEntry[] = []
   const tablePattern = /<table\b[^>]*>([\s\S]*?)<\/table>/gi
   for (const tableMatch of markdown.matchAll(tablePattern)) {
@@ -291,6 +293,7 @@ function applyAnswerTablePolicy(
   entries: TableAnswerEntry[],
   config: ImportFlowV2ParserConfig,
 ): ParserDiagnostic[] {
+  if (config.answerTablePolicy === 'disabled') return []
   const diagnostics: ParserDiagnostic[] = []
   for (const entry of entries) {
     const existing = matches.get(entry.questionNo)
@@ -381,7 +384,7 @@ function extractQuestionThenHeadingMatches(markdown: string, config: ImportFlowV
     }
 
     const body = markdown.slice(chunk.contentStart, chunk.end)
-    const tableStart = firstAnswerTableStart(body)
+    const tableStart = firstAnswerTableStart(body, config)
     const trimmedBody = tableStart === undefined ? body : body.slice(0, tableStart).trimEnd()
     if (config.metadataBlockPolicy === 'ignore' && metadataOnlySolutionBlock(trimmedBody, config)) continue
     const fields = splitQuestionFields(trimmedBody, chunk.contentStart)
@@ -411,6 +414,16 @@ function firstMetadataHeadingStart(markdown: string, start: number, end: number,
 }
 
 function sourceRangeForCandidateKind(document: OCRDocument, candidate: QuestionCandidate, kind: 'stem' | 'answer' | 'analysis'): MarkdownRange | undefined {
+  const candidateText = String({
+    stem: candidate.stemMarkdown,
+    answer: candidate.answerText,
+    analysis: candidate.analysisMarkdown,
+  }[kind] || '')
+  if (candidateText && (kind !== 'answer' || candidateText.length >= 8)) {
+    const exactStart = String(document.markdown || '').indexOf(candidateText)
+    if (exactStart >= 0) return { start: exactStart, end: exactStart + candidateText.length }
+  }
+
   const blockIds = new Set(
     candidate.sourceRefs
       .filter((ref) => ref.kind === kind)
@@ -459,30 +472,32 @@ function collectStructureTokens(markdown: string, lines: LineOffset[], config: I
     if (token) tokens.push(token)
   }
 
-  for (const tableMatch of markdown.matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)) {
-    const start = tableMatch.index || 0
-    if (!/题号|序号/.test(tableMatch[0]) || !/答案/.test(tableMatch[0])) continue
-    const token = tokenFor(lines, {
-      id: `answer-table:${start}`,
-      kind: 'answer_table',
-      start,
-      end: start + tableMatch[0].length,
-      label: '答案表',
-      severity: 'info',
-    })
-    if (token) tokens.push(token)
-  }
+  if (config.answerTablePolicy !== 'disabled') {
+    for (const tableMatch of markdown.matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)) {
+      const start = tableMatch.index || 0
+      if (!/题号|序号/.test(tableMatch[0]) || !/答案/.test(tableMatch[0])) continue
+      const token = tokenFor(lines, {
+        id: `answer-table:${start}`,
+        kind: 'answer_table',
+        start,
+        end: start + tableMatch[0].length,
+        label: '答案表',
+        severity: 'info',
+      })
+      if (token) tokens.push(token)
+    }
 
-  for (const block of extractInlineAnswerTableBlocks(markdown)) {
-    const token = tokenFor(lines, {
-      id: `inline-answer-table:${block.start}`,
-      kind: 'answer_table',
-      start: block.start,
-      end: block.end,
-      label: '答案表',
-      severity: 'info',
-    })
-    if (token) tokens.push(token)
+    for (const block of extractInlineAnswerTableBlocks(markdown)) {
+      const token = tokenFor(lines, {
+        id: `inline-answer-table:${block.start}`,
+        kind: 'answer_table',
+        start: block.start,
+        end: block.end,
+        label: '答案表',
+        severity: 'info',
+      })
+      if (token) tokens.push(token)
+    }
   }
 
   for (const section of findSolutionSections(markdown, config)) {
@@ -564,7 +579,7 @@ function strategyDiagnostics(markdown: string, config: ImportFlowV2ParserConfig)
     for (const section of sections) {
       const content = markdown.slice(section.contentStart, section.end)
       const followingQuestions = detectSolutionQuestionNumbers(maskNonSolutionBlocks(content, config), config)
-      if (!followingQuestions.length && section.kind === 'answer' && containsAnswerTable(content)) continue
+      if (!followingQuestions.length && section.kind === 'answer' && containsAnswerTable(content, config)) continue
       if (!followingQuestions.length) {
         const previousQuestion = [...questionMatches].reverse().find((match) => match.start < section.start)
         diagnostics.push({
@@ -585,7 +600,7 @@ function strategyDiagnostics(markdown: string, config: ImportFlowV2ParserConfig)
       const section = sections.find((item) => item.start >= chunk.contentStart && item.start < chunk.end)
       if (!section) continue
       const between = markdown.slice(chunk.contentStart, section.start)
-      if (containsAnswerTable(between) || containsQuestionSectionHeading(between, config)) continue
+      if (containsAnswerTable(between, config) || containsQuestionSectionHeading(between, config)) continue
       diagnostics.push({
         code: 'question_before_solution_heading',
         severity: 'info',
@@ -611,7 +626,7 @@ function buildStrategyPreview(
   const matches = strategy === 'question_then_heading'
     ? extractQuestionThenHeadingMatches(markdown, nextConfig)
     : cloneMatches(parseSolutionDocument(document, { config: nextConfig }))
-  const tableDiagnostics = applyAnswerTablePolicy(matches, extractAnswerTableEntries(markdown), nextConfig)
+  const tableDiagnostics = applyAnswerTablePolicy(matches, extractAnswerTableEntries(markdown, nextConfig), nextConfig)
   const diagnostics = [...strategyDiagnostics(markdown, nextConfig), ...tableDiagnostics]
 
   for (const [questionNo, match] of matches) {
@@ -676,6 +691,45 @@ function currentCandidatePreview(document: OCRDocument, candidate: QuestionCandi
   }
 }
 
+function candidateHasSourceRange(preview: CandidateParsePreview) {
+  return Boolean(preview.sourceRanges.stem || preview.sourceRanges.answer || preview.sourceRanges.analysis)
+}
+
+function recognizedQuestionTokensForPreviews(lines: LineOffset[], previews: CandidateParsePreview[]) {
+  const tokens: MarkdownStructureToken[] = []
+  for (const preview of previews) {
+    for (const [kind, range] of Object.entries(preview.sourceRanges) as Array<[keyof CandidateParsePreview['sourceRanges'], MarkdownRange | undefined]>) {
+      if (!range) continue
+      const token = tokenFor(lines, {
+        id: `recognized-question:${preview.questionNo}:${kind}:${range.start}`,
+        kind: 'question_no',
+        questionNo: preview.questionNo,
+        start: range.start,
+        end: Math.min(range.end, range.start + 1),
+        label: `第 ${preview.questionNo} 题`,
+        severity: 'info',
+      })
+      if (token) tokens.push(token)
+    }
+  }
+  return tokens
+}
+
+function recognizedCandidateDiagnostics(candidates: QuestionCandidate[]) {
+  const diagnostics: ParserDiagnostic[] = []
+  const seen = new Set<string>()
+  for (const candidate of candidates) {
+    for (const diagnostic of candidate.parseDiagnostics || []) {
+      const item = diagnostic as ParserDiagnostic
+      const key = `${item.code}:${item.questionNo || candidate.questionNo}:${item.start || ''}:${item.end || ''}:${item.message}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      diagnostics.push({ ...item, questionNo: item.questionNo || candidate.questionNo })
+    }
+  }
+  return diagnostics
+}
+
 function diagnosticsForCandidate(candidate: QuestionCandidate | undefined, config: ImportFlowV2ParserConfig): ParserDiagnostic[] {
   if (!candidate) return []
   const diagnostics: ParserDiagnostic[] = []
@@ -704,6 +758,7 @@ export function buildParserPreview(
   document: OCRDocument,
   request: ParserPreviewRequest = {},
   candidate?: QuestionCandidate,
+  recognizedCandidates: QuestionCandidate[] = [],
 ): ParserPreviewResponse {
   const config = normalizeParserConfig({ ...defaultParserConfig, ...(request.config || {}) })
   const markdown = String(document.markdown || '')
@@ -717,14 +772,23 @@ export function buildParserPreview(
     : config.solutionBindingStrategy
   const selected = selectedStrategy === 'question_then_heading' ? questionPreview : headingPreview
 
+  const constrainedCandidates = recognizedCandidates.length ? recognizedCandidates : candidate ? [candidate] : []
+  const constrainedPreviews = constrainedCandidates
+    .map((item) => currentCandidatePreview(document, item))
+    .filter(candidateHasSourceRange)
   const candidateDiagnostics = diagnosticsForCandidate(candidate, config)
-  let candidatePreviews = selected.candidatePreviews
+  let candidatePreviews = recognizedCandidates.length ? constrainedPreviews : selected.candidatePreviews
   if (candidate && !candidatePreviews.some((preview) => preview.questionNo === candidate.questionNo)) {
-    candidatePreviews = [currentCandidatePreview(document, candidate), ...candidatePreviews]
+    const currentPreview = currentCandidatePreview(document, candidate)
+    if (candidateHasSourceRange(currentPreview)) candidatePreviews = [currentPreview, ...candidatePreviews]
   }
 
+  const collectedStructures = collectStructureTokens(markdown, lines, config)
   const structures = [
-    ...collectStructureTokens(markdown, lines, config),
+    ...(recognizedCandidates.length
+      ? collectedStructures.filter((token) => token.kind !== 'question_no')
+      : collectedStructures),
+    ...(recognizedCandidates.length ? recognizedQuestionTokensForPreviews(lines, candidatePreviews) : []),
     ...rangeTokensForPreviews(lines, candidatePreviews, focusQuestionNo),
   ].sort((left, right) => left.start - right.start || left.end - right.end)
 
@@ -744,6 +808,8 @@ export function buildParserPreview(
     strategyRecommendation,
     structures,
     candidatePreviews: candidatePreviews.slice(0, 200),
-    diagnostics: [...selected.diagnostics, ...candidateDiagnostics],
+    diagnostics: recognizedCandidates.length
+      ? recognizedCandidateDiagnostics(recognizedCandidates)
+      : [...selected.diagnostics, ...candidateDiagnostics],
   }
 }

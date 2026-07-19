@@ -26,10 +26,12 @@ import {
   type QuestionDocumentLayoutClassification,
 } from './document-layout.classifier.js'
 import { extractAnswerTable, extractAnswerTableEntries, extractQuestionThenHeadingSolutionMatches } from './solution-document.parser.js'
+import type { PaperKind } from '../../utils/import-metadata.js'
 
 export type ParseQuestionCandidatesOptions = {
   now?: string
   config?: ImportFlowV2ParserConfig
+  paperKind?: PaperKind
 }
 
 function normalizedLine(value: string) {
@@ -112,6 +114,62 @@ function isAnswerOrAnalysisMarker(line: string) {
 
 function blankPreservingNewlines(value: string) {
   return value.replace(/[^\n]/g, ' ')
+}
+
+function isLectureNonQuestionHeading(line: string, config: ImportFlowV2ParserConfig) {
+  const title = normalizedLine(line)
+  return config.lectureNonQuestionSectionKeywords.some((item) => {
+    const keyword = normalizedLine(item)
+    return Boolean(keyword) && (title === keyword || title === `点${keyword}` || title.endsWith(keyword))
+  })
+}
+
+function isLikelyLectureQuestionBody(value: string) {
+  const body = String(value || '')
+  return hasAnswerOrAnalysisMarkerText(body)
+    || hasChoiceOptionLines(body)
+    || /(?:_{2,}|（\s*）|\(\s*\))/.test(body)
+    || /^\s*(?:【\s*(?:单选|多选|填空|解答)[^】]*】|[（(](?:20\d{2}|高[一二三]|初[一二三]))/m.test(body)
+}
+
+/**
+ * A lecture often places a numbered knowledge/tips list immediately before the
+ * exercises in each topic. Mask that prelude (without changing offsets) until
+ * the first chunk with strong question evidence. The heading vocabulary stays
+ * user-configurable in the existing parser settings.
+ */
+function maskLectureNonQuestionSections(value: string, config: ImportFlowV2ParserConfig) {
+  const source = String(value || '')
+  const lines = Array.from(source.matchAll(/.*(?:\n|$)/g))
+    .filter((match) => String(match[0] || '').length)
+    .map((match) => ({
+      start: match.index || 0,
+      end: (match.index || 0) + String(match[0] || '').length,
+      text: String(match[0] || '').replace(/\n$/, ''),
+    }))
+  const ranges: Array<{ start: number; end: number }> = []
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const heading = lines[index]
+    if (!isLectureNonQuestionHeading(heading.text, config)) continue
+    const nextHeading = lines.slice(index + 1).find((line) => /^\s*#{1,6}\s+/.test(line.text))
+    const sectionEnd = nextHeading?.start ?? source.length
+    const section = source.slice(heading.end, sectionEnd)
+    const matches = detectQuestionNumbers(section, config)
+    const chunks = splitMarkdownByQuestionNumbers(section, matches)
+    const firstQuestionIndex = chunks.findIndex((chunk) => isLikelyLectureQuestionBody(chunk.body))
+    const firstQuestionStart = firstQuestionIndex >= 0 ? matches[firstQuestionIndex]?.start : undefined
+    ranges.push({
+      start: heading.start,
+      end: firstQuestionStart === undefined ? sectionEnd : heading.end + firstQuestionStart,
+    })
+  }
+
+  let masked = source
+  for (const range of ranges.sort((left, right) => right.start - left.start)) {
+    masked = masked.slice(0, range.start) + blankPreservingNewlines(masked.slice(range.start, range.end)) + masked.slice(range.end)
+  }
+  return masked
 }
 
 function maskPreludeBeforeFirstSectionHeading(value: string, config: ImportFlowV2ParserConfig) {
@@ -330,7 +388,14 @@ function attachImageBlocks(document: OCRDocument, chunks: QuestionMarkdownChunk[
     }
     if (index < 0) {
       const fallback = candidates[candidates.length - 1]
-      fallback.issues.push({ code: 'unplaced_figure', severity: 'warning', message: `有一张图片（${block.id}）未能可靠归属到题目，请核对。`, relatedBlockIds: [block.id] })
+      const relatedFigure = figureForBlock(document, block, 'unknown')
+      fallback.issues.push({
+        code: 'unplaced_figure',
+        severity: 'warning',
+        message: `有一张图片（${block.id}）未能可靠归属到题目，请核对。`,
+        relatedBlockIds: [block.id],
+        relatedFigures: relatedFigure ? [relatedFigure] : [],
+      })
       fallback.status = statusForIssues(fallback.issues)
       continue
     }
@@ -502,8 +567,8 @@ function shouldInferMissingSolutionNo(currentNo: number | undefined, nextNo: num
   return missingNo
 }
 
-function trimBodyBeforeAnswerTable(body: string) {
-  const tableStart = firstAnswerTableStart(body)
+function trimBodyBeforeAnswerTable(body: string, config: ImportFlowV2ParserConfig) {
+  const tableStart = firstAnswerTableStart(body, config)
   return tableStart === undefined ? body : body.slice(0, tableStart).trimEnd()
 }
 
@@ -514,7 +579,7 @@ function extractWholeDocumentSolutionMatches(markdown: string, start: number, co
   const matches = new Map<string, SolutionMatch>()
   let chunksWithFieldMarkers = 0
   const expectedNos = new Set(expectedQuestionNos)
-  const tableAnswers = extractAnswerTable(source)
+  const tableAnswers = extractAnswerTable(source, config)
 
   for (let index = 0; index < chunks.length; index += 1) {
     const chunk = chunks[index]
@@ -523,7 +588,7 @@ function extractWholeDocumentSolutionMatches(markdown: string, start: number, co
     const nextNo = numberValue(nextChunk?.questionNo)
     const missingNo = shouldInferMissingSolutionNo(currentNo, nextNo, expectedNos, tableAnswers)
     const inferred = missingNo ? findTrailingUnnumberedSolutionBlock(chunk.body, tableAnswers.get(missingNo)) : null
-    const currentBody = trimBodyBeforeAnswerTable(inferred?.before || chunk.body)
+    const currentBody = trimBodyBeforeAnswerTable(inferred?.before || chunk.body, config)
     const fields = splitQuestionFields(currentBody, start + chunk.contentStart)
     if (fields.hasFieldMarkers) chunksWithFieldMarkers += 1
     matches.set(chunk.questionNo, mergeSolutionMatch(matches.get(chunk.questionNo), solutionMatchFromWholeDocumentChunk(
@@ -555,8 +620,9 @@ function offsetRange(range: MarkdownRange | undefined, offset: number): Markdown
 }
 
 function mergeTableAnswers(matches: Map<string, SolutionMatch>, markdown: string, config: ImportFlowV2ParserConfig, offset = 0) {
+  if (config.answerTablePolicy === 'disabled') return matches
   const entries = new Map<string, { questionNo: string; answerText: string; range?: MarkdownRange }>()
-  for (const entry of extractAnswerTableEntries(markdown)) entries.set(entry.questionNo, entry)
+  for (const entry of extractAnswerTableEntries(markdown, config)) entries.set(entry.questionNo, entry)
   for (const [questionNo, entry] of entries) {
     const existing = matches.get(questionNo)
     const answerText = entry.answerText
@@ -632,6 +698,7 @@ function candidateFromChunk(
   duplicateNos: Set<string>,
   timestamp: string,
   config: ImportFlowV2ParserConfig,
+  paperKind: PaperKind,
 ): QuestionCandidate {
   const fields = splitQuestionFields(maskStructuralText(chunk.body, config), chunk.contentStart)
   const stemMarkdown = stripRepeatedQuestionMarker(cleanOcrPresentationMarkdown(fields.stemMarkdown, config), chunk.questionNo)
@@ -668,6 +735,7 @@ function candidateFromChunk(
     sourceRefs,
     status: 'needs_review',
     ...DEFAULT_IMPORT_METADATA,
+    paperKind,
     issues: [],
     parseDiagnostics: [],
     parserConfigSnapshot: {},
@@ -684,7 +752,7 @@ function candidateFromChunk(
   return candidate
 }
 
-function fallbackCandidate(document: OCRDocument, timestamp: string, config: ImportFlowV2ParserConfig): QuestionCandidate {
+function fallbackCandidate(document: OCRDocument, timestamp: string, config: ImportFlowV2ParserConfig, paperKind: PaperKind): QuestionCandidate {
   const fields = splitQuestionFields(maskStructuralText(document.markdown || '', config), 0)
   const stemMarkdown = cleanOcrPresentationMarkdown(fields.stemMarkdown, config)
   const answerText = cleanOcrPresentationMarkdown(fields.answerText, config)
@@ -710,6 +778,7 @@ function fallbackCandidate(document: OCRDocument, timestamp: string, config: Imp
     sourceRefs: sourceRefsForRange(document, fields.stemRange || fullRange, 'stem'),
     status: 'needs_review',
     ...DEFAULT_IMPORT_METADATA,
+    paperKind,
     issues: [],
     parseDiagnostics: [],
     parserConfigSnapshot: {},
@@ -733,12 +802,18 @@ function fillDoc2xFigures(
   const warnings: string[] = []
   
   const DOC2X_FIGURE_MARKER_RE = /<!--\s*DOC2X_FIGURE:([^\s>]+)\s*-->/g
+  const optionLabels = new Map<string, string>()
+  for (const match of stemMarkdown.matchAll(/(?:^|\n)\s*([A-H])[.．、]\s*\n?\s*<!--\s*DOC2X_FIGURE:([^\s>]+)\s*-->/g)) {
+    optionLabels.set(match[2], match[1].toUpperCase())
+  }
   
   const scan = (markdown: string, usage: CandidateFigure['usage']) => {
     if (!markdown) return
     const matches = Array.from(markdown.matchAll(DOC2X_FIGURE_MARKER_RE))
     for (const match of matches) {
       const figureId = match[1]
+      const optionLabel = usage === 'stem' ? optionLabels.get(figureId) : undefined
+      const resolvedUsage: CandidateFigure['usage'] = optionLabel ? 'options' : usage
       if (isLikelyPageChromeFigureId(document, figureId)) {
         ignoredFigureIds.add(figureId)
         continue
@@ -746,9 +821,10 @@ function fillDoc2xFigures(
       
       const exists = figures.find((f) => f.id === figureId || f.blockId === figureId)
       if (exists) {
-        if (exists.usage !== usage) {
-          exists.usage = usage
+        if (exists.usage !== resolvedUsage) {
+          exists.usage = resolvedUsage
         }
+        exists.optionLabel = optionLabel
         continue
       }
       
@@ -764,11 +840,12 @@ function fillDoc2xFigures(
       const newFig: CandidateFigure = {
         id: figureId,
         blockId: figureId,
-        usage,
+        usage: resolvedUsage,
         path: path || figureId,
         sourceBlockId: asset?.sourceBlockId || block?.id,
         pageNo: asset?.pageNo || block?.pageNo || 1,
         bbox: asset?.bbox || block?.bbox,
+        optionLabel,
       }
       figures.push(newFig)
     }
@@ -797,9 +874,11 @@ function removeDoc2xFigureMarkers(markdown: string, figureIds: string[]) {
 export function parseQuestionCandidates(document: OCRDocument, options: ParseQuestionCandidatesOptions = {}): QuestionCandidate[] {
   const timestamp = options.now || nowIso()
   const config = options.config || getParserConfig()
+  const paperKind = options.paperKind || 'unknown'
   const markdown = normalizeHtmlImageTags(String(document.markdown || ''))
   const alignedDocument = alignDocumentBlockOffsets(document, markdown)
-  const maskedMarkdown = maskStructuralMarkdown(markdown, config)
+  const lectureAwareMarkdown = paperKind === 'lecture' ? maskLectureNonQuestionSections(markdown, config) : markdown
+  const maskedMarkdown = maskStructuralMarkdown(lectureAwareMarkdown, config)
   const classification = classifyQuestionDocumentLayout(markdown, config, { detectionMarkdown: maskedMarkdown })
   const solutionSections = findSolutionSections(markdown, config)
   const useAppendixSolutions = classification.cleaningRule === 'same_document_appendix' && classification.solutionStart !== undefined
@@ -808,24 +887,32 @@ export function parseQuestionCandidates(document: OCRDocument, options: ParseQue
     : useAppendixSolutions
       ? maskedMarkdown.slice(0, classification.solutionStart)
       : maskedMarkdown
-  const questionMatches = cleanQuestionMatchesForLayout(
-    questionMarkdown,
-    detectQuestionNumbers(questionMarkdown, config),
-    classification,
-    config,
-  )
+  const detectedQuestionMatches = detectQuestionNumbers(questionMarkdown, config)
+  const questionMatches = paperKind === 'lecture'
+    ? detectedQuestionMatches
+    : cleanQuestionMatchesForLayout(questionMarkdown, detectedQuestionMatches, classification, config)
   const chunks = mergeDuplicateContinuationChunks(questionMarkdown, splitMarkdownByQuestionNumbers(questionMarkdown, questionMatches), config)
 
   let candidates: QuestionCandidate[] = []
   if (!chunks.length) {
-    candidates = [fallbackCandidate(alignedDocument, timestamp, config)]
+    candidates = paperKind === 'lecture' ? [] : [fallbackCandidate(alignedDocument, timestamp, config, paperKind)]
   } else {
     const solutions = useAppendixSolutions
       ? extractAppendixSolutionMatches(markdown, classification.solutionStart!, solutionSections, config, chunks.map((chunk) => chunk.questionNo))
       : new Map<string, SolutionMatch>()
     const duplicateNos = duplicateQuestionNos(chunks)
-    candidates = chunks.map((chunk) => candidateFromChunk(alignedDocument, chunk, solutions.get(chunk.questionNo), duplicateNos, timestamp, config))
+    candidates = chunks.map((chunk) => candidateFromChunk(alignedDocument, chunk, solutions.get(chunk.questionNo), duplicateNos, timestamp, config, paperKind))
     attachImageBlocks(alignedDocument, chunks, candidates, config)
+  }
+
+  if (paperKind === 'lecture') {
+    candidates.forEach((candidate, index) => {
+      candidate.questionNo = String(index + 1)
+      const liveValidationCodes = new Set(['missing_question_no', 'duplicate_question_no', 'missing_stem', 'missing_answer', 'missing_analysis'])
+      const baseIssues = candidate.issues.filter((item) => !liveValidationCodes.has(item.code))
+      candidate.issues = validateQuestionCandidate({ ...candidate, issues: baseIssues }, new Set())
+      candidate.status = statusForIssues(candidate.issues)
+    })
   }
 
   for (const candidate of candidates) {

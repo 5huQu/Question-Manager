@@ -250,7 +250,12 @@ export function extractInlineAnswerTableEntries(markdown: string) {
   return extractInlineAnswerTableBlocks(markdown).flatMap((block) => block.entries)
 }
 
-export function firstAnswerTableStart(source: string) {
+export function answerTableDetectionEnabled(config: ImportFlowV2ParserConfig = getParserConfig()) {
+  return config.answerTablePolicy !== 'disabled'
+}
+
+export function firstAnswerTableStart(source: string, config: ImportFlowV2ParserConfig = getParserConfig()) {
+  if (!answerTableDetectionEnabled(config)) return undefined
   const text = String(source || '')
   let first: number | undefined
   for (const match of text.matchAll(ANSWER_TABLE_RE)) {
@@ -263,7 +268,8 @@ export function firstAnswerTableStart(source: string) {
   return first === undefined || !Number.isFinite(first) ? undefined : first
 }
 
-function answerTableRanges(source: string): MarkdownRange[] {
+function answerTableRanges(source: string, config: ImportFlowV2ParserConfig = getParserConfig()): MarkdownRange[] {
+  if (!answerTableDetectionEnabled(config)) return []
   const ranges: MarkdownRange[] = []
   for (const match of source.matchAll(ANSWER_TABLE_RE)) {
     if (!/题号|序号/.test(match[0]) || !/答案/.test(match[0])) continue
@@ -287,9 +293,9 @@ function maskRanges(source: string, ranges: MarkdownRange[]) {
   return chars.join('')
 }
 
-export function maskAnswerTableBlocks(markdown: string) {
+export function maskAnswerTableBlocks(markdown: string, config: ImportFlowV2ParserConfig = getParserConfig()) {
   const source = String(markdown || '')
-  return maskRanges(source, answerTableRanges(source))
+  return maskRanges(source, answerTableRanges(source, config))
 }
 
 const CHINESE_SECTION_PREFIX_RE = /^[一二三四五六七八九十百千万]+[、.．]/
@@ -360,7 +366,7 @@ export function metadataBlockRanges(markdown: string, config: ImportFlowV2Parser
 export function maskNonSolutionBlocks(markdown: string, config: ImportFlowV2ParserConfig = getParserConfig()) {
   const source = String(markdown || '')
   return maskRanges(source, [
-    ...answerTableRanges(source),
+    ...answerTableRanges(source, config),
     ...metadataBlockRanges(source, config),
   ])
 }
@@ -384,7 +390,7 @@ function metadataKeywordForLine(line: string, config: ImportFlowV2ParserConfig) 
 
 export function metadataOnlySolutionBlock(value: string, config: ImportFlowV2ParserConfig = getParserConfig()) {
   const raw = String(value || '').replace(PAGE_MARKER_RE, '')
-  const source = maskRanges(raw, answerTableRanges(raw))
+  const source = maskRanges(raw, answerTableRanges(raw, config))
     .replace(/^\s*#{1,6}\s*(?:[一二三四五六七八九十]+[、.．]\s*)?(?:选择题|填空题|解答题|选做题).*$/gm, '')
     .trim()
   if (!source) return true
@@ -396,8 +402,8 @@ export function metadataOnlySolutionBlock(value: string, config: ImportFlowV2Par
   })
 }
 
-function trimBodyBeforeAnswerTable(body: string) {
-  const tableStart = firstAnswerTableStart(body)
+function trimBodyBeforeAnswerTable(body: string, config: ImportFlowV2ParserConfig) {
+  const tableStart = firstAnswerTableStart(body, config)
   return tableStart === undefined ? body : body.slice(0, tableStart).trimEnd()
 }
 
@@ -539,7 +545,7 @@ export function extractSolutionMatches(markdown: string, sections: SolutionSecti
     const starts = detectSolutionQuestionNumbers(matchingContent, config)
     const chunks = splitMarkdownByQuestionNumbers(content, starts)
     for (const chunk of chunks) {
-      const body = trimBodyBeforeAnswerTable(chunk.body)
+      const body = trimBodyBeforeAnswerTable(chunk.body, config)
       if (config.metadataBlockPolicy === 'ignore' && metadataOnlySolutionBlock(body, config)) continue
       const fields = splitQuestionFields(body, offset + chunk.contentStart)
       const fallbackRange = { start: offset + chunk.contentStart, end: offset + chunk.contentStart + body.length }

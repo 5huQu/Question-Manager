@@ -1,5 +1,7 @@
 import { AlertTriangle, FileText, Image, Layers, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui'
+import { QuestionContentEditor, type QuestionEditorConflict } from '@/components/questions/editor'
+import type { QuestionContentDraft } from '@/types/questionContent'
 import { assetUrl } from '@/utils/questionDisplay'
 import type { ManualFixRegion, ManualFixTab } from './types'
 
@@ -10,17 +12,24 @@ interface Props {
   stemMarkdown: string
   answerText: string
   analysisMarkdown: string
+  contentRevision?: number
+  conflict?: (QuestionEditorConflict & { committedQuestionId?: string }) | null
+  contentDirty?: boolean
+  recoveredDraft?: boolean
   figures: any[]
   regions: ManualFixRegion[]
   selectedRegionId: string | null
   onStemChange: (value: string) => void
   onAnswerChange: (value: string) => void
   onAnalysisChange: (value: string) => void
+  onSaveContent?: (value: QuestionContentDraft) => void | Promise<void>
   onAddRegion: (kind: ManualFixRegion['kind']) => void
   onDeleteSelected: () => void
   onRegionNoteChange: (value: string) => void
   onCleanHeaderFooter: () => void
   onLocateFigure: (figure: any) => void
+  onUpdateFigure: (figure: any, usage: 'stem' | 'analysis' | 'options', optionLabel?: string) => void
+  onAssignTrailingOptions: () => void
   onDeleteFigure: (figure: any) => void
 }
 
@@ -63,10 +72,38 @@ export function ManualFixInspector(props: Props) {
       <div className="flex-1 overflow-y-auto p-5">
         {props.activeTab === 'content' && (
           <div className="space-y-4">
-            <Editor label="题干内容" value={props.stemMarkdown} onChange={props.onStemChange} rows={9} placeholder="录入或修改识别出的题干内容…" />
-            <Editor label="答案" value={props.answerText} onChange={props.onAnswerChange} rows={4} placeholder="录入或修改答案…" />
-            <Editor label="解析" value={props.analysisMarkdown} onChange={props.onAnalysisChange} rows={8} placeholder="录入或修改解析过程…" />
-            <p className="text-xs leading-5 text-zinc-500">内容使用 Markdown 格式。文本修改将在点击“保存草稿”或“完成修正”时写入。</p>
+            {props.recoveredDraft ? (
+              <div role="status" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/30 p-3 text-xs leading-5 text-amber-800 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-400">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />已恢复这道候选题上次未保存的本地内容，请核对后保存。
+              </div>
+            ) : null}
+            {props.conflict?.committedQuestionId ? (
+              <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50/30 p-3 text-xs leading-5 text-amber-800 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-400">
+                该候选题已入库，本地修改仍已保留。<a className="ml-1 font-medium underline underline-offset-2" href="/questions">返回题库</a>
+              </div>
+            ) : null}
+            <QuestionContentEditor
+              entityKey={`candidate:${String(props.candidate?.id || 'unknown')}:${props.contentRevision || 1}`}
+              value={{ stemMarkdown: props.stemMarkdown, answerText: props.answerText, analysisMarkdown: props.analysisMarkdown }}
+              savedValue={{
+                stemMarkdown: String(props.candidate?.stemMarkdown || ''),
+                answerText: String(props.candidate?.answerText || ''),
+                analysisMarkdown: String(props.candidate?.analysisMarkdown || ''),
+              }}
+              onChange={(value) => {
+                props.onStemChange(value.stemMarkdown)
+                props.onAnswerChange(value.answerText)
+                props.onAnalysisChange(value.analysisMarkdown)
+              }}
+              onSave={props.onSaveContent}
+              title="修正题目内容"
+              description="对照左侧原始 PDF 修正内容；文本仅在显式保存或完成修正时写入。"
+              variant="compact"
+              contentRevision={props.contentRevision}
+              conflict={props.conflict}
+              dirty={props.contentDirty}
+              className="shadow-none"
+            />
           </div>
         )}
 
@@ -96,12 +133,45 @@ export function ManualFixInspector(props: Props) {
           </div>
         )}
 
-        {props.activeTab === 'figures' && (props.figures.length ? <div className="space-y-3">{props.figures.map((figure, index) => { const path = String(figure.path || ''); const renderable = path && !path.trim().startsWith('<'); return <div key={figure.id || `${path}-${index}`} className="flex items-center gap-3 rounded-lg border border-zinc-200 p-3 hover:bg-zinc-50/50 dark:border-zinc-800 dark:hover:bg-zinc-900/30"><button type="button" onClick={() => props.onLocateFigure(figure)} className="flex min-w-0 flex-1 items-center gap-3 text-left"><span className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-zinc-200 bg-white text-[10px] text-zinc-400 dark:border-zinc-800">{renderable ? <img src={assetUrl(path)} alt={`题图 ${index + 1}`} className="h-full w-full object-contain" /> : '内联资源'}</span><span className="min-w-0"><span className="block text-sm font-medium">题图 {index + 1}</span><span className="mt-1 block text-xs text-zinc-500">{figure.usage === 'analysis' ? '解析' : '题干'}{figure.pageNo ? ` · 第 ${figure.pageNo} 页` : ''}</span></span></button><Button size="xs" variant="outline" icon={Trash2} onClick={() => props.onDeleteFigure(figure)}>删除</Button></div>})}</div> : <div className="rounded-xl border border-dashed border-zinc-200 p-12 text-center dark:border-zinc-800"><Image className="mx-auto mb-3 size-8 text-zinc-300 dark:text-zinc-700"/><p className="text-xs text-zinc-400">当前题目暂无题图</p></div>)}
+        {props.activeTab === 'figures' && (props.figures.length ? (
+          <div className="space-y-3">
+            {props.figures.length >= 4 ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+                <p className="text-xs leading-5 text-zinc-500">图片型选择题可快速指定最后四张图片。</p>
+                <Button size="xs" variant="outline" onClick={props.onAssignTrailingOptions}>后四张设为 A-D</Button>
+              </div>
+            ) : null}
+            {props.figures.map((figure, index) => {
+              const path = String(figure.path || '')
+              const renderable = path && !path.trim().startsWith('<')
+              const usage = figure.usage === 'analysis' ? 'analysis' : figure.usage === 'options' || figure.usage === 'option' ? 'options' : 'stem'
+              return (
+                <div key={figure.id || `${path}-${index}`} className="flex flex-col gap-3 rounded-lg border border-zinc-200 p-3 hover:bg-zinc-50/50 sm:flex-row sm:items-center dark:border-zinc-800 dark:hover:bg-zinc-900/30">
+                  <button type="button" onClick={() => props.onLocateFigure(figure)} className="flex w-full min-w-0 flex-1 items-center gap-3 text-left">
+                    <span className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-zinc-200 bg-white text-[10px] text-zinc-400 dark:border-zinc-800">
+                      {renderable ? <img src={assetUrl(path)} alt={`题图 ${index + 1}`} className="h-full w-full object-contain" /> : '内联资源'}
+                    </span>
+                    <span className="min-w-0"><span className="block text-sm font-medium">题图 {index + 1}</span><span className="mt-1 block text-xs text-zinc-500">{usage === 'analysis' ? '解析图' : usage === 'options' ? `选项 ${figure.optionLabel || '未指定'}` : '题干图'}{figure.pageNo ? ` · 第 ${figure.pageNo} 页` : ''}</span></span>
+                  </button>
+                  <div className="flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto">
+                    <select aria-label={`题图 ${index + 1} 类型`} value={usage} onChange={(event) => props.onUpdateFigure(figure, event.target.value as 'stem' | 'analysis' | 'options', usage === 'options' ? figure.optionLabel || 'A' : undefined)} className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-xs outline-none focus:border-zinc-900 dark:border-zinc-800 dark:bg-zinc-950">
+                      <option value="stem">题干图</option>
+                      <option value="options">选项图</option>
+                      <option value="analysis">解析图</option>
+                    </select>
+                    {usage === 'options' ? (
+                      <select aria-label={`题图 ${index + 1} 选项`} value={String(figure.optionLabel || 'A').toUpperCase()} onChange={(event) => props.onUpdateFigure(figure, 'options', event.target.value)} className="h-8 w-14 rounded-md border border-zinc-200 bg-white px-2 text-xs outline-none focus:border-zinc-900 dark:border-zinc-800 dark:bg-zinc-950">
+                        {['A', 'B', 'C', 'D'].map((label) => <option key={label} value={label}>{label}</option>)}
+                      </select>
+                    ) : null}
+                    <Button size="xs" variant="outline" icon={Trash2} onClick={() => props.onDeleteFigure(figure)}>删除</Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : <div className="rounded-xl border border-dashed border-zinc-200 p-12 text-center dark:border-zinc-800"><Image className="mx-auto mb-3 size-8 text-zinc-300 dark:text-zinc-700"/><p className="text-xs text-zinc-400">当前题目暂无题图</p></div>)}
       </div>
     </aside>
   )
-}
-
-function Editor({ label, value, onChange, rows, placeholder }: { label: string; value: string; onChange: (value: string) => void; rows: number; placeholder: string }) {
-  return <label className="block space-y-1.5"><span className="text-[13px] font-medium text-zinc-500">{label}</span><textarea value={value} onChange={(event) => onChange(event.target.value)} rows={rows} className="w-full resize-y rounded-lg border border-zinc-200 bg-white p-3 font-mono text-sm leading-6 outline-none transition-colors focus:border-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:focus:border-zinc-100" placeholder={placeholder} /></label>
 }

@@ -205,6 +205,14 @@ body {
   padding-top: 0.85rem;
 }
 
+/* Choice layout is based on the available content column, not the browser
+   viewport. This matters in split-pane review screens where a wide window can
+   still leave the question preview too narrow for two formula-heavy options. */
+.question-content,
+.rich-content {
+  container-type: inline-size;
+}
+
 .choice-options-quad {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -286,6 +294,26 @@ body {
 .template-preview-root .choice-markdown > p {
   margin-top: 0;
   margin-bottom: 0;
+}
+
+@container (max-width: 42rem) {
+  .choice-options-quad {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .choice-options-double {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Print preview has a fixed A4 geometry and must remain independent from
+     the surrounding app split pane. */
+  .template-preview-root .choice-options-quad {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .template-preview-root .choice-options-double {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 900px) {

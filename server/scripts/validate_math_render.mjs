@@ -6,7 +6,62 @@ import remarkRehype from 'remark-rehype'
 import rehypeKatex from 'rehype-katex'
 
 function normalizeMarkdownForRender(value) {
-  return normalizeMarkdownTables(String(value || ''))
+  return normalizeMarkdownTables(normalizeLatexMathDelimiters(String(value || '')))
+}
+
+function isEscapedDelimiter(value, index) {
+  let slashCount = 0
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === '\\'; cursor -= 1) slashCount += 1
+  return slashCount % 2 === 1
+}
+
+function normalizeMathDelimiterLine(value) {
+  let output = ''
+  let codeTicks = 0
+  for (let index = 0; index < value.length;) {
+    if (value[index] === '`') {
+      let end = index + 1
+      while (value[end] === '`') end += 1
+      const count = end - index
+      if (!codeTicks) codeTicks = count
+      else if (codeTicks === count) codeTicks = 0
+      output += value.slice(index, end)
+      index = end
+      continue
+    }
+    if (!codeTicks && value[index] === '\\' && !isEscapedDelimiter(value, index)) {
+      const delimiter = value[index + 1]
+      if (delimiter === '(' || delimiter === ')') {
+        output += '$'
+        index += 2
+        continue
+      }
+      if (delimiter === '[' || delimiter === ']') {
+        output += '$$'
+        index += 2
+        continue
+      }
+    }
+    output += value[index]
+    index += 1
+  }
+  return output
+}
+
+function normalizeLatexMathDelimiters(value) {
+  const lines = String(value || '').split('\n')
+  let fence = null
+  return lines.map((line) => {
+    const match = line.match(/^\s{0,3}(`{3,}|~{3,})/)
+    if (match) {
+      const marker = match[1][0]
+      const length = match[1].length
+      if (!fence) fence = { marker, length }
+      else if (fence.marker === marker && length >= fence.length) fence = null
+      return line
+    }
+    return fence ? line : normalizeMathDelimiterLine(line)
+  }).join('\n')
 }
 
 function normalizeMarkdownTables(value) {
@@ -311,13 +366,14 @@ function validateQuestionPayload(payload) {
   const errors = []
   for (const field of ['problem_text', 'answer', 'analysis']) {
     const rawText = String(payload[field] || '')
-    const delimiterErrors = validateField(field, rawText)
+    const normalizedText = normalizeLatexMathDelimiters(rawText)
+    const delimiterErrors = validateField(field, normalizedText)
       .filter((error) => error.code === 'math_delimiter_unclosed')
     if (delimiterErrors.length) {
       errors.push(...delimiterErrors)
       continue
     }
-    const text = normalizeMarkdownForRender(rawText)
+    const text = normalizeMarkdownForRender(normalizedText)
     const fieldErrors = validateField(field, text)
     errors.push(...fieldErrors)
     errors.push(...validateFrontendMarkdown(field, text, { renderKatex: fieldErrors.length === 0 }))

@@ -35,11 +35,13 @@ const doc2xPayload = {
           page_idx: 0,
           width: 800,
           height: 1100,
-          md: `1. 如图，求三角形面积。${doc2xFormulaMarkdown}\n\n<!-- Media -->\n<img src="https://example.test/doc2x-figure-1.png">\n<!-- Media -->`,
+          md: `<!-- Meanless: 页眉第一行\n页眉第二行 -->\n\n1. 如图，求三角形面积。${doc2xFormulaMarkdown}\n\n<!-- Media -->\n<img src="https://img.doc2x.noedgeai.com/page-1.jpg?x=90&y=120&w=340&h=270&r=0">\n<!-- Media -->\n\n<!-- Meanless: 1 / 1 -->`,
           layout: {
             blocks: [
+              { id: 'doc2x_header_1', type: 'Text', text: '测试页眉', attributes: { is_boilerplate: true } },
+              { id: 'doc2x_footer_1', type: 'Text', text: '1 / 1', attributes: { is_boilerplate: 'true' } },
               { id: 'doc2x_text_1', type: 'Text', text: `1. 如图，求三角形面积。${doc2xFormulaMarkdown}`, bbox: [12, 20, 520, 70], score: 0.99 },
-              { id: 'doc2x_fig_1', type: 'Figure', src: 'https://example.test/doc2x-figure-1.png', bbox: [90, 120, 430, 390] },
+              { id: 'doc2x_fig_1', type: 'Figure', src: 'https://cdn.noedgeai.com/page-1.jpg?h=270&w=340&y=120&x=90&r=0', bbox: [90, 120, 430, 390] },
             ],
           },
         },
@@ -80,14 +82,21 @@ assert.equal(doc2xDocument.sourceDocumentId, 'src_test')
 assert.equal(doc2xDocument.rawResultPath, '/tmp/doc2x/raw.json')
 assert.equal(doc2xDocument.pages.length, 1)
 assert.equal(doc2xDocument.pages[0].blocks.length, 2)
+assert.equal(doc2xDocument.pages[0].blocks.some((block) => block.content === '测试页眉' || block.content === '1 / 1'), false)
 assert.equal(doc2xDocument.assets.length, 1)
+assert.equal(doc2xDocument.assets[0].sourceBlockId, 'doc2x_fig_1')
 assert.match(doc2xDocument.markdown, /DOC2X_PAGE:1/)
 assert.match(doc2xDocument.markdown, /三角形面积/)
 assert.ok(doc2xDocument.markdown.includes(doc2xFormulaMarkdown), 'Doc2X formula markdown must stay byte-for-byte unchanged')
 assert.equal(doc2xDocument.pages[0].blocks[0].content.includes(doc2xFormulaMarkdown), true)
 assert.match(doc2xDocument.markdown, /<!--\s*DOC2X_FIGURE:doc2x_asset_[a-f0-9]{12}\s*-->/)
 assert.doesNotMatch(doc2xDocument.markdown, /<!--\s*Media\s*-->/i)
+assert.doesNotMatch(doc2xDocument.markdown, /<!--\s*Meanless\s*:/i)
 assert.equal(doc2xDocument.metadata.taskId, 'doc2x-task-1')
+assert.deepEqual(doc2xDocument.metadata.boilerplateCleanup, {
+  meanlessCommentCount: 2,
+  boilerplateBlockCount: 2,
+})
 
 const watermarkText = cleanWatermarkText([
   '# 鼎尖教育',
@@ -152,6 +161,46 @@ import { localizeRemoteImages, figuresForQuestionBank } from '../dist/services/i
         `Asset path should become local portable path, got ${asset.path}`
       )
     }
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
+
+// Test B2: 未知 URL 别名在下载后按内容兜底复用唯一的结构化 Figure asset
+{
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    arrayBuffer: async () => new Uint8Array([1, 2, 3, 4, 5]).buffer,
+  })
+  const strongId = 'doc2x_structured_figure'
+  const weakId = 'doc2x_marker_only_figure'
+  const duplicateDocument = {
+    id: 'ocr_doc2x_content_dedupe',
+    sourceDocumentId: 'src_doc2x_content_dedupe',
+    provider: 'doc2x',
+    rawResultPath: '/tmp/doc2x/raw.json',
+    markdown: `题干\n<!-- DOC2X_FIGURE:${weakId} -->`,
+    pages: [{
+      pageNo: 1,
+      width: 800,
+      height: 1100,
+      blocks: [{ id: 'figure_block', pageNo: 1, type: 'image', content: '', assetId: strongId }],
+    }],
+    assets: [
+      { id: strongId, type: 'image', path: 'https://images-a.example.test/figure.png', pageNo: 1, bbox: [90, 120, 430, 390], sourceBlockId: 'figure_block' },
+      { id: weakId, type: 'image', path: 'https://images-b.example.test/duplicate.png', pageNo: 1 },
+    ],
+    metadata: {},
+    createdAt: '2026-06-24T00:00:00.000Z',
+  }
+  try {
+    await localizeRemoteImages(duplicateDocument)
+    assert.equal(duplicateDocument.assets.length, 1)
+    assert.equal(duplicateDocument.assets[0].id, strongId)
+    assert.match(duplicateDocument.markdown, new RegExp(`DOC2X_FIGURE:${strongId}`))
+    assert.doesNotMatch(duplicateDocument.markdown, new RegExp(weakId))
   } finally {
     globalThis.fetch = originalFetch
   }

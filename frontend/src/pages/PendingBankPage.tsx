@@ -169,7 +169,7 @@ export default function PendingBankPage() {
     if (!editingItem) return
     const saved = editingItem.pendingBankReadOnly
       ? await pendingBankApi.createManualCandidate(decodedRunId, nextDraft)
-      : await questionBankApi.updateItem(editingItem.id, nextDraft)
+      : await questionBankApi.updateItem(editingItem.id, nextDraft, editingItem.contentRevision)
     setActiveId(saved.id)
     setEditingItem(null)
     setEditingDraft({})
@@ -272,7 +272,7 @@ export default function PendingBankPage() {
         ...item,
         ...patch,
       }
-      await questionBankApi.updateItem(id, nextDraft)
+      await questionBankApi.updateItem(id, nextDraft, item.contentRevision)
       await reload({ silent: true })
       showNotice('图片定位已保存')
     } catch (err) {
@@ -530,6 +530,12 @@ export default function PendingBankPage() {
             setEditingDraft({})
           }}
           onSave={saveEditedQuestion}
+          onManageFigures={() => {
+            setCroppingItem(editingItem)
+            setEditingItem(null)
+            setEditingDraft({})
+          }}
+          entityType={editingItem.pendingBankReadOnly ? 'pending-manual-candidate' : 'pending-question'}
         />
       ) : null}
       {croppingItem ? <FigureCropDialog

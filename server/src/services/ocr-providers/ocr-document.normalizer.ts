@@ -113,6 +113,31 @@ function markdownImage(url: string) {
   return `![题图](${source.replace(/\\/g, '\\\\').replace(/\)/g, '\\)')})`
 }
 
+const DOC2X_IMAGE_HOSTS = new Set([
+  'cdn.noedgeai.com',
+  'img.doc2x.noedgeai.com',
+])
+
+/**
+ * Doc2X exposes the same crop through both its structured-layout CDN and the
+ * page-markdown image host. Treat those host aliases as one remote resource,
+ * while keeping the full crop query in the identity so nearby figures on the
+ * same source page are never merged.
+ */
+export function doc2xImageResourceKey(value: string) {
+  try {
+    const url = new URL(decodeHtmlAttribute(String(value || '').trim()))
+    if (!DOC2X_IMAGE_HOSTS.has(url.hostname.toLowerCase())) return ''
+    const query = Array.from(url.searchParams.entries())
+      .sort(([leftKey, leftValue], [rightKey, rightValue]) => leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue))
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+      .join('&')
+    return `${url.pathname}${query ? `?${query}` : ''}`
+  } catch {
+    return ''
+  }
+}
+
 /** Convert provider HTML image tags without enabling arbitrary HTML rendering. */
 export function normalizeHtmlImageTags(value: string) {
   const withoutMediaComments = stripDoc2xMediaComments(value)
@@ -154,7 +179,7 @@ function markdownNeedleForStoredBlock(block: OCRBlock) {
   })
 }
 
-function realignBlockMarkdownOffsets(doc: OCRDocument) {
+export function realignOcrDocumentBlockMarkdownOffsets(doc: OCRDocument) {
   let cursor = 0
   doc.pages = doc.pages.map((page) => ({
     ...page,
@@ -216,7 +241,9 @@ export function ensureOcrDocumentFiguresAndPlaceholders(doc: {
   
   let newMarkdown = markdown
   for (const item of foundUrls) {
-    let asset = assets.find((a) => a.path === item.url)
+    const resourceKey = doc.provider === 'doc2x' ? doc2xImageResourceKey(item.url) : ''
+    let asset = assets.find((candidate) => candidate.path === item.url
+      || Boolean(resourceKey && doc2xImageResourceKey(candidate.path) === resourceKey))
     if (!asset) {
       const hash = createHash('sha256').update(item.url).digest('hex').slice(0, 16)
       const assetId = stableNormalizerId(doc.provider + '_inline_asset', [doc.sourceDocumentId, hash])
@@ -342,7 +369,7 @@ export function createNormalizedOCRDocument(
   }
 
   ensureOcrDocumentFiguresAndPlaceholders(doc)
-  realignBlockMarkdownOffsets(doc)
+  realignOcrDocumentBlockMarkdownOffsets(doc)
 
   return doc
 }

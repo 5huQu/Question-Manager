@@ -147,6 +147,7 @@ export function updateItem(id: string, rawBody: Record<string, any>) {
   const stemMarkdown = stripDoc2xNoiseComments(fieldFromPatch(body.stemMarkdown, body.problemBlocks, before.stemMarkdown))
   const answerText = stripDoc2xNoiseComments(fieldFromPatch(body.answerText, body.answerBlocks, before.answerText))
   const analysisMarkdown = stripDoc2xNoiseComments(fieldFromPatch(body.analysisMarkdown, body.analysisBlocks, before.analysisMarkdown))
+  const contentChanged = stemMarkdown !== before.stemMarkdown || answerText !== before.answerText || analysisMarkdown !== before.analysisMarkdown
   const knowledgePoints = body.knowledgePoints ? normalizeTags(body.knowledgePoints) : before.knowledgePoints
   const solutionMethods = body.solutionMethods ? normalizeTags(body.solutionMethods) : before.solutionMethods
   const sourceTitle = body.sourceTitle ?? before.sourceTitle
@@ -169,7 +170,9 @@ export function updateItem(id: string, rawBody: Record<string, any>) {
   const requiresFormatReview = Boolean(formatIssues.length)
   const nextBankStatus = body.bankStatus ?? (!requiresFormatReview && before.bankStatus === 'blocked' && before.needsFormatReview ? 'ready' : null)
   const formatReviewJson = requiresFormatReview ? JSON.stringify(formatReviewPayload(formatIssues, nowIso())) : '{}'
-  repo.updateQuestionBankItem(id, [
+  const rawExpectedContentRevision = rawBody.expectedContentRevision ?? body.expectedContentRevision
+  const expectedContentRevision = rawExpectedContentRevision == null ? undefined : Number(rawExpectedContentRevision)
+  const result = repo.updateQuestionBankItem(id, [
     nextQuestionNo,
     body.stage ?? null,
     body.questionType ?? null,
@@ -191,10 +194,26 @@ export function updateItem(id: string, rawBody: Record<string, any>) {
     requiresFormatReview ? 1 : 0,
     nextBankStatus,
     nowIso(),
-  ])
-  repo.updateQuestionFigures(id, figures)
-  syncQuestionBankItemToOcrDraft(repo.getQuestion(id))
-  return repo.getQuestion(id)
+  ], { expectedContentRevision, contentChanged, figures })
+  if (!result.changes) {
+    const current = repo.getQuestion(id)
+    if (!current) throw new RouteError(404, '题目不存在。')
+    throw new RouteError(409, '内容已在其他页面更新，请刷新后重试。', undefined, {
+      error: 'content_revision_conflict',
+      message: '内容已在其他页面更新，请刷新后重试。',
+      expectedContentRevision: Number(expectedContentRevision),
+      actualContentRevision: current.contentRevision,
+      current,
+    })
+  }
+  const updated = repo.getQuestion(id)
+  const warnings: Array<{ code: string; message: string }> = []
+  try {
+    syncQuestionBankItemToOcrDraft(updated)
+  } catch (error) {
+    warnings.push({ code: 'ocr_draft_sync_failed', message: error instanceof Error ? error.message : String(error) })
+  }
+  return warnings.length ? { ...updated, warnings } : updated
 }
 
 export function deleteItem(id: string) {

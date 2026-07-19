@@ -16,6 +16,7 @@ const {
   parseCandidatesForOcrDocument,
   listQuestionCandidatesForSource,
   commitQuestionCandidate,
+  skipQuestionCandidates,
   ensureSingleDocumentImportJob,
   listImportJobQuestions,
   resolveImportJobForLegacyRunId,
@@ -277,7 +278,38 @@ try {
   const reviewResult = listQuestionCandidatesForSource(staleSource.id, { status: 'needs_review' })
   assert.equal(reviewResult.items.some((item) => item.id === staleResult.items[0].id), false)
 
-  console.log('6. Export preflight clears stale blocked format state...')
+  console.log('6. Skipping candidates removes them from review without banking them...')
+  const skipSource = makeSourceDocument('src_skip_candidates', 'Skip Candidates Source')
+  const skipMarkdown = [
+    '1. 第一题。',
+    '答案：A',
+    '解析：第一题解析。',
+    '2. 第二题。',
+    '答案：B',
+    '解析：第二题解析。',
+  ].join('\n')
+  const skipOcr = makeOcrDocument('ocr_skip_candidates', skipSource.id, skipMarkdown, blocks(skipMarkdown, [
+    ['1. 第一题。', 'b_skip_1'],
+    ['答案：A', 'b_skip_answer_1'],
+    ['解析：第一题解析。', 'b_skip_analysis_1'],
+    ['2. 第二题。', 'b_skip_2'],
+    ['答案：B', 'b_skip_answer_2'],
+    ['解析：第二题解析。', 'b_skip_analysis_2'],
+  ]))
+  const skipCandidates = parseCandidatesForOcrDocument(skipOcr.id).items
+  assert.equal(skipCandidates.length, 2)
+  await commitQuestionCandidate(skipCandidates[0].id, { skipAutoClassification: true })
+  assert.throws(
+    () => skipQuestionCandidates({ candidateIds: skipCandidates.map((item) => item.id) }),
+    /已经入库，不能跳过/,
+  )
+  assert.equal(listQuestionCandidatesForSource(skipSource.id, {}).items.length, 2, 'failed bulk skip must be atomic')
+  const skipped = skipQuestionCandidates({ candidateIds: [skipCandidates[1].id] })
+  assert.deepEqual(skipped.skippedIds, [skipCandidates[1].id])
+  assert.equal(listQuestionCandidatesForSource(skipSource.id, {}).items.length, 1)
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM question_bank_items WHERE import_source_id = ?').get(skipSource.id).count, 1)
+
+  console.log('7. Export preflight clears stale blocked format state...')
   const staleBlockedId = commitResult.item.id
   db.prepare(`
     UPDATE question_bank_items

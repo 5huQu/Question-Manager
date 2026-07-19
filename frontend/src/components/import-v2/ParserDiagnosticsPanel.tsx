@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, Info, ListChecks, LoaderCircle } from 'lucide-react'
 import type { CandidateParsePreview, ImportFlowV2ParserConfig, ParserDiagnostic, ParserPreviewResponse } from '@/api/importV2'
-import { Badge, Button } from '@/components/ui'
+import { Badge } from '@/components/ui'
 import { parserDiagnosticLabel } from '@/utils/importDiagnostics'
 import { ParserStrategyControls } from './ParserStrategyControls'
 
@@ -25,17 +25,18 @@ type ParserDiagnosticsPanelProps = {
   config: ImportFlowV2ParserConfig | null
   loading?: boolean
   focusQuestionNo?: string
+  onQuestionSelect?: (questionNo: string) => void
   onConfigChange: (config: ImportFlowV2ParserConfig) => void
 }
 
-export function ParserDiagnosticsPanel({ preview, config, loading, focusQuestionNo, onConfigChange }: ParserDiagnosticsPanelProps) {
+export function ParserDiagnosticsPanel({ preview, config, loading, focusQuestionNo, onQuestionSelect, onConfigChange }: ParserDiagnosticsPanelProps) {
   const diagnostics = preview?.diagnostics || []
   const focusedPreview = focusQuestionNo
     ? preview?.candidatePreviews.find((item) => item.questionNo === focusQuestionNo)
     : null
   const visiblePreviews = [
     ...(focusedPreview ? [focusedPreview] : []),
-    ...(preview?.candidatePreviews.filter((item) => item.questionNo !== focusedPreview?.questionNo).slice(0, 8) || []),
+    ...(preview?.candidatePreviews.filter((item) => item.questionNo !== focusedPreview?.questionNo) || []),
   ]
 
   return (
@@ -99,7 +100,14 @@ export function ParserDiagnosticsPanel({ preview, config, loading, focusQuestion
           </div>
           {visiblePreviews.length ? (
             <div className="space-y-2">
-              {visiblePreviews.map((item) => <CandidatePreviewCard key={item.questionNo} item={item} focused={item.questionNo === focusQuestionNo} />)}
+              {visiblePreviews.map((item) => (
+                <CandidatePreviewCard
+                  key={item.questionNo}
+                  item={item}
+                  focused={item.questionNo === focusQuestionNo}
+                  onSelect={onQuestionSelect}
+                />
+              ))}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-zinc-200 p-4 text-center text-xs text-zinc-400 dark:border-zinc-800">
@@ -108,21 +116,30 @@ export function ParserDiagnosticsPanel({ preview, config, loading, focusQuestion
           )}
         </section>
 
-        {preview && preview.candidatePreviews.length > visiblePreviews.length ? (
-          <div className="mt-3 text-center">
-            <Button size="xs" variant="outline" disabled>
-              已显示前 {visiblePreviews.length} / {preview.candidatePreviews.length} 题
-            </Button>
-          </div>
-        ) : null}
       </div>
     </aside>
   )
 }
 
-function CandidatePreviewCard({ item, focused }: { item: CandidateParsePreview; focused?: boolean }) {
+function CandidatePreviewCard({
+  item,
+  focused,
+  onSelect,
+}: {
+  item: CandidateParsePreview
+  focused?: boolean
+  onSelect?: (questionNo: string) => void
+}) {
   return (
-    <div className={`rounded-lg border p-2.5 text-xs ${focused ? 'border-amber-300 bg-amber-50/50 dark:border-amber-800/60 dark:bg-amber-950/20' : 'border-zinc-200 dark:border-zinc-800'}`}>
+    <button
+      type="button"
+      aria-label={`定位到第 ${item.questionNo || '？'} 题源码`}
+      disabled={!item.questionNo || !onSelect}
+      onClick={() => item.questionNo && onSelect?.(item.questionNo)}
+      className={`block w-full rounded-lg border p-2.5 text-left text-xs transition-colors ${focused
+        ? 'border-amber-300 bg-amber-50/50 dark:border-amber-800/60 dark:bg-amber-950/20'
+        : 'border-zinc-200 hover:border-amber-300 hover:bg-amber-50/40 dark:border-zinc-800 dark:hover:border-amber-800 dark:hover:bg-amber-950/20'}`}
+    >
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-semibold text-zinc-900 dark:text-zinc-50">第 {item.questionNo || '？'} 题</span>
         {item.issues.length ? <Badge variant="warning">{item.issues.length} 个问题</Badge> : <Badge variant="outline">预览</Badge>}
@@ -137,6 +154,6 @@ function CandidatePreviewCard({ item, focused }: { item: CandidateParsePreview; 
           <dd className="line-clamp-5 whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{previewText(item.analysisPreview)}</dd>
         </div>
       </dl>
-    </div>
+    </button>
   )
 }

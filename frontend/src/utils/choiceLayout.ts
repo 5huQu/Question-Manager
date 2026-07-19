@@ -2,7 +2,12 @@ export type ChoiceLayout = 'quad' | 'double' | 'single'
 
 function requiresSingleColumn(value: string) {
   const source = String(value || '').replace(/\r\n?/g, '\n')
-  return /\n\s*\n|\$\$|\\\[|\\begin\s*\{|!\[[^\]]*\]\(|<img\b|^\s*\|.*\|\s*$/im.test(source)
+  if (/\n\s*\n|\$\$|\\\[|\\begin\s*\{|!\[[^\]]*\]\(|<img\b|^\s*\|.*\|\s*$/im.test(source)) return true
+
+  // KaTeX keeps expressions such as unions of intervals on a single line.
+  // They are technically short in Markdown but cannot safely share a narrow
+  // two-column cell without colliding with the neighbouring option.
+  return /\\(?:left|right|frac|dfrac|tfrac|sqrt|overline|underline|vec|hat|bar|cup|cap|infty|sum|prod|int|lim)\b|[∪∩∞]/.test(source)
 }
 
 function visualChoiceWidth(value: string) {

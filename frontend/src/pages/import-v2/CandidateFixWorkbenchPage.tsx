@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { LoaderCircle } from 'lucide-react'
 import type { BBoxCanvasBox } from '@/components/questions/BBoxCanvas'
@@ -20,6 +20,8 @@ import { ManualFixViewerToolbar } from '@/components/import-v2/manual-fix/Manual
 import { ManualFixDocumentViewer } from '@/components/import-v2/manual-fix/ManualFixDocumentViewer'
 import type { ManualFixRegion as Region, ManualFixSegment as Segment, ManualFixTab } from '@/components/import-v2/manual-fix/types'
 import { useCandidateFixSession } from '@/hooks/useCandidateFixSession'
+import { useQuestionEditorDraft } from '@/hooks/useQuestionEditorDraft'
+import type { QuestionContentDraft } from '@/types/questionContent'
 
 interface SourceProfile {
   pageCount?: number
@@ -30,6 +32,25 @@ function createRegionId() {
   return `reg_${globalThis.crypto.randomUUID()}`
 }
 
+function figureMarkerIds(figure: any) {
+  return [figure.blockId, figure.id, figure.sourceBlockId].filter(Boolean).map(String)
+}
+
+function setFigureChoiceLabel(markdown: string, figure: any, optionLabel?: string) {
+  let next = String(markdown || '')
+  for (const id of figureMarkerIds(figure)) {
+    const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const marker = `<!-- DOC2X_FIGURE:${id} -->`
+    const markerPattern = `<!--\\s*DOC2X_FIGURE:${escaped}\\s*-->`
+    next = next.replace(new RegExp(`(^|\\n)\\s*[A-H][.．、]\\s*(?:\\n\\s*)?(?=${markerPattern})`, 'g'), '$1')
+    if (optionLabel && new RegExp(markerPattern).test(next)) {
+      next = next.replace(new RegExp(markerPattern), `${optionLabel}.\n${marker}`)
+      break
+    }
+  }
+  return next.replace(/\n{3,}/g, '\n\n').trim()
+}
+
 export default function CandidateFixWorkbenchPage() {
   const { sourceDocumentId: sourceDocumentIdFromPath, candidateId } = useParams<{ sourceDocumentId: string; candidateId: string }>()
   const [searchParams] = useSearchParams()
@@ -37,14 +58,24 @@ export default function CandidateFixWorkbenchPage() {
   const sourceDocumentId = sourceDocumentIdFromPath || sourceDocumentIdFromQuery
   const navigate = useNavigate()
 
-  const { loading, saving, finalizing, candidate, session, loadError, saveError, textDirty, setTextDirty, saveDraft, saveRegions, finalize } = useCandidateFixSession(sourceDocumentId, candidateId)
+  const { loading, saving, finalizing, candidate, session, loadError, saveError, conflict, saveDraft, saveRegions, finalize } = useCandidateFixSession(sourceDocumentId, candidateId)
   const [activeInspectorTab, setActiveInspectorTab] = useState<ManualFixTab>('content')
 
-  // Markdown Texts
-  const [stemMarkdown, setStemMarkdown] = useState('')
-  const [answerText, setAnswerText] = useState('')
-  const [analysisMarkdown, setAnalysisMarkdown] = useState('')
+  const initialContent = useMemo<QuestionContentDraft>(() => ({
+    stemMarkdown: String(candidate?.stemMarkdown || ''),
+    answerText: String(candidate?.answerText || ''),
+    analysisMarkdown: String(candidate?.analysisMarkdown || ''),
+  }), [candidate?.id, candidate?.contentRevision, candidate?.stemMarkdown, candidate?.answerText, candidate?.analysisMarkdown])
+  const contentDraft = useQuestionEditorDraft({
+    entityType: 'candidate',
+    entityId: candidateId || 'unknown',
+    initialValue: initialContent,
+    contentRevision: candidate?.contentRevision,
+    warnBeforeUnload: false,
+  })
   const [figures, setFigures] = useState<any[]>([])
+  const [figureDirty, setFigureDirty] = useState(false)
+  const textDirty = contentDraft.dirty || figureDirty
 
   // Annotation Region state
   const [regions, setRegions] = useState<Region[]>([])
@@ -74,10 +105,8 @@ export default function CandidateFixWorkbenchPage() {
   // Restore editor-local state after the controller has loaded the candidate/session.
   useEffect(() => {
     if (!candidate || !session) return
-    setStemMarkdown(candidate.stemMarkdown || '')
-    setAnswerText(candidate.answerText || '')
-    setAnalysisMarkdown(candidate.analysisMarkdown || '')
     setFigures(candidate.figures || [])
+    setFigureDirty(false)
     setRegions(session.regions || [])
     let profiles: Record<string, SourceProfile> = {}
     try { profiles = JSON.parse(session.sourceProfileJson || '{}') } catch { /* fall back to the candidate source */ }
@@ -380,10 +409,12 @@ export default function CandidateFixWorkbenchPage() {
 
     setFigures(nextFigures)
     setRegions((current) => current.filter((region) => !removedRegionIds.has(region.id)))
-    setStemMarkdown((current) => removeFigureMarkersByIds(current, removedFigureIds))
-    setAnswerText((current) => removeFigureMarkersByIds(current, removedFigureIds))
-    setAnalysisMarkdown((current) => removeFigureMarkersByIds(current, removedFigureIds))
-    if (removedFigureIds.size > 0) setTextDirty(true)
+    contentDraft.setValue((current) => ({
+      stemMarkdown: removeFigureMarkersByIds(current.stemMarkdown, removedFigureIds),
+      answerText: removeFigureMarkersByIds(current.answerText, removedFigureIds),
+      analysisMarkdown: removeFigureMarkersByIds(current.analysisMarkdown, removedFigureIds),
+    }))
+    if (removedFigureIds.size > 0) setFigureDirty(true)
     if (selectedRegionId && removedRegionIds.has(selectedRegionId)) {
       setSelectedRegionId(null)
       setRect({ x: 0, y: 0, width: 0, height: 0 })
@@ -399,11 +430,19 @@ export default function CandidateFixWorkbenchPage() {
   }, [regions])
 
   // Save drafts manually
-  async function handleSaveDraft() {
+  async function handleSaveDraft(value: QuestionContentDraft = contentDraft.value) {
     if (!session) return
     try {
-      const result = await saveDraft(normalizedRegionsForSave(), { stemMarkdown, answerText, analysisMarkdown, figures })
-      if (result) setFigures(result.candidate.figures || [])
+      const result = await saveDraft(normalizedRegionsForSave(), { ...value, figures })
+      if (result) {
+        setFigures(result.candidate.figures || [])
+        setFigureDirty(false)
+        contentDraft.markSaved({
+          stemMarkdown: String(result.candidate.stemMarkdown || ''),
+          answerText: String(result.candidate.answerText || ''),
+          analysisMarkdown: String(result.candidate.analysisMarkdown || ''),
+        })
+      }
     } catch (err) {
       console.error('保存草稿失败：', err)
     }
@@ -412,8 +451,11 @@ export default function CandidateFixWorkbenchPage() {
   // Finalize manual correction
   async function handleFinalizeFix() {
     if (!session) return
-    const done = await finalize(normalizedRegionsForSave(), { stemMarkdown, answerText, analysisMarkdown, figures })
-    if (done) navigateBack(true)
+    const done = await finalize(normalizedRegionsForSave(), { ...contentDraft.value, figures })
+    if (done) {
+      contentDraft.markSaved(contentDraft.value)
+      navigateBack(true)
+    }
   }
 
   // Add new region helper
@@ -478,10 +520,36 @@ export default function CandidateFixWorkbenchPage() {
       setSelectedRegionId(null)
       setRect({ x: 0, y: 0, width: 0, height: 0 })
     }
-    setStemMarkdown((current) => removeFigureMarkers(current, figure))
-    setAnswerText((current) => removeFigureMarkers(current, figure))
-    setAnalysisMarkdown((current) => removeFigureMarkers(current, figure))
-    setTextDirty(true)
+    contentDraft.setValue((current) => ({
+      stemMarkdown: removeFigureMarkers(current.stemMarkdown, figure),
+      answerText: removeFigureMarkers(current.answerText, figure),
+      analysisMarkdown: removeFigureMarkers(current.analysisMarkdown, figure),
+    }))
+    setFigureDirty(true)
+  }
+
+  function handleUpdateFigure(figure: any, usage: 'stem' | 'analysis' | 'options', optionLabel?: string) {
+    const normalizedLabel = usage === 'options' ? String(optionLabel || 'A').toUpperCase() : undefined
+    setFigures((current) => current.map((item) => item === figure || item.id === figure.id
+      ? { ...item, usage, optionLabel: normalizedLabel || '' }
+      : item))
+    contentDraft.updateField('stemMarkdown', setFigureChoiceLabel(contentDraft.value.stemMarkdown, figure, normalizedLabel))
+    setFigureDirty(true)
+  }
+
+  function handleAssignTrailingOptions() {
+    const optionFigures = figures.slice(-4)
+    const labels = ['A', 'B', 'C', 'D']
+    const assignments = new Map(optionFigures.map((figure, index) => [String(figure.id), labels[index]]))
+    setFigures((current) => current.map((figure) => assignments.has(String(figure.id))
+      ? { ...figure, usage: 'options', optionLabel: assignments.get(String(figure.id)) }
+      : figure))
+    let stemMarkdown = contentDraft.value.stemMarkdown
+    optionFigures.forEach((figure, index) => {
+      stemMarkdown = setFigureChoiceLabel(stemMarkdown, figure, labels[index])
+    })
+    contentDraft.updateField('stemMarkdown', stemMarkdown)
+    setFigureDirty(true)
   }
 
   // Helpers for mapping regions to Canvas Boxes
@@ -539,6 +607,19 @@ export default function CandidateFixWorkbenchPage() {
     )
   }
 
+  if (candidate?.status === 'committed') {
+    return (
+      <div className="mx-auto max-w-xl rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">该候选题已入库</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-500">候选内容已锁定，请在正式题目中继续编辑，避免两份内容分叉。</p>
+        <div className="mt-5 flex gap-2">
+          <button type="button" onClick={() => navigateBack(true)} className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900">返回候选题</button>
+          {candidate.committedQuestionId ? <button type="button" onClick={() => navigate('/questions')} className="h-9 rounded-md bg-zinc-900 px-4 text-sm font-medium text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200">返回题库</button> : null}
+        </div>
+      </div>
+    )
+  }
+
   if (loadError || !candidate || !session) {
     return <div className="rounded-lg border border-red-200 bg-red-50/30 p-4 text-sm text-red-800 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400">加载手动修正会话失败：{loadError || '未找到可用的修正会话。'}</div>
   }
@@ -559,20 +640,27 @@ export default function CandidateFixWorkbenchPage() {
           activeTab={activeInspectorTab}
           onTabChange={setActiveInspectorTab}
           candidate={candidate}
-          stemMarkdown={stemMarkdown}
-          answerText={answerText}
-          analysisMarkdown={analysisMarkdown}
+          stemMarkdown={contentDraft.value.stemMarkdown}
+          answerText={contentDraft.value.answerText}
+          analysisMarkdown={contentDraft.value.analysisMarkdown}
+          contentRevision={candidate.contentRevision}
+          conflict={conflict}
+          contentDirty={contentDraft.dirty}
+          recoveredDraft={contentDraft.hasRecoveredDraft}
           figures={figures}
           regions={regions}
           selectedRegionId={selectedRegionId}
-          onStemChange={(value) => { setStemMarkdown(value); setTextDirty(true) }}
-          onAnswerChange={(value) => { setAnswerText(value); setTextDirty(true) }}
-          onAnalysisChange={(value) => { setAnalysisMarkdown(value); setTextDirty(true) }}
+          onStemChange={(value) => contentDraft.updateField('stemMarkdown', value)}
+          onAnswerChange={(value) => contentDraft.updateField('answerText', value)}
+          onAnalysisChange={(value) => contentDraft.updateField('analysisMarkdown', value)}
+          onSaveContent={handleSaveDraft}
           onAddRegion={handleAddNewRegion}
           onDeleteSelected={handleDeleteSelected}
           onRegionNoteChange={(note) => setRegions((current) => current.map((region) => region.id === selectedRegionId ? { ...region, note } : region))}
           onCleanHeaderFooter={handleCleanHeaderFooter}
           onLocateFigure={handleLocateFigure}
+          onUpdateFigure={handleUpdateFigure}
+          onAssignTrailingOptions={handleAssignTrailingOptions}
           onDeleteFigure={handleDeleteFigure}
         />
       </div>

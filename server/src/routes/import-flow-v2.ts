@@ -1,9 +1,11 @@
 import type { Express } from 'express'
-import { upload } from '../config.js'
+import type { QuestionCandidate } from '../types/question-candidate.js'
+import { doc2xPackageUpload, upload } from '../config.js'
 import { sendRouteError } from './errors.js'
 import {
   commitQuestionCandidate,
   commitQuestionCandidates,
+  skipQuestionCandidates,
   createSourceDocument,
   getOcrDocument,
   getSourceDocument,
@@ -18,6 +20,8 @@ import {
   uploadSourceDocument,
   updateSourceDocument,
   updateQuestionCandidate,
+  moveCandidateFigure,
+  resolveCandidateUnplacedFigure,
   renderSourceDocumentPage,
   createOrRestoreCandidateManualFixSession,
   deleteSourceDocument,
@@ -28,6 +32,7 @@ import {
   parseCandidatesForImportJob,
   deleteImportJob,
   updateImportJob,
+  importDoc2xMarkdownPackage,
 } from '../services/import-flow-v2/import-flow-v2.service.js'
 import {
   ensureSingleDocumentImportJob,
@@ -269,7 +274,13 @@ export function mountImportFlowV2Routes(app: Express) {
       const document = loadOcrDocument(decodeURIComponent(String(req.params.id || '')))
       const candidateId = String(req.body?.candidateId || '').trim()
       const candidate = candidateId ? candidateRepo.getQuestionCandidate(candidateId) || undefined : undefined
-      res.json(buildParserPreview(document, req.body || {}, candidate))
+      const candidateIds = Array.isArray(req.body?.candidateIds)
+        ? req.body.candidateIds.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+        : []
+      const recognizedCandidates = candidateIds
+        .map((id: string) => candidateRepo.getQuestionCandidate(id))
+        .filter((item: QuestionCandidate | null | undefined): item is QuestionCandidate => Boolean(item))
+      res.json(buildParserPreview(document, req.body || {}, candidate, recognizedCandidates))
     } catch (error) {
       sendRouteError(res, error)
     }
@@ -294,6 +305,14 @@ export function mountImportFlowV2Routes(app: Express) {
   app.post('/api/import-flow-v2/source-documents/upload', upload.single('file'), (req, res) => {
     try {
       res.status(201).json(uploadSourceDocument(req.file, req.body || {}))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/import-flow-v2/source-documents/import-doc2x-package', doc2xPackageUpload.single('file'), async (req, res) => {
+    try {
+      res.status(201).json(await importDoc2xMarkdownPackage(req.file, req.body || {}))
     } catch (error) {
       sendRouteError(res, error)
     }
@@ -355,6 +374,30 @@ export function mountImportFlowV2Routes(app: Express) {
     }
   })
 
+  app.post('/api/import-flow-v2/candidates/:id/unplaced-figures/:blockId/resolve', (req, res) => {
+    try {
+      res.json(resolveCandidateUnplacedFigure(
+        decodeURIComponent(String(req.params.id || '')),
+        decodeURIComponent(String(req.params.blockId || '')),
+        req.body || {},
+      ))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/import-flow-v2/candidates/:id/figures/:figureId/move', (req, res) => {
+    try {
+      res.json(moveCandidateFigure(
+        decodeURIComponent(String(req.params.id || '')),
+        decodeURIComponent(String(req.params.figureId || '')),
+        req.body || {},
+      ))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
   app.delete('/api/import-flow-v2/candidates/:id', (req, res) => {
     try {
       res.json(deleteQuestionCandidate(decodeURIComponent(String(req.params.id || ''))))
@@ -374,6 +417,14 @@ export function mountImportFlowV2Routes(app: Express) {
   app.post('/api/import-flow-v2/candidates/commit', async (req, res) => {
     try {
       res.json(await commitQuestionCandidates(req.body || {}))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/import-flow-v2/candidates/skip', (req, res) => {
+    try {
+      res.json(skipQuestionCandidates(req.body || {}))
     } catch (error) {
       sendRouteError(res, error)
     }

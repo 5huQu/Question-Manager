@@ -37,6 +37,7 @@ export type WorksheetFigureTelemetry = {
 export type WorksheetQuestionTelemetry = {
   id: string
   startPage: number
+  startPageTotal: number
   endPage: number
   endPageTotal: number
   pageGoal: number
@@ -93,7 +94,7 @@ export function worksheetFigureWidthLimits(imagePath: string) {
   return { defaultWidth: 0.30, minWidth: 0.24 }
 }
 
-/** Deterministic, side-effect-free decision used by PDF and browser previews. */
+/** Deterministic, side-effect-free decision used by PDF preview and export. */
 export function decideWorksheetFigureLayout(input: FigureLayoutDecisionInput): FigureLayoutDecision {
   const warnings: LayoutWarning[] = []
   let aspect: number | undefined
@@ -115,9 +116,10 @@ export function decideWorksheetFigureLayout(input: FigureLayoutDecisionInput): F
     })
   }
 
-  const shortChoices = input.choices.length === 4 && qbankChoiceLayout(input.choices) === 'four'
+  const hasFourChoices = input.choices.length === 4
+  const shortChoices = hasFourChoices && qbankChoiceLayout(input.choices) === 'four'
   const suitableAspect = aspect !== undefined && aspect >= 0.72 && aspect <= 1.65
-  const auto: ResolvedFigurePlacement = !input.hasInlineMarker && input.stemFigureCount === 1 && shortChoices && suitableAspect
+  const auto: ResolvedFigurePlacement = !input.hasInlineMarker && input.stemFigureCount === 1 && hasFourChoices && suitableAspect
     ? 'side-right'
     : 'block'
   const requested = input.requested?.placement
@@ -125,7 +127,7 @@ export function decideWorksheetFigureLayout(input: FigureLayoutDecisionInput): F
   let resolved = override || auto
   let source: 'auto' | 'manual' = override ? 'manual' : 'auto'
   let reason = auto === 'side-right'
-    ? '单张方形题干图与四个短选项适合左右混排。'
+    ? '四个选项纵向排列在左侧，题图放在右侧并共享同一行区域。'
     : input.hasInlineMarker
       ? '图片已有题干内联锚点，不参与自动左右混排。'
       : input.stemFigureCount !== 1
@@ -142,10 +144,11 @@ export function decideWorksheetFigureLayout(input: FigureLayoutDecisionInput): F
   }
 
   const side = resolved === 'side-left' || resolved === 'side-right'
-  const widthRatio = input.requested?.widthRatio ?? (side ? 0.38 : input.imagePath ? worksheetFigureWidthLimits(input.imagePath).defaultWidth : 0.3)
+  const requestedWidth = input.requested?.widthRatio ?? (side ? 0.38 : input.imagePath ? worksheetFigureWidthLimits(input.imagePath).defaultWidth : 0.3)
+  const widthRatio = side ? Math.min(0.55, Math.max(0.25, requestedWidth)) : Math.min(1, Math.max(0.15, requestedWidth))
   return {
     placement: resolved,
-    widthRatio: Math.min(1, Math.max(0.15, widthRatio)),
+    widthRatio,
     alignment: input.requested?.alignment || (side ? (resolved === 'side-left' ? 'left' : 'right') : 'center'),
     keepWithChoices: input.requested?.keepWithChoices ?? side,
     source,
@@ -188,15 +191,15 @@ export function parseWorksheetQuestionTelemetry(logPath: string) {
   const text = fs.readFileSync(logPath, 'utf8')
   const compact = text.replace(/\s+/g, '')
   const records = [...compact.matchAll(/QBANKQUESTIONphase=(start|end)id=(.+?)page=(\d+)pagetotal=([0-9.]+)ptpagegoal=([0-9.]+)pt/g)]
-  const starts = new Map<string, { page: number }>()
+  const starts = new Map<string, { page: number; pageTotal: number; pageGoal: number }>()
   const result: WorksheetQuestionTelemetry[] = []
   for (const match of records) {
     const [, phase, id, pageText, totalText, goalText] = match
     const page = Number(pageText)
-    if (phase === 'start') starts.set(id, { page })
+    if (phase === 'start') starts.set(id, { page, pageTotal: Number(totalText), pageGoal: Number(goalText) })
     else {
       const start = starts.get(id)
-      if (start) result.push({ id, startPage: start.page, endPage: page, endPageTotal: Number(totalText), pageGoal: Number(goalText) })
+      if (start) result.push({ id, startPage: start.page, startPageTotal: start.pageTotal, endPage: page, endPageTotal: Number(totalText), pageGoal: Number(goalText) || start.pageGoal })
     }
   }
   return result
@@ -267,7 +270,7 @@ export function worksheetAnswerLatex(value: string) {
   const text = String(value || '').trim()
   if (!text) return ''
   const rawMath = /\\(?:frac|dfrac|sqrt|sum|int|lim|ln|infty|mathbb|mathbf|vec|overrightarrow|leq|geq|neq|cdot|times|binom)\b/
-  if (!text.includes('$') && rawMath.test(text) && text.length <= 160) {
+  if (!text.includes('$') && !/\\[([]/.test(text) && rawMath.test(text) && text.length <= 160) {
     return `$${normalizeLatexMathSegment(text)}$`
   }
   return markdownToExamLatex(text, true)
@@ -276,12 +279,22 @@ export function worksheetAnswerLatex(value: string) {
 // ── Compilation ────────────────────────────────────────────────────────────────
 
 export function compileWorksheetTex(texPath: string) {
-  for (let pass = 0; pass < 2; pass += 1) {
-    execFileSync(xelatexPath(), ['-interaction=nonstopmode', '-halt-on-error', path.basename(texPath)], {
-      cwd: path.dirname(texPath),
-      encoding: 'utf8',
-      maxBuffer: 1024 * 1024 * 10,
-    })
+  try {
+    for (let pass = 0; pass < 2; pass += 1) {
+      execFileSync(xelatexPath(), ['-interaction=nonstopmode', '-halt-on-error', path.basename(texPath)], {
+        cwd: path.dirname(texPath),
+        encoding: 'utf8',
+        maxBuffer: 1024 * 1024 * 10,
+      })
+    }
+  } catch (error) {
+    const logPath = texPath.replace(/\.tex$/i, '.log')
+    const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : ''
+    const diagnostic = Array.from(log.matchAll(/!\s+([^\n]+)[\s\S]*?l\.(\d+)\s+([^\n]+)/g)).at(-1)
+    if (diagnostic) {
+      throw new Error(`PDF 编译失败（TeX 第 ${diagnostic[2]} 行）：${diagnostic[1]}。附近内容：${diagnostic[3].trim()}`, { cause: error })
+    }
+    throw error
   }
 }
 

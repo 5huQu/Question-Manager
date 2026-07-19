@@ -17,6 +17,10 @@ export const pythonRoot = path.join(sourceRoot, 'server', 'python')
 export const pythonDataRoot = path.join(storageRoot, 'python')
 export const frontendDist = path.join(sourceRoot, 'frontend', 'dist')
 export const upload = multer({ storage: multer.memoryStorage() })
+export const doc2xPackageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { files: 1, fileSize: 200 * 1024 * 1024 },
+})
 const require = createRequire(import.meta.url)
 export const katex = require('katex') as { renderToString: (tex: string, options?: Record<string, unknown>) => string }
 

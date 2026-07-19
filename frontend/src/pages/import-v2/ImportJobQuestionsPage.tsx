@@ -181,7 +181,7 @@ export function ImportJobQuestionsPage() {
             onReload={reload}
             onQuestionSaved={replaceQuestion}
             isInBasket={basketQuestionIds.has(item.id)}
-            showFigureAction={false}
+            showFigureAction
           />
         ))}
         {!items.length ? (

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { buildParserPreview, classifyQuestionDocumentLayout, defaultParserConfig, extractInlineAnswerTableBlocks, mergeQuestionCandidatesWithSolutions, parseQuestionCandidates, parseSolutionDocument } from '../dist/services/question-parser/index.js'
+import { refreshCandidateParseDiagnostics, validateQuestionCandidate } from '../dist/services/question-parser/candidate-validator.js'
+import { cleanOcrPresentationMarkdown } from '../dist/services/question-parser/presentation-cleanup.js'
 
 function block(markdown, content, pageNo, id, type = 'text', assetId = '') {
   const markdownStart = markdown.indexOf(content)
@@ -78,6 +80,18 @@ assert.equal(candidates[0].sourceRefs.some((ref) => ref.kind === 'stem' && ref.b
 assert.equal(candidates[1].questionNo, '2')
 assert.equal(candidates[1].answerText, '4')
 assert.match(candidates[1].analysisMarkdown, /3\+1=4/)
+
+const recognizedCandidatePreview = buildParserPreview(ocrDocument, {}, undefined, [candidates[1]])
+assert.deepEqual(recognizedCandidatePreview.candidatePreviews.map((item) => item.questionNo), ['2'])
+assert.deepEqual(
+  [...new Set(recognizedCandidatePreview.structures.filter((token) => token.kind === 'question_no').map((token) => token.questionNo))],
+  ['2'],
+)
+assert.equal(recognizedCandidatePreview.structures.some((token) => token.kind === 'question_no' && token.questionNo === '1'), false)
+
+const candidateWithoutSourceRefs = { ...candidates[1], sourceRefs: [] }
+const textLocatedPreview = buildParserPreview(ocrDocument, {}, undefined, [candidateWithoutSourceRefs])
+assert.equal(textLocatedPreview.candidatePreviews[0].sourceRanges.stem.start, markdown.indexOf(candidateWithoutSourceRefs.stemMarkdown))
 
 const solutionWithoutHeadingDocument = {
   ...ocrDocument,
@@ -730,6 +744,16 @@ assert.equal(imageBetweenCandidates[0].figures.some((figure) => figure.sourceBlo
 const unplacedImageDocument = { ...imageBetweenDocument, id: 'ocr_unplaced_image_test', pages: [{ pageNo: 2, width: 800, height: 1100, blocks: [{ id: 'b_unplaced', pageNo: 2, type: 'image', content: 'orphan.png' }] }] }
 const unplacedImageCandidates = parseQuestionCandidates(unplacedImageDocument, { now: '2026-06-24T00:00:00.000Z' })
 assert.equal(unplacedImageCandidates.some((candidate) => candidate.issues.some((issue) => issue.code === 'unplaced_figure')), true)
+const unplacedImageIssue = unplacedImageCandidates.flatMap((candidate) => candidate.issues).find((issue) => issue.code === 'unplaced_figure')
+assert.equal(unplacedImageIssue.relatedBlockIds[0], 'b_unplaced')
+assert.equal(unplacedImageIssue.relatedFigures[0].path, 'orphan.png')
+assert.equal(unplacedImageIssue.relatedFigures[0].pageNo, 2)
+const resolvedUnplacedCandidate = {
+  ...unplacedImageCandidates[unplacedImageCandidates.length - 1],
+  issues: [],
+  parseDiagnostics: [{ code: 'unplaced_figure', severity: 'warning', message: unplacedImageIssue.message }],
+}
+assert.equal(refreshCandidateParseDiagnostics(resolvedUnplacedCandidate, []).some((diagnostic) => diagnostic.code === 'unplaced_figure'), false)
 
 const inlineMarkdownImageDocument = {
   ...ocrDocument,
@@ -945,6 +969,74 @@ assert.match(presentationNoiseCandidates[0].analysisMarkdown, /DOC2X_FIGURE:fig_
 assert.doesNotMatch(presentationNoiseCandidates[0].stemMarkdown, /<div|<\/div>|图1|<!--\s*Media\s*-->/)
 assert.doesNotMatch(presentationNoiseCandidates[0].analysisMarkdown, /<div|<\/div>|室2|四、解答题|<!--\s*Media\s*-->/)
 
+const realPaperPresentationNoise = cleanOcrPresentationMarkdown([
+  '推导得到输电线损耗功率',
+  '第1页，共7页 \\( {\\Delta P} = I^2R \\)；因此损耗减小。',
+  '## 第II卷 (共 60 分)',
+  '## 三、计算题（第 13 题 10 分，共 40 分）',
+  '## 在答题卡上作答，画在试卷上无效】',
+  '糖视图',
+].join('\n'))
+assert.doesNotMatch(realPaperPresentationNoise, /第1页|第II卷|三、计算题|答题卡上作答/)
+assert.match(realPaperPresentationNoise, /\\Delta P/)
+assert.match(realPaperPresentationNoise, /糖视图/)
+
+const truncatedCandidateIssues = validateQuestionCandidate({
+  id: 'candidate_truncated_presentation_test',
+  sourceDocumentId: 'source_truncated_presentation_test',
+  questionNo: '12',
+  stemMarkdown: '若电源电动势变小，需要将滑动变阻器调',
+  answerText: '增大',
+  analysisMarkdown: '根据分压关系判断。',
+  figures: [],
+  sourceRefs: [],
+  status: 'ready',
+  issues: [],
+  createdAt: '2026-07-19T00:00:00.000Z',
+  updatedAt: '2026-07-19T00:00:00.000Z',
+}, new Set())
+assert.equal(truncatedCandidateIssues.some((issue) => issue.code === 'possible_cross_page'), true)
+
+const trailingLabelImageChoiceDocument = {
+  ...ocrDocument,
+  id: 'ocr_trailing_label_image_choice_test',
+  markdown: [
+    '1. 观察示意图，选择正确的图像。',
+    '<!-- DOC2X_FIGURE:fig_stem -->',
+    '<!-- figureText: 选项图 A -->',
+    '<!-- DOC2X_FIGURE:fig_option_a -->',
+    'A',
+    '<!-- figureText: 选项图 B -->',
+    '<!-- DOC2X_FIGURE:fig_option_b -->',
+    'B',
+    '<!-- figureText: 选项图 C -->',
+    '<!-- DOC2X_FIGURE:fig_option_c -->',
+    'C',
+    '<!-- figureText: 选项图 D -->',
+    '<!-- DOC2X_FIGURE:fig_option_d -->',
+    'D',
+  ].join('\n\n'),
+  pages: [],
+  assets: [
+    { id: 'fig_stem', type: 'image', path: 'stem.png', pageNo: 1 },
+    { id: 'fig_option_a', type: 'image', path: 'a.png', pageNo: 1 },
+    { id: 'fig_option_b', type: 'image', path: 'b.png', pageNo: 1 },
+    { id: 'fig_option_c', type: 'image', path: 'c.png', pageNo: 1 },
+    { id: 'fig_option_d', type: 'image', path: 'd.png', pageNo: 1 },
+  ],
+}
+const trailingLabelImageChoiceCandidates = parseQuestionCandidates(trailingLabelImageChoiceDocument, { now: '2026-07-19T00:00:00.000Z' })
+assert.equal(trailingLabelImageChoiceCandidates.length, 1)
+const trailingLabelImageChoice = trailingLabelImageChoiceCandidates[0]
+assert.equal(trailingLabelImageChoice.questionType, '单选题')
+assert.match(trailingLabelImageChoice.stemMarkdown, /A\.\s*\n\s*<!-- DOC2X_FIGURE:fig_option_a -->/)
+assert.match(trailingLabelImageChoice.stemMarkdown, /D\.\s*\n\s*<!-- DOC2X_FIGURE:fig_option_d -->/)
+assert.equal(trailingLabelImageChoice.figures.find((figure) => figure.id === 'fig_stem')?.usage, 'stem')
+assert.deepEqual(
+  trailingLabelImageChoice.figures.filter((figure) => figure.usage === 'options').map((figure) => figure.optionLabel),
+  ['A', 'B', 'C', 'D'],
+)
+
 const ocrSpacedFormulaDocument = {
   ...ocrDocument,
   id: 'ocr_spaced_formula_test',
@@ -1099,6 +1191,91 @@ assert.match(ocrSpacedFormulaCandidates[0].stemMarkdown, /x _ \{1\} \+ x _ \{2\}
     solutionDocument,
   )
   assert.deepEqual(mergedCandidates.map((candidate) => candidate.questionType), ['多选题', '单选题'])
+}
+
+{
+  const lectureDocument = {
+    ...ocrDocument,
+    id: 'ocr_lecture_numbered_notes_test',
+    markdown: [
+      '## 题型 01 函数单调性',
+      '## 点方法技巧',
+      '1. 先求导函数。',
+      '2. 再判断导数符号。',
+      '1. （2026 高三・广州）函数 $f(x)=x^2$ 的单调区间是（ ）',
+      'A. $(-\\infty,0)$ B. $(0,+\\infty)$',
+      '【答案】B',
+      '【解析】由导函数判断。',
+      '## 题型 02 函数最值',
+      '## 知识总结',
+      '1. 比较端点与极值点。',
+      '2. 注意定义域。',
+      '1. （2026 高三・深圳）函数 $g(x)=x^2$ 的最小值为___。',
+    ].join('\n'),
+    pages: [],
+    assets: [],
+  }
+  const lectureCandidates = parseQuestionCandidates(lectureDocument, {
+    now: '2026-07-17T00:00:00.000Z',
+    paperKind: 'lecture',
+  })
+  assert.deepEqual(lectureCandidates.map((candidate) => candidate.questionNo), ['1', '2'])
+  assert.equal(lectureCandidates.some((candidate) => candidate.issues.some((issue) => ['missing_question_no', 'duplicate_question_no'].includes(issue.code))), false)
+  assert.equal(lectureCandidates[1].issues.some((issue) => issue.code === 'missing_answer'), true)
+  assert.doesNotMatch(lectureCandidates.map((candidate) => candidate.stemMarkdown).join('\n'), /先求导函数|比较端点与极值点/)
+
+  const notesOnlyLecture = parseQuestionCandidates({
+    ...lectureDocument,
+    id: 'ocr_lecture_notes_only_test',
+    markdown: '## 方法技巧\n1. 先求导。\n2. 再判断符号。',
+  }, { paperKind: 'lecture' })
+  assert.deepEqual(notesOnlyLecture, [])
+}
+
+// “题干答案混排 · 无答案表” must bypass answer-table detection completely.
+// Doc2X commonly emits LaTeX multiplication such as `2 \cdot`, which the
+// permissive inline-table detector can otherwise mistake for “题号 2 + 答案”.
+{
+  const mixedInlineWithoutAnswerTableDocument = {
+    ...ocrDocument,
+    id: 'ocr_mixed_inline_without_answer_table_test',
+    markdown: [
+      '1. 第一题',
+      '【答案】A',
+      '【解析】第一题解析。',
+      '',
+      '2. 第二题',
+      '【答案】C',
+      '【解析】第二题解析。',
+      '',
+      '19. 第十九题',
+      '【答案】略',
+      '【解析】',
+      String.raw`不妨设 \( S = 2 \cdot \left(\frac{1}{3}\right) + 4 \cdot \left(\frac{2}{3}\right) \)`,
+    ].join('\n'),
+    pages: [],
+    assets: [],
+  }
+  const enabledConfig = {
+    ...defaultParserConfig,
+    solutionBindingStrategy: 'auto',
+    answerTablePolicy: 'fill_empty_only',
+  }
+  const disabledConfig = {
+    ...enabledConfig,
+    answerTablePolicy: 'disabled',
+  }
+  const enabledPreview = buildParserPreview(mixedInlineWithoutAnswerTableDocument, { config: enabledConfig })
+  assert.equal(enabledPreview.diagnostics.some((diagnostic) => diagnostic.code === 'table_answer_blocked_by_existing_answer'), true)
+
+  const disabledPreview = buildParserPreview(mixedInlineWithoutAnswerTableDocument, { config: disabledConfig })
+  assert.equal(disabledPreview.diagnostics.some((diagnostic) => diagnostic.code.startsWith('table_answer_')), false)
+  assert.equal(disabledPreview.structures.some((token) => token.kind === 'answer_table'), false)
+
+  const disabledSolutions = parseSolutionDocument(mixedInlineWithoutAnswerTableDocument, { config: disabledConfig })
+  assert.equal(disabledSolutions.get('1')?.answerText, 'A')
+  assert.equal(disabledSolutions.get('2')?.answerText, 'C')
+  assert.match(disabledSolutions.get('19')?.analysisMarkdown || '', /2 \\cdot/)
 }
 
 console.log('question parser ok')
