@@ -341,45 +341,47 @@ export default function ImportJobsListPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <PageTitle
-          title="资料导入中心"
-          desc="管理所有已导入的试卷批次，配置元数据、运行识别并核对题目入库。"
-          path="/tools/import"
-        />
-        <div className="flex gap-2">
-          <Button icon={Plus} onClick={() => navigate('/tools/import/upload')}>
-            新建导入
-          </Button>
-          <Button variant="outline" icon={RefreshCcw} onClick={() => fetchJobs()}>
+    <div className="space-y-6 pb-12">
+      {/* SF Glass macOS Style Header Toolbar */}
+      <div className="sf-glass p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="sf-title-large text-zinc-900 dark:text-zinc-50 tracking-tight flex items-center gap-2.5">
+            资料导入中心
+          </h1>
+          <p className="sf-subtitle text-xs mt-1">管理所有导入试卷批次，运行全流程 OCR 识别、候选题校验与确认入库</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" icon={RefreshCcw} onClick={() => fetchJobs()} className="sf-pressable rounded-xl">
             刷新
+          </Button>
+          <Button icon={Plus} onClick={() => navigate('/tools/import/upload')} className="sf-pressable rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 shadow-md">
+            新建导入
           </Button>
         </div>
       </div>
 
       {notice && (
-        <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 px-4 py-2.5 text-xs text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-200 flex items-center gap-2 shadow-sm animate-in fade-in duration-200">
-          <Badge variant="success" className="h-4 px-1 rounded">成功</Badge>
+        <div className="sf-glass px-4 py-3 rounded-xl border-emerald-500/20 bg-emerald-50/50 text-xs text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300 flex items-center gap-2.5 shadow-sm animate-in fade-in duration-200">
+          <Badge variant="success" className="h-4 px-1.5 rounded">成功</Badge>
           <span>{notice}</span>
         </div>
       )}
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50/20 px-4 py-2.5 text-xs text-red-700 dark:border-red-900/30 dark:bg-red-955/10 dark:text-red-400 flex items-center gap-2 shadow-sm animate-in fade-in duration-200">
-          <Badge variant="danger" className="h-4 px-1 rounded">错误</Badge>
+        <div className="sf-glass px-4 py-3 rounded-xl border-red-500/20 bg-red-50/50 text-xs text-red-700 dark:bg-red-950/20 dark:text-red-300 flex items-center gap-2.5 shadow-sm animate-in fade-in duration-200">
+          <Badge variant="danger" className="h-4 px-1.5 rounded">错误</Badge>
           <span>{error}</span>
         </div>
       )}
 
-      <Panel title="导入批次列表">
+      <Panel title="导入批次列表" className="sf-glass rounded-2xl overflow-hidden">
         {loading && jobs.length === 0 ? (
           <div className="flex h-36 items-center justify-center">
             <LoaderCircle className="size-6 animate-spin text-zinc-400" />
           </div>
         ) : jobs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl bg-zinc-50/10">
-            <FileText className="size-8 text-zinc-300 dark:text-zinc-700 mb-3" />
-            <p className="text-xs text-zinc-400 dark:text-zinc-500">暂无导入批次，请点击右上方“新建导入”上传文件</p>
+          <div className="flex flex-col items-center justify-center p-12 border border-dashed border-zinc-200/60 dark:border-zinc-800/60 rounded-2xl bg-white/40 dark:bg-zinc-900/30">
+            <FileText className="size-10 text-zinc-300 dark:text-zinc-600 mb-3" />
+            <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">暂无导入批次，点击右上方“新建导入”开始上传文件</p>
           </div>
         ) : (
           <div className="space-y-3">

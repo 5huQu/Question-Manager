@@ -123,26 +123,37 @@ export function ImportJobQuestionsPage() {
   const hasActiveFilters = Boolean(query.trim() || stage || questionType || difficulty || knowledgePoint || solutionMethod)
 
   return (
-    <section className="mock-page-root min-h-[calc(100vh-6rem)] space-y-6 overflow-y-auto bg-zinc-50/30 p-6 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
-      <div className="flex flex-col gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800 sm:flex-row sm:items-start sm:justify-between">
+    <section className="mock-page-root min-h-[calc(100vh-6rem)] space-y-6 overflow-y-auto bg-zinc-50/30 p-6 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50 pb-16">
+      {/* SF Glass Top Header */}
+      <div className="sf-glass p-5 rounded-2xl flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between shadow-sm">
         <div>
-          <p className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400">资料导入 / 批次题目</p>
-          <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+          <p className="sf-subtitle text-xs">资料导入 / 批次题目结果</p>
+          <h1 className="sf-title-large text-zinc-900 dark:text-zinc-50 mt-1">
             {importJob.paperTitle || importJob.title || '资料导入批次'}
           </h1>
-          <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">批次 ID: {importJob.id}</p>
+          <p className="mt-1 text-[11px] text-zinc-400 font-mono">ID: {importJob.id}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2.5 items-center">
           <Button
             size="sm"
             variant="outline"
             onClick={classifyImportJobQuestions}
             icon={classifying ? LoaderCircle : Tags}
             disabled={classifying || !items.length}
+            className="sf-pressable rounded-xl"
           >
             {classifying ? '分类中...' : '数据分类'}
           </Button>
-          <Button size="sm" variant="outline" icon={replacingBasket?LoaderCircle:Replace} disabled={replacingBasket||!items.length} onClick={replaceBasket}>{replacingBasket?'替换中...':'替换到试卷篮'}</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            icon={replacingBasket ? LoaderCircle : Replace}
+            disabled={replacingBasket || !items.length}
+            onClick={replaceBasket}
+            className="sf-pressable rounded-xl"
+          >
+            {replacingBasket ? '替换中...' : '替换到试卷篮'}
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -150,24 +161,28 @@ export function ImportJobQuestionsPage() {
             onClick={() => primaryDocumentId
               ? navigate(importJobDocumentPath(importJob.id, primaryDocumentId), { replace: true })
               : navigate('/tools/import', { replace: true })}
+            className="sf-pressable rounded-xl"
           >
             返回导入批次
           </Button>
-          <Button size="sm" variant="outline" onClick={reload} icon={RefreshCcw}>刷新</Button>
+          <Button size="sm" variant="outline" onClick={reload} icon={RefreshCcw} className="sf-pressable rounded-xl">
+            刷新
+          </Button>
         </div>
       </div>
 
-      <div className="grid gap-2 rounded-xl border border-zinc-200 bg-white p-4 text-zinc-950 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 sm:grid-cols-2 lg:grid-cols-6">
-        <Input className="h-9 border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 focus-visible:ring-1 focus-visible:ring-zinc-950 dark:focus-visible:ring-zinc-300" placeholder="搜索本批次题目..." value={query} onChange={(event) => setQuery(event.target.value)} />
+      {/* SF Glass Search & Filter Panel */}
+      <div className="sf-glass grid gap-3 rounded-2xl p-4 sm:grid-cols-2 lg:grid-cols-6 shadow-sm">
+        <Input className="h-9 border-zinc-200/80 bg-white/80 dark:border-zinc-800/80 dark:bg-zinc-900/80 rounded-xl focus-visible:ring-1 focus-visible:ring-zinc-950 dark:focus-visible:ring-zinc-300 text-xs" placeholder="搜索本批次题目..." value={query} onChange={(event) => setQuery(event.target.value)} />
         <SelectFilter label="全部学段" value={stage} options={tagLibraries.data?.stages ?? ['高一', '高二', '高三']} onChange={setStage} />
         <SelectFilter label="全部题型" value={questionType} options={tagLibraries.data?.questionTypes ?? ['单选题', '多选题', '填空题', '解答题']} onChange={setQuestionType} />
         <SelectFilter label="全部难度" value={difficulty} options={tagLibraries.data?.difficultyLabels ?? ['基础', '中等', '较难', '压轴']} onChange={setDifficulty} />
         <SelectFilter label="全部知识点" value={knowledgePoint} options={tagLibraries.data?.knowledgePoints ?? []} onChange={setKnowledgePoint} />
         <SelectFilter label="全部解题方法" value={solutionMethod} options={tagLibraries.data?.solutionMethods ?? []} onChange={setSolutionMethod} />
         {hasActiveFilters ? (
-          <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400 lg:col-span-6">
+          <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400 lg:col-span-6 pt-1">
             <span>已筛选出 {filteredItems.length} / {items.length} 题</span>
-            <button className="font-semibold text-zinc-950 hover:underline dark:text-zinc-50" type="button" onClick={() => { setQuery(''); setStage(''); setQuestionType(''); setDifficulty(''); setKnowledgePoint(''); setSolutionMethod('') }}>重置筛选</button>
+            <button className="font-semibold text-zinc-950 hover:underline dark:text-zinc-50 cursor-pointer" type="button" onClick={() => { setQuery(''); setStage(''); setQuestionType(''); setDifficulty(''); setKnowledgePoint(''); setSolutionMethod('') }}>重置筛选</button>
           </div>
         ) : null}
       </div>
