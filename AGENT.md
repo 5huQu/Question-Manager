@@ -41,7 +41,7 @@ Do not treat `docs/lkcoffee-mcp.example.json` as project business documentation;
   - `frontend/src/App.tsx`: frontend routes, application shell, first-run setup entry, and update reminder.
   - `frontend/src/api/`: frontend API wrappers. Pages should call these functions instead of scattering `fetch('/api/...')`.
   - `frontend/src/pages/import-v2/`: current main import flow pages.
-  - `frontend/src/pages/pdf-slicer/`: legacy PDF slicing, manual annotation, and review pages.
+  - Legacy PDF-slicer pages have been removed; historical URLs render a read-only retirement notice or a V2 redirect.
   - `frontend/src/pages/questions/`: question bank list, detail, create, and paper preview pages.
   - `frontend/src/components/questions/`: question rendering, editing, figures, and BBoxCanvas.
   - `frontend/src/components/ui/` and `frontend/src/components/ui.tsx`: shadcn-style base components.
@@ -54,10 +54,8 @@ Do not treat `docs/lkcoffee-mcp.example.json` as project business documentation;
   - `server/src/repositories/`: SQL, row mapping, and transaction-oriented data access.
   - `server/src/types/`: business types such as SourceDocument, OCRDocument, and QuestionCandidate.
   - `server/tag_libraries/`: built-in learning tag libraries.
-- `server/python/`: Python OCR, slicing, page rendering, and experiment scripts.
-  - `server/python/src/cutter/`: legacy PDF slicing.
-  - `server/python/src/ocr/`: legacy OCR runner and cleanup logic.
-  - `server/python/scripts/`: utility scripts called by the Node backend.
+- `server/python/`: allowlisted runtime tools for V2 PDF page rendering/cropping and question classification.
+  - Production packages contain only `crop_manual_annotation.py`, `render_pdf_page.py`, `classify_question_bank.py`, and the minimal config module.
   - `server/python/requirements.txt` and `runtime-requirements.txt`: source-development and packaged-runtime dependencies.
 - `electron/`: Electron main process, preload, and update logic.
   - `electron/main.cjs`: starts the local API service in packaged desktop builds and points `QUESTION_DATA_DIR` to Electron userData.
@@ -219,22 +217,9 @@ Implementation rules:
 - Candidate bank insertion must go through `commitQuestionCandidate(s)`, which writes `question_bank_items` and marks the candidate as `committed`.
 - Manual fixing goes through `createOrRestoreCandidateManualFixSession()` to create/restore a legacy annotation session. The fix should update the candidate rather than directly editing the question bank.
 
-## Legacy PDF Slicing Path
+## Retired V1 PDF Slicing Data
 
-The legacy path is still used for PDF slicing center, OCR queue, legacy pending bank, and manual annotation:
-
-- routes: `server/src/routes/pdf-slicer/`
-- services: `server/src/services/pdf-slicer/`
-- repositories: `server/src/repositories/pdf-slicer/`
-- Python: `server/python/src/cutter/`, `server/python/scripts/run_cut.py`, `run_glm_ocr.py`
-- frontend: `frontend/src/pages/pdf-slicer/`, `frontend/src/pages/PendingBankPage.tsx`
-
-When changing the legacy path, preserve:
-
-- run, batch, review item, solution item, and annotation session state semantics.
-- legacy pending-bank API response shapes.
-- figure crop/selection, solution figures, and GLM figure/text binding behavior.
-- LibreOffice detection warnings for Word/DOCX uploads.
+V1 production routes, services, repositories, Python runners, and frontend pages are retired. Until the real-data migration gate passes, preserve the V1 tables and explicitly isolated read/migration adapters; do not reintroduce write routes.
 
 ## Question Bank, Tags, Basket, Export
 

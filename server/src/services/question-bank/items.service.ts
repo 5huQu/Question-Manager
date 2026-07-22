@@ -3,34 +3,23 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { Request } from 'express'
 import { createQuestion, normalizeScoringRubric, normalizeTotalScore } from '../../db/questions.js'
-import { getRun } from '../../db/runs.js'
-import { upload, dataDir } from '../../config.js'
+import { candidateFigureUpload, dataDir } from '../../config.js'
 import { resolveStoragePath } from '../../utils/paths.js'
 import { buildSearchText, difficultyLabel10, normalizeDifficultyScore10 } from '../../utils/search.js'
 import { inferQuestionType } from '../../utils/question-type.js'
 import { cleanQuestionNoLabel, syncQuestionBankItemToOcrDraft } from '../../utils/ocr-helpers.js'
 import { blocksToMarkdown, stripDoc2xNoiseComments } from '../../utils/rich-content.js'
 import { nowIso, createId } from '../../utils/ids.js'
-import { bindInlineImageReferences, imageExtension } from '../../utils/figure-helpers.js'
+import { bindInlineImageReferences } from '../../utils/figure-helpers.js'
+import { imageExtension } from '../../utils/image-operations.js'
 import { normalizeTags } from '../tags/tag-libraries.js'
 import { formatReviewPayload, validateQuestionMarkdown } from '../../utils/validation.js'
 import { pythonCommand } from '../settings/python.js'
-import { normalizeOcrProvider, readOcrSettings } from '../settings/ocr-settings.js'
-import { createQuestionBankRerunTask, startMigratedOcrBackground } from '../pdf-slicer/ocr.js'
-import { importJsonQuestionsFromSliceRun } from './import.js'
+import { rerunQuestionBankItemOcr } from './ocr-rerun.js'
 import { RouteError } from '../../utils/http-error.js'
 import * as repo from '../../repositories/question-bank/items.repo.js'
 
-export const questionFigureUpload = upload.single('file')
-
-function isImportFlowV2SourceId(value: unknown) {
-  const sourceId = String(value || '')
-  return sourceId.startsWith('ifv2:') || sourceId.startsWith('ifv2-job:')
-}
-
-function isImportFlowV2Question(item: NonNullable<ReturnType<typeof repo.getQuestion>>) {
-  return Boolean(item.importSourceId) || isImportFlowV2SourceId(item.sourceRunId)
-}
+export const questionFigureUpload = candidateFigureUpload.single('file')
 
 export function listItems(query: Record<string, unknown>) {
   const requestedPage = Number.parseInt(String(query.page || '1'), 10)
@@ -47,28 +36,10 @@ export function listItems(query: Record<string, unknown>) {
   })
 }
 
-export function rerunItemOcr(id: string, body: Record<string, unknown>) {
+export function rerunItemOcr(id: string, _body: Record<string, unknown>) {
   const item = repo.getQuestion(id)
   if (!item) throw new RouteError(404, '题目不存在。')
-  if (isImportFlowV2Question(item)) {
-    throw new RouteError(400, 'V2 导入题目请回到导入批次中重新识别或修正。')
-  }
-  if (!item.sourceRunId) throw new RouteError(400, '当前题目没有原始 OCR 来源，无法重新 OCR。')
-  const sourceRun = getRun(item.sourceRunId)
-  if (sourceRun?.ocrProvider === 'doc2x' || normalizeOcrProvider(readOcrSettings().ocrProvider) === 'doc2x') {
-    throw new RouteError(400, 'Doc2X 首版仅支持整批完全重跑，暂不支持单题重新 OCR。')
-  }
-  const route = String(body?.route || 'whole_question_json')
-  const forceRegionOcr = route === 'region_chunks'
-  try {
-    const task = createQuestionBankRerunTask([id], { forceRegionOcr })
-    repo.markRerunRunning(task.runId)
-    startMigratedOcrBackground(task.runId)
-    return { ...task, route: forceRegionOcr ? 'region_chunks' : 'whole_question_json', message: forceRegionOcr ? '已启动当前题分块 OCR。' : '已启动当前题整图 OCR。' }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new RouteError(500, `单题重新 OCR 启动失败：${message}`)
-  }
+  return rerunQuestionBankItemOcr(id)
 }
 
 export function createItem(body: Record<string, unknown>) {
@@ -108,23 +79,6 @@ export function importJsonItems(body: unknown) {
     })
   })
   return { items: created, count: created.length }
-}
-
-export function importJsonItemsFromSlices(body: Record<string, any>) {
-  const questions = Array.isArray(body) ? body : Array.isArray(body.questions) ? body.questions : []
-  const runId = String(body.runId || '')
-  if (!runId) throw new RouteError(400, '请选择已切分的 PDF 批次。')
-  if (!questions.length) throw new RouteError(400, '请提供 questions 数组。')
-  try {
-    return importJsonQuestionsFromSliceRun(runId, questions as Array<Record<string, unknown>>, {
-      sourceTitle: String(body.sourceTitle || body.paperTitle || ''),
-      stage: String(body.stage || '高三'),
-      createCollection: body.createCollection !== false,
-    })
-  } catch (error) {
-    const typed = error as Error & { status?: number; details?: unknown }
-    throw new RouteError(typed.status || 500, typed.message, typed.details)
-  }
 }
 
 export function getItem(id: string) {

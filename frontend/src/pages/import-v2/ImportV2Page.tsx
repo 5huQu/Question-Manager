@@ -22,219 +22,38 @@ import {
   PencilLine,
   ChevronLeft,
 } from 'lucide-react'
-import { importV2Api, type ImportFlowV2ParserConfig, type ImportParserPreset, type ImportV2Candidate, type ImportV2ImportJob, type ImportV2ImportJobDocument, type ImportV2ImportJobDocumentDetail, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics, type ParseCandidatesRequest, type ParseCandidatesResult } from '@/api/importV2'
+import { importV2Api, type ImportFlowV2ParserConfig, type ImportParserPreset, type ImportV2ImportJob, type ImportV2ImportJobDocument, type ImportV2ImportJobDocumentDetail, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics, type ParseCandidatesRequest, type ParseCandidatesResult } from '@/api/importV2'
 import { settingsApi } from '@/api/settings'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { MarkdownStructurePreviewDialog, type MarkdownPreviewDocumentOption } from '@/components/import-v2/MarkdownStructurePreviewDialog'
+import { ImportMetadataEditorDialog } from '@/components/import-v2/ImportMetadataEditorDialog'
 import { ReviewActionMenu } from '@/components/import-v2/ReviewActionMenu'
 import { FigureGallery, MarkdownWithInlineFigures, QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import { PageTitle, Panel, Badge, Button, Empty } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
-import { Modal } from '@/components/dialogs/Modal'
-import { importIssueLabel, parserDiagnosticLabel } from '@/utils/importDiagnostics'
+import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling'
+import { parserDiagnosticLabel } from '@/utils/importDiagnostics'
 import { assetUrl } from '@/utils/questionDisplay'
-import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
+import {
+  fromCandidate,
+  importJobDocumentRoleLabel,
+  issueLabel,
+  metadataDraftFromDoc,
+  metadataPayload,
+  normalizeSourceOcrProvider,
+  paperKindOptions,
+  questionReviewState,
+  reviewTabFromQuery,
+  sourceOcrProviderLabel,
+  type SourceMetadataDraft,
+  type UnifiedQuestion,
+  type UploadDocumentMode,
+} from './importV2PageModel'
+import { buildCandidateReviewModel } from './candidateReviewModel'
+import { candidateDetailPath, candidateReviewPath, importJobDocumentPath, importJobQuestionsPath, legacySourceDocumentPath } from './importV2Routes'
+import { fetchCandidates, fetchImportJob, fetchOcrDocuments, fetchParserPresets, fetchSourceDocuments, invalidateImportV2Queries } from './importV2Queries'
 
-// ── 统一数据适配层 (Unified Model Adapter) ─────────────────────────────
-
-type UnifiedQuestion = {
-  id: string
-  questionNo: string
-  questionType: string
-  stemMarkdown: string
-  answerText: string
-  analysisMarkdown: string
-  status: 'ready' | 'needs_review' | 'needs_manual_fix' | 'blocked' | 'committed' | 'banked' | 'skipped'
-  issues: Array<{
-    severity: 'warning' | 'error'
-    message: string
-    code?: string
-    relatedBlockIds?: string[]
-    relatedFigures?: ImportV2Candidate['figures']
-  }>
-  figures: Array<{ id: string; usage: string; path: string; pageNo?: number; blockId?: string; sourceBlockId?: string; bbox?: any; inlineMarker?: string; optionLabel?: string }>
-  hasFigures: boolean
-  similarQuestions?: any[]
-  parseDiagnostics: Array<{ code: string; severity: 'info' | 'warning' | 'error'; message: string; questionNo?: string }>
-  rawItem: any
-}
-
-type PaperKind = ImportV2SourceDocument['paperKind']
-type UploadDocumentMode = 'single_document' | 'separated_documents'
-type SourceOcrProvider = 'doc2x' | 'glm'
-
-type SourceMetadataDraft = {
-  paperTitle: string
-  batchName: string
-  stage: string
-  subject: string
-  province: string
-  city: string
-  paperKind: PaperKind
-  examYear: string
-  sourceOrg: string
-  hasWatermark: boolean
-  watermarkTerms: string
-}
-
-const paperKindOptions: Array<{ value: PaperKind; label: string }> = [
-  { value: 'gaokao_real', label: '高考真题' },
-  { value: 'local_real', label: '地方真题' },
-  { value: 'mock', label: '模拟题' },
-  { value: 'school_exam', label: '校内考试' },
-  { value: 'lecture', label: '讲义' },
-  { value: 'daily_practice', label: '日常练习' },
-  { value: 'unknown', label: '未分类' },
-]
-
-const subjectOptions = ['语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理']
-
-const gaokaoRegionOptions = [
-  {
-    value: '全国一卷 / 新课标全国 I 卷',
-    label: '全国一卷 / 新课标全国 I 卷',
-    provinces: '浙江、山东、江苏、河北、福建、湖北、湖南、广东、江西、安徽、河南',
-  },
-  {
-    value: '全国二卷 / 新课标全国 II 卷',
-    label: '全国二卷 / 新课标全国 II 卷',
-    provinces: '海南、重庆、贵州、广西、甘肃、四川、云南、辽宁、吉林、黑龙江、内蒙古、陕西、青海、宁夏、山西、新疆、西藏',
-  },
-  { value: '北京', label: '北京', provinces: '' },
-  { value: '上海', label: '上海', provinces: '' },
-  { value: '天津', label: '天津', provinces: '' },
-]
-
-function isGaokaoRegion(value: string) {
-  return gaokaoRegionOptions.some((item) => item.value === value)
-}
-
-function metadataDraftFromDoc(doc?: Partial<ImportV2SourceDocument> | null): SourceMetadataDraft {
-  const watermark = doc?.metadata && typeof doc.metadata.watermark === 'object' && !Array.isArray(doc.metadata.watermark)
-    ? doc.metadata.watermark as { enabled?: unknown; terms?: unknown }
-    : {}
-  const watermarkTerms = Array.isArray(watermark.terms)
-    ? watermark.terms.map((item) => String(item || '')).filter(Boolean).join('\n')
-    : ''
-  return {
-    paperTitle: doc?.paperTitle || '',
-    batchName: doc?.batchName || '',
-    stage: doc?.stage || '高三',
-    subject: doc?.subject || '数学',
-    province: doc?.province || '',
-    city: doc?.city || '',
-    paperKind: doc?.paperKind || 'unknown',
-    examYear: doc?.examYear ? String(doc.examYear) : '',
-    sourceOrg: doc?.sourceOrg || '',
-    hasWatermark: Boolean(watermark.enabled),
-    watermarkTerms,
-  }
-}
-
-function metadataPayload(draft: SourceMetadataDraft) {
-  const isGaokaoReal = draft.paperKind === 'gaokao_real'
-  const gaokaoProvince = isGaokaoReal && isGaokaoRegion(draft.province) ? draft.province.trim() : ''
-  const paperTitle = draft.paperTitle.trim()
-  return {
-    paperTitle,
-    batchName: draft.batchName.trim() || paperTitle,
-    stage: draft.stage.trim() || '高三',
-    subject: draft.subject.trim() || '数学',
-    province: isGaokaoReal ? gaokaoProvince : draft.province.trim(),
-    city: isGaokaoReal ? '' : draft.city.trim(),
-    paperKind: draft.paperKind || 'unknown',
-    examYear: Number(draft.examYear || 0) || 0,
-    sourceOrg: isGaokaoReal ? '' : draft.sourceOrg.trim(),
-    metadata: {
-      watermark: {
-        enabled: draft.hasWatermark,
-        terms: draft.watermarkTerms.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
-      },
-    },
-  }
-}
-
-function hasVisibleFigureMarkup(...contents: string[]) {
-  return contents.some((content) =>
-    /!\[[^\]]*]\(\s*(?:<([^>\n]+)>|([^\s)\n]+))\s*\)/.test(String(content || '')) ||
-    /<!--\s*DOC2X_FIGURE:([^\s>]+)\s*-->/.test(String(content || ''))
-  )
-}
-
-function fromCandidate(c: ImportV2Candidate): UnifiedQuestion {
-  return {
-    id: c.id,
-    questionNo: c.questionNo || '',
-    questionType: c.questionType || '',
-    stemMarkdown: c.stemMarkdown || '',
-    answerText: c.answerText || '',
-    analysisMarkdown: c.analysisMarkdown || '',
-    status: c.status === 'committed' ? 'committed' : c.status === 'ready' ? 'ready' : c.status === 'blocked' ? 'blocked' : 'needs_review',
-    issues: (c.issues || []).map(iss => ({
-      severity: iss.severity,
-      message: iss.message,
-      code: iss.code,
-      relatedBlockIds: iss.relatedBlockIds,
-      relatedFigures: iss.relatedFigures,
-    })),
-    figures: (c.figures || []).map(fig => ({
-      id: fig.id,
-      usage: fig.usage,
-      path: fig.path,
-      pageNo: fig.pageNo,
-      blockId: fig.blockId,
-      sourceBlockId: fig.sourceBlockId,
-      bbox: fig.bbox,
-      inlineMarker: fig.inlineMarker,
-      optionLabel: fig.optionLabel,
-    })),
-    hasFigures: hasVisibleFigureMarkup(c.stemMarkdown, c.answerText, c.analysisMarkdown),
-    parseDiagnostics: (c.parseDiagnostics || []).map((diagnostic) => ({
-      code: diagnostic.code,
-      severity: diagnostic.severity,
-      message: diagnostic.message,
-      questionNo: diagnostic.questionNo,
-    })),
-    rawItem: c
-  }
-}
-
-function issueLabel(code?: string) {
-  return importIssueLabel(code)
-}
-
-function importJobDocumentRoleLabel(role?: ImportV2ImportJobDocument['role']) {
-  return ({
-    full: '完整文档',
-    questions: '原卷',
-    solutions: '答案解析',
-  } as Record<string, string>)[role || ''] || ''
-}
-
-function normalizeSourceOcrProvider(value: unknown): SourceOcrProvider {
-  return String(value || '').toLowerCase() === 'glm' ? 'glm' : 'doc2x'
-}
-
-function sourceOcrProviderLabel(provider: SourceOcrProvider) {
-  return provider === 'glm' ? 'GLM-OCR' : 'Doc2X'
-}
-
-function reviewTabFromQuery(value: string | null): 'all' | 'ready' | 'warning' | 'error' {
-  return value === 'ready' || value === 'warning' || value === 'error' ? value : 'all'
-}
-
-function questionReviewState(question: UnifiedQuestion, isCommitted: boolean) {
-  if (isCommitted) return { label: '已入库', dotClass: 'bg-emerald-500', textClass: 'text-emerald-700 dark:text-emerald-400' }
-  if (question.status === 'blocked' || question.status === 'needs_manual_fix' || question.issues.some((issue) => issue.severity === 'error')) {
-    return { label: '需要修正', dotClass: 'bg-red-500', textClass: 'text-red-700 dark:text-red-400' }
-  }
-  if (question.issues.some((issue) => issue.severity === 'warning') || question.similarQuestions?.length) {
-    return { label: '建议核对', dotClass: 'bg-amber-500', textClass: 'text-amber-700 dark:text-amber-400' }
-  }
-  return { label: '可以入库', dotClass: 'bg-emerald-500', textClass: 'text-muted-foreground' }
-}
-
-export default function ImportV2Page() {
+export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { jobId: importJobIdFromPath, sourceDocumentId: sourceDocumentIdFromPath, candidateId: candidateIdFromPath } = useParams<{ jobId: string; sourceDocumentId: string; candidateId: string }>()
@@ -242,7 +61,7 @@ export default function ImportV2Page() {
   const sourceDocumentIdFromQuery = searchParams.get('sourceDocumentId') || ''
   const importJobIdFromQuery = searchParams.get('importJobId') || ''
   const currentImportJobId = importJobIdFromPath || importJobIdFromQuery
-  const isCandidatesRoute = Boolean(location.pathname.includes('/candidates'))
+  const isCandidatesRoute = view === 'candidate'
   const routeSyncKey = `${currentImportJobId || ''}:${sourceDocumentIdFromPath || ''}:${candidateIdFromPath || ''}:${isCandidatesRoute ? 'candidates' : 'document'}`
 
   const [sourceDocuments, setSourceDocuments] = useState<ImportV2SourceDocument[]>([])
@@ -303,13 +122,6 @@ export default function ImportV2Page() {
   const ocrSettings = useAsync(() => settingsApi.getOcrSettings(), [])
   const currentOcrProvider = normalizeSourceOcrProvider(ocrSettings.data?.ocrProvider)
   const currentOcrProviderLabel = sourceOcrProviderLabel(currentOcrProvider)
-  const configuredStageOptions = gradeOptionsForTeachingStages(ocrSettings.data?.teachingStages)
-  const stageOptions = metadataDraft.stage && !configuredStageOptions.includes(metadataDraft.stage)
-    ? [metadataDraft.stage, ...configuredStageOptions]
-    : configuredStageOptions
-  const selectedStage = ensureStageValue(metadataDraft.stage, stageOptions)
-  const metadataSubject = metadataDraft.subject || '数学'
-  const visibleSubjectOptions = subjectOptions.includes(metadataSubject) ? subjectOptions : [metadataSubject, ...subjectOptions]
 
   // JSON 模式下的已选择 OCR
   const selectedOcr = useMemo(() => ocrDocuments.find((item) => item.id === selectedOcrId) || null, [ocrDocuments, selectedOcrId])
@@ -445,7 +257,7 @@ export default function ImportV2Page() {
   }, [selectedDoc])
 
   function jobDocumentUrl(importJobId: string, sourceDocumentId: string) {
-    return `/tools/import/jobs/${encodeURIComponent(importJobId)}/documents/${encodeURIComponent(sourceDocumentId)}`
+    return importJobDocumentPath(importJobId, sourceDocumentId)
   }
 
   function currentImportJobIdForSourceDocument(sourceDocumentId: string) {
@@ -457,17 +269,15 @@ export default function ImportV2Page() {
     const importJobId = currentImportJobIdForSourceDocument(sourceDocumentId)
     return importJobId
       ? jobDocumentUrl(importJobId, sourceDocumentId)
-      : `/tools/import/documents/${encodeURIComponent(sourceDocumentId)}`
+      : legacySourceDocumentPath(sourceDocumentId)
   }
 
   function candidatesUrl(sourceDocumentId: string) {
-    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
-    return `${documentUrl(sourceDocumentId)}/candidates${suffix}`
+    return candidateReviewPath(documentUrl(sourceDocumentId), searchParams.toString())
   }
 
   function candidateUrl(sourceDocumentId: string, candidateId: string) {
-    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : ''
-    return `${documentUrl(sourceDocumentId)}/candidates/${encodeURIComponent(candidateId)}${suffix}`
+    return candidateDetailPath(documentUrl(sourceDocumentId), candidateId, searchParams.toString())
   }
 
   function navigateToDocument(sourceDocumentId: string, options?: { replace?: boolean }) {
@@ -509,10 +319,11 @@ export default function ImportV2Page() {
     }
   }, [showCheckArea])
 
-  async function loadLists() {
+  async function loadLists(options: { force?: boolean } = { force: true }) {
+    if (options.force) invalidateImportV2Queries()
     const [sourceResult, ocrResult] = await Promise.all([
-      importV2Api.listSourceDocuments(),
-      importV2Api.listOcrDocuments(),
+      fetchSourceDocuments(options),
+      fetchOcrDocuments(options),
     ])
     setSourceDocuments(sourceResult.items)
     setOcrDocuments(ocrResult.items)
@@ -532,12 +343,12 @@ export default function ImportV2Page() {
   }
 
   useEffect(() => {
-    loadLists().catch((err) => setError(err instanceof Error ? err.message : String(err)))
+    loadLists({ force: false }).catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }, [])
 
   useEffect(() => {
     let active = true
-    importV2Api.listParserPresets()
+    fetchParserPresets()
       .then((result) => {
         if (!active) return
         setParserPresets(result.items || [])
@@ -555,7 +366,7 @@ export default function ImportV2Page() {
   useEffect(() => {
     if (!currentImportJobId) return undefined
     let active = true
-    importV2Api.getImportJob(currentImportJobId)
+    fetchImportJob(currentImportJobId)
       .then((result) => {
         if (!active) return
         setActiveImportJob(result.importJob)
@@ -680,85 +491,80 @@ export default function ImportV2Page() {
     }
   }, [candidateIdFromPath, questions])
 
-  useEffect(() => {
-    if (!runningSourceDocumentKey) return undefined
-    let active = true
+  useVisibilityAwarePolling(async (signal) => {
     const runningIds = runningSourceDocumentKey.split('|').filter(Boolean)
-    const poll = async () => {
-      const settled = await Promise.all(runningIds.map(async (id) => {
-        try {
-          return { id, result: await importV2Api.getSourceDocumentOcrStatus(id) }
-        } catch (err) {
-          return { id, error: err }
-        }
-      }))
-      if (!active) return
-
-      const errors = settled.filter((item): item is { id: string; error: unknown } => 'error' in item)
-      if (errors.length) {
-        setError(errors[0].error instanceof Error ? errors[0].error.message : String(errors[0].error))
+    const settled = await Promise.all(runningIds.map(async (id) => {
+      try {
+        return { id, result: await importV2Api.getSourceDocumentOcrStatus(id) }
+      } catch (err) {
+        return { id, error: err }
       }
+    }))
+    if (signal.aborted) return
 
-      const results = settled
-        .filter((item): item is { id: string; result: Awaited<ReturnType<typeof importV2Api.getSourceDocumentOcrStatus>> } => 'result' in item)
-        .map((item) => item.result)
-      if (!results.length) return
+    const errors = settled.filter((item): item is { id: string; error: unknown } => 'error' in item)
+    if (errors.length) {
+      setError(errors[0].error instanceof Error ? errors[0].error.message : String(errors[0].error))
+    }
 
-      const sourceById = new Map(results.map((result) => [result.sourceDocument.id, result.sourceDocument]))
-      setSourceDocuments((items) => items.map((item) => sourceById.get(item.id) || item))
+    const results = settled
+      .filter((item): item is { id: string; result: Awaited<ReturnType<typeof importV2Api.getSourceDocumentOcrStatus>> } => 'result' in item)
+      .map((item) => item.result)
+    if (!results.length) return
 
-      const newOcrDocuments = results.map((result) => result.ocrDocument).filter(Boolean) as ImportV2OcrDocument[]
-      if (newOcrDocuments.length) {
-        setOcrDocuments((items) => {
-          const byId = new Map(items.map((item) => [item.id, item]))
-          for (const item of newOcrDocuments) byId.set(item.id, item)
-          return Array.from(byId.values())
-        })
-      }
+    const sourceById = new Map(results.map((result) => [result.sourceDocument.id, result.sourceDocument]))
+    setSourceDocuments((items) => items.map((item) => sourceById.get(item.id) || item))
 
-      const finished = results.filter((result) => ['ocr_succeeded', 'ocr_failed'].includes(result.task.status))
-      if (!finished.length) return
+    const newOcrDocuments = results.map((result) => result.ocrDocument).filter(Boolean) as ImportV2OcrDocument[]
+    if (newOcrDocuments.length) {
+      setOcrDocuments((items) => {
+        const byId = new Map(items.map((item) => [item.id, item]))
+        for (const item of newOcrDocuments) byId.set(item.id, item)
+        return Array.from(byId.values())
+      })
+    }
 
-      const finishedIds = new Set(finished.map((result) => result.sourceDocument.id))
-      setRunningSourceDocumentId((current) => finishedIds.has(current) ? '' : current)
+    const finished = results.filter((result) => ['ocr_succeeded', 'ocr_failed'].includes(result.task.status))
+    if (!finished.length) return
 
-      const failed = finished.filter((result) => result.task.status === 'ocr_failed')
-      if (failed.length) {
-        const nextErrors = Object.fromEntries(failed.map((result) => [
-          result.sourceDocument.id,
-          result.task.error || 'OCR 识别失败。',
-        ]))
-        setSourceOcrErrors((current) => ({ ...current, ...nextErrors }))
-        setError(Object.values(nextErrors)[0])
-      }
+    const finishedIds = new Set(finished.map((result) => result.sourceDocument.id))
+    setRunningSourceDocumentId((current) => finishedIds.has(current) ? '' : current)
 
-      await loadLists()
-      if (!active) return
-      if (currentImportJobId) {
-        try {
-          const result = await importV2Api.getImportJob(currentImportJobId)
-          if (!active) return
-          setActiveImportJob(result.importJob)
-          setActiveImportJobDocuments(result.documents || [])
-        } catch {
-          // 列表状态已经刷新；批次详情刷新失败时不打断 OCR 状态轮询。
-        }
-      }
-      const succeeded = finished.filter((result) => result.task.status === 'ocr_succeeded')
-      const selectedFinished = selectedDoc?.id ? finished.some((result) => result.sourceDocument.id === selectedDoc.id) : false
-      const firstSelectedOcr = results.find((result) => result.sourceDocument.id === selectedDoc?.id)?.ocrDocument
-      if (firstSelectedOcr) setSelectedOcrId(firstSelectedOcr.id)
-      if (succeeded.length && selectedFinished) {
-        showNotice(succeeded.length > 1 ? `${succeeded.length} 份资料识别完成。` : '识别完成。请在右侧点击“生成待确认题目”继续。')
+    const failed = finished.filter((result) => result.task.status === 'ocr_failed')
+    if (failed.length) {
+      const nextErrors = Object.fromEntries(failed.map((result) => [
+        result.sourceDocument.id,
+        result.task.error || 'OCR 识别失败。',
+      ]))
+      setSourceOcrErrors((current) => ({ ...current, ...nextErrors }))
+      setError(Object.values(nextErrors)[0])
+    }
+
+    await loadLists()
+    if (signal.aborted) return
+    if (currentImportJobId) {
+      try {
+        const result = await fetchImportJob(currentImportJobId, { force: true })
+        if (signal.aborted) return
+        setActiveImportJob(result.importJob)
+        setActiveImportJobDocuments(result.documents || [])
+      } catch {
+        // 列表状态已经刷新；批次详情刷新失败时不打断 OCR 状态轮询。
       }
     }
-    void poll()
-    const timer = window.setInterval(() => void poll(), 3000)
-    return () => {
-      active = false
-      window.clearInterval(timer)
+    const succeeded = finished.filter((result) => result.task.status === 'ocr_succeeded')
+    const selectedFinished = selectedDoc?.id ? finished.some((result) => result.sourceDocument.id === selectedDoc.id) : false
+    const firstSelectedOcr = results.find((result) => result.sourceDocument.id === selectedDoc?.id)?.ocrDocument
+    if (firstSelectedOcr) setSelectedOcrId(firstSelectedOcr.id)
+    if (succeeded.length && selectedFinished) {
+      showNotice(succeeded.length > 1 ? `${succeeded.length} 份资料识别完成。` : '识别完成。请在右侧点击“生成待确认题目”继续。')
     }
-  }, [currentImportJobId, runningSourceDocumentKey, selectedDoc?.id])
+  }, {
+    enabled: Boolean(runningSourceDocumentKey),
+    intervalMs: 3_000,
+    immediate: true,
+    onError: (err) => setError(err instanceof Error ? err.message : String(err)),
+  })
 
   // 清除通知和错误
   function showNotice(message: string) {
@@ -1082,7 +888,7 @@ export default function ImportV2Page() {
       if (ocrDoc) {
         setSelectedOcrId(ocrDoc.id)
       }
-      const result = await importV2Api.listCandidates(item.id)
+      const result = await fetchCandidates(item.id, { force: Boolean(options.showLoadedNotice) })
       const unified = (result.items || []).map(fromCandidate)
       setQuestions(unified)
       setDiagnostics(result.diagnostics || null)
@@ -1244,7 +1050,7 @@ export default function ImportV2Page() {
     setBusy('load-candidates')
     setError('')
     try {
-      const result = await importV2Api.listCandidates(selectedOcr.sourceDocumentId)
+      const result = await fetchCandidates(selectedOcr.sourceDocumentId)
       const unified = (result.items || []).map(fromCandidate)
       setQuestions(unified)
       setDiagnostics(result.diagnostics || null)
@@ -1349,7 +1155,8 @@ export default function ImportV2Page() {
       })
       const sourceDocumentId = String(activeQuestion.rawItem?.sourceDocumentId || selectedDoc?.id || sourceDocumentIdFromPath || '')
       if (sourceDocumentId) {
-        const result = await importV2Api.listCandidates(sourceDocumentId)
+        invalidateImportV2Queries()
+        const result = await fetchCandidates(sourceDocumentId, { force: true })
         setQuestions((result.items || []).map(fromCandidate))
         setDiagnostics(result.diagnostics || null)
       }
@@ -1390,7 +1197,8 @@ export default function ImportV2Page() {
       })
       const sourceDocumentId = String(activeQuestion.rawItem?.sourceDocumentId || selectedDoc?.id || sourceDocumentIdFromPath || '')
       if (sourceDocumentId) {
-        const result = await importV2Api.listCandidates(sourceDocumentId)
+        invalidateImportV2Queries()
+        const result = await fetchCandidates(sourceDocumentId, { force: true })
         setQuestions((result.items || []).map(fromCandidate))
         setDiagnostics(result.diagnostics || null)
       }
@@ -1672,10 +1480,24 @@ export default function ImportV2Page() {
     }
   }
 
-  // 多选与过滤计算
-  const activeQuestion = useMemo(() => {
-    return questions.find(q => q.id === activeQuestionId) || null
-  }, [questions, activeQuestionId])
+  const reviewModel = useMemo(() => buildCandidateReviewModel({
+    questions,
+    activeQuestionId,
+    activeTab,
+    activeDiagnosticCode,
+    committedIds,
+  }), [activeDiagnosticCode, activeQuestionId, activeTab, committedIds, questions])
+  const {
+    activeQuestion,
+    activeQuestionCommitted,
+    activeQuestionReviewState,
+    committedQuestionCount,
+    filteredQuestions,
+    parseDiagnosticCounts,
+    reviewTabs,
+    selectableList,
+    visibleActiveParseDiagnostics,
+  } = reviewModel
 
   useEffect(() => {
     if (activeQuestion) {
@@ -1684,63 +1506,6 @@ export default function ImportV2Page() {
       setEditingQuestionNo('')
     }
   }, [activeQuestion?.id, activeQuestion?.questionNo])
-
-  const visibleActiveParseDiagnostics = useMemo(() => {
-    if (!activeQuestion) return []
-    const issueCodes = new Set((activeQuestion.issues || []).map((issue) => issue.code).filter(Boolean))
-    return (activeQuestion.parseDiagnostics || []).filter((diagnostic) => !issueCodes.has(diagnostic.code))
-  }, [activeQuestion])
-
-  const filteredQuestions = useMemo(() => {
-    return questions.filter(q => {
-      if (activeDiagnosticCode && !q.parseDiagnostics.some((diagnostic) => diagnostic.code === activeDiagnosticCode)) {
-        return false
-      }
-      if (activeTab === 'ready') {
-        return q.status === 'ready' && q.issues.length === 0
-      }
-      if (activeTab === 'warning') {
-        return q.issues.some(iss => iss.severity === 'warning') || (q.similarQuestions && q.similarQuestions.length > 0)
-      }
-      if (activeTab === 'error') {
-        return q.status === 'blocked' || q.status === 'needs_manual_fix' || q.issues.some(iss => iss.severity === 'error')
-      }
-      return true
-    })
-  }, [questions, activeTab, activeDiagnosticCode])
-
-  const parseDiagnosticCounts = useMemo(() => {
-    const counts = new Map<string, { code: string; count: number; severity: 'info' | 'warning' | 'error' }>()
-    for (const question of questions) {
-      const seen = new Set<string>()
-      for (const diagnostic of question.parseDiagnostics || []) {
-        if (!diagnostic.code || seen.has(diagnostic.code)) continue
-        seen.add(diagnostic.code)
-        const current = counts.get(diagnostic.code) || { code: diagnostic.code, count: 0, severity: diagnostic.severity }
-        current.count += 1
-        if (diagnostic.severity === 'error' || (diagnostic.severity === 'warning' && current.severity === 'info')) current.severity = diagnostic.severity
-        counts.set(diagnostic.code, current)
-      }
-    }
-    return Array.from(counts.values()).sort((left, right) => {
-      const severityOrder = { error: 0, warning: 1, info: 2 }
-      return severityOrder[left.severity] - severityOrder[right.severity] || right.count - left.count || left.code.localeCompare(right.code)
-    })
-  }, [questions])
-
-  const reviewTabs = useMemo(() => [
-    { key: 'all' as const, label: '全部', count: questions.length },
-    { key: 'ready' as const, label: '可以入库', count: questions.filter(q => q.status === 'ready' && q.issues.length === 0).length },
-    { key: 'warning' as const, label: '建议核对', count: questions.filter(q => q.issues.some(iss => iss.severity === 'warning') || q.similarQuestions && q.similarQuestions.length > 0).length },
-    { key: 'error' as const, label: '需要修正', count: questions.filter(q => q.status === 'blocked' || q.status === 'needs_manual_fix' || q.issues.some(iss => iss.severity === 'error')).length },
-  ], [questions])
-
-  const committedQuestionCount = useMemo(
-    () => questions.filter((question) => question.status === 'committed' || committedIds.has(question.id)).length,
-    [committedIds, questions],
-  )
-  const activeQuestionCommitted = Boolean(activeQuestion && (activeQuestion.status === 'committed' || committedIds.has(activeQuestion.id)))
-  const activeQuestionReviewState = activeQuestion ? questionReviewState(activeQuestion, activeQuestionCommitted) : null
 
   useEffect(() => {
     if (!activeQuestionId) return
@@ -1755,11 +1520,6 @@ export default function ImportV2Page() {
     })
     return () => window.cancelAnimationFrame(frame)
   }, [activeQuestionId, filteredQuestions])
-
-  // 批量全选判断
-  const selectableList = useMemo(() => {
-    return filteredQuestions.filter(q => q.status !== 'committed' && !committedIds.has(q.id))
-  }, [filteredQuestions, committedIds])
 
   const allSelected = useMemo(() => {
     return selectableList.length > 0 && selectableList.every(q => selectedIds.has(q.id))
@@ -2315,7 +2075,7 @@ export default function ImportV2Page() {
                               setError('当前资料尚未关联导入批次，请刷新页面完成迁移后再查看。')
                               return
                             }
-                            navigate(`/tools/import/jobs/${encodeURIComponent(activeImportJob.id)}/questions`)
+                            navigate(importJobQuestionsPath(activeImportJob.id))
                           }}
                           className="w-full sm:w-auto"
                         >
@@ -2881,149 +2641,16 @@ export default function ImportV2Page() {
         </div>
       )}
 
-      {showMetadataEditor && (
-        <Modal
-          title="修改试卷批次属性"
-          desc="修改此批次会将属性同步写入底下的所有关联文档以及所有的待确认题目记录中。"
+      {showMetadataEditor ? (
+        <ImportMetadataEditorDialog
+          draft={metadataDraft}
+          setDraft={setMetadataDraft}
+          teachingStages={ocrSettings.data?.teachingStages}
+          saving={busy === `metadata-${activeImportJob?.id}`}
           onClose={() => setShowMetadataEditor(false)}
-        >
-          <div className="space-y-4 py-2">
-            <div className="space-y-4">
-              {/* 第一部分：基本档案 */}
-              <div className="space-y-3">
-                <label className="space-y-1.5 block">
-                  <span className="text-[13px] font-medium text-zinc-500">试卷名称</span>
-                  <input
-                    className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
-                    value={metadataDraft.paperTitle}
-                    onChange={(event) => setMetadataDraft((draft) => ({ ...draft, paperTitle: event.target.value }))}
-                  />
-                </label>
-                <label className="space-y-1.5 block">
-                  <span className="text-[13px] font-medium text-zinc-500">批次名称</span>
-                  <input
-                    className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
-                    value={metadataDraft.batchName}
-                    onChange={(event) => setMetadataDraft((draft) => ({ ...draft, batchName: event.target.value }))}
-                  />
-                </label>
-              </div>
-
-              {/* 第二部分：分类属性 */}
-              <div className="p-3.5 bg-zinc-50/50 dark:bg-zinc-900/20 border border-zinc-150 dark:border-zinc-800 rounded-xl">
-                <div className="mb-2.5 text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
-                  分类与年份信息
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="space-y-1.5 block">
-                    <span className="text-[13px] font-medium text-zinc-500">学段/年级</span>
-                    <select
-                      className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
-                      value={selectedStage}
-                      onChange={(event) => setMetadataDraft((draft) => ({ ...draft, stage: event.target.value }))}
-                    >
-                      {stageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                    </select>
-                  </label>
-                  <label className="space-y-1.5 block">
-                    <span className="text-[13px] font-medium text-zinc-500">学科</span>
-                    <select
-                      className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
-                      value={metadataSubject}
-                      onChange={(event) => setMetadataDraft((draft) => ({ ...draft, subject: event.target.value }))}
-                    >
-                      {visibleSubjectOptions.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
-                    </select>
-                  </label>
-                  <label className="space-y-1.5 block">
-                    <span className="text-[13px] font-medium text-zinc-500">资料类型</span>
-                    <select
-                      className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
-                      value={metadataDraft.paperKind}
-                      onChange={(event) => setMetadataDraft((draft) => {
-                        const paperKind = event.target.value as PaperKind
-                        if (paperKind === 'gaokao_real') {
-                          return { ...draft, paperKind, province: isGaokaoRegion(draft.province) ? draft.province : '', city: '', sourceOrg: '' }
-                        }
-                        return { ...draft, paperKind }
-                      })}
-                    >
-                      {paperKindOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                    </select>
-                  </label>
-                  <label className="space-y-1.5 block">
-                    <span className="text-[13px] font-medium text-zinc-500">年份</span>
-                    <input
-                      type="number"
-                      min="0"
-                      className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
-                      value={metadataDraft.examYear}
-                      onChange={(event) => setMetadataDraft((draft) => ({ ...draft, examYear: event.target.value }))}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {/* 第三部分：归属来源 */}
-              <div className="p-3.5 bg-zinc-50/50 dark:bg-zinc-900/20 border border-zinc-150 dark:border-zinc-800 rounded-xl">
-                <div className="mb-2.5 text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
-                  归属与来源机构
-                </div>
-                {metadataDraft.paperKind === 'gaokao_real' ? (
-                  <label className="space-y-1.5 block">
-                    <span className="text-[13px] font-medium text-zinc-500">试卷适用地区</span>
-                    <select
-                      className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
-                      value={isGaokaoRegion(metadataDraft.province) ? metadataDraft.province : ''}
-                      onChange={(event) => setMetadataDraft((draft) => ({ ...draft, province: event.target.value, city: '', sourceOrg: '' }))}
-                    >
-                      <option value="">请选择全国卷或直辖市</option>
-                      {gaokaoRegionOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                    </select>
-                  </label>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="space-y-1.5 block">
-                        <span className="text-[13px] font-medium text-zinc-500">省份</span>
-                        <input
-                          className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
-                          value={metadataDraft.province}
-                          onChange={(event) => setMetadataDraft((draft) => ({ ...draft, province: event.target.value }))}
-                        />
-                      </label>
-                      <label className="space-y-1.5 block">
-                        <span className="text-[13px] font-medium text-zinc-500">城市</span>
-                        <input
-                          className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
-                          value={metadataDraft.city}
-                          onChange={(event) => setMetadataDraft((draft) => ({ ...draft, city: event.target.value }))}
-                        />
-                      </label>
-                    </div>
-                    <label className="space-y-1.5 block">
-                      <span className="text-[13px] font-medium text-zinc-500">来源机构</span>
-                      <input
-                        className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800 transition-all"
-                        value={metadataDraft.sourceOrg}
-                        onChange={(event) => setMetadataDraft((draft) => ({ ...draft, sourceOrg: event.target.value }))}
-                      />
-                    </label>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-4 border-t border-zinc-100 dark:border-zinc-900 mt-4">
-              <Button variant="outline" onClick={() => setShowMetadataEditor(false)}>
-                取消
-              </Button>
-              <Button disabled={Boolean(busy)} onClick={handleSaveSourceMetadata}>
-                {busy === `metadata-${activeImportJob?.id}` ? '保存中...' : '保存修改'}
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
+          onSave={handleSaveSourceMetadata}
+        />
+      ) : null}
 
       <MarkdownStructurePreviewDialog
         key={markdownPreviewTarget ? `${markdownPreviewTarget.ocrDocumentId}:${markdownPreviewTarget.candidateId || ''}:${markdownPreviewTarget.focusKind || ''}` : 'closed'}

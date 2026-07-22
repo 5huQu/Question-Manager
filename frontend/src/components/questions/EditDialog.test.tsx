@@ -73,7 +73,7 @@ describe('EditDialog unified content editor integration', () => {
   })
 
   it('maps editor content back to markdown and rich block fields before saving', async () => {
-    const onSave = vi.fn(async () => undefined)
+    const onSave = vi.fn(async (_draft?: Partial<QuestionItem>) => undefined)
     await renderDialog(onSave)
 
     await act(async () => {
@@ -89,8 +89,31 @@ describe('EditDialog unified content editor integration', () => {
     expect(onSave.mock.calls[0][0]?.problemBlocks).toEqual(expect.any(Array))
   })
 
+  it('saves edited metadata through the dialog footer', async () => {
+    const onSave = vi.fn(async (_draft?: Partial<QuestionItem>) => undefined)
+    await renderDialog(onSave)
+
+    await act(async () => {
+      ;[...container.querySelectorAll('button')].find((button) => button.textContent === '题目元数据')!.click()
+    })
+    const sourceInput = [...container.querySelectorAll('input')].find((input) => input.value === '')
+    expect(sourceInput).toBeTruthy()
+    await act(async () => {
+      const input = sourceInput!
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(input, '2026 模拟卷')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      ;[...container.querySelectorAll('button')].find((button) => button.textContent === '保存')!.click()
+    })
+
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][0]?.sourceTitle).toBe('2026 模拟卷')
+  })
+
   it('keeps the draft and exposes revision conflicts returned by the API', async () => {
-    const onSave = vi.fn(async () => {
+    const onSave = vi.fn(async (_draft?: Partial<QuestionItem>) => {
       throw new ApiError('内容版本冲突', 409, { message: '服务器已有更新', actualContentRevision: 5 })
     })
     await renderDialog(onSave)

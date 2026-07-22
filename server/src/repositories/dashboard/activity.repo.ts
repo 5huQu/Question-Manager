@@ -18,7 +18,7 @@ const SOURCES: Record<ActivityMetricKey, { table: string; column: string }> = {
   questionsCreated: { table: 'question_bank_items', column: 'created_at' },
   questionsUpdated: { table: 'question_bank_items', column: 'updated_at' },
   exportsCreated: { table: 'question_bank_export_records', column: 'created_at' },
-  ocrCompleted: { table: 'pdf_slicer_runs', column: 'ocr_finished_at' },
+  ocrCompleted: { table: 'source_document_ocr_tasks', column: 'finished_at' },
 }
 
 function tableHasColumn(table: string, column: string) {

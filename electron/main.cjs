@@ -1,10 +1,11 @@
-const { app, BrowserWindow, dialog, screen } = require('electron')
+const { app, BrowserWindow, dialog, screen, shell } = require('electron')
 const { spawn } = require('node:child_process')
 const fs = require('node:fs')
 const http = require('node:http')
 const net = require('node:net')
 const path = require('node:path')
 const { initUpdateHandlers } = require('./updater.cjs')
+const { isAllowedExternalUrl, isSameAppOrigin, popupSecurityOptions } = require('./security.cjs')
 
 let serverProcess = null
 
@@ -127,6 +128,28 @@ function setupDisplayAwareZoom(win) {
   })
 }
 
+function secureWebContents(contents, appUrl) {
+  contents.on('will-navigate', (event, navigationUrl) => {
+    if (isSameAppOrigin(navigationUrl, appUrl)) return
+    event.preventDefault()
+    if (isAllowedExternalUrl(navigationUrl)) {
+      void shell.openExternal(navigationUrl).catch((error) => console.error('Failed to open external URL:', error))
+    }
+  })
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isSameAppOrigin(url, appUrl)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: { webPreferences: popupSecurityOptions() },
+      }
+    }
+    if (isAllowedExternalUrl(url)) {
+      void shell.openExternal(url).catch((error) => console.error('Failed to open external URL:', error))
+    }
+    return { action: 'deny' }
+  })
+}
+
 async function createWindow() {
   const port = await getFreePort()
   await startServer(port)
@@ -141,6 +164,7 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       additionalArguments: [`--api-base-url=http://127.0.0.1:${port}`],
     },
   })
@@ -148,6 +172,7 @@ async function createWindow() {
   setupDisplayAwareZoom(win)
 
   const appUrl = `http://127.0.0.1:${port}`
+  secureWebContents(win.webContents, appUrl)
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (isMainFrame) {
       dialog.showErrorBox(

@@ -1,24 +1,12 @@
-import fs from 'node:fs'
-import path from 'node:path'
 import type { Express } from 'express'
 import { db } from '../../db/connection.js'
-import { listExportRecords, createExportRecord, mapExportRecord, exportRecordFileSize } from '../../db/export-records.js'
+import { listExportRecords } from '../../db/export-records.js'
 import { restoreExportRecordToCollection } from '../../db/export-records.js'
-import { getRun } from '../../db/runs.js'
 import { collectionExists } from '../../db/collections.js'
-import { nowIso, safeName } from '../../utils/ids.js'
-import { assetPathFor } from '../../utils/paths.js'
 import {
   normalizeNumber,
   normalizeExportRecordSourceType,
-  normalizeExportVariant,
 } from '../../services/question-bank/export-records.js'
-import {
-  exportRunWorksheetPdf,
-  exportRunExamPdf,
-} from '../../services/question-bank/export.js'
-import { normalizeExamZhScoreConfig } from '../../utils/exam-zh.js'
-import { runExportItems } from '../../services/question-bank/collections.js'
 
 export function mountExportRecordsRoutes(app: Express) {
   app.get('/api/question-bank/export-records', (req, res) => {
@@ -71,54 +59,4 @@ export function mountExportRecordsRoutes(app: Express) {
     res.json({ items: listExportRecords({ sourceType: 'collection', collectionId: id, limit }) })
   })
 
-  app.get('/api/tools/pdf-slicer/runs/:runId/export-records', (req, res) => {
-    const runId = req.params.runId
-    if (!getRun(runId)) {
-      res.status(404).json({ error: '批次不存在。' })
-      return
-    }
-    const limit = Math.floor(normalizeNumber(req.query.limit, 100))
-    res.json({ items: listExportRecords({ sourceType: 'run', runId, limit }) })
-  })
-
-  app.post('/api/tools/pdf-slicer/runs/:runId/export-batch', (req, res) => {
-    const runId = req.params.runId
-    const format = req.body?.format === 'pdf' ? 'pdf' : 'latex'
-    const title = String(req.body?.title || '').trim()
-    const template = req.body?.template === 'worksheet' ? 'worksheet' : 'exam'
-    const variant = normalizeExportVariant(req.body?.variant)
-    const watermarkText = String(req.body?.watermarkText || '').trim()
-    const scoreConfig = normalizeExamZhScoreConfig(req.body?.scoreConfig)
-    try {
-      const run = getRun(runId)
-      if (!run) throw new Error('批次不存在。')
-      const result = run.materialType === 'lecture' || template === 'worksheet'
-        ? exportRunWorksheetPdf(runId, { title, variant })
-        : exportRunExamPdf(runId, { title, variant })
-      const rel = assetPathFor(result.path)
-      const record = createExportRecord({
-        sourceType: 'run',
-        runId,
-        title: title || run.paperTitle || run.pdfName,
-        format: result.format,
-        variant: `${template}-${variant}`,
-        filename: path.basename(result.path),
-        path: rel,
-        url: `/assets/${rel}`,
-        items: runExportItems(runId),
-        contentLength: exportRecordFileSize(rel),
-        questionCount: Number(run.approvedQuestions || run.totalQuestions || 0),
-      })
-      res.json({
-        filename: path.basename(result.path),
-        format: result.format,
-        url: `/assets/${rel}`,
-        path: rel,
-        exportRecord: mapExportRecord(record),
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      res.status(500).json({ error: `批次导出失败：${message}` })
-    }
-  })
 }

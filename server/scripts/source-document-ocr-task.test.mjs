@@ -39,6 +39,7 @@ const originalFetch = globalThis.fetch
 let preuploadCalls = 0
 let uploadCalls = 0
 let statusCalls = 0
+let fetchMode = 'success'
 globalThis.fetch = async (url, init = {}) => {
   const href = String(url)
   const method = String(init.method || 'GET').toUpperCase()
@@ -58,18 +59,28 @@ globalThis.fetch = async (url, init = {}) => {
   }
   if (href === 'https://doc2x.example.test/api/v2/parse/status?uid=uid_doc2x_status_flow' && method === 'GET') {
     statusCalls += 1
+    if (fetchMode === 'failure') {
+      return new Response(JSON.stringify({
+        code: 'success',
+        data: { status: 'failed', detail: 'provider rejected document', progress: 35 },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
     return new Response(JSON.stringify(doc2xPayload), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
   throw new Error(`Unexpected fetch call: ${method} ${href}`)
 }
 
 const { closeDatabase } = await import('../dist/index.js')
+const { db } = await import('../dist/db/connection.js')
 const { createSourceDocument } = await import('../dist/repositories/source-documents.repo.js')
-const { listOcrDocuments } = await import('../dist/repositories/ocr-documents.repo.js')
+const { createQuestionCandidate } = await import('../dist/repositories/question-candidates.repo.js')
+const { createOcrDocument, listOcrDocuments } = await import('../dist/repositories/ocr-documents.repo.js')
+const taskRepo = await import('../dist/repositories/source-document-ocr-tasks.repo.js')
 const { assetPathFor } = await import('../dist/utils/paths.js')
 const {
   getSourceDocumentOcrStatus,
   loadOcrDocument,
+  recoverInterruptedSourceDocumentOcrTasks,
   startSourceDocumentOcr,
 } = await import('../dist/services/import-flow-v2/import-flow-v2.service.js')
 
@@ -108,6 +119,13 @@ try {
   const started = startSourceDocumentOcr(sourceDocumentId, { provider: 'doc2x' })
   assert.equal(started.task.provider, 'doc2x')
   assert.equal(started.task.status, 'ocr_running')
+  assert.equal(started.task.attempt, 1)
+  assert.equal(started.task.lifecycleStatus, 'running')
+  assert.throws(
+    () => startSourceDocumentOcr(sourceDocumentId, { provider: 'doc2x' }),
+    (error) => error?.status === 409,
+    'the database must reject a second active task for the same source document',
+  )
 
   const finished = await waitForOcrStatus(sourceDocumentId, 'ocr_succeeded')
   assert.equal(finished.task.provider, 'doc2x')
@@ -126,6 +144,127 @@ try {
   assert.equal(preuploadCalls, 1)
   assert.equal(uploadCalls, 1)
   assert.equal(statusCalls, 1)
+
+  const rerun = startSourceDocumentOcr(sourceDocumentId, { provider: 'doc2x', force: true })
+  assert.equal(rerun.task.attempt, 2)
+  await waitForOcrStatus(sourceDocumentId, 'ocr_succeeded')
+  const attempts = db.prepare(`
+    SELECT attempt, status FROM source_document_ocr_tasks
+    WHERE source_document_id = ? ORDER BY attempt
+  `).all(sourceDocumentId).map((row) => ({ attempt: row.attempt, status: row.status }))
+  assert.deepEqual(attempts, [
+    { attempt: 1, status: 'succeeded' },
+    { attempt: 2, status: 'succeeded' },
+  ], 'force reruns must append immutable attempt history')
+  createQuestionCandidate({
+    id: 'candidate_committed_ocr_rerun_guard',
+    sourceDocumentId,
+    questionNo: '1',
+    status: 'committed',
+    committedQuestionId: 'question_committed_ocr_rerun_guard',
+    committedAt: new Date().toISOString(),
+  })
+  assert.throws(
+    () => startSourceDocumentOcr(sourceDocumentId, { provider: 'doc2x', force: true }),
+    (error) => error?.status === 409,
+    'force rerun must remain blocked after any candidate is committed',
+  )
+
+  const interruptedId = 'src_restart_interrupted'
+  createSourceDocument({
+    id: interruptedId,
+    title: 'Interrupted OCR',
+    originalFileName: 'interrupted.pdf',
+    filePath: '',
+    fileType: 'pdf',
+    provider: 'glm',
+    status: 'ocr_running',
+  })
+  const interruptedQueued = taskRepo.createQueuedTask({ sourceDocumentId: interruptedId, provider: 'glm' })
+  taskRepo.claimTask(interruptedQueued.id, 'dead-process', '2000-01-01T00:00:00.000Z')
+  recoverInterruptedSourceDocumentOcrTasks()
+  const interrupted = getSourceDocumentOcrStatus(interruptedId)
+  assert.equal(interrupted.task.lifecycleStatus, 'interrupted')
+  assert.equal(interrupted.task.errorCode, 'process_interrupted')
+  assert.equal(interrupted.sourceDocument.status, 'ocr_failed')
+  recoverInterruptedSourceDocumentOcrTasks()
+  assert.equal(getSourceDocumentOcrStatus(interruptedId).task.lifecycleStatus, 'interrupted', 'recovery must be idempotent')
+
+  const repairedId = 'src_restart_repaired'
+  createSourceDocument({
+    id: repairedId,
+    title: 'Repair OCR',
+    originalFileName: 'repair.pdf',
+    filePath: '',
+    fileType: 'pdf',
+    provider: 'doc2x',
+    status: 'ocr_running',
+  })
+  const repairTask = taskRepo.createQueuedTask({ sourceDocumentId: repairedId, provider: 'doc2x' })
+  taskRepo.claimTask(repairTask.id, 'dead-process', '2000-01-01T00:00:00.000Z')
+  const repairedOcr = createOcrDocument({
+    id: 'ocrdoc_recovery_repair',
+    sourceDocumentId: repairedId,
+    provider: 'doc2x',
+    rawResultPath: '',
+    markdownPath: '',
+    blocksJsonPath: '',
+    assetsJsonPath: '',
+  })
+  assert.ok(repairedOcr)
+  recoverInterruptedSourceDocumentOcrTasks()
+  const repaired = getSourceDocumentOcrStatus(repairedId)
+  assert.equal(repaired.task.lifecycleStatus, 'succeeded')
+  assert.equal(repaired.task.ocrDocumentId, repairedOcr.id)
+  assert.equal(repaired.sourceDocument.status, 'ocr_succeeded')
+
+  const failedId = 'src_provider_failure'
+  const failedPath = path.join(tempRoot, 'data', 'import-flow-v2', 'source-documents', failedId, 'original.pdf')
+  fs.mkdirSync(path.dirname(failedPath), { recursive: true })
+  fs.writeFileSync(failedPath, Buffer.from('%PDF-1.4\n%%EOF\n'))
+  createSourceDocument({
+    id: failedId,
+    title: 'Provider Failure',
+    originalFileName: 'provider-failure.pdf',
+    filePath: assetPathFor(failedPath),
+    fileType: 'pdf',
+    provider: 'doc2x',
+    status: 'uploaded',
+  })
+  fetchMode = 'failure'
+  startSourceDocumentOcr(failedId, { provider: 'doc2x' })
+  const failed = await waitForOcrStatus(failedId, 'ocr_failed')
+  assert.equal(failed.task.lifecycleStatus, 'failed')
+  assert.equal(failed.task.errorCode, 'doc2x_provider_error')
+  assert.match(failed.task.error, /provider rejected document/)
+
+  const rollbackId = 'src_completion_rollback'
+  const rollbackPath = path.join(tempRoot, 'data', 'import-flow-v2', 'source-documents', rollbackId, 'original.pdf')
+  fs.mkdirSync(path.dirname(rollbackPath), { recursive: true })
+  fs.writeFileSync(rollbackPath, Buffer.from('%PDF-1.4\n%%EOF\n'))
+  createSourceDocument({
+    id: rollbackId,
+    title: 'Completion Rollback',
+    originalFileName: 'completion-rollback.pdf',
+    filePath: assetPathFor(rollbackPath),
+    fileType: 'pdf',
+    provider: 'doc2x',
+    status: 'uploaded',
+  })
+  db.exec(`
+    CREATE TRIGGER fail_ocr_success_update
+    BEFORE UPDATE OF status ON source_documents
+    WHEN NEW.id = '${rollbackId}' AND NEW.status = 'ocr_succeeded'
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated source update failure');
+    END;
+  `)
+  fetchMode = 'success'
+  startSourceDocumentOcr(rollbackId, { provider: 'doc2x' })
+  const rolledBack = await waitForOcrStatus(rollbackId, 'ocr_failed')
+  assert.equal(rolledBack.task.lifecycleStatus, 'failed')
+  assert.equal(listOcrDocuments({ sourceDocumentId: rollbackId }).length, 0, 'OCRDocument insert must roll back with source update')
+  db.exec('DROP TRIGGER fail_ocr_success_update')
 
   console.log('source document ocr task ok')
 } catch (error) {

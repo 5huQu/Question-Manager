@@ -1,8 +1,7 @@
 import { useEffect, useState, lazy, Suspense } from 'react'
 import { Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { FilterX, Plus, ShoppingBag } from 'lucide-react'
+import { FilterX, Tags } from 'lucide-react'
 import { settingsApi } from '@/api/settings'
-import { collectionsApi } from '@/api/collections'
 import { importV2Api } from '@/api/importV2'
 import { UpdateCard } from '@/components/UpdateCard'
 import { AppPageHeader } from '@/components/layout/AppPageHeader'
@@ -12,26 +11,22 @@ import type { OcrSettings } from '@/types'
 import type { UpdateCheckResult } from '@/api/client'
 
 const TraditionalWorkbenchPage = lazy(() => import('@/pages/workbench/TraditionalWorkbenchPage'))
-const ImportV2Page = lazy(() => import('@/pages/import-v2/ImportV2Page'))
+const ImportDocumentReviewPage = lazy(() => import('@/pages/import-v2/ImportDocumentReviewPage'))
+const ImportCandidateReviewPage = lazy(() => import('@/pages/import-v2/ImportCandidateReviewPage'))
 const ImportJobsListPage = lazy(() => import('@/pages/import-v2/ImportJobsListPage'))
 const ImportUploadPage = lazy(() => import('@/pages/import-v2/ImportUploadPage'))
 const ImportJobQuestionsPage = lazy(() => import('@/pages/import-v2/ImportJobQuestionsPage'))
-const PdfSlicerPage = lazy(() => import('@/pages/pdf-slicer/PdfSlicerPage'))
-const OcrQueuePage = lazy(() => import('@/pages/ocr/OcrQueuePage'))
 const QuestionBankPage = lazy(() => import('@/pages/questions/QuestionBankPage'))
 const QuestionCreatePage = lazy(() => import('@/pages/questions/QuestionCreatePage'))
-const RunQuestionsPage = lazy(() => import('@/pages/questions/RunQuestionsPage'))
 const MarkdownPreviewPage = lazy(() => import('@/pages/questions/MarkdownPreviewPage'))
 const LayoutWorkbenchPage = lazy(() => import('@/pages/questions/LayoutWorkbenchPage'))
 const LayoutDraftsPage = lazy(() => import('@/pages/questions/LayoutDraftsPage'))
 const LayoutDraftPreviewPage = lazy(() => import('@/pages/questions/LayoutDraftPreviewPage'))
-const PendingBankPage = lazy(() => import('@/pages/PendingBankPage'))
 const LearningTagsPage = lazy(() => import('@/pages/LearningTagsPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const ExportRecordsPage = lazy(() => import('@/pages/ExportRecordsPage'))
 const SetupPage = lazy(() => import('@/pages/SetupPage').then(module => ({ default: module.SetupPage })))
 const QuestionBasket = lazy(() => import('@/components/QuestionBasket').then(module => ({ default: module.QuestionBasket })))
-const AnnotationWorkbenchPage = lazy(() => import('@/pages/pdf-slicer/AnnotationWorkbenchPage'))
 const CandidateFixWorkbenchPage = lazy(() => import('@/pages/import-v2/CandidateFixWorkbenchPage'))
 const QuestionEditorMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/QuestionEditorMockPage')) : null
 
@@ -61,15 +56,6 @@ function LegacyCandidateFixRedirect() {
   }, [candidateId, navigate, searchParams])
 
   return null
-}
-
-function RunQuestionsRoute() {
-  const { runId = '' } = useParams()
-  const decodedRunId = decodeURIComponent(runId)
-  if (!decodedRunId.startsWith('ifv2:') && !decodedRunId.startsWith('ifv2-job:')) {
-    return <RunQuestionsPage />
-  }
-  return <LegacyImportV2RunQuestionsRedirect runId={decodedRunId} />
 }
 
 function LegacyImportV2RunQuestionsRedirect({ runId }: { runId: string }) {
@@ -188,21 +174,19 @@ export default function App() {
                 <Route path="/workbench" element={<TraditionalWorkbenchPage />} />
                 <Route path="/tools/import" element={<ImportJobsListPage />} />
                 <Route path="/tools/import/upload" element={<ImportUploadPage />} />
-                <Route path="/tools/import/jobs/:jobId" element={<ImportV2Page />} />
-                <Route path="/tools/import/jobs/:jobId/candidates" element={<ImportV2Page />} />
-                <Route path="/tools/import/jobs/:jobId/candidates/:candidateId" element={<ImportV2Page />} />
-                <Route path="/tools/import/jobs/:jobId/documents/:sourceDocumentId" element={<ImportV2Page />} />
-                <Route path="/tools/import/jobs/:jobId/documents/:sourceDocumentId/candidates" element={<ImportV2Page />} />
-                <Route path="/tools/import/jobs/:jobId/documents/:sourceDocumentId/candidates/:candidateId" element={<ImportV2Page />} />
+                <Route path="/tools/import/jobs/:jobId" element={<ImportDocumentReviewPage />} />
+                <Route path="/tools/import/jobs/:jobId/candidates" element={<ImportCandidateReviewPage />} />
+                <Route path="/tools/import/jobs/:jobId/candidates/:candidateId" element={<ImportCandidateReviewPage />} />
+                <Route path="/tools/import/jobs/:jobId/documents/:sourceDocumentId" element={<ImportDocumentReviewPage />} />
+                <Route path="/tools/import/jobs/:jobId/documents/:sourceDocumentId/candidates" element={<ImportCandidateReviewPage />} />
+                <Route path="/tools/import/jobs/:jobId/documents/:sourceDocumentId/candidates/:candidateId" element={<ImportCandidateReviewPage />} />
                 <Route path="/tools/import/jobs/:jobId/documents/:sourceDocumentId/candidates/:candidateId/manual-fix" element={<CandidateFixWorkbenchPage />} />
                 <Route path="/tools/import/jobs/:jobId/questions" element={<ImportJobQuestionsPage />} />
                 <Route path="/tools/import/jobs/:jobId/exports" element={<ExportRecordsPage />} />
-                <Route path="/tools/import/documents/:sourceDocumentId" element={<ImportV2Page />} />
-                <Route path="/tools/import/documents/:sourceDocumentId/candidates" element={<ImportV2Page />} />
-                <Route path="/tools/import/documents/:sourceDocumentId/candidates/:candidateId" element={<ImportV2Page />} />
+                <Route path="/tools/import/documents/:sourceDocumentId" element={<ImportDocumentReviewPage />} />
+                <Route path="/tools/import/documents/:sourceDocumentId/candidates" element={<ImportCandidateReviewPage />} />
+                <Route path="/tools/import/documents/:sourceDocumentId/candidates/:candidateId" element={<ImportCandidateReviewPage />} />
                 <Route path="/tools/import/documents/:sourceDocumentId/candidates/:candidateId/manual-fix" element={<CandidateFixWorkbenchPage />} />
-                <Route path="/tools/pdf-slicer" element={<PdfSlicerPage />} />
-                <Route path="/tools/pdf-slicer/ocr-jobs" element={<OcrQueuePage />} />
                 <Route path="/questions" element={<QuestionBankPage />} />
                 <Route path="/questions/new" element={<QuestionCreatePage />} />
                 <Route path="/questions/basket" element={<QuestionBasket mode="page" />} />
@@ -213,9 +197,8 @@ export default function App() {
                 <Route path="/learning-tags" element={<LearningTagsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/exports" element={<ExportRecordsPage />} />
-                <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<RunQuestionsRoute />} />
-                <Route path="/tools/pdf-slicer/runs/:runId/pending-bank" element={<PendingBankPage />} />
-                <Route path="/tools/pdf-slicer/batches/:batchId/annotate" element={<AnnotationWorkbenchPage />} />
+                <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<LegacyPdfSlicerRunRedirect />} />
+                <Route path="/tools/pdf-slicer/*" element={<LegacyPdfSlicerGone />} />
                 <Route path="/tools/import/candidates/:candidateId/manual-fix" element={<LegacyCandidateFixRedirect />} />
                 {QuestionEditorMockPage ? <Route path="/mock/question-editor" element={<QuestionEditorMockPage />} /> : null}
 
@@ -253,6 +236,23 @@ export default function App() {
   )
 }
 
+function LegacyPdfSlicerRunRedirect() {
+  const { runId = '' } = useParams()
+  const decodedRunId = decodeURIComponent(runId)
+  if (decodedRunId.startsWith('ifv2:') || decodedRunId.startsWith('ifv2-job:')) {
+    return <LegacyImportV2RunQuestionsRedirect runId={decodedRunId} />
+  }
+  return <LegacyPdfSlicerGone />
+}
+
+function LegacyPdfSlicerGone() {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-6 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
+      旧版 PDF 切题功能已退役。历史数据仍保留为只读归档；新资料请使用“资料导入”。
+    </div>
+  )
+}
+
 function UpdateAutoCheck({ enabled, onUpdateAvailable }: {
   enabled: boolean
   onUpdateAvailable: (result: UpdateCheckResult) => void
@@ -280,40 +280,13 @@ export function dispatchResetFilters() {
 }
 
 export function QuestionBankHeaderActions() {
-  const navigate = useNavigate()
-  const [basketCount, setBasketCount] = useState(0)
-
-  useEffect(() => {
-    async function loadCount() {
-      try {
-        const id = localStorage.getItem('question-manager.activeCollectionId') || 'basket'
-        const data = await collectionsApi.getCollection(id)
-        setBasketCount(data.questionCount ?? data.questions?.length ?? 0)
-      } catch (e) {
-        console.error(e)
-      }
-    }
-    loadCount()
-    window.addEventListener('question-basket-updated', loadCount)
-    return () => window.removeEventListener('question-basket-updated', loadCount)
-  }, [])
-
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => navigate('/questions/basket')}
-        className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
-      >
-        <ShoppingBag className="size-3.5 text-zinc-500 dark:text-zinc-400" /> 试题篮 ({basketCount})
-      </button>
-      <button
-        type="button"
-        onClick={() => navigate('/questions/new')}
-        className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-50 shadow hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200 transition-colors cursor-pointer"
-      >
-        <Plus className="size-3.5" /> 新增题目
-      </button>
-    </>
+    <button
+      type="button"
+      onClick={() => window.dispatchEvent(new Event('question-bank-start-classification'))}
+      className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+    >
+      <Tags className="size-3.5 text-zinc-500 dark:text-zinc-400" /> 开始分类
+    </button>
   )
 }

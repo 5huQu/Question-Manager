@@ -5,7 +5,7 @@ import { ManualFixHeader } from './ManualFixHeader'
 import { ManualFixInspector } from './ManualFixInspector'
 import type { ManualFixRegion, ManualFixTab } from './types'
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 let container: HTMLDivElement
 let root: Root
@@ -87,10 +87,13 @@ describe('ManualFixInspector', () => {
     const onDeleteSelected = vi.fn()
     const region: ManualFixRegion = {
       id: 'region-1',
+      sourceRunId: 'run-1',
       kind: 'question',
       questionLabel: '第 8 题题干',
       questionKeys: [],
       segments: [{ page: 2, x: 0.1, y: 0.1, width: 0.4, height: 0.2 }],
+      sortOrder: 0,
+      note: '',
     }
     inspector({ activeTab: 'regions', regions: [region], selectedRegionId: region.id, onAddRegion, onDeleteSelected })
     click('题干')
@@ -156,7 +159,7 @@ function inspectorProps(overrides: Partial<React.ComponentProps<typeof ManualFix
 
 describe('ManualFixHeader', () => {
   it('展示题号、文件名和选区保存状态', () => {
-    act(() => root.render(<ManualFixHeader candidate={{ questionNo: 12 }} pdfName="期末试卷.pdf" saving finalizing={false} onBack={vi.fn()} onSaveDraft={vi.fn()} onFinalize={vi.fn()} />))
+    act(() => root.render(<ManualFixHeader candidate={{ questionNo: 12 }} pdfName="期末试卷.pdf" saving finalizing={false} textDirty={false} saveError="" onBack={vi.fn()} onSaveDraft={vi.fn()} onFinalize={vi.fn()} />))
     expect(container.textContent).toContain('第 12 题 · 期末试卷.pdf')
     expect(container.textContent).toContain('保存中…')
     expect(container.querySelector<HTMLButtonElement>('button[aria-label="返回候选题"]')).toBeTruthy()
@@ -167,7 +170,7 @@ describe('ManualFixHeader', () => {
     const onBack = vi.fn()
     const onSaveDraft = vi.fn()
     const onFinalize = vi.fn()
-    act(() => root.render(<ManualFixHeader candidate={{}} pdfName="试卷.pdf" saving={false} finalizing={false} onBack={onBack} onSaveDraft={onSaveDraft} onFinalize={onFinalize} />))
+    act(() => root.render(<ManualFixHeader candidate={{}} pdfName="试卷.pdf" saving={false} finalizing={false} textDirty={false} saveError="" onBack={onBack} onSaveDraft={onSaveDraft} onFinalize={onFinalize} />))
     act(() => container.querySelector<HTMLButtonElement>('button[aria-label="返回候选题"]')!.click())
     click('保存草稿')
     click('完成修正')
@@ -175,7 +178,7 @@ describe('ManualFixHeader', () => {
     expect(onSaveDraft).toHaveBeenCalledOnce()
     expect(onFinalize).toHaveBeenCalledOnce()
 
-    act(() => root.render(<ManualFixHeader candidate={{}} pdfName="试卷.pdf" saving={false} finalizing onBack={onBack} onSaveDraft={onSaveDraft} onFinalize={onFinalize} />))
+    act(() => root.render(<ManualFixHeader candidate={{}} pdfName="试卷.pdf" saving={false} finalizing textDirty={false} saveError="" onBack={onBack} onSaveDraft={onSaveDraft} onFinalize={onFinalize} />))
     expect(container.textContent).toContain('正在提交…')
   })
 })

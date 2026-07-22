@@ -37,6 +37,9 @@ jobs:
       - name: Install Python runtime dependencies
         run: python -m pip install -r server/python/runtime-requirements.txt
 
+      - name: Type-check application
+        run: npm run typecheck
+
       - name: Build application
         run: npm run build
 

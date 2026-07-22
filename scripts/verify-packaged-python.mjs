@@ -11,9 +11,10 @@ const appRoot = path.join(resourcesRoot, 'app')
 const python = process.platform === 'win32'
   ? path.join(resourcesRoot, 'python', 'python.exe')
   : path.join(resourcesRoot, 'python', 'bin', 'python3')
-const cutter = path.join(appRoot, 'server', 'python', 'scripts', 'run_cut_for_question.py')
+const renderer = path.join(appRoot, 'server', 'python', 'scripts', 'render_pdf_page.py')
+const cropper = path.join(appRoot, 'server', 'python', 'scripts', 'crop_manual_annotation.py')
 
-for (const required of [python, cutter]) {
+for (const required of [python, renderer, cropper]) {
   if (!fs.existsSync(required)) throw new Error(`Packaged file is missing: ${required}`)
 }
 
@@ -26,8 +27,7 @@ try {
     'import json, sys, importlib.metadata',
     'import fitz',
     'from PIL import Image',
-    'import flask',
-    'print(json.dumps({"version": sys.version.split()[0], "executable": sys.executable, "pymupdf": fitz.VersionBind, "pillow": Image.__version__, "flask": importlib.metadata.version("flask")}))',
+    'print(json.dumps({"version": sys.version.split()[0], "executable": sys.executable, "pymupdf": fitz.VersionBind, "pillow": Image.__version__}))',
   ].join('; ')
   const pythonInfo = JSON.parse(run(python, ['-I', '-c', importCheck]).stdout)
 
@@ -40,15 +40,16 @@ try {
     'doc.save(sys.argv[1])',
   ].join('; ')
   run(python, ['-I', '-c', createPdf, inputPdf])
-  run(python, [cutter, '--input-pdf', inputPdf, '--output-dir', outputDir, '--asset-root', tempRoot, '--dpi', '72'])
-
-  const result = JSON.parse(fs.readFileSync(path.join(outputDir, 'cut_results.json'), 'utf8'))
-  if (result.summary?.failed_pdfs?.length) throw new Error(JSON.stringify(result.summary.failed_pdfs))
-  if (!Array.isArray(result.results)) throw new Error('Packaged cutter did not write a results array')
+  const renderedPage = path.join(outputDir, 'page.png')
+  run(python, [renderer, inputPdf, '1', renderedPage, '--dpi', '72'])
+  const regions = path.join(tempRoot, 'regions.json')
+  fs.writeFileSync(regions, JSON.stringify([{ id: 'smoke', kind: 'problem', question_key: '1', segments: [{ page: 1, x: 0, y: 0, width: 0.8, height: 0.5 }] }]))
+  const cropResult = JSON.parse(run(python, [cropper, '--pdf', inputPdf, '--regions-json-file', regions, '--output-dir', outputDir, '--dpi', '72']).stdout)
+  if (!fs.existsSync(renderedPage) || !cropResult.results?.length) throw new Error('Packaged V2 PDF tools did not create expected images')
   console.log(JSON.stringify({
     python: pythonInfo,
-    questionCount: result.results.length,
-    cutResults: path.join(outputDir, 'cut_results.json'),
+    renderedPage,
+    cropCount: cropResult.results.length,
   }))
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true })

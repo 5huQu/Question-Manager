@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui'
-import type { SliceReviewItem } from '@/types'
 
 export function Modal({ title, desc, children, onClose, wide, locked, actions }: { title: string; desc?: string; children: ReactNode; onClose: () => void; wide?: boolean; locked?: boolean; actions?: ReactNode }) {
   const widthClass = locked && wide ? 'w-full max-w-[calc(100vw-2rem)]' : wide ? 'w-full max-w-7xl' : 'w-full max-w-2xl'
@@ -25,18 +24,6 @@ export function Modal({ title, desc, children, onClose, wide, locked, actions }:
         <div className={bodyClass}>{children}</div>
       </div>
     </div>
-  )
-}
-
-export function ImagePreviewDialog({ item, onClose }: { item: SliceReviewItem; onClose: () => void }) {
-  return (
-    <LargeImageDialog
-      caption={`P${item.pageStart}${item.pageEnd !== item.pageStart ? `-P${item.pageEnd}` : ''}${item.solutionImageUrl ? ' · 含对应解析裁图' : ''}`}
-      imageUrl={item.imageUrl}
-      secondaryImageUrl={item.solutionImageUrl}
-      onClose={onClose}
-      title={`第 ${item.questionLabel || '?'} 题大图`}
-    />
   )
 }
 

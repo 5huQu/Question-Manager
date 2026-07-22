@@ -355,7 +355,9 @@ export default function LayoutWorkbenchPage() {
     }
   }
   function applyPageEqualization(startRelationId: string, count: 2 | 3 | null) {
-    if (!layout) return;
+    if (!layout || !draft) return;
+    const activeLayout = layout;
+    const activeDraft = draft;
     const restore = (item: QuestionLayout): QuestionLayout => ({
       ...item,
       answerAreaHeight: item.equalizedPreviousAnswerAreaHeight,
@@ -374,22 +376,22 @@ export default function LayoutWorkbenchPage() {
       (entry) => entry.layout.relationId === startRelationId,
     );
     if (startIndex < 0) return;
-    const current = layout.questions.find(
+    const current = activeLayout.questions.find(
       (item) => item.relationId === startRelationId,
     );
     const currentGroup = current?.equalizedGroupId || startRelationId;
     if (!count) {
       change({
-        ...layout,
-        questions: layout.questions.map((item) =>
+        ...activeLayout,
+        questions: activeLayout.questions.map((item) =>
           item.equalizedGroupId === currentGroup ? restore(item) : item,
         ),
       });
       return;
     }
-    const telemetry = draft.preview.questionPages?.student || {};
+    const telemetry = activeDraft.preview.questionPages?.student || {};
     if (
-      draft.preview.displayRevision !== draft.revision ||
+      activeDraft.preview.displayRevision !== activeDraft.revision ||
       !telemetry[startRelationId]
     ) {
       setMessage("请先生成当前 revision 的 PDF，再使用本页等高排版。");
@@ -406,11 +408,11 @@ export default function LayoutWorkbenchPage() {
     const conflictingGroups = new Set(
       grouped.map((entry) => entry.layout.equalizedGroupId).filter(Boolean),
     );
-    const cleared = layout.questions.map((item) =>
+    const cleared = activeLayout.questions.map((item) =>
       conflictingGroups.has(item.equalizedGroupId) ? restore(item) : item,
     );
     change({
-      ...layout,
+      ...activeLayout,
       questions: cleared.map((item) => {
         if (!selectedIds.has(item.relationId)) return item;
         const record = telemetry[item.relationId];
@@ -447,6 +449,8 @@ export default function LayoutWorkbenchPage() {
     });
   }
   function resetPage() {
+    if (!draft || !layout) return;
+    const activeLayout = layout;
     const pages = draft.preview.questionPages?.[variant] || {};
     const ids = entries
       .filter((entry) => {
@@ -459,14 +463,16 @@ export default function LayoutWorkbenchPage() {
     const solutions = entries
       .filter((entry) => isSolutionQuestion(entry.question))
       .map((entry) => entry.layout.relationId);
-    if (ids.length) change(resetLayoutQuestions(layout, ids, solutions));
+    if (ids.length) change(resetLayoutQuestions(activeLayout, ids, solutions));
   }
   function resetAll() {
-    const ids = layout.questions.map((item) => item.relationId);
+    if (!layout) return;
+    const activeLayout = layout;
+    const ids = activeLayout.questions.map((item) => item.relationId);
     const solutions = entries
       .filter((entry) => isSolutionQuestion(entry.question))
       .map((entry) => entry.layout.relationId);
-    change(resetLayoutQuestions(layout, ids, solutions));
+    change(resetLayoutQuestions(activeLayout, ids, solutions));
   }
   async function exactPreview() {
     if (!layout || !draft) return;

@@ -28,7 +28,7 @@ function normalizeScope(scope: QuestionBatchClassificationScope) {
   return { type: scope.type, id }
 }
 
-export function runQuestionBatchClassification(scope: QuestionBatchClassificationScope): Promise<QuestionBatchClassificationReport> {
+export function runQuestionBatchClassification(scope: QuestionBatchClassificationScope, options: { onlyMissing?: boolean } = {}): Promise<QuestionBatchClassificationReport> {
   const normalized = normalizeScope(scope)
   const scriptPath = path.join(sourceRoot, 'server', 'python', 'scripts', 'classify_question_bank.py')
   const settings = readOcrSettings()
@@ -42,6 +42,7 @@ export function runQuestionBatchClassification(scope: QuestionBatchClassificatio
       normalized.id,
       '--concurrency',
       settings.cleanupConcurrency || '20',
+      ...(options.onlyMissing === false ? [] : ['--only-missing']),
     ],
     {
       cwd: pythonRoot,

@@ -5,6 +5,14 @@ import {
   clearMismatchedExportRecordItems,
   backfillExportRecordItems,
 } from './backfill.js'
+import { migrateDatabase, type DatabaseMigration } from './migrator.js'
+import { importJobIdentityMigration } from './migrations/import-job-identity.js'
+import { candidateFixDomainMigration } from './migrations/candidate-fix-domain.js'
+import { sourceDocumentOcrTasksMigration } from './migrations/source-document-ocr-tasks.js'
+import { v1ImportMappingMigration } from './migrations/v1-import-mapping.js'
+import { importProvenanceArchiveMigration } from './migrations/import-provenance-archive.js'
+import path from 'node:path'
+import { dataDir } from '../config.js'
 
 /**
  * Ensure a column exists on a table. If the column is missing, it is added
@@ -36,15 +44,7 @@ export function ensureColumn(table: string, column: string, definition: string) 
  * - question_bank_collection_items
  * - question_bank_export_records
  */
-export function ensureSchema() {
-  const questionColumns = db.prepare("PRAGMA table_info(question_bank_items)").all() as Array<{ name: string }>
-  if (questionColumns.length && !questionColumns.some((item) => item.name === 'stem_markdown')) {
-    db.exec(`
-      DROP TABLE IF EXISTS question_bank_collection_items;
-      DROP TABLE IF EXISTS question_bank_items;
-      DROP TABLE IF EXISTS pdf_slicer_solution_items;
-    `)
-  }
+function bootstrapLegacySchema() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS pdf_slicer_batches (
       id TEXT PRIMARY KEY,
@@ -538,4 +538,60 @@ export function ensureSchema() {
   } else {
     db.prepare("UPDATE question_bank_collections SET kind = 'basket', title = COALESCE(NULLIF(title, ''), '试题篮') WHERE id = 'basket'").run()
   }
+}
+
+function validateLegacySchemaBaseline(database: typeof db) {
+  const requiredTables = [
+    'source_documents', 'import_jobs', 'import_job_documents', 'ocr_documents', 'question_candidates',
+    'question_bank_items', 'question_bank_collections', 'question_bank_collection_items', 'question_bank_export_records',
+  ]
+  for (const table of requiredTables) {
+    if (!database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)) {
+      throw new Error(`Legacy schema baseline invariant failed: missing table ${table}`)
+    }
+  }
+  for (const [table, column] of [
+    ['source_documents', 'id'], ['import_jobs', 'id'], ['ocr_documents', 'source_document_id'],
+    ['question_candidates', 'source_document_id'], ['question_bank_items', 'id'],
+  ] as const) {
+    const columns = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+    if (!columns.some((item) => item.name === column)) {
+      throw new Error(`Legacy schema baseline invariant failed: missing ${table}.${column}`)
+    }
+  }
+}
+
+export const applicationMigrations: DatabaseMigration[] = [
+  {
+    version: 1,
+    name: 'legacy_schema_baseline',
+    description: 'Create and upgrade the pre-versioned application schema without destructive table replacement (v1).',
+    fingerprint: 'legacy-schema-baseline-v1',
+    acceptLegacyChecksum: true,
+    legacyChecksums: [{
+      checksum: '070d5f7bad8eab506ac9c50d0754859e23d6b1b05756629feecb0235544fb3ee',
+      description: 'Validated legacy schema baseline v1 build: core V2 import and question-bank tables and ownership columns exist.',
+      validate: validateLegacySchemaBaseline,
+    }],
+    up: () => bootstrapLegacySchema(),
+  },
+  importJobIdentityMigration,
+  candidateFixDomainMigration,
+  sourceDocumentOcrTasksMigration,
+  v1ImportMappingMigration,
+  importProvenanceArchiveMigration,
+]
+
+/** Run the ordered, checksummed database migrations. */
+export function ensureSchema() {
+  return migrateDatabase(db, applicationMigrations, {
+    backup: {
+      directory: path.join(dataDir, 'database-backups'),
+      retention: Number(process.env.DATABASE_BACKUP_RETENTION || 5),
+    },
+  })
+}
+
+export function databaseMigrationStatus(options: { dryRun?: boolean } = { dryRun: true }) {
+  return migrateDatabase(db, applicationMigrations, options)
 }

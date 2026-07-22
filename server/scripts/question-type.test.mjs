@@ -13,10 +13,21 @@ const solutionStem = [
 ].join('\n')
 
 // A-D letters in an answer, diagram description, or analysis must never turn
-// an open-ended problem into a choice question.
+// an open-ended problem into a choice question when its type is inferred.
 assert.equal(inferQuestionType(solutionStem, '证明过程见解析，点A、B、C、D满足条件。'), '解答题')
 assert.equal(normalizeQuestionType('OCR题', solutionStem, '答案：A'), '解答题')
-assert.equal(normalizeQuestionType('单选题', solutionStem, '答案：A'), '解答题')
+assert.equal(normalizeQuestionType('单选题', solutionStem, '答案：A'), '单选题')
+
+// A saved type is an explicit editor decision. The word “计算” is common in
+// choice stems and must not overwrite a manual multi-choice selection.
+const calculationChoices = [
+  '下列计算结果正确的是（ ）',
+  'A. 1',
+  'B. 2',
+  'C. 3',
+  'D. 4',
+].join('\n')
+assert.equal(normalizeQuestionType('多选题', calculationChoices, '答案：AB'), '多选题')
 
 const fourChoices = [
   '下列函数中既是奇函数又是增函数的是（ ）',

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { importV2Api } from '@/api/importV2'
-import { pdfSlicerApi } from '@/api/pdfSlicer'
+import type { CandidateFixRegion, CandidateFixSession } from '@/api/importV2'
 import { ApiError } from '@/api/client'
 import type { ManualFixRegion } from '@/components/import-v2/manual-fix/types'
 
@@ -47,7 +47,7 @@ export function useCandidateFixSession(sourceDocumentId: string, candidateId?: s
           }
           return
         }
-        const currentSession = await importV2Api.createManualFixSession(candidateId)
+        const currentSession = toWorkbenchSession(await importV2Api.createManualFixSession(candidateId))
         if (!cancelled) {
           setCandidate(currentCandidate)
           setSession(currentSession)
@@ -69,7 +69,7 @@ export function useCandidateFixSession(sourceDocumentId: string, candidateId?: s
     setSaveError('')
     setConflict(null)
     try {
-      const updatedSession = await pdfSlicerApi.saveAnnotationRegions(session.id, regions, session.revision)
+      const updatedSession = toWorkbenchSession(await importV2Api.saveCandidateFixRegions(session.id, toApiRegions(regions), session.revision))
       const updated = await importV2Api.updateCandidate(candidateId, draft, Number(candidate?.contentRevision || 1))
       setSession(updatedSession)
       setCandidate(updated.candidate)
@@ -96,7 +96,7 @@ export function useCandidateFixSession(sourceDocumentId: string, candidateId?: s
     if (!session) return null
     setSaving(true)
     try {
-      const updated = await pdfSlicerApi.saveAnnotationRegions(session.id, regions, session.revision)
+      const updated = toWorkbenchSession(await importV2Api.saveCandidateFixRegions(session.id, toApiRegions(regions), session.revision))
       setSession(updated)
       return updated
     } catch (error) {
@@ -113,18 +113,13 @@ export function useCandidateFixSession(sourceDocumentId: string, candidateId?: s
     setSaveError('')
     setConflict(null)
     try {
-      const saved = await pdfSlicerApi.saveAnnotationRegions(session.id, regions, session.revision)
+      const saved = toWorkbenchSession(await importV2Api.saveCandidateFixRegions(session.id, toApiRegions(regions), session.revision))
       const updated = await importV2Api.updateCandidate(candidateId, draft, Number(candidate?.contentRevision || 1))
-      const response = await fetch(`/api/tools/pdf-slicer/annotation-sessions/${encodeURIComponent(session.id)}/finalize`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stemMarkdown: draft.stemMarkdown, answerText: draft.answerText, analysisMarkdown: draft.analysisMarkdown }),
+      const finalized = await importV2Api.finalizeCandidateFixSession(saved.id, {
+        stemMarkdown: draft.stemMarkdown, answerText: draft.answerText, analysisMarkdown: draft.analysisMarkdown,
       })
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}))
-        throw new Error(body.error || '提交裁剪与校对失败。')
-      }
-      setSession(saved)
-      setCandidate(updated.candidate)
+      setSession(toWorkbenchSession(finalized.session))
+      setCandidate(finalized.candidate || updated.candidate)
       setTextDirty(false)
       setLastSavedAt(new Date())
       return true
@@ -144,4 +139,20 @@ export function useCandidateFixSession(sourceDocumentId: string, candidateId?: s
   }, [candidate?.contentRevision, candidateId, session])
 
   return { loading, saving, finalizing, candidate, session, loadError, saveError, conflict, textDirty, lastSavedAt, setSession, setTextDirty, saveDraft, saveRegions, finalize }
+}
+
+function toApiRegions(regions: ManualFixRegion[]): CandidateFixRegion[] {
+  return regions.map((region) => ({
+    id: region.id, sourceDocumentId: region.sourceRunId, kind: region.kind,
+    questionLabel: region.questionLabel, questionKeys: region.questionKeys || [], segments: region.segments,
+    sortOrder: region.sortOrder, note: region.note,
+  }))
+}
+
+function toWorkbenchSession(session: CandidateFixSession) {
+  return {
+    ...session,
+    sourceProfileJson: JSON.stringify(session.sourceProfiles || {}),
+    regions: session.regions.map((region) => ({ ...region, sourceRunId: region.sourceDocumentId })),
+  }
 }

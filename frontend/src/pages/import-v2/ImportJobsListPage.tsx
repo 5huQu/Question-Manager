@@ -20,7 +20,9 @@ import { SearchableSelect } from '@/components/SearchableSelect'
 import { PageTitle, Panel, Badge, Button } from '@/components/ui'
 import { Modal } from '@/components/dialogs/Modal'
 import { useAsync } from '@/hooks/useAsync'
+import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling'
 import { cityOptionsForProvince, provinceOptions, yearOptionsFromServerYear } from '@/utils/metadataOptions'
+import { candidateReviewPath, importJobDocumentPath, importJobPath, importJobQuestionsPath } from './importV2Routes'
 
 const paperKindOptions: Array<{ value: PaperKind; label: string }> = [
   { value: 'gaokao_real', label: '高考真题' },
@@ -100,14 +102,20 @@ export default function ImportJobsListPage() {
     fetchJobs()
   }, [])
 
-  // 如果有后台正在运行的 OCR 识别，则每隔 4 秒轮询一次
-  useEffect(() => {
-    if (!hasRunningOcr) return undefined
-    const timer = window.setInterval(() => {
-      fetchJobs(true)
-    }, 4000)
-    return () => window.clearInterval(timer)
-  }, [hasRunningOcr])
+  useVisibilityAwarePolling(async (signal) => {
+    const res = await importV2Api.listImportJobs()
+    if (signal.aborted) return
+    const items = res.items || []
+    setJobs(items)
+    setHasRunningOcr(items.some((job) =>
+      job.documents.some((doc) => ['uploaded', 'ocr_running'].includes(doc.sourceDocument.status))
+    ))
+    setError('')
+  }, {
+    enabled: hasRunningOcr,
+    intervalMs: 4_000,
+    onError: (err) => setError(err instanceof Error ? err.message : String(err)),
+  })
 
   const stageFilterOptions = useMemo(() => {
     return Array.from(new Set([...stageOptions, ...jobs.map(job => job.importJob.stage).filter(Boolean)]))
@@ -306,8 +314,8 @@ export default function ImportJobsListPage() {
 
   function getReviewUrl(job: ImportV2ImportJobDetail) {
     const sourceDocumentId = getReviewSourceDocumentId(job)
-    if (!sourceDocumentId) return `/tools/import/jobs/${encodeURIComponent(job.importJob.id)}`
-    return `/tools/import/jobs/${encodeURIComponent(job.importJob.id)}/documents/${encodeURIComponent(sourceDocumentId)}/candidates`
+    if (!sourceDocumentId) return importJobPath(job.importJob.id)
+    return candidateReviewPath(importJobDocumentPath(job.importJob.id, sourceDocumentId))
   }
 
   function getDocStatusBadge(status: string) {
@@ -517,7 +525,7 @@ export default function ImportJobsListPage() {
                             <Button
                               size="xs"
                               variant="outline"
-                              onClick={() => navigate(`/tools/import/jobs/${job.importJob.id}/questions`)}
+                              onClick={() => navigate(importJobQuestionsPath(job.importJob.id))}
                               icon={Eye}
                               className="text-zinc-600 border-zinc-200 hover:bg-zinc-50"
                             >
@@ -696,8 +704,8 @@ export default function ImportJobsListPage() {
                     <label className="space-y-1.5 block">
                       <span className="text-[13px] font-medium text-zinc-500">年份</span>
                       <SearchableSelect
-                        value={editForm.examYear}
-                        options={yearOptions.includes(editForm.examYear) ? yearOptions : [editForm.examYear, ...yearOptions].filter(Boolean)}
+                        value={String(editForm.examYear)}
+                        options={yearOptions.includes(String(editForm.examYear)) ? yearOptions : [String(editForm.examYear), ...yearOptions].filter(Boolean)}
                         onChange={(examYear) => updateEditForm({ examYear })}
                         placeholder="请选择年份"
                         searchPlaceholder="搜索年份"

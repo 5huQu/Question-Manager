@@ -173,7 +173,7 @@ export function figureIdOf(figure: QuestionFigure, index: number) {
 }
 
 export function choiceSuggestion(stem: string) {
-  let matches = [...stem.matchAll(/(?:^|\n)\s*[A-D][.．、]\s*([^\n]+)/g)];
+  let matches: RegExpMatchArray[] = [...stem.matchAll(/(?:^|\n)\s*[A-D][.．、]\s*([^\n]+)/g)];
   if (matches.length !== 4) {
     const markers = [...stem.matchAll(/(?:^|\s)([A-D])[.．、]\s*/g)];
     if (markers.map((match) => match[1]).join("") === "ABCD")

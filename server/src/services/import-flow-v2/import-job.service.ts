@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { db } from '../../db/connection.js'
 import * as importJobRepo from '../../repositories/import-jobs.repo.js'
 import * as sourceRepo from '../../repositories/source-documents.repo.js'
@@ -14,10 +16,11 @@ import { buildParserPreview } from '../question-parser/parser-preview.js'
 import { parserConfigForRequest } from '../question-parser/parser-config.js'
 import { refreshCandidateParseDiagnostics, validationIssueDiagnostics } from '../question-parser/candidate-validator.js'
 import type { ImportFlowV2ParserConfig } from '../question-parser/default-parser-config.js'
-import { revalidateAllCandidatesForSourceDocument } from '../pdf-slicer/annotations.service.js'
+import { revalidateAllCandidatesForSourceDocument } from './candidate-validation.service.js'
 import { getOcrFigureDiagnostics } from './figure-mapping.js'
 import { loadOcrDocument } from './ocr-document.service.js'
-import { deleteSourceDocument } from './source-document.service.js'
+import { hasActiveSourceDocumentOcrTask } from './ocr-task.service.js'
+import { ensureDir, importDataDir, sourceDocumentDir, storedOcrDocumentDir } from './import-flow-v2.paths.js'
 
 
 const VALID_IMPORT_JOB_MODES: ImportJobMode[] = ['single_document', 'separated_documents']
@@ -205,6 +208,14 @@ export function addSourceDocumentToImportJob(id: string, body: Record<string, un
   const sourceDocumentId = String(body.sourceDocumentId || body.source_document_id || '')
   if (!sourceDocumentId) throw new RouteError(400, '请指定 sourceDocumentId。')
   const sourceDocument = requireSourceDocument(sourceDocumentId)
+  const existingOwner = db.prepare(`
+    SELECT job_id FROM import_job_documents
+    WHERE source_document_id = ?
+    LIMIT 1
+  `).get(sourceDocument.id) as { job_id: string } | undefined
+  if (existingOwner) {
+    throw new RouteError(409, `该资料已属于导入任务 ${existingOwner.job_id}，请先显式转移资料。`)
+  }
   const document = importJobRepo.addSourceDocumentToImportJob({
     jobId: importJob.id,
     sourceDocumentId: sourceDocument.id,
@@ -218,6 +229,40 @@ export function addSourceDocumentToImportJob(id: string, body: Record<string, un
 export function listImportJobDocuments(id: string) {
   requireImportJob(id)
   return { items: importJobRepo.listImportJobDocuments(id) }
+}
+
+export function transferSourceDocumentBetweenImportJobs(input: {
+  sourceDocumentId: string
+  fromJobId: string
+  toJobId: string
+  role?: ImportJobDocumentRole
+}) {
+  if (!input.sourceDocumentId || !input.fromJobId || !input.toJobId) {
+    throw new RouteError(400, '资料转移必须指定 sourceDocumentId、fromJobId 和 toJobId。')
+  }
+  if (input.fromJobId === input.toJobId) throw new RouteError(400, '来源任务与目标任务不能相同。')
+  requireSourceDocument(input.sourceDocumentId)
+  requireImportJob(input.fromJobId)
+  requireImportJob(input.toJobId)
+  if (hasActiveSourceDocumentOcrTask(input.sourceDocumentId)) {
+    throw new RouteError(409, '该资料的 OCR 任务正在运行，无法转移。')
+  }
+  const owner = db.prepare(`SELECT job_id FROM import_job_documents WHERE source_document_id = ?`).get(input.sourceDocumentId) as { job_id: string } | undefined
+  if (!owner) throw new RouteError(404, '资料尚未关联导入任务。')
+  if (owner.job_id !== input.fromJobId) throw new RouteError(409, `资料当前属于导入任务 ${owner.job_id}。`)
+  if (input.role && !VALID_IMPORT_JOB_DOCUMENT_ROLES.includes(input.role)) {
+    throw new RouteError(400, '导入任务文档 role 只能是 full、questions 或 solutions。')
+  }
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    const document = importJobRepo.transferSourceDocumentOwnership(input)
+    if (!document) throw new RouteError(409, '资料所有权已变化，请刷新后重试。')
+    db.exec('COMMIT')
+    return { document, fromJob: importJobRepo.getImportJob(input.fromJobId), toJob: importJobRepo.getImportJob(input.toJobId) }
+  } catch (error) {
+    if (db.isTransaction) db.exec('ROLLBACK')
+    throw error
+  }
 }
 
 export function parseCandidatesForImportJob(id: string, body: Record<string, unknown> = {}) {
@@ -272,30 +317,102 @@ export function parseCandidatesForImportJob(id: string, body: Record<string, unk
 export function deleteImportJob(id: string) {
   const importJob = requireImportJob(id)
   const documents = importJobRepo.listImportJobDocuments(id)
+  const sourceDocumentIds = documents.map((document) => document.sourceDocumentId)
+  const activeDocument = sourceDocumentIds.find((sourceDocumentId) => hasActiveSourceDocumentOcrTask(sourceDocumentId))
+  if (activeDocument) {
+    throw new RouteError(409, `资料 ${activeDocument} 的 OCR 任务正在运行，无法删除导入任务。`)
+  }
 
-  for (const doc of documents) {
-    try {
-      deleteSourceDocument(doc.sourceDocumentId)
-    } catch (err) {
-      console.error(`Failed to delete source document ${doc.sourceDocumentId} for job ${id}:`, err)
+  const now = new Date().toISOString()
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    db.prepare("UPDATE import_jobs SET status = 'deleting', updated_at = ? WHERE id = ?").run(now, id)
+    db.prepare(`
+      INSERT INTO import_job_deletion_manifests
+        (job_id, status, source_document_ids_json, moved_paths_json, error, created_at, updated_at)
+      VALUES (?, 'moving', ?, '[]', '', ?, ?)
+      ON CONFLICT(job_id) DO UPDATE SET
+        status = 'moving', source_document_ids_json = excluded.source_document_ids_json,
+        error = '', updated_at = excluded.updated_at
+    `).run(id, JSON.stringify(sourceDocumentIds), now, now)
+    db.exec('COMMIT')
+  } catch (error) {
+    if (db.isTransaction) db.exec('ROLLBACK')
+    throw error
+  }
+
+  const trashRoot = path.join(importDataDir(), 'trash', 'import-jobs', id)
+  const moves: Array<{ from: string; to: string }> = []
+  for (const sourceDocumentId of sourceDocumentIds) {
+    moves.push({
+      from: sourceDocumentDir(sourceDocumentId),
+      to: path.join(trashRoot, 'source-documents', sourceDocumentId),
+    })
+    const ocrRows = db.prepare('SELECT id FROM ocr_documents WHERE source_document_id = ?').all(sourceDocumentId) as Array<{ id: string }>
+    for (const row of ocrRows) {
+      moves.push({
+        from: storedOcrDocumentDir(row.id),
+        to: path.join(trashRoot, 'ocr-documents', row.id),
+      })
     }
+  }
+
+  const moved: Array<{ from: string; to: string }> = []
+  try {
+    for (const move of moves) {
+      if (!fs.existsSync(move.from)) continue
+      if (fs.existsSync(move.to)) throw new Error(`Trash target already exists: ${move.to}`)
+      ensureDir(path.dirname(move.to))
+      fs.renameSync(move.from, move.to)
+      moved.push(move)
+    }
+  } catch (error) {
+    for (const move of [...moved].reverse()) {
+      if (!fs.existsSync(move.to) || fs.existsSync(move.from)) continue
+      ensureDir(path.dirname(move.from))
+      fs.renameSync(move.to, move.from)
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    db.prepare(`
+      UPDATE import_job_deletion_manifests
+      SET status = 'failed', moved_paths_json = ?, error = ?, updated_at = ?
+      WHERE job_id = ?
+    `).run(JSON.stringify(moved), message, new Date().toISOString(), id)
+    importJobRepo.updateImportJob(id, { status: importJob.status === 'deleting' ? 'failed' : importJob.status })
+    throw new RouteError(500, `导入任务文件移入回收站失败：${message}`)
   }
 
   db.exec('BEGIN IMMEDIATE')
   try {
-    db.prepare('DELETE FROM import_job_documents WHERE job_id = ?').run(id)
+    db.prepare('UPDATE question_bank_items SET import_job_id = NULL WHERE import_job_id = ?').run(id)
+    for (const sourceDocumentId of sourceDocumentIds) {
+      db.prepare('DELETE FROM source_documents WHERE id = ?').run(sourceDocumentId)
+    }
     db.prepare('DELETE FROM import_jobs WHERE id = ?').run(id)
+    db.prepare(`
+      UPDATE import_job_deletion_manifests
+      SET status = 'trashed', moved_paths_json = ?, error = '', updated_at = ?
+      WHERE job_id = ?
+    `).run(JSON.stringify(moved), new Date().toISOString(), id)
     db.exec('COMMIT')
   } catch (error) {
-    try {
-      db.exec('ROLLBACK')
-    } catch {
-      // ignore
+    if (db.isTransaction) db.exec('ROLLBACK')
+    for (const move of [...moved].reverse()) {
+      if (!fs.existsSync(move.to) || fs.existsSync(move.from)) continue
+      ensureDir(path.dirname(move.from))
+      fs.renameSync(move.to, move.from)
     }
+    const message = error instanceof Error ? error.message : String(error)
+    db.prepare(`
+      UPDATE import_job_deletion_manifests
+      SET status = 'failed', moved_paths_json = '[]', error = ?, updated_at = ?
+      WHERE job_id = ?
+    `).run(message, new Date().toISOString(), id)
+    importJobRepo.updateImportJob(id, { status: 'failed' })
     throw error
   }
 
-  return { success: true }
+  return { success: true, recoveryPath: trashRoot }
 }
 
 export function updateImportJob(id: string, body: Record<string, unknown>) {

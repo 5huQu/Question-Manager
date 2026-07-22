@@ -15,6 +15,8 @@ import { Button } from '@/components/ui'
 import { UpdateCard } from '@/components/UpdateCard'
 import { Modal } from '@/components/dialogs/Modal'
 import { useAsync } from '@/hooks/useAsync'
+import { useQuery } from '@/lib/queryCache'
+import { importV2QueryKeys } from '@/pages/import-v2/importV2Queries'
 import type { OcrSettings } from '@/types'
 import { teachingStageOptions } from '@/utils/stages'
 import { libreOfficeDownloadUrl } from '@/utils/wordFiles'
@@ -58,8 +60,14 @@ export function SettingsPage() {
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [showLibreOfficeAlert, setShowLibreOfficeAlert] = useState(false)
 
-  const parserConfigApi = useAsync<{ config: ImportFlowV2ParserConfig }>(() => importV2Api.getParserConfig(), [])
-  const parserPresetsApi = useAsync<{ items: ImportParserPreset[] }>(() => importV2Api.listParserPresets(), [])
+  const parserConfigApi = useQuery<{ config: ImportFlowV2ParserConfig }>({
+    key: importV2QueryKeys.parserConfig,
+    queryFn: () => importV2Api.getParserConfig(),
+  })
+  const parserPresetsApi = useQuery<{ items: ImportParserPreset[] }>({
+    key: importV2QueryKeys.parserPresets,
+    queryFn: () => importV2Api.listParserPresets(),
+  })
   const [parserConfig, setParserConfig] = useState<ImportFlowV2ParserConfig | null>(null)
   const [parserTextDraft, setParserTextDraft] = useState<ParserTextDraft | null>(null)
   const [parserPresets, setParserPresets] = useState<ImportParserPreset[]>([])
@@ -404,8 +412,8 @@ export function SettingsPage() {
             desc="用于 GLM-OCR 导入资料时识别题号、卷面栏目和答案解析区。调整后仅影响之后重新生成的待确认题目。"
             footer={<div className="flex gap-2"><Button size="sm" variant="outline" onClick={resetParserConfig} disabled={isParserSaving}>恢复默认</Button><SaveButton label="保存规则" loading={isParserSaving} onClick={saveParserConfig} /></div>}
           >
-            {parserConfigApi.loading && !parserConfig ? <p className="text-xs text-zinc-400">读取导入识别规则中...</p> : null}
-            {parserConfigApi.error ? <p className="text-xs text-red-500">{parserConfigApi.error}</p> : null}
+            {parserConfigApi.status === 'loading' && !parserConfig ? <p className="text-xs text-zinc-400">读取导入识别规则中...</p> : null}
+            {parserConfigApi.error ? <p className="text-xs text-red-500">{parserConfigApi.error.message}</p> : null}
             {parserConfig ? <>
               {parserSaveStatus ? <StatusBanner status={parserSaveStatus} /> : null}
               <div className="rounded-xl border border-zinc-200 bg-zinc-50/40 p-3 dark:border-zinc-800 dark:bg-zinc-900/20">

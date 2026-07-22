@@ -1,6 +1,6 @@
 # Question Manager
 
-Question Manager 是一个本地优先的数学题库桌面工具，覆盖从 PDF 切题、OCR、人工复核到题库维护、组卷和导出的完整流程。
+Question Manager 是一个本地优先的数学题库桌面工具，覆盖从整卷 OCR、候选题复核到题库维护、组卷和导出的完整流程。
 
 项目以 Electron、React、Express、SQLite 和 Python 构建，支持 macOS 与 Windows。真实试卷、题图、SQLite 数据库、OCR 响应与 API 密钥均不包含在开源仓库中。
 
@@ -15,12 +15,12 @@ Question Manager 是一个本地优先的数学题库桌面工具，覆盖从 PD
 
 当前实现状态与已知限制以 [`docs/capability_matrix.md`](docs/capability_matrix.md) 为准；候选题局部重新识别的技术方案见 [`docs/region_ocr_design.md`](docs/region_ocr_design.md)。
 
-- **PDF 切题与复核**：自动检测题号和页面区域，支持跨页题，并可在 OCR 前人工调整边界。
-- **混合资料拆分**：同一 PDF 中的题干和解析会作为独立分段处理，再按题号合并为一题。
+- **V2 整卷导入**：统一处理 PDF 与图片资料，持久化 OCR 任务，并从 `OCRDocument` 生成候选题。
+- **异常题手动修正**：在候选题修正工作台调整来源区域、正文和题图，不再创建旧切题 run。
 - **GLM-OCR 区域归属**：GLM-OCR 可识别整份 PDF；系统根据已复核的题干/解析区域回收文本，避免相邻题或解析内容串入当前题。
 - **题图管理**：可在题干切片、解析裁图或 OCR 分块中框图、上传、调整和删除。已匹配的 GLM 图仅作识别诊断，不会重复显示为第二张题图。
 - **图片位置绑定**：OCR 返回图片标签或独立图注（例如“图1”）时，系统按阅读顺序绑定本地复核图；图数不一致时会明确提示“缺少可绑定图片”。
-- **待入库确认**：集中检查 OCR 文本、公式、题图、答案与解析，再确认进入题库。
+- **候选题确认**：集中检查 OCR 文本、公式、题图、答案与解析，再确认进入题库。
 - **题库与组卷**：支持标签、难度、题型、检索、题图维护、试题篮和练习单/试卷/讲义编排。
 - **多格式导出**：支持 Markdown、LaTeX 与 PDF，可使用内置模板或 Examch 模板。
 
@@ -32,7 +32,7 @@ Question Manager 是一个本地优先的数学题库桌面工具，覆盖从 PD
 
 - GLM-OCR 支持 PDF、JPG 与 PNG。
 - Doc2X v2 当前支持 PDF。
-- 旧“PDF 切分中心”仍保留，用于历史数据、旧工作流和特殊情况，不是 import flow v2 的默认入口。
+- 旧“PDF 切分中心”生产入口已经退役；尚未完成迁移的数据保留在只读归档和迁移报告中。
 
 ### 2. 生成并复核候选题
 
@@ -43,7 +43,7 @@ Question Manager 是一个本地优先的数学题库桌面工具，覆盖从 PD
 - 手动修正目前不会对框选区域自动重新 OCR；局部重新识别仍在设计中。
 - 重新解析或重新 OCR 前，应特别确认是否已有候选题入库，避免把已确认结果与新版本混淆。
 
-### 3. 待入库确认
+### 3. 候选题确认
 
 在“入库确认”中检查：
 
@@ -69,7 +69,7 @@ Question Manager 是一个本地优先的数学题库桌面工具，覆盖从 PD
 
 
 
-OCR 失败时，优先检查：API Key、模型名称、原始 PDF 是否仍存在、切题复核是否已提交，以及 OCR 队列中的失败详情。
+OCR 失败时，优先检查：API Key、模型名称、原始资料是否仍存在，以及 V2 导入任务中的失败详情。
 
 ## 桌面版使用
 
@@ -154,7 +154,7 @@ npm run pack:desktop
 build-and-install-windows.cmd
 ```
 
-脚本会检查 Node.js、安装依赖、准备 Python 运行时、验证切题流程，并生成和启动 NSIS 安装向导。详细排错说明见 [WINDOWS_BUILD.md](WINDOWS_BUILD.md)。
+脚本会检查 Node.js、安装依赖、准备 Python 运行时、验证 V2 PDF 页面渲染与裁剪能力，并生成和启动 NSIS 安装向导。详细排错说明见 [WINDOWS_BUILD.md](WINDOWS_BUILD.md)。
 
 ## 数据、配置与安全
 
@@ -171,6 +171,10 @@ build-and-install-windows.cmd
 | `LAYOUT_PREVIEW_POLL_MS` | 持久化预览队列轮询间隔，默认 `750` 毫秒。 |
 | `LAYOUT_PREVIEW_LEASE_MS` | worker 编译租约时长，默认 `600000` 毫秒；实例异常退出后任务可被其他实例恢复。 |
 | `LAYOUT_PREVIEW_CACHE_MAX_ENTRIES` | 按内容哈希保留的 PDF 预览缓存数量，默认 `50`。 |
+| `SOURCE_DOCUMENT_UPLOAD_MAX_BYTES` | V2 PDF/图片资料单文件上限，默认 `104857600`（100 MiB）。 |
+| `CANDIDATE_FIGURE_UPLOAD_MAX_BYTES` | 候选题题图单文件上限，默认 `20971520`（20 MiB）。 |
+| `DOC2X_PACKAGE_UPLOAD_MAX_BYTES` | Doc2X 导出包单文件上限，默认 `209715200`（200 MiB）。 |
+| `UPLOAD_MAX_FIELDS` | multipart 表单字段数上限，默认 `32`。 |
 
 PDF 精确预览使用 SQLite 持久化队列。草稿内容、布局、模板文件或题图字节变化会生成新的 SHA-256；相同输入直接复用学生版/教师版 PDF 与页面图。草稿 revision 更新时，旧的排队或编译任务会被标记为取消。多进程部署必须让各实例共享同一 `QUESTION_DATA_DIR`，才能共享 SQLite 队列、缓存目录与预览制品。
 | `OCR_PROVIDER` | `glm` 或 `doc2x`。 |

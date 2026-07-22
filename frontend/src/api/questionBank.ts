@@ -1,5 +1,5 @@
 import { api, jsonHeaders } from './client'
-import type { ApiRun, QuestionBankResponse, QuestionFigure, QuestionItem } from '@/types'
+import type { QuestionBankResponse, QuestionFigure, QuestionItem } from '@/types'
 
 export type QuestionBankListParams = {
   q?: string
@@ -132,16 +132,6 @@ export const questionBankApi = {
       headers: jsonHeaders,
       body: JSON.stringify(payload),
     })
-  },
-  importJsonItemsFromSlices(payload: Record<string, unknown>) {
-    return api<{ run?: ApiRun; items: QuestionItem[]; count: number; pendingBankUrl?: string; report?: { total?: number; updated?: number; failed?: number } }>('/api/question-bank/import-json-from-slices', {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify(payload),
-    })
-  },
-  listRunQuestions(runId: string) {
-    return api<{ run: ApiRun; items: QuestionItem[] }>(`/api/tools/pdf-slicer/runs/${encodeURIComponent(runId)}/questions`)
   },
   createFigure(questionId: string, payload: QuestionFigurePayload) {
     return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures`, {

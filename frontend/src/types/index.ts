@@ -202,6 +202,7 @@ export type Basket = {
 export type QuestionBankResponse = {
   items: QuestionItem[]
   totalItems: number
+  classificationPendingCount?: number
   page: number
   pageSize: number
   totalPages: number

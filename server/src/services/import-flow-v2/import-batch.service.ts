@@ -69,8 +69,8 @@ function importJobQuestionWhere(jobId: string, documents: Array<Pick<ImportJobDo
   const sourceIds = sourceDocumentIds(documents)
   const importSourceIds = [jobId, `ifv2-job:${jobId}`, ...sourceIds]
   return {
-    sql: `import_source_id IN (${placeholders(importSourceIds)})`,
-    values: importSourceIds as SqlValue[],
+    sql: `(import_job_id = ? OR (import_job_id IS NULL AND import_source_id IN (${placeholders(importSourceIds)})))`,
+    values: [jobId, ...importSourceIds] as SqlValue[],
   }
 }
 
@@ -123,8 +123,52 @@ export function listImportJobsWithStats(query: Record<string, unknown> = {}) {
     ORDER BY updated_at DESC, created_at DESC
     LIMIT ? OFFSET ?
   `).all(limit, offset) as ImportJobRow[]
+  const importJobs = rows.map(importJobRepo.mapImportJob)
+  const documentRows = importJobRepo.listImportJobDocumentStats(importJobs.map((job) => job.id))
+  const documentsByJobId = new Map<string, ImportJobDocumentDetail[]>()
+  for (const row of documentRows) {
+    const sourceDocument = sourceRepo.mapSourceDocument(row)
+    sourceDocument.importStats = importJobRepo.sourceDocumentImportStatsFromRow(row)
+    const document: ImportJobDocumentDetail = {
+      id: row.document_link_id,
+      jobId: row.document_job_id,
+      sourceDocumentId: sourceDocument.id,
+      role: importJobRepo.normalizeImportJobDocumentRole(row.document_role),
+      sortOrder: Number(row.document_sort_order || 0),
+      createdAt: row.document_created_at,
+      updatedAt: row.document_updated_at,
+      sourceDocument,
+    }
+    const documents = documentsByJobId.get(document.jobId) || []
+    documents.push(document)
+    documentsByJobId.set(document.jobId, documents)
+  }
+
+  const importSourceIds = Array.from(new Set(importJobs.flatMap((job) => [
+    job.id,
+    `ifv2-job:${job.id}`,
+    ...(documentsByJobId.get(job.id) || []).map((document) => document.sourceDocumentId),
+  ])))
+  const questionCounts = importJobRepo.countQuestionsForImportJobList(importJobs.map((job) => job.id), importSourceIds)
   return {
-    items: rows.map((row) => getImportJobDetail(importJobRepo.mapImportJob(row).id)),
+    items: importJobs.map((importJob) => {
+      const documents = documentsByJobId.get(importJob.id) || []
+      const documentStats = documents.map((document) => document.sourceDocument.importStats!)
+      return {
+        importJob,
+        documents,
+        stats: {
+          sourceDocumentCount: documents.length,
+          ocrSucceededCount: documents.filter((document) => ['ocr_succeeded', 'parsed', 'partially_parsed'].includes(document.sourceDocument.status)).length,
+          candidateCount: documentStats.reduce((sum, stats) => sum + stats.candidateCount, 0),
+          committedCandidateCount: documentStats.reduce((sum, stats) => sum + stats.committedCount, 0),
+          questionCount: [importJob.id, `ifv2-job:${importJob.id}`, ...documents.map((document) => document.sourceDocumentId)]
+            .reduce((sum, id) => sum + (questionCounts.byLegacyImportSourceId.get(id) || 0), questionCounts.byJobId.get(importJob.id) || 0),
+          needsReviewCount: documentStats.reduce((sum, stats) => sum + stats.needsReviewCount + stats.needsManualFixCount, 0),
+          blockedCount: documentStats.reduce((sum, stats) => sum + stats.blockedCount, 0),
+        },
+      }
+    }),
   }
 }
 

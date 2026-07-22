@@ -1,5 +1,10 @@
 import { api, jsonHeaders } from './client'
 import type { ExportRecord, QuestionItem } from '@/types'
+import type {
+  ImportV2ImportJobDocumentRole,
+  ImportV2ImportJobMode,
+  ImportV2OcrProvider,
+} from '../../../shared/contracts/import-v2'
 
 export type SourceDocumentImportStats = {
   ocrDocumentCount: number
@@ -60,7 +65,7 @@ export type SourceMetadataDraft = {
 export type ImportV2OcrDocument = {
   id: string
   sourceDocumentId: string
-  provider: 'doc2x' | 'glm'
+  provider: ImportV2OcrProvider
   rawResultPath: string
   markdownPath: string
   blocksJsonPath: string
@@ -71,12 +76,36 @@ export type ImportV2OcrDocument = {
 
 export type ImportV2OcrTask = {
   sourceDocumentId?: string
-  provider?: 'doc2x' | 'glm'
+  provider?: ImportV2OcrProvider
   status: 'uploaded' | 'ocr_running' | 'ocr_succeeded' | 'ocr_failed' | 'parsed' | 'partially_parsed'
   ocrDocumentId?: string
   startedAt?: string
   finishedAt?: string
   error?: string
+}
+
+export type CandidateFixSegment = { page: number; x: number; y: number; width: number; height: number }
+export type CandidateFixRegion = {
+  id: string
+  sourceDocumentId: string
+  kind: 'question' | 'solution' | 'shared_answer_key'
+  questionLabel: string
+  questionKeys: string[]
+  segments: CandidateFixSegment[]
+  sortOrder: number
+  note: string
+}
+export type CandidateFixSession = {
+  id: string
+  candidateId: string
+  revision: number
+  status: 'draft' | 'finalized' | 'superseded'
+  sourceProfiles: Record<string, { pageCount: number; pdfName: string }>
+  baseContentRevision: number
+  regions: CandidateFixRegion[]
+  createdAt: string
+  updatedAt: string
+  finalizedAt: string
 }
 
 export type ImportV2CandidateIssue = {
@@ -269,7 +298,7 @@ export type ParseCandidatesResult = {
 export type ImportV2ImportJob = {
   id: string
   title: string
-  mode: 'single_document' | 'separated_documents'
+  mode: ImportV2ImportJobMode
   status: 'draft' | 'parsing' | 'parsed' | 'partially_parsed' | 'failed'
   province: string
   city: string
@@ -288,7 +317,7 @@ export type ImportV2ImportJobDocument = {
   id: string
   jobId: string
   sourceDocumentId: string
-  role: 'full' | 'questions' | 'solutions'
+  role: ImportV2ImportJobDocumentRole
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -445,7 +474,7 @@ export const importV2Api = {
       body: JSON.stringify({ sourceDocument }),
     })
   },
-  startSourceDocumentOcr(sourceDocumentId: string, options?: { provider?: 'doc2x' | 'glm'; force?: boolean } | 'doc2x' | 'glm') {
+  startSourceDocumentOcr(sourceDocumentId: string, options?: { provider?: ImportV2OcrProvider; force?: boolean } | ImportV2OcrProvider) {
     const payload = typeof options === 'string' ? { provider: options } : options || {}
     return api<{ sourceDocument: ImportV2SourceDocument; task: ImportV2OcrTask }>('/api/import-flow-v2/source-documents/' + encodeURIComponent(sourceDocumentId) + '/ocr', {
       method: 'POST',
@@ -458,24 +487,24 @@ export const importV2Api = {
   },
   listOcrDocuments(sourceDocumentId?: string) {
     const query = sourceDocumentId ? '?sourceDocumentId=' + encodeURIComponent(sourceDocumentId) : ''
-    return api<{ items: ImportV2OcrDocument[] }>('/api/ocr-documents' + query)
+    return api<{ items: ImportV2OcrDocument[] }>('/api/import-flow-v2/ocr-documents' + query)
   },
   importOcrDocumentJson(payload: Record<string, unknown>) {
-    return api<{ sourceDocument: ImportV2SourceDocument; ocrDocument: ImportV2OcrDocument }>('/api/ocr-documents/import-json', {
+    return api<{ sourceDocument: ImportV2SourceDocument; ocrDocument: ImportV2OcrDocument }>('/api/import-flow-v2/ocr-documents/import-json', {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify(payload),
     })
   },
   updateOcrDocumentMarkdown(ocrDocumentId: string, markdown: string) {
-    return api<{ ocrDocument: ImportV2OcrDocument }>('/api/ocr-documents/' + encodeURIComponent(ocrDocumentId) + '/markdown', {
+    return api<{ ocrDocument: ImportV2OcrDocument }>('/api/import-flow-v2/ocr-documents/' + encodeURIComponent(ocrDocumentId) + '/markdown', {
       method: 'PATCH',
       headers: jsonHeaders,
       body: JSON.stringify({ markdown }),
     })
   },
   parseCandidates(ocrDocumentId: string, payload: ParseCandidatesRequest = {}) {
-    return api<ParseCandidatesResult>('/api/ocr-documents/' + encodeURIComponent(ocrDocumentId) + '/parse-candidates', {
+    return api<ParseCandidatesResult>('/api/import-flow-v2/ocr-documents/' + encodeURIComponent(ocrDocumentId) + '/parse-candidates', {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify(payload),
@@ -551,9 +580,28 @@ export const importV2Api = {
     })
   },
   createManualFixSession(candidateId: string) {
-    return api<{ id: string; batchId: string; revision: number; status: string; sourceProfileJson: string; regions: any[] }>('/api/import-flow-v2/candidates/' + encodeURIComponent(candidateId) + '/manual-fix-session', {
+    return api<CandidateFixSession>('/api/import-flow-v2/candidates/' + encodeURIComponent(candidateId) + '/fix-session', {
       method: 'POST',
     })
+  },
+  getCandidateFixSession(sessionId: string) {
+    return api<CandidateFixSession>('/api/import-flow-v2/candidate-fix-sessions/' + encodeURIComponent(sessionId))
+  },
+  saveCandidateFixRegions(sessionId: string, regions: CandidateFixRegion[], revision: number) {
+    return api<CandidateFixSession>('/api/import-flow-v2/candidate-fix-sessions/' + encodeURIComponent(sessionId) + '/regions', {
+      method: 'PUT', headers: jsonHeaders, body: JSON.stringify({ regions, revision }),
+    })
+  },
+  validateCandidateFixSession(sessionId: string) {
+    return api<{ errors: string[]; warnings: string[] }>('/api/import-flow-v2/candidate-fix-sessions/' + encodeURIComponent(sessionId) + '/validate', { method: 'POST' })
+  },
+  finalizeCandidateFixSession(sessionId: string, payload: { stemMarkdown: string; answerText: string; analysisMarkdown: string }) {
+    return api<{ session: CandidateFixSession; candidate: ImportV2Candidate }>('/api/import-flow-v2/candidate-fix-sessions/' + encodeURIComponent(sessionId) + '/finalize', {
+      method: 'POST', headers: jsonHeaders, body: JSON.stringify(payload),
+    })
+  },
+  reopenCandidateFixSession(sessionId: string) {
+    return api<CandidateFixSession>('/api/import-flow-v2/candidate-fix-sessions/' + encodeURIComponent(sessionId) + '/reopen', { method: 'POST' })
   },
   deleteSourceDocument(sourceDocumentId: string) {
     return api<{ success: boolean }>('/api/import-flow-v2/source-documents/' + encodeURIComponent(sourceDocumentId), {

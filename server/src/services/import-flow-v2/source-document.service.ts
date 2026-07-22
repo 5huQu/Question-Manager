@@ -6,7 +6,7 @@ import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
 import { RouteError } from '../../utils/http-error.js'
 import { assetPathFor } from '../../utils/paths.js'
 import { normalizeUploadName } from '../../utils/ocr-helpers.js'
-import { activeSourceDocumentOcrTasks } from './ocr-task.service.js'
+import { hasActiveSourceDocumentOcrTask } from './ocr-task.service.js'
 import { ensureDir, importDataDir, sourceDocumentDir, storedOcrDocumentDir } from './import-flow-v2.paths.js'
 
 type UploadedSourceDocumentFile = {
@@ -136,7 +136,7 @@ export function deleteSourceDocument(id: string) {
     throw new RouteError(404, '资料不存在。')
   }
 
-  if (activeSourceDocumentOcrTasks.has(id)) {
+  if (hasActiveSourceDocumentOcrTask(id)) {
     throw new RouteError(409, '该资料的 OCR 任务正在运行，无法删除。')
   }
 
@@ -165,10 +165,6 @@ export function deleteSourceDocument(id: string) {
   // 3. 删除数据库记录
   db.exec('BEGIN IMMEDIATE')
   try {
-    // 删除相关标注区域
-    db.prepare('DELETE FROM pdf_slicer_annotation_regions WHERE source_run_id = ?').run(id)
-    // 删除相关标注会话
-    db.prepare('DELETE FROM pdf_slicer_annotation_sessions WHERE batch_id IN (SELECT id FROM question_candidates WHERE source_document_id = ?)').run(id)
     // 删除源资料（通过级联删除级联删除 ocr_documents 和 question_candidates）
     db.prepare('DELETE FROM source_documents WHERE id = ?').run(id)
     db.exec('COMMIT')

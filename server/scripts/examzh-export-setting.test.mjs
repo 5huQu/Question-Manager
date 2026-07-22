@@ -29,6 +29,36 @@ try {
     answerText: 'A',
     analysisMarkdown: '由平方的非负性可知。',
   })
+  const optionFigurePath = path.join(tempRoot, 'option.png')
+  fs.writeFileSync(
+    optionFigurePath,
+    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+  )
+  const imageChoiceQuestion = createQuestion({
+    questionNo: '2',
+    questionType: '单选题',
+    stemMarkdown: [
+      '选出正确图像（　　）',
+      'A. <!-- DOC2X_FIGURE:option-a -->',
+      'B. <!-- DOC2X_FIGURE:option-b -->',
+      'C. <!-- DOC2X_FIGURE:option-c -->',
+      'D. <!-- DOC2X_FIGURE:option-d -->',
+    ].join('\n'),
+    answerText: 'A',
+    figures: ['a', 'b', 'c', 'd'].map((label) => ({
+      id: `option-${label}`,
+      usage: 'options',
+      optionLabel: label.toUpperCase(),
+      path: path.relative(tempRoot, optionFigurePath),
+    })),
+  })
+  db.prepare('UPDATE question_bank_items SET stem_markdown = ? WHERE id = ?').run([
+    '选出正确图像（　　）',
+    'A. <!-- DOC2X_FIGURE:option-a -->',
+    'B. <!-- DOC2X_FIGURE:option-b -->',
+    'C. <!-- DOC2X_FIGURE:option-c -->',
+    'D. <!-- DOC2X_FIGURE:option-d -->',
+  ].join('\n'), imageChoiceQuestion.id)
   const collection = collections.createCollection({ title: 'ExamZh 设置测试', kind: 'paper' })
   collections.addCollectionItem(collection.id, { questionId: question.id, score: 5 })
   const assembled = collections.getCollection(collection.id)
@@ -38,8 +68,14 @@ try {
   assert.match(fs.readFileSync(examZhCollection.texPath, 'utf8'), /\\documentclass\{exam-zh\}/)
 
   const row = db.prepare('SELECT * FROM question_bank_items WHERE id = ?').get(question.id)
-  const examZhSet = exports.exportQuestionSetPdf({ id: 'examzh-question-set', title: '题组导出', rows: [row], template: 'exam', variant: 'student' })
-  assert.match(fs.readFileSync(examZhSet.texPath, 'utf8'), /\\documentclass\{exam-zh\}/)
+  const imageChoiceRow = db.prepare('SELECT * FROM question_bank_items WHERE id = ?').get(imageChoiceQuestion.id)
+  const examZhSet = exports.exportQuestionSetPdf({ id: 'examzh-question-set', title: '题组导出', rows: [row, imageChoiceRow], template: 'exam', variant: 'student' })
+  const examZhTex = fs.readFileSync(examZhSet.texPath, 'utf8')
+  assert.match(examZhTex, /\\documentclass\{exam-zh\}/)
+  const imageChoices = examZhTex.match(/\\includegraphics\[width=0\.9\\linewidth,keepaspectratio\][^\n]*/g) || []
+  assert.equal(imageChoices.length, 4, '应输出四张行内选项图')
+  const choiceBlocks = (examZhTex.match(/\\begin\{choices\}[\s\S]*?\\end\{choices\}/g) || []).join('\n')
+  assert.doesNotMatch(choiceBlocks, /\\begin\{flushleft\}/, '选项图不应使用段落环境')
 
   writeTemplateSetting('builtin')
   const builtinSet = exports.exportQuestionSetPdf({ id: 'builtin-question-set', title: '内置题组导出', rows: [row], template: 'exam', variant: 'student' })

@@ -87,8 +87,7 @@ function verifyRuntime() {
     'import json, sys, importlib.metadata',
     'import fitz',
     'from PIL import Image',
-    'import flask',
-    'print(json.dumps({"python": sys.version.split()[0], "pymupdf": fitz.VersionBind, "pillow": Image.__version__, "flask": importlib.metadata.version("flask")}))',
+    'print(json.dumps({"python": sys.version.split()[0], "pymupdf": fitz.VersionBind, "pillow": Image.__version__}))',
   ].join('; ')
   run(pythonExecutable(), ['-I', '-c', code])
 }

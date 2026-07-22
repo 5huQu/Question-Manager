@@ -11,7 +11,7 @@ const item = {
   answerText: '1',
   analysisMarkdown: '解析',
   figures: [],
-} as QuestionItem
+} as unknown as QuestionItem
 
 describe('LayoutQuestionContentSheet', () => {
   let container: HTMLDivElement

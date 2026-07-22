@@ -3,21 +3,18 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
 import { importV2Api } from '@/api/importV2'
-import { pdfSlicerApi } from '@/api/pdfSlicer'
 import { useCandidateFixSession } from './useCandidateFixSession'
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('@/api/importV2', () => ({
   importV2Api: {
     listCandidates: vi.fn(),
     createManualFixSession: vi.fn(),
+    saveCandidateFixRegions: vi.fn(),
+    finalizeCandidateFixSession: vi.fn(),
     updateCandidate: vi.fn(),
   },
-}))
-
-vi.mock('@/api/pdfSlicer', () => ({
-  pdfSlicerApi: { saveAnnotationRegions: vi.fn() },
 }))
 
 let container: HTMLDivElement
@@ -35,8 +32,14 @@ beforeEach(async () => {
   vi.mocked(importV2Api.listCandidates).mockResolvedValue({
     items: [{ id: 'candidate-1', status: 'needs_manual_fix', contentRevision: 5 } as never],
   })
-  vi.mocked(importV2Api.createManualFixSession).mockResolvedValue({ id: 'session-1', batchId: 'batch-1', revision: 2, status: 'draft', sourceProfileJson: '{}', regions: [] })
-  vi.mocked(pdfSlicerApi.saveAnnotationRegions).mockResolvedValue({ id: 'session-1', revision: 3 } as never)
+  vi.mocked(importV2Api.createManualFixSession).mockResolvedValue({
+    id: 'session-1', candidateId: 'candidate-1', revision: 2, status: 'draft', sourceProfiles: {},
+    baseContentRevision: 5, regions: [], createdAt: '', updatedAt: '', finalizedAt: '',
+  })
+  vi.mocked(importV2Api.saveCandidateFixRegions).mockResolvedValue({
+    id: 'session-1', candidateId: 'candidate-1', revision: 3, status: 'draft', sourceProfiles: {},
+    baseContentRevision: 5, regions: [], createdAt: '', updatedAt: '', finalizedAt: '',
+  })
   await act(async () => { root.render(<Harness />) })
 })
 
@@ -54,8 +57,31 @@ describe('useCandidateFixSession', () => {
 
     await act(async () => { await latest.saveDraft([], draft) })
 
+    expect(importV2Api.saveCandidateFixRegions).toHaveBeenCalledWith('session-1', [], 2)
     expect(importV2Api.updateCandidate).toHaveBeenCalledWith('candidate-1', draft, 5)
     expect(latest.candidate).toEqual(updatedCandidate)
+  })
+
+  it('通过 V2 session API 保存并 finalize', async () => {
+    const updatedCandidate = { id: 'candidate-1', status: 'needs_review', contentRevision: 6 }
+    const finalizedCandidate = { ...updatedCandidate, status: 'ready', contentRevision: 7 }
+    const finalizedSession = {
+      id: 'session-1', candidateId: 'candidate-1', revision: 3, status: 'finalized' as const,
+      sourceProfiles: {}, baseContentRevision: 5, regions: [], createdAt: '', updatedAt: '', finalizedAt: 'now',
+    }
+    vi.mocked(importV2Api.updateCandidate).mockResolvedValue({ candidate: updatedCandidate as never })
+    vi.mocked(importV2Api.finalizeCandidateFixSession).mockResolvedValue({ session: finalizedSession, candidate: finalizedCandidate as never })
+    const draft = { stemMarkdown: '题干', answerText: '答案', analysisMarkdown: '解析', figures: [] }
+
+    let done = false
+    await act(async () => { done = await latest.finalize([], draft) })
+
+    expect(done).toBe(true)
+    expect(importV2Api.finalizeCandidateFixSession).toHaveBeenCalledWith('session-1', {
+      stemMarkdown: '题干', answerText: '答案', analysisMarkdown: '解析',
+    })
+    expect(latest.session.status).toBe('finalized')
+    expect(latest.candidate).toEqual(finalizedCandidate)
   })
 
   it('409 冲突使用 ApiError payload 呈现服务器版本', async () => {

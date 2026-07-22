@@ -38,8 +38,6 @@ import {
 } from '../../utils/worksheet-figures.js'
 import {
   renderExamZhPrompt,
-  buildRunExamZhLatex,
-  exportRunExamZh,
   exportExamZhQuestionSet,
   splitChoiceStemForExport,
 } from '../../utils/exam-zh.js'
@@ -47,7 +45,6 @@ import { readAppSettings } from '../settings/app-settings.js'
 import { collectionExportItems } from './collections.js'
 import { mapQuestion } from '../../db/questions.js'
 import { getCollection } from '../../db/collections.js'
-import { getRun } from '../../db/runs.js'
 import { resolveStoragePath } from '../../utils/paths.js'
 import { stripAssetPrefix } from '../../utils/ocr-helpers.js'
 import { stripLeadingQuestionNo } from '../../utils/question-type.js'
@@ -555,12 +552,13 @@ function worksheetQuestionLatex(
 ) {
   const questionId = safeName(String(entry.relationId || entry.item?.id || index + 1))
   const lines = [`\\begin{examquestion}{${index + 1}}{${questionId}}`]
-  const { prompt, choices, trailingContent } = splitChoiceStemForExport(entry.item.stemMarkdown)
   const stemFigures = questionFigures(entry)
+  const stemForLayout = moveTrailingStemFigureBeforeChoices(entry.item.stemMarkdown, stemFigures)
+  const { prompt, choices, trailingContent } = splitChoiceStemForExport(stemForLayout)
   // Doc2X often places a single figure marker exactly between the stem and
   // option A. Treat that boundary marker as a layout figure so choices can
   // occupy the space beside it instead of waiting below a full-width row.
-  const boundaryMarker = doc2xInlineFigureIds(prompt).size === 1
+  const boundaryMarker = choices.length > 0 && doc2xInlineFigureIds(prompt).size === 1
     ? prompt.match(/<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->\s*$/)
     : null
   const boundaryFigure = boundaryMarker ? figuresByIdentifier(stemFigures).get(boundaryMarker[1]) : undefined
@@ -597,7 +595,7 @@ function worksheetQuestionLatex(
     else lines.push(...rendered)
   }
 
-  const figuresWithoutMarkers = figuresWithoutInlineMarkers(entry.item.stemMarkdown, stemFigures)
+  const figuresWithoutMarkers = figuresWithoutInlineMarkers(stemForLayout, stemFigures)
   const unanchoredStemFigures = figuresWithoutMarkers.filter((figure) => String(figure.usage || 'stem') !== 'options')
   const sideFigure = unanchoredStemFigures.length === 1
     ? unanchoredStemFigures[0]
@@ -620,7 +618,11 @@ function worksheetQuestionLatex(
     (sideDecision.placement === 'side-left' || sideDecision.placement === 'side-right') &&
     (sideDecision.source === 'manual' || !explicitWideChoices),
   )
-  if (useSideLayout) lines.unshift('\\Needspace{16\\baselineskip}')
+  // The two side-by-side minipages are already an indivisible block. Only
+  // reserve the question start when the user also asked to keep the whole
+  // question together; otherwise the stem may use the current page and the
+  // figure/choice block can move naturally without leaving a large blank.
+  if (useSideLayout && layout?.keepTogether !== false) lines.unshift('\\Needspace{16\\baselineskip}')
   const promptLatex = compactWorksheetFigureRuns(keepSubquestionsTogether(
     worksheetPromptWithInlineFigures(
       promptForLayout || entry.item.stemMarkdown,
@@ -688,6 +690,23 @@ function worksheetQuestionLatex(
   }
   lines.push('\\end{examquestion}')
   return lines.join('\n')
+}
+
+/**
+ * OCR providers commonly append a stem diagram after option D. Without this
+ * normalization the choice splitter treats that marker as part of D, so the
+ * diagram can never participate in the side-by-side stem layout.
+ */
+function moveTrailingStemFigureBeforeChoices(stem: string, figures: Array<Record<string, any>>) {
+  const source=String(stem||'')
+  const markerMatch=source.match(/(?:\r?\n\s*)+(<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->)\s*$/)
+  if(!markerMatch?.index)return source
+  const figure=figuresByIdentifier(figures).get(markerMatch[2])
+  if(!figure||String(figure.usage||'stem')==='options')return source
+  const withoutMarker=source.slice(0,markerMatch.index).trimEnd()
+  const split=splitChoiceStemForExport(withoutMarker)
+  if(split.choices.length!==4||split.trailingContent)return source
+  return [split.prompt,markerMatch[1],...split.choices.map((choice,index)=>`${String.fromCharCode(65+index)}. ${choice}`)].join('\n')
 }
 
 function worksheetPromptWithInlineFigures(
@@ -968,60 +987,4 @@ export function exportQuestionSetPdf(input: {
   return { path: pdfPath, format: 'pdf' as const }
 }
 
-// ── Run worksheet PDF ──────────────────────────────────────────────────────
-
-export function exportRunWorksheetPdf(runId: string, options: { title?: string; variant?: StandardExportVariant }) {
-  const run = getRun(runId)
-  if (!run) throw new Error('批次不存在。')
-  const rows = db.prepare(`
-    SELECT * FROM question_bank_items
-    WHERE source_run_id = ? AND bank_status = 'banked'
-    ORDER BY serial_no ASC
-  `).all(runId) as QuestionRow[]
-  if (!rows.length) throw new Error('当前批次暂无已入库题目，无法导出。')
-  const variant = options.variant || 'student'
-  return exportQuestionSetPdf({
-    id: `run-${run.runId}`,
-    title: options.title || run.paperTitle || run.pdfName || '综合练习',
-    rows,
-    template: 'worksheet',
-    variant,
-    createdAt: run.createdAt,
-    updatedAt: run.updatedAt,
-    bindingRunId: run.runId,
-  })
-}
-
-// ── Run exam PDF (qbank-exam template) ─────────────────────────────────────
-
-export function exportRunExamPdf(runId: string, options: { title?: string; variant?: StandardExportVariant }) {
-  const variant = options.variant || 'student'
-  const run = getRun(runId)
-  if (!run) throw new Error('批次不存在。')
-  const rows = db.prepare(`
-    SELECT * FROM question_bank_items
-    WHERE source_run_id = ? AND bank_status = 'banked'
-    ORDER BY serial_no ASC
-  `).all(runId) as QuestionRow[]
-  if (!rows.length) throw new Error('当前批次暂无已入库题目，无法导出。')
-  // The alternate template used to bypass all image review rules. Validate
-  // every exported question before choosing either renderer.
-  rows.forEach((row) => questionForExport(mapQuestion(row), runId, exportFieldsForVariant(variant)))
-  if (readAppSettings().examExportTemplate === 'examch') {
-    return exportRunExamZh(runId, { ...options, format: 'pdf', variant })
-  }
-  return exportQuestionSetPdf({
-    id: `run-${run.runId}`,
-    title: options.title || run.paperTitle || run.pdfName || '综合练习',
-    rows,
-    template: 'exam',
-    variant,
-    createdAt: run.createdAt,
-    updatedAt: run.updatedAt,
-    bindingRunId: run.runId,
-  })
-}
-
-// ── Re-export exam-zh functions so callers can use them directly ───────────
-
-export { buildRunExamZhLatex, exportRunExamZh, splitChoiceStemForExport }
+export { splitChoiceStemForExport }

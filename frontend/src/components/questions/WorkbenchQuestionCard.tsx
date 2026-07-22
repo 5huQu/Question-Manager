@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, Calendar, Check, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Crop, Grid, List, LoaderCircle, PencilLine, PlusSquare, Search, ShoppingBag, Tag, Tags, Trash2, X } from 'lucide-react'
+import { BookOpen, Calendar, Check, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsLeft, ChevronsRight, Crop, Grid, List, PencilLine, Plus, PlusSquare, Search, ShoppingBag, Tag, Trash2, X } from 'lucide-react'
 import { questionBankApi } from '@/api/questionBank'
 import { learningTagsApi } from '@/api/learningTags'
 import { FigureCropDialog } from '@/components/questions/FigureDialogs'
@@ -33,6 +33,7 @@ export function WorkbenchQuestionCard({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<Partial<QuestionItem>>(item)
   const [showAnalysis, setShowAnalysis] = useState(false)
+  const [saveNotice, setSaveNotice] = useState('')
 
   useEffect(() => {
     setDraft(item)
@@ -52,9 +53,11 @@ export function WorkbenchQuestionCard({
     if (changed) onReload()
   }
   async function saveEditedQuestion(nextDraft = draft) {
-    const saved = await questionBankApi.updateItem(item.id, nextDraft)
+    const saved = await questionBankApi.updateItem(item.id, nextDraft, item.contentRevision)
     setDraft(saved)
     setEditing(false)
+    setSaveNotice('题目已保存')
+    window.setTimeout(() => setSaveNotice(''), 3000)
     if (onQuestionSaved) onQuestionSaved(saved)
     else onReload()
   }
@@ -87,6 +90,7 @@ export function WorkbenchQuestionCard({
         </div>
 
         <div className="flex items-center gap-1.5">
+          {saveNotice ? <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"><CheckCircle className="size-3.5" />{saveNotice}</span> : null}
           <button
             type="button"
             onClick={() => setEditing(true)}
@@ -224,6 +228,7 @@ function QuestionBankDraftCard({
   const [showAnalysis, setShowAnalysis] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<Partial<QuestionItem>>(item)
+  const [saveNotice, setSaveNotice] = useState('')
   const stem = item.stemMarkdown || richBlocksPlainText(item.problemBlocks)
   const answer = item.answerText || richBlocksPlainText(item.answerBlocks)
   const analysis = item.analysisMarkdown || richBlocksPlainText(item.analysisBlocks)
@@ -237,9 +242,11 @@ function QuestionBankDraftCard({
   }, [item])
 
   async function saveEditedQuestion(nextDraft = draft) {
-    const saved = await questionBankApi.updateItem(item.id, nextDraft)
+    const saved = await questionBankApi.updateItem(item.id, nextDraft, item.contentRevision)
     setDraft(saved)
     setEditing(false)
+    setSaveNotice('题目已保存')
+    window.setTimeout(() => setSaveNotice(''), 3000)
     onQuestionSaved?.(saved)
   }
 
@@ -280,6 +287,7 @@ function QuestionBankDraftCard({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {saveNotice ? <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"><CheckCircle className="size-3.5" />{saveNotice}</span> : null}
           <button
             type="button"
             onClick={(event) => {
@@ -463,6 +471,7 @@ export function BankTab({
   const basketQuestionIds = useMemo(() => new Set((questionBank?.basket?.questions ?? []).map((entry) => entry.item.id)), [questionBank?.basket?.questions])
   const basketCount = questionBank?.basket?.questionCount ?? questionBank?.basket?.questions?.length ?? 0
   const totalItems = questionBank?.totalItems ?? 0
+  const classificationPendingCount = questionBank?.classificationPendingCount ?? 0
   const hasActiveFilters = Boolean(query.trim() || stage || questionType || difficulty || knowledgePoint.length > 0 || solutionMethod.length > 0)
   const stageOptions = tagLibraries.data?.stages?.length ? tagLibraries.data.stages : ['高一', '高二', '高三', '高中']
   const questionTypeOptions = tagLibraries.data?.questionTypes?.length ? tagLibraries.data.questionTypes : ['单选题', '多选题', '填空题', '解答题']
@@ -533,8 +542,11 @@ export function BankTab({
   }
 
   async function classifyAllQuestions() {
-    if (!totalItems || classifying) return
-    const confirmed = window.confirm(`确认对题库中的 ${totalItems} 道题目执行数据分类？本操作只更新知识点、解题方法和难度。`)
+    if (!classificationPendingCount || classifying) {
+      if (!classifying) setClassificationStatus('没有需要分类的题目。')
+      return
+    }
+    const confirmed = window.confirm(`确认对题库中尚未完成分类的 ${classificationPendingCount} 道题目执行数据分类？本操作只补充缺少的知识点、解题方法和难度。`)
     if (!confirmed) return
     setClassifying(true)
     setClassificationStatus('')
@@ -549,6 +561,12 @@ export function BankTab({
       setClassifying(false)
     }
   }
+
+  useEffect(() => {
+    const handleStartClassification = () => { void classifyAllQuestions() }
+    window.addEventListener('question-bank-start-classification', handleStartClassification)
+    return () => window.removeEventListener('question-bank-start-classification', handleStartClassification)
+  }, [classifyAllQuestions])
 
   function selectAllCurrentPage() {
     const pageIds = items.map((item) => item.id)
@@ -919,9 +937,7 @@ export function BankTab({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2 border-l border-zinc-200 pl-3 dark:border-zinc-800">
-            <Button size="sm" variant="outline" icon={classifying ? LoaderCircle : Tags} disabled={classifying || totalItems === 0} onClick={classifyAllQuestions}>
-              {classifying ? '分类中...' : '开始分类'}
-            </Button>
+            <Button size="sm" asLink to="/questions/new" icon={Plus}>新增题目</Button>
             <Button size="sm" variant="outline" asLink to="/questions/basket" icon={ShoppingBag}>试题篮 ({basketCount})</Button>
           </div>
         </div>

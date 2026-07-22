@@ -7,7 +7,6 @@ import {
   deleteItem,
   getItem,
   importJsonItems,
-  importJsonItemsFromSlices,
   listItems,
   questionFigureUpload,
   rerunItemOcr,
@@ -62,14 +61,6 @@ export function mountQuestionBankItemsRoutes(app: Express) {
   app.post('/api/question-bank/import-json', (req, res) => {
     try {
       res.status(201).json(importJsonItems(req.body || {}))
-    } catch (error) {
-      sendRouteError(res, error)
-    }
-  })
-
-  app.post('/api/question-bank/import-json-from-slices', (req, res) => {
-    try {
-      res.status(201).json(importJsonItemsFromSlices(req.body || {}))
     } catch (error) {
       sendRouteError(res, error)
     }

@@ -6,6 +6,13 @@ import { nowIso } from '../../utils/ids.js'
 
 type SqlValue = string | number | bigint | null | Buffer
 
+const classificationPendingSql = `
+  COALESCE(TRIM(knowledge_points_json), '') IN ('', '[]')
+  OR COALESCE(TRIM(solution_methods_json), '') IN ('', '[]')
+  OR COALESCE(difficulty_score_10, 0) <= 0
+  OR COALESCE(TRIM(difficulty_label), '') = ''
+`
+
 export function listQuestionBankItems(filters: {
   q: string
   stage: string
@@ -59,6 +66,8 @@ export function listQuestionBankItems(filters: {
 
   const totalRow = db.prepare(`SELECT COUNT(*) AS count FROM question_bank_items ${whereSql}`).get(...filterParams) as { count: number }
   const totalItems = totalRow.count ?? 0
+  const classificationPendingRow = db.prepare(`SELECT COUNT(*) AS count FROM question_bank_items WHERE ${classificationPendingSql}`).get() as { count: number }
+  const classificationPendingCount = classificationPendingRow.count ?? 0
   const totalPages = Math.max(1, Math.ceil(totalItems / filters.pageSize))
   const page = Math.min(totalPages, Math.max(1, filters.page))
   const offset = (page - 1) * filters.pageSize
@@ -68,7 +77,7 @@ export function listQuestionBankItems(filters: {
     ORDER BY updated_at DESC
     LIMIT ? OFFSET ?
   `).all(...filterParams, filters.pageSize, offset) as QuestionRow[]
-  return { items: rows.map(mapQuestion), totalItems, page, pageSize: filters.pageSize, totalPages, basket: getBasket() }
+  return { items: rows.map(mapQuestion), totalItems, classificationPendingCount, page, pageSize: filters.pageSize, totalPages, basket: getBasket() }
 }
 
 export function updateQuestionBankItem(id: string, values: SqlValue[], options: {
@@ -140,12 +149,6 @@ export function updateQuestionFigures(id: string, figures: Array<Record<string, 
 export function updateQuestionAfterFigureBinding(id: string, values: SqlValue[]) {
   db.prepare('UPDATE question_bank_items SET stem_markdown = ?, answer_text = ?, analysis_markdown = ?, figures_json = ?, bank_status = ?, format_review_required = ?, format_review_reasons_json = ?, updated_at = ? WHERE id = ?')
     .run(...values, id)
-}
-
-export function markRerunRunning(runId: string) {
-  const now = nowIso()
-  db.prepare("UPDATE pdf_slicer_runs SET ocr_status = 'running', ocr_error = '', ocr_started_at = COALESCE(NULLIF(ocr_started_at, ''), ?), updated_at = ? WHERE run_id = ?")
-    .run(now, now, runId)
 }
 
 export function updateQuestionFormatReviewState(id: string, values: {

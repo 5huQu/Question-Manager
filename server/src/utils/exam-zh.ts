@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { pythonRoot, storageRoot, runsRoot, frontendDist } from '../config.js'
 import { normalizeBlocks, inlineMarkdown, blocksToMarkdown, markdownToExamLatex, markdownTableToExamLatex, escapeLatexTextSegment, normalizeUnicodeRomanNumerals, normalizeLatexMathSegment, keepSubquestionsTogether } from './rich-content.js'
 import { questionFigures, analysisFigures, latexFigureLines, latexWithInlineFigures, figureCaptionForExport, markdownWithInlineFigures, removeDoc2xFigurePlaceholders, questionPlainText, doc2xInlineFigureIds, figuresWithoutInlineMarkers, figuresByIdentifier } from './figure-export.js'
-import { figureAbsolutePath } from './figure-helpers.js'
+import { figureAbsolutePath } from './image-operations.js'
 import { parseJson } from './json.js'
 import { normalizeQuestionType, exportQuestionType, paperQuestionNo, stripLeadingQuestionNo, selectedChoiceLetters } from './question-type.js'
 import { nowIso, safeName } from './ids.js'
@@ -116,6 +116,14 @@ export function examZhFigureLines(figures: Array<Record<string, any>>) {
   })
 }
 
+export function examZhChoiceFigureLines(figures: Array<Record<string, any>>) {
+  return figures.flatMap((figure) => {
+    const filePath = figureAbsolutePath(figure)
+    if (!filePath || !fs.existsSync(filePath)) return []
+    return [`\\includegraphics[width=0.9\\linewidth,keepaspectratio]{\\detokenize{${filePath}}}`]
+  })
+}
+
 export function renderExamZhPromptWithInlineFigures(
   prompt: string,
   figures: Array<Record<string, any>>,
@@ -142,7 +150,11 @@ export function renderExamZhPromptWithInlineFigures(
   return lines.join('\n')
 }
 
-export function renderExamZhMarkdownWithInlineFigures(content: string, figures: Array<Record<string, any>>) {
+export function renderExamZhMarkdownWithInlineFigures(
+  content: string,
+  figures: Array<Record<string, any>>,
+  figureLayout: 'block' | 'choice' = 'block',
+) {
   if (!doc2xInlineFigureIds(content).size) return markdownToExamLatex(content, true)
   const figureById = figuresByIdentifier(figures)
   const lines: string[] = []
@@ -154,7 +166,9 @@ export function renderExamZhMarkdownWithInlineFigures(content: string, figures: 
     const text = removeDoc2xFigurePlaceholders(source.slice(cursor, match.index))
     if (text) lines.push(markdownToExamLatex(text, true))
     const figure = figureById.get(match[1])
-    if (figure) lines.push(...examZhFigureLines([figure]))
+    if (figure) {
+      lines.push(...(figureLayout === 'choice' ? examZhChoiceFigureLines([figure]) : examZhFigureLines([figure])))
+    }
     cursor = match.index + match[0].length
   }
   const tail = removeDoc2xFigurePlaceholders(source.slice(cursor))
@@ -334,7 +348,7 @@ export function buildRunExamZhLatex(
     lines.push(`${questionScore ? `\\textbf{（${scoreText(questionScore)}分）}\\quad ` : ''}${renderExamZhPromptWithInlineFigures(prompt, stemFigures, questionType, variant, item.answerText) || '（题干待补充）'}`)
     if (choices.length) {
       lines.push('\\begin{choices}')
-      for (const choice of choices) lines.push(`  \\item ${renderExamZhMarkdownWithInlineFigures(choice, stemFigures)}`)
+      for (const choice of choices) lines.push(`  \\item ${renderExamZhMarkdownWithInlineFigures(choice, stemFigures, 'choice')}`)
       lines.push('\\end{choices}')
     }
     if (trailingContent) lines.push(renderExamZhMarkdownWithInlineFigures(trailingContent, stemFigures))

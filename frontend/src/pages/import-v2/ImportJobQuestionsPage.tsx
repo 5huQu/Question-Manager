@@ -11,6 +11,7 @@ import { Button, Empty, Input, SelectFilter } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { QuestionItem, TagLibraries } from '@/types'
 import { addQuestionToActiveBasket } from '@/utils/questionBasket'
+import { importJobDocumentPath } from './importV2Routes'
 
 export function ImportJobQuestionsPage() {
   const { jobId = '' } = useParams()
@@ -147,7 +148,7 @@ export function ImportJobQuestionsPage() {
             variant="outline"
             icon={Database}
             onClick={() => primaryDocumentId
-              ? navigate(`/tools/import/jobs/${encodeURIComponent(importJob.id)}/documents/${encodeURIComponent(primaryDocumentId)}`, { replace: true })
+              ? navigate(importJobDocumentPath(importJob.id, primaryDocumentId), { replace: true })
               : navigate('/tools/import', { replace: true })}
           >
             返回导入批次

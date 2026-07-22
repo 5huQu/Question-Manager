@@ -11,7 +11,7 @@ import type { OCRBBox, OCRDocument } from '../../types/ocr-document.js'
 import type { CandidateFigure, CandidateFigureUsage, CandidateParseDiagnostic, CandidateSourceRef, QuestionCandidate, QuestionCandidateStatus, UpdateQuestionCandidateInput } from '../../types/question-candidate.js'
 import { RouteError } from '../../utils/http-error.js'
 import { createId, nowIso } from '../../utils/ids.js'
-import { imageExtension } from '../../utils/figure-helpers.js'
+import { imageExtension } from '../../utils/image-operations.js'
 import { difficultyLabel10, normalizeDifficultyScore10 } from '../../utils/search.js'
 import { inferQuestionType, normalizeQuestionType } from '../../utils/question-type.js'
 import { normalizeTags } from '../tags/tag-libraries.js'
@@ -26,7 +26,8 @@ import {
   validateQuestionCandidate,
   validationIssueDiagnostics,
 } from '../question-parser/candidate-validator.js'
-import { revalidateAllCandidatesForSourceDocument } from '../pdf-slicer/annotations.service.js'
+import { revalidateAllCandidatesForSourceDocument } from './candidate-validation.service.js'
+import * as candidateFixRepo from '../../repositories/candidate-fix-sessions.repo.js'
 import { figuresForQuestionBank, getOcrFigureDiagnostics } from './figure-mapping.js'
 import { loadOcrDocument } from './ocr-document.service.js'
 import { readOcrSettings } from '../settings/ocr-settings.js'
@@ -150,6 +151,7 @@ function importJobContextForSource(sourceDocumentId: string) {
   if (!row) return null
   return {
     importSourceId: row.id,
+    importJobId: row.id,
     sourceTitle: row.paper_title || row.title || sourceTitle(sourceDocumentId),
   }
 }
@@ -723,6 +725,7 @@ export async function commitQuestionCandidate(id: string, options: { skipAutoCla
       examYear: candidate.examYear,
       sourceOrg: candidate.sourceOrg,
       importSourceId: importJobContext?.importSourceId || candidate.sourceDocumentId,
+      importJobId: importJobContext?.importJobId || null,
       bankStatus: 'ready',
       stemMarkdown: candidate.stemMarkdown,
       answerText: candidate.answerText,
@@ -775,9 +778,7 @@ export function skipQuestionCandidates(body: Record<string, unknown>) {
 
   withImmediateTransaction(() => {
     for (const candidate of candidates) {
-      const sessionId = `sess_candidate_${candidate.id}`
-      db.prepare('DELETE FROM pdf_slicer_annotation_regions WHERE session_id = ?').run(sessionId)
-      db.prepare('DELETE FROM pdf_slicer_annotation_sessions WHERE id = ?').run(sessionId)
+      candidateFixRepo.deleteForCandidate(candidate.id)
       candidateRepo.deleteQuestionCandidate(candidate.id)
     }
   })
@@ -794,14 +795,11 @@ export function deleteQuestionCandidate(id: string) {
     throw new RouteError(404, '候选题不存在。')
   }
 
-  const sessionId = `sess_candidate_${id}`
   const sourceDocumentId = candidate.sourceDocumentId
 
   db.exec('BEGIN IMMEDIATE')
   try {
-    // 删除该候选题关联的手动修正标注选区与会话
-    db.prepare('DELETE FROM pdf_slicer_annotation_regions WHERE session_id = ?').run(sessionId)
-    db.prepare('DELETE FROM pdf_slicer_annotation_sessions WHERE id = ?').run(sessionId)
+    candidateFixRepo.deleteForCandidate(id)
     // 删除候选题本身
     candidateRepo.deleteQuestionCandidate(id)
     db.exec('COMMIT')

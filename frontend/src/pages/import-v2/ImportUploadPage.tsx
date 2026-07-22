@@ -19,6 +19,7 @@ import { PageTitle, Panel, Button } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import { cityOptionsForProvince, provinceOptions, yearOptionsFromServerYear } from '@/utils/metadataOptions'
 import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
+import { importJobPath } from './importV2Routes'
 
 type UploadDocumentMode = 'single_document' | 'separated_documents' | 'doc2x_package'
 type Doc2xPackageDocumentMode = 'single_document' | 'separated_documents'
@@ -265,7 +266,7 @@ export default function ImportUploadPage() {
             : []),
         ])
         await importV2Api.parseImportJobCandidates(jobRes.importJob.id, { presetId: selectedDoc2xParserPresetId })
-        navigate(`/tools/import/jobs/${jobRes.importJob.id}`)
+        navigate(importJobPath(jobRes.importJob.id))
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
@@ -294,7 +295,7 @@ export default function ImportUploadPage() {
 
         if (autoOcr) {
           await importV2Api.startSourceDocumentOcr(res.sourceDocument.id)
-          navigate(`/tools/import/jobs/${jobRes.importJob.id}`)
+          navigate(importJobPath(jobRes.importJob.id))
         } else {
           navigate('/tools/import')
         }
@@ -339,7 +340,7 @@ export default function ImportUploadPage() {
             importV2Api.startSourceDocumentOcr(questionRes.sourceDocument.id),
             importV2Api.startSourceDocumentOcr(solutionRes.sourceDocument.id)
           ])
-          navigate(`/tools/import/jobs/${jobRes.importJob.id}`)
+          navigate(importJobPath(jobRes.importJob.id))
         } else {
           navigate('/tools/import')
         }
@@ -440,7 +441,7 @@ export default function ImportUploadPage() {
                 <label className="space-y-1.5">
                   <span className="text-[13px] font-medium text-zinc-500">年份</span>
                   <SearchableSelect
-                    value={metadataDraft.examYear}
+                    value={String(metadataDraft.examYear)}
                     options={yearOptions}
                     onChange={(examYear) => setMetadataDraft((d) => ({ ...d, examYear }))}
                     placeholder="请选择年份"

@@ -12,8 +12,7 @@ const code = [
   'import json, sys, importlib.metadata',
   'import fitz',
   'from PIL import Image',
-  'import flask',
-  'print(json.dumps({"executable": sys.executable, "version": sys.version.split()[0], "pymupdf": fitz.VersionBind, "pillow": Image.__version__, "flask": importlib.metadata.version("flask")}))',
+  'print(json.dumps({"executable": sys.executable, "version": sys.version.split()[0], "pymupdf": fitz.VersionBind, "pillow": Image.__version__}))',
 ].join('; ')
 const result = spawnSync(python, ['-I', '-c', code], {
   env: { ...process.env, PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' },

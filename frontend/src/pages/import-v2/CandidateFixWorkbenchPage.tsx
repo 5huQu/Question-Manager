@@ -23,6 +23,7 @@ import type { ManualFixRegion as Region, ManualFixSegment as Segment, ManualFixT
 import { useCandidateFixSession } from '@/hooks/useCandidateFixSession'
 import { useQuestionEditorDraft } from '@/hooks/useQuestionEditorDraft'
 import type { QuestionContentDraft } from '@/types/questionContent'
+import { candidateDetailPath, candidateReviewPath, importJobDocumentPath, legacySourceDocumentPath } from './importV2Routes'
 
 interface SourceProfile {
   pageCount?: number
@@ -53,7 +54,7 @@ function setFigureChoiceLabel(markdown: string, figure: any, optionLabel?: strin
 }
 
 export default function CandidateFixWorkbenchPage() {
-  const { sourceDocumentId: sourceDocumentIdFromPath, candidateId } = useParams<{ sourceDocumentId: string; candidateId: string }>()
+  const { jobId, sourceDocumentId: sourceDocumentIdFromPath, candidateId } = useParams<{ jobId: string; sourceDocumentId: string; candidateId: string }>()
   const [searchParams] = useSearchParams()
   const sourceDocumentIdFromQuery = searchParams.get('sourceDocumentId') || ''
   const sourceDocumentId = sourceDocumentIdFromPath || sourceDocumentIdFromQuery
@@ -168,10 +169,13 @@ export default function CandidateFixWorkbenchPage() {
   function navigateBack(skipUnsavedCheck = false) {
     if (!skipUnsavedCheck && textDirty && !window.confirm('内容尚未保存，确定离开当前页面吗？')) return
     const currentSourceDocumentId = candidate?.sourceDocumentId || sourceDocumentId
+    const documentPath = currentSourceDocumentId
+      ? (jobId ? importJobDocumentPath(jobId, currentSourceDocumentId) : legacySourceDocumentPath(currentSourceDocumentId))
+      : ''
     if (currentSourceDocumentId && candidateId) {
-      navigate(`/tools/import/documents/${encodeURIComponent(currentSourceDocumentId)}/candidates/${encodeURIComponent(candidateId)}`)
+      navigate(candidateDetailPath(documentPath, candidateId))
     } else if (currentSourceDocumentId) {
-      navigate(`/tools/import/documents/${encodeURIComponent(currentSourceDocumentId)}/candidates`)
+      navigate(candidateReviewPath(documentPath))
     } else {
       navigate('/tools/import')
     }

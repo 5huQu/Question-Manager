@@ -210,13 +210,13 @@ export const layoutDraftsApi = {
     api<{ revision: number; displayRevision?:number; status: string; pages: string[]; pdfUrl: string }>(
       `/api/question-bank/layout-drafts/${encodeURIComponent(id)}/pages`,
     ),
-  export: (id: string, revision: number) =>
+  export: (id: string, revision: number, variant: "student" | "teacher") =>
     api<any>(
       `/api/question-bank/layout-drafts/${encodeURIComponent(id)}/export`,
       {
         method: "POST",
         headers: jsonHeaders,
-        body: JSON.stringify({ revision, format: "pdf" }),
+        body: JSON.stringify({ revision, format: "pdf", variant }),
       },
     ),
   remove: (id: string) =>

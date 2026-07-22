@@ -55,6 +55,19 @@ try {
   assert.equal(student.includes('q1-analysis-unanchored'), false, '学生版不应输出解析图')
   assert.ok(student.includes('\\qbankchoiceswithfigure{right}{0.38}'), '单图选择题应自动使用左侧纵向选项、右侧题图布局')
 
+  const flowingSideLayout = buildCollectionWorksheetLatex(collection, 'student', figuresDir, new Map(), undefined, {
+    version: 1,
+    questions: [{ relationId: 'relation-1', choiceLayout: 'auto', figures: [], keepTogether: false }],
+  }).content
+  assert.ok(flowingSideLayout.includes('\\qbankchoiceswithfigure{right}{0.38}'), '关闭整题保持后仍应保留左选项、右题图布局')
+  assert.equal(flowingSideLayout.includes('\\Needspace{16\\baselineskip}'), false, '关闭整题保持后不得由右侧题图偷偷触发题前空间预留')
+
+  const protectedSideLayout = buildCollectionWorksheetLatex(collection, 'student', figuresDir, new Map(), undefined, {
+    version: 1,
+    questions: [{ relationId: 'relation-1', choiceLayout: 'auto', figures: [], keepTogether: true }],
+  }).content
+  assert.ok(protectedSideLayout.includes('\\Needspace{16\\baselineskip}'), '开启整题保持时应保留右侧题图的题前空间保护')
+
   const decision = decideWorksheetFigureLayout({
     questionId: 'question-1', figureId: 'stem-unanchored', imagePath: stemFigurePath,
     stemFigureCount: 1, hasInlineMarker: false, choices: ['-1', '-0.5', '0', '0.5'],
@@ -103,6 +116,24 @@ try {
   boundaryFigure.questions[0].item.stemMarkdown = '题干文字\n<!-- DOC2X_FIGURE:stem-unanchored -->\nA. 甲\nB. 乙\nC. 丙\nD. 丁'
   const boundary = buildCollectionWorksheetLatex(boundaryFigure, 'student', figuresDir, new Map()).content
   assert.match(boundary, /\\qbankchoiceswithfigure\{right\}[\s\S]*stem-unanchored[\s\S]*\\begin\{qbankchoicesone\}/, '题干与选项之间的单图锚点应进入选项右侧而非单独占行')
+
+  const solutionBoundaryFigure = structuredClone(collection)
+  solutionBoundaryFigure.questions[0].item.questionType = '解答题'
+  solutionBoundaryFigure.questions[0].item.stemMarkdown = '证明空间几何结论。\n\n<!-- DOC2X_FIGURE:stem-unanchored -->'
+  const solutionBoundary = buildCollectionWorksheetLatex(solutionBoundaryFigure, 'student', figuresDir, new Map()).content
+  assert.match(solutionBoundary, /证明空间几何结论。[\s\S]*\\qbankfigure\{[^}]*stem-unanchored/, '无选项题末尾的题图锚点必须按正文题图输出')
+  assert.doesNotMatch(solutionBoundary, /\\qbankchoiceswithfigure/, '解答题题图不得进入选择题左右混排宏')
+
+  const trailingStemFigure = structuredClone(collection)
+  trailingStemFigure.questions[0].item.stemMarkdown = '题干文字\nA. -1 B. -0.5\nC. 0 D. 0.5\n\n<!-- DOC2X_FIGURE:stem-unanchored -->'
+  const trailingStem = buildCollectionWorksheetLatex(trailingStemFigure, 'student', figuresDir, new Map()).content
+  assert.match(trailingStem, /\\qbankchoiceswithfigure\{right\}[\s\S]*stem-unanchored[\s\S]*\\begin\{qbankchoicesone\}/, '选项 D 后的题干图锚点应归位到左选项、右题图布局')
+  assert.doesNotMatch(trailingStem, /\\item 0\.5\s+\\includegraphics/, '题干图不得被吞入选项 D')
+
+  const trailingOptionFigure = structuredClone(trailingStemFigure)
+  trailingOptionFigure.questions[0].item.figures[0].usage = 'options'
+  const trailingOption = buildCollectionWorksheetLatex(trailingOptionFigure, 'student', figuresDir, new Map()).content
+  assert.doesNotMatch(trailingOption, /\\qbankchoiceswithfigure/, '选项图不得被误归位为右侧题干图')
 
   const labelledFigures = structuredClone(collection)
   labelledFigures.questions[0].item.stemMarkdown = [

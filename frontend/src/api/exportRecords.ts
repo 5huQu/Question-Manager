@@ -14,12 +14,6 @@ export type ExportRecordsParams = {
   limit?: number
 }
 
-export type RunExportResult = {
-  filename: string
-  format: string
-  url: string
-}
-
 export const exportRecordsApi = {
   listExportRecords(params: ExportRecordsParams = {}) {
     const query = new URLSearchParams()
@@ -44,15 +38,5 @@ export const exportRecordsApi = {
   },
   listCollectionExportRecords(collectionId: string) {
     return api<ExportRecordsResponse>(`/api/question-bank/collections/${encodeURIComponent(collectionId)}/export-records`)
-  },
-  listRunExportRecords(runId: string) {
-    return api<ExportRecordsResponse>(`/api/tools/pdf-slicer/runs/${encodeURIComponent(runId)}/export-records`)
-  },
-  exportRunBatch(runId: string, payload: Record<string, unknown>) {
-    return api<RunExportResult>(`/api/tools/pdf-slicer/runs/${encodeURIComponent(runId)}/export-batch`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify(payload),
-    })
   },
 }

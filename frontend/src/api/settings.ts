@@ -25,10 +25,10 @@ export const settingsApi = {
     })
   },
   getOcrSettings() {
-    return api<OcrSettings>('/api/tools/pdf-slicer/ocr-settings')
+    return api<OcrSettings>('/api/settings')
   },
   updateOcrSettings(settings: Partial<OcrSettings>) {
-    return api<OcrSettings>('/api/tools/pdf-slicer/ocr-settings', {
+    return api<OcrSettings>('/api/settings', {
       method: 'PATCH',
       headers: jsonHeaders,
       body: JSON.stringify(settings),

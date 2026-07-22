@@ -24,8 +24,13 @@ cp.execFileSync = (command, args, options) => {
 
 const { closeDatabase } = await import('../dist/index.js')
 const { db } = await import('../dist/db/connection.js')
-const { createOrRestoreCandidateManualFixSession, renderSourceDocumentPage } = await import('../dist/services/import-flow-v2/import-flow-v2.service.js')
-const { saveRegions, finalizeSession, getSession } = await import('../dist/services/pdf-slicer/annotations.service.js')
+const {
+  createOrRestoreCandidateFixSession,
+  finalizeCandidateFixSession,
+  getCandidateFixSession,
+  reopenCandidateFixSession,
+  saveCandidateFixRegions,
+} = await import('../dist/services/candidate-fix/candidate-fix.service.js')
 const candidateService = await import('../dist/services/import-flow-v2/candidate.service.js')
 const candidateRepo = await import('../dist/repositories/question-candidates.repo.js')
 
@@ -76,30 +81,27 @@ try {
     VALUES (?, ?, 'ocr_doc_test', '1', '1. 计算 $1+1=2$。', '2', '因为 $1+1=2$。', ?, ?, 'needs_manual_fix', '[]', '2026-06-25T00:00:00Z', '2026-06-25T00:00:00Z')
   `).run(candidateId, docId, JSON.stringify(initialFigures), JSON.stringify(initialSourceRefs))
 
-  // 2. Test createOrRestoreCandidateManualFixSession
-  console.log('Testing createOrRestoreCandidateManualFixSession...')
-  const session = createOrRestoreCandidateManualFixSession(candidateId)
-  assert.equal(session.id, `sess_candidate_${candidateId}`)
-  assert.equal(session.batchId, candidateId)
+  // 2. Test V2-native create/restore
+  console.log('Testing createOrRestoreCandidateFixSession...')
+  const session = createOrRestoreCandidateFixSession(candidateId)
+  assert.equal(session.candidateId, candidateId)
   assert.equal(session.status, 'draft')
-  assert.equal(Boolean(JSON.parse(session.sourceProfileJson)[solutionDocId]), true)
+  assert.equal(Boolean(session.sourceProfiles[solutionDocId]), true)
   const initialAnalysisRegion = session.regions.find((region) => region.kind === 'solution')
-  assert.equal(initialAnalysisRegion?.sourceRunId, solutionDocId)
+  assert.equal(initialAnalysisRegion?.sourceDocumentId, solutionDocId)
   const initialAnalysisFigureRegion = session.regions.find((region) => region.kind === 'shared_answer_key' && region.questionKeys?.includes('fig_solution_existing'))
-  assert.equal(initialAnalysisFigureRegion?.sourceRunId, solutionDocId)
-  db.prepare('UPDATE pdf_slicer_annotation_regions SET source_run_id = ? WHERE id = ?').run(docId, initialAnalysisFigureRegion?.id)
-  const restoredSession = createOrRestoreCandidateManualFixSession(candidateId)
-  const repairedFigureRegion = restoredSession.regions.find((region) => region.id === initialAnalysisFigureRegion?.id)
-  assert.equal(repairedFigureRegion?.sourceRunId, solutionDocId)
+  assert.equal(initialAnalysisFigureRegion?.sourceDocumentId, solutionDocId)
+  const restoredSession = createOrRestoreCandidateFixSession(candidateId)
+  assert.equal(restoredSession.id, session.id)
 
   db.prepare('UPDATE question_candidates SET figures_json = ?, source_refs_json = ? WHERE id = ?').run('[]', '[]', candidateId)
   
-  // 3. Test saveRegions (saving coordinates draft)
-  console.log('Testing saveRegions for candidate session...')
+  // 3. Test saving coordinates, ownership validation, and optimistic concurrency
+  console.log('Testing saveCandidateFixRegions for candidate session...')
   const mockRegions = [
     {
       id: 'reg_stem',
-      sourceRunId: docId,
+      sourceDocumentId: docId,
       kind: 'question',
       questionLabel: '题干',
       segments: [{ page: 1, x: 0.1, y: 0.1, width: 0.5, height: 0.2 }],
@@ -108,7 +110,7 @@ try {
     },
     {
       id: 'reg_analysis',
-      sourceRunId: solutionDocId,
+      sourceDocumentId: solutionDocId,
       kind: 'solution',
       questionLabel: '解析',
       segments: [{ page: 1, x: 0.1, y: 0.4, width: 0.5, height: 0.2 }],
@@ -117,7 +119,7 @@ try {
     },
     {
       id: 'reg_new_figure',
-      sourceRunId: docId,
+      sourceDocumentId: docId,
       kind: 'shared_answer_key',
       questionLabel: '题图',
       segments: [{ page: 2, x: 0.2, y: 0.2, width: 0.4, height: 0.3 }],
@@ -126,8 +128,11 @@ try {
     }
   ]
 
-  const savedSession = saveRegions(session.id, mockRegions, session.revision)
+  const savedSession = saveCandidateFixRegions(session.id, mockRegions, session.revision)
   assert.equal(savedSession.regions.length, 3)
+  assert.throws(() => saveCandidateFixRegions(session.id, mockRegions, session.revision), (error) => error?.status === 409)
+  assert.throws(() => saveCandidateFixRegions(session.id, [{ ...mockRegions[0], sourceDocumentId: 'not-owned' }], savedSession.revision), (error) => error?.status === 400)
+  assert.throws(() => saveCandidateFixRegions(session.id, [{ ...mockRegions[0], segments: [{ page: 9, x: 0, y: 0, width: 1, height: 1 }] }], savedSession.revision), (error) => error?.status === 400)
 
   // 4. Test finalizeSession with new markdown & cropping mock
   console.log('Testing finalizeSession for candidate...')
@@ -144,10 +149,11 @@ try {
   ]
   cropCalls = []
 
-  finalizeSession(session.id, {
+  const finalized = finalizeCandidateFixSession(session.id, {
     stemMarkdown: '1. 计算 $1+1$。',
     analysisMarkdown: '解析：1 加 1 的结果为 2。'
   })
+  assert.equal(finalized.session.status, 'finalized')
   assert.equal(cropCalls.length, 2)
   assert.equal(cropCalls.some((args) => args.includes(path.join(tempRoot, 'import-flow-v2', 'source-documents', solutionDocId, 'solution.pdf'))), true)
 
@@ -196,8 +202,23 @@ try {
     (error) => error?.status === 409 && error?.body?.error === 'candidate_committed' && error?.body?.committedQuestionId === 'qb_committed',
   )
   
-  const finalizedSession = getSession(session.id)
+  const finalizedSession = getCandidateFixSession(session.id)
   assert.equal(finalizedSession.status, 'finalized')
+
+  candidateRepo.updateQuestionCandidate(candidateId, { status: 'needs_review', committedQuestionId: '', committedAt: '' })
+  const reopened = reopenCandidateFixSession(session.id)
+  assert.equal(reopened.status, 'draft')
+  assert.equal(reopened.revision, finalizedSession.revision + 1)
+
+  const beforeFailedFinalize = candidateRepo.getQuestionCandidate(candidateId)
+  mockedResults = [{ regionId: 'reg_stem', error: 'forced crop failure' }]
+  assert.throws(() => finalizeCandidateFixSession(session.id), (error) => error?.status === 500)
+  const afterFailedFinalize = candidateRepo.getQuestionCandidate(candidateId)
+  assert.equal(afterFailedFinalize.contentRevision, beforeFailedFinalize.contentRevision)
+  assert.equal(getCandidateFixSession(session.id).status, 'draft')
+
+  candidateRepo.updateQuestionCandidate(candidateId, { status: 'committed', committedQuestionId: 'qb_committed' })
+  assert.throws(() => saveCandidateFixRegions(session.id, mockRegions, reopened.revision), (error) => error?.status === 409)
 
   console.log('集成测试全部通过 (Integrational tests passed)!')
 } finally {

@@ -2,7 +2,7 @@ import type { PaperKind } from '../utils/import-metadata.js'
 
 export type ImportJobMode = 'single_document' | 'separated_documents'
 
-export type ImportJobStatus = 'draft' | 'parsing' | 'parsed' | 'partially_parsed' | 'failed'
+export type ImportJobStatus = 'draft' | 'parsing' | 'parsed' | 'partially_parsed' | 'failed' | 'deleting'
 
 export type ImportJobDocumentRole = 'full' | 'questions' | 'solutions'
 

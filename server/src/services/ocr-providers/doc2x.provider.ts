@@ -151,27 +151,26 @@ export function assertDoc2xInputSupported(filePath: string) {
   }
 }
 
-export async function callDoc2xParsing(input: { filePath: string }) {
+type Doc2xProgress = {
+  uid: string
+  phase: string
+  progress: number
+}
+
+async function pollDoc2xParsing(input: {
+  uid: string
+  onProgress?: (progress: Doc2xProgress) => void
+}) {
   const config = doc2xConfig()
-  if (!input.filePath || !fs.existsSync(input.filePath)) {
-    throw new Doc2xProviderError('找不到 v2 OCR 的原始资料文件。')
-  }
-  assertDoc2xInputSupported(input.filePath)
-
-  const preupload = preuploadPayload(await fetchJson(config, '/api/v2/parse/preupload', {
-    method: 'POST',
-    body: JSON.stringify({ model: config.model }),
-  }))
-  await uploadFile(preupload.url, input.filePath, config.timeoutSeconds)
-
   while (true) {
-    const payload = await fetchJson(config, '/api/v2/parse/status?uid=' + encodeURIComponent(preupload.uid), { method: 'GET' })
+    const payload = await fetchJson(config, '/api/v2/parse/status?uid=' + encodeURIComponent(input.uid), { method: 'GET' })
     const status = statusPayload(payload)
+    input.onProgress?.({ uid: input.uid, phase: status.status || 'processing', progress: status.progress })
     if (status.status === 'success') {
       return {
         payload,
         metadata: {
-          uid: preupload.uid,
+          uid: input.uid,
           model: config.model,
           apiBaseUrl: config.apiBaseUrl,
           remoteProgress: status.progress,
@@ -183,4 +182,32 @@ export async function callDoc2xParsing(input: { filePath: string }) {
     }
     await sleep(config.pollSeconds * 1000)
   }
+}
+
+export async function resumeDoc2xParsing(input: {
+  uid: string
+  onProgress?: (progress: Doc2xProgress) => void
+}) {
+  if (!input.uid) throw new Doc2xProviderError('Doc2X 恢复任务缺少 uid。')
+  return pollDoc2xParsing(input)
+}
+
+export async function callDoc2xParsing(input: {
+  filePath: string
+  onProgress?: (progress: Doc2xProgress) => void
+}) {
+  const config = doc2xConfig()
+  if (!input.filePath || !fs.existsSync(input.filePath)) {
+    throw new Doc2xProviderError('找不到 v2 OCR 的原始资料文件。')
+  }
+  assertDoc2xInputSupported(input.filePath)
+
+  const preupload = preuploadPayload(await fetchJson(config, '/api/v2/parse/preupload', {
+    method: 'POST',
+    body: JSON.stringify({ model: config.model }),
+  }))
+  input.onProgress?.({ uid: preupload.uid, phase: 'uploading', progress: 0 })
+  await uploadFile(preupload.url, input.filePath, config.timeoutSeconds)
+  input.onProgress?.({ uid: preupload.uid, phase: 'processing', progress: 0 })
+  return pollDoc2xParsing({ uid: preupload.uid, onProgress: input.onProgress })
 }

@@ -38,7 +38,7 @@ try {
       ? { relationId: entry.relationId, order, choiceLayout: 'four', figures: [{ figureId: 'figure-1', placement: 'side-right', widthRatio: .32, alignment: 'right' }], keepTogether: true }
       : { relationId: entry.relationId, order, choiceLayout: 'auto', figures: [], keepTogether: true, pageBreakBefore: order === 3, answerAreaHeight: 6, answerAreaManual: true }),
   }
-  let draft = drafts.createLayoutDraft(collection.id, { name: '四页验收', layout })
+  let draft = drafts.createLayoutDraft(collection.id, { name: '四页验收', layout, variant: 'teacher' })
   const editedRelationId = reversed[0].relationId
   const originalStem = reversed[0].item.stemMarkdown
   draft = drafts.updateLayoutDraft(draft.id, {
@@ -82,9 +82,11 @@ try {
   assert.equal(cachedPreview.status, 'ready', '相同输入应同步命中缓存')
   assert.equal(db.prepare('SELECT COUNT(*) count FROM layout_preview_jobs').get().count, jobCount, '缓存命中不得新增编译任务')
 
-  const exported = drafts.exportLayoutDraft(draft.id, { revision: draft.revision, format: 'pdf' })
+  const exported = drafts.exportLayoutDraft(draft.id, { revision: draft.revision, format: 'pdf', variant: 'student' })
+  assert.equal(exported.exportRecord.variant, 'worksheet-student', '本次明确选择的学生版必须覆盖草稿默认教师版')
   assert.equal(exported.exportRecord.snapshot.draftId, draft.id)
   assert.equal(exported.exportRecord.snapshot.revision, draft.revision)
+  assert.equal(exported.exportRecord.snapshot.variant, 'student', '可复现快照应记录实际导出版本')
   assert.equal(exported.exportRecord.snapshot.contentOverrides[editedRelationId].stemMarkdown.includes('仅当前试卷校订标记'), true, '最终导出记录应保存实际内容覆盖')
   assert.equal(fs.existsSync(path.join(tempRoot, exported.path)), true, '最终导出的 PDF 文件应存在')
 

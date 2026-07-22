@@ -40,7 +40,7 @@ Question Manager 是一个本地优先的数学题库桌面工具，覆盖资料
   - `frontend/src/App.tsx`：前端路由、应用外壳、首次设置入口、自动更新提醒。
   - `frontend/src/api/`：前端 API 封装。页面应调用这里的方法，不要散写 `fetch('/api/...')`。
   - `frontend/src/pages/import-v2/`：当前主导入流程页面。
-  - `frontend/src/pages/pdf-slicer/`：旧 PDF 切题、人工标注和复核页面。
+  - 旧 PDF 切题页面已删除；历史 URL 只显示只读退役提示或跳转到 V2。
   - `frontend/src/pages/questions/`：题库列表、详情、新建、试卷预览。
   - `frontend/src/components/questions/`：题目渲染、编辑、题图和 BBoxCanvas。
   - `frontend/src/components/ui/` 与 `frontend/src/components/ui.tsx`：shadcn 风格基础组件。
@@ -53,10 +53,8 @@ Question Manager 是一个本地优先的数学题库桌面工具，覆盖资料
   - `server/src/repositories/`：SQL、row 映射、事务相关数据访问。
   - `server/src/types/`：SourceDocument、OCRDocument、QuestionCandidate 等业务类型。
   - `server/tag_libraries/`：内置学习标签库。
-- `server/python/`：Python OCR、切题、页面渲染和实验脚本。
-  - `server/python/src/cutter/`：旧 PDF 切题。
-  - `server/python/src/ocr/`：旧 OCR runner 与清理逻辑。
-  - `server/python/scripts/`：Node 后端会调用的工具脚本。
+- `server/python/`：V2 PDF 页面渲染/裁剪和题库分类所需的白名单运行时工具。
+  - 生产包只包含 `crop_manual_annotation.py`、`render_pdf_page.py`、`classify_question_bank.py` 与最小配置模块。
   - `server/python/requirements.txt` 与 `runtime-requirements.txt`：源码开发和打包运行时依赖。
 - `electron/`：Electron 主进程、preload、更新逻辑。
   - `electron/main.cjs`：生产桌面版启动本地 API 服务，并将 `QUESTION_DATA_DIR` 指向 Electron userData。
@@ -218,22 +216,9 @@ UI 规范：
 - 候选题入库只通过 `commitQuestionCandidate(s)`，入库后写入 `question_bank_items` 并标记 candidate 为 `committed`。
 - 手动修正通过 `createOrRestoreCandidateManualFixSession()` 创建/恢复旧 annotation session，修正后应更新 candidate，而不是直接改题库。
 
-## 旧 PDF 切题链路
+## 已退役的 V1 PDF 切题数据
 
-旧链路仍用于 PDF 切分中心、OCR 队列、旧待入库和人工标注：
-
-- routes：`server/src/routes/pdf-slicer/`
-- services：`server/src/services/pdf-slicer/`
-- repositories：`server/src/repositories/pdf-slicer/`
-- Python：`server/python/src/cutter/`、`server/python/scripts/run_cut.py`、`run_glm_ocr.py`
-- 前端：`frontend/src/pages/pdf-slicer/`、`frontend/src/pages/PendingBankPage.tsx`
-
-改旧链路时要保持：
-
-- run、batch、review item、solution item、annotation session 的状态语义。
-- 旧待入库 API 返回结构。
-- 题图框选、解析图、GLM 图文绑定行为。
-- Word/DOCX 上传对 LibreOffice 的检测提示。
+V1 生产 routes、services、repositories、Python runners 和前端页面均已退役。在真实数据迁移 gate 通过前，保留 V1 表与明确隔离的只读/迁移 adapter，禁止重新挂载写接口。
 
 ## 题库、标签、组卷、导出
 

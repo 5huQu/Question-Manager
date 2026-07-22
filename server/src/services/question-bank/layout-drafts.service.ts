@@ -24,7 +24,7 @@ import { syncQuestionBankItemToOcrDraft } from '../../utils/ocr-helpers.js'
 
 function parseJson(value: unknown, fallback: any) { try { return JSON.parse(String(value || '')) } catch { return fallback } }
 const contentSnapshotVersion = 1
-const previewRendererVersion = 'layout-preview-v3'
+const previewRendererVersion = 'layout-preview-v6'
 const previewWorkerOwner = `${os.hostname()}:${process.pid}:${Math.random().toString(36).slice(2,8)}`
 const activePreviewWorkers = new Map<string,{draftId:string;child:ChildProcess;leaseTimer:NodeJS.Timeout}>()
 let previewQueueTimer:NodeJS.Timeout|undefined
@@ -379,4 +379,15 @@ export function executeLayoutPreviewJob(jobId:string,owner:string){
 export function recoverInterruptedLayoutPreviews(){repo.failOrphanedPreviewStates();startPreviewQueuePolling()}
 export function getPreviewStatus(id:string){ return getLayoutDraft(id).preview }
 export function getPreviewPages(id:string){ const draft=getLayoutDraft(id); return {revision:draft.preview.revision,displayRevision:draft.preview.displayRevision,status:draft.preview.status,pages:draft.preview.pages,pdfUrl:draft.preview.pdfUrl} }
-export function exportLayoutDraft(id:string,body:Record<string,any>){ const row=repo.getLayoutDraft(id); if(!row) throw new RouteError(404,'排版草稿不存在。'); if(Number(body.revision)!==row.revision) throw new RouteError(409,'只能导出当前草稿版本。'); const frozen=parseJson(row.content_snapshot_json,{}); const overrides=parseJson(row.content_overrides_json,{});const snapshot=effectiveSnapshot(frozen,overrides); const layout=parseJson(row.layout_json,{}); assertSnapshotSupported(snapshot); return exportCollection(snapshot,{...body,variant:row.variant,template:row.template_id,layoutDraft:layout,reproducibleSnapshot:{draftId:id,revision:row.revision,templateId:row.template_id,templateVersion:row.template_version,layoutVersion:row.layout_version,contentSnapshot:frozen,contentOverrides:overrides,effectiveContentSnapshot:snapshot,layout}}) }
+export function exportLayoutDraft(id:string,body:Record<string,any>){
+  const row=repo.getLayoutDraft(id); if(!row) throw new RouteError(404,'排版草稿不存在。')
+  if(Number(body.revision)!==row.revision) throw new RouteError(409,'只能导出当前草稿版本。')
+  const requestedVariant=body.variant===undefined?row.variant:body.variant
+  if(requestedVariant!=='student'&&requestedVariant!=='teacher') throw new RouteError(400,'导出版本必须是学生版或教师版。')
+  const frozen=parseJson(row.content_snapshot_json,{})
+  const overrides=parseJson(row.content_overrides_json,{})
+  const snapshot=effectiveSnapshot(frozen,overrides)
+  const layout=parseJson(row.layout_json,{})
+  assertSnapshotSupported(snapshot)
+  return exportCollection(snapshot,{...body,variant:requestedVariant,template:row.template_id,layoutDraft:layout,reproducibleSnapshot:{draftId:id,revision:row.revision,variant:requestedVariant,templateId:row.template_id,templateVersion:row.template_version,layoutVersion:row.layout_version,contentSnapshot:frozen,contentOverrides:overrides,effectiveContentSnapshot:snapshot,layout}})
+}
