@@ -15,24 +15,18 @@ Question Manager 是一个本地优先的数学题库桌面工具，覆盖资料
 5. 正式入库：候选题 commit 后写入 question_bank_items。
 6. 题库与组卷：在题库检索、编辑、加试题篮、导出。
 
-旧的 PDF 切分中心仍然保留，用于兼容已有数据、人工标注、旧切题/OCR 链路和异常修正。不要在没有明确要求时删除旧链路。
+旧的 PDF 切分生产链路已经退役。在真实数据迁移门槛通过前，仍保留兼容表、只读迁移适配器和异常修正支持；不要在没有明确要求时删除这些兼容内容。
 
 ## 文档目录
 
 优先阅读顺序：
 
 - `README.md`：项目能力、运行方式、环境变量、打包、安全说明。
-- `Agent.md`：后续 Agent 操作指南，也就是当前文件。
-- `docs/import_flow_v2.md`：导入流程 v2 的产品目标、核心类型、API 和阶段规划。
+- `AGENTS.md`：英文版后续 Agent 操作指南，也是 Codex 的仓库级入口。
+- `AGENT_zhcn.md`：本文件，中文版操作指南。
 - `docs/ui_design_specification.md`：shadcn/ui 风格设计规范。普通页面开发必须遵守；默认不要顺手修改 AppSidebar、AppPageHeader、整体外壳。
-- `docs/AGENT_Cowork.md`：早期 Agent 协作规范，重点是后端分层、前端 API 封装、UI 约束、副作用清单。
 - `backend-layered-refactor-plan.md`：后端 route/service/repository 分层迁移原则和测试重点。
-- `docs/tasks/*.md`：历史任务设计文档，记录试题篮、导出、待入库、OCR 题图绑定、人工标注等模块的设计意图。
-- `docs/task_run/*.md`：某些任务的实际执行记录。
-- `Doc/CodeX_frontend_task/`：前端迁移任务说明。
 - `WINDOWS_BUILD.md`：Windows 构建与安装排错。
-
-不要把 `docs/lkcoffee-mcp.example.json` 当成本项目业务文档；那是无关连接器示例。
 
 ## 目录地图
 

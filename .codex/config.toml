@@ -1,4 +1,0 @@
-[mcp_servers.my-coffee]
-url = "https://gwmcp.lkcoffee.com/order/user/mcp"
-bearer_token_env_var = "LKCOFFEE_MCP_TOKEN"
-enabled = true

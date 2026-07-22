@@ -41,11 +41,13 @@ PROJECT_MEMORY.md
 pdf_slicer_design.html
 frontend/*_design.html
 /.claude/
+/.codex/
 /design_drafts/
 /design_workbench.html
 /docs/design-integration-conflicts.md
 /docs/export-template-integration.md
 /docs/updates.md
+/docs/archive/
 /tmp/
 
 # Logs and caches

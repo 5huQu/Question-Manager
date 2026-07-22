@@ -13,7 +13,7 @@ Question Manager 是一个本地优先的数学题库桌面工具，覆盖从整
 
 ## 核心能力
 
-当前实现状态与已知限制以 [`docs/capability_matrix.md`](docs/capability_matrix.md) 为准；候选题局部重新识别的技术方案见 [`docs/region_ocr_design.md`](docs/region_ocr_design.md)。
+下面列出当前实现的主要能力和已知限制；更具体的行为以代码、测试和导入 V2 文档为准。
 
 - **V2 整卷导入**：统一处理 PDF 与图片资料，持久化 OCR 任务，并从 `OCRDocument` 生成候选题。
 - **异常题手动修正**：在候选题修正工作台调整来源区域、正文和题图，不再创建旧切题 run。
@@ -175,12 +175,12 @@ build-and-install-windows.cmd
 | `CANDIDATE_FIGURE_UPLOAD_MAX_BYTES` | 候选题题图单文件上限，默认 `20971520`（20 MiB）。 |
 | `DOC2X_PACKAGE_UPLOAD_MAX_BYTES` | Doc2X 导出包单文件上限，默认 `209715200`（200 MiB）。 |
 | `UPLOAD_MAX_FIELDS` | multipart 表单字段数上限，默认 `32`。 |
-
-PDF 精确预览使用 SQLite 持久化队列。草稿内容、布局、模板文件或题图字节变化会生成新的 SHA-256；相同输入直接复用学生版/教师版 PDF 与页面图。草稿 revision 更新时，旧的排队或编译任务会被标记为取消。多进程部署必须让各实例共享同一 `QUESTION_DATA_DIR`，才能共享 SQLite 队列、缓存目录与预览制品。
 | `OCR_PROVIDER` | `glm` 或 `doc2x`。 |
 | `GLM_OCR_API_BASE_URL` / `GLM_OCR_API_KEY` / `GLM_OCR_MODEL` | GLM-OCR 配置。 |
 | `DOC2X_API_BASE_URL` / `DOC2X_API_KEY` / `DOC2X_MODEL` | Doc2X 配置。 |
 | `OCR_CLEANUP_*` | 可选的文本清理与分类模型配置。 |
+
+PDF 精确预览使用 SQLite 持久化队列。草稿内容、布局、模板文件或题图字节变化会生成新的 SHA-256；相同输入直接复用学生版/教师版 PDF 与页面图。草稿 revision 更新时，旧的排队或编译任务会被标记为取消。多进程部署必须让各实例共享同一 `QUESTION_DATA_DIR`，才能共享 SQLite 队列、缓存目录与预览制品。
 
 请勿提交 `config/`、`data/`、`python/ocr_drafts/`、`experiments/`、上传的 PDF、导出文件或任何密钥。
 

@@ -187,7 +187,10 @@ jobs:
 
       - name: Install ossutil
         run: |
-          curl -L -o ossutil64 https://gosspublic.alicdn.com/ossutil/1.7.19/ossutil64
+          curl -fsSL -o ossutil.zip https://gosspublic.alicdn.com/ossutil/1.7.19/ossutil-v1.7.19-linux-amd64.zip
+          echo "dcc512e4a893e16bbee63bc769339d8e56b21744fd83c8212a9d8baf28767343  ossutil.zip" | sha256sum --check --strict
+          unzip -q ossutil.zip
+          mv ossutil-v1.7.19-linux-amd64/ossutil64 ./ossutil64
           chmod +x ossutil64
 
       - name: Upload update files to Aliyun OSS

@@ -15,25 +15,18 @@ The current main product path is import flow v2:
 5. Commit to bank: committed candidates are written into question_bank_items.
 6. Bank and assemble: search/edit questions, add them to the basket, and export.
 
-The older PDF slicing center is still kept for compatibility with existing data, manual annotation, the legacy slicing/OCR path, and exceptional fixes. Do not remove the legacy path unless the user explicitly asks for it.
+The older PDF slicing production path has been retired. Compatibility tables, read-only migration adapters, and exceptional-fix support remain until the real-data migration gate passes; do not remove them unless the user explicitly asks for it.
 
 ## Documentation Map
 
 Recommended reading order:
 
 - `README.md`: product capabilities, run commands, environment variables, packaging, and security notes.
-- `AGENT.md`: this future-Agent guide.
+- `AGENTS.md`: this future-Agent guide.
 - `AGENT_zhcn.md`: Chinese version of this guide.
-- `docs/import_flow_v2.md`: import flow v2 product goals, core types, APIs, and staged plan.
 - `docs/ui_design_specification.md`: shadcn/ui style rules. Ordinary page work must follow it; do not casually change AppSidebar, AppPageHeader, or the app shell.
-- `docs/AGENT_Cowork.md`: earlier Agent collaboration rules, especially backend layering, frontend API wrappers, UI constraints, and side-effect checklist.
 - `backend-layered-refactor-plan.md`: backend route/service/repository layering principles and testing focus.
-- `docs/tasks/*.md`: historical task designs for the basket, export, pending bank, OCR figure binding, manual annotation, and related modules.
-- `docs/task_run/*.md`: execution notes for selected tasks.
-- `Doc/CodeX_frontend_task/`: frontend migration task notes.
 - `WINDOWS_BUILD.md`: Windows build and installer troubleshooting.
-
-Do not treat `docs/lkcoffee-mcp.example.json` as project business documentation; it is an unrelated connector example.
 
 ## Repository Map
 
