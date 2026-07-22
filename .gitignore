@@ -41,6 +41,7 @@ PROJECT_MEMORY.md
 pdf_slicer_design.html
 frontend/*_design.html
 /.claude/
+/.agents/
 /.codex/
 /design_drafts/
 /design_workbench.html
