@@ -16,7 +16,7 @@ export type UnifiedQuestion = {
     relatedBlockIds?: string[]
     relatedFigures?: ImportV2Candidate['figures']
   }>
-  figures: Array<{ id: string; usage: string; path: string; pageNo?: number; blockId?: string; sourceBlockId?: string; bbox?: any; inlineMarker?: string; optionLabel?: string }>
+  figures: Array<{ id: string; usage: 'stem' | 'analysis' | 'options' | 'unknown'; path: string; pageNo?: number; blockId?: string; sourceBlockId?: string; bbox?: any; inlineMarker?: string; optionLabel?: string }>
   hasFigures: boolean
   similarQuestions?: any[]
   parseDiagnostics: Array<{ code: string; severity: 'info' | 'warning' | 'error'; message: string; questionNo?: string }>
