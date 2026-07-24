@@ -19,7 +19,7 @@ import { PageTitle, Panel, Button } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import { cityOptionsForProvince, provinceOptions, yearOptionsFromServerYear } from '@/utils/metadataOptions'
 import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
-import { importJobPath } from './importV2Routes'
+import { importJobDocumentPath, importJobPath } from './importV2Routes'
 
 type UploadDocumentMode = 'single_document' | 'separated_documents' | 'doc2x_package'
 type Doc2xPackageDocumentMode = 'single_document' | 'separated_documents'
@@ -266,7 +266,7 @@ export default function ImportUploadPage() {
             : []),
         ])
         await importV2Api.parseImportJobCandidates(jobRes.importJob.id, { presetId: selectedDoc2xParserPresetId })
-        navigate(importJobPath(jobRes.importJob.id))
+        navigate(importJobDocumentPath(jobRes.importJob.id, questionImported.sourceDocument.id))
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
@@ -295,7 +295,7 @@ export default function ImportUploadPage() {
 
         if (autoOcr) {
           await importV2Api.startSourceDocumentOcr(res.sourceDocument.id)
-          navigate(importJobPath(jobRes.importJob.id))
+          navigate(importJobDocumentPath(jobRes.importJob.id, res.sourceDocument.id))
         } else {
           navigate('/tools/import')
         }
@@ -340,7 +340,7 @@ export default function ImportUploadPage() {
             importV2Api.startSourceDocumentOcr(questionRes.sourceDocument.id),
             importV2Api.startSourceDocumentOcr(solutionRes.sourceDocument.id)
           ])
-          navigate(importJobPath(jobRes.importJob.id))
+          navigate(importJobDocumentPath(jobRes.importJob.id, questionRes.sourceDocument.id))
         } else {
           navigate('/tools/import')
         }

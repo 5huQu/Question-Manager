@@ -186,6 +186,38 @@ function markerDrivenAppendixStart(
   return { start, repeatedQuestionNos, firstQuestionNoAfterHeading: firstAfterNo }
 }
 
+function restartedQuestionAppendixStart(
+  source: string,
+  questionMatches: QuestionNumberMatch[],
+): { start: number; repeatedQuestionNos: string[]; firstQuestionNoAfterHeading?: string } | undefined {
+  if (questionMatches.length < 6) return undefined
+
+  for (let index = 1; index <= questionMatches.length - 3; index += 1) {
+    const first = questionMatches[index]
+    if (numberValue(first.questionNo) !== 1 || first.start < source.length * 0.35) continue
+
+    const beforeNumbers = new Set(questionMatches.slice(0, index).map((item) => numberValue(item.questionNo)).filter((item): item is number => item !== undefined))
+    if (!beforeNumbers.has(1) || !beforeNumbers.has(2) || !beforeNumbers.has(3)) continue
+
+    const repeatedQuestionNos: string[] = []
+    let expected = 1
+    for (let cursor = index; cursor < questionMatches.length; cursor += 1) {
+      const value = numberValue(questionMatches[cursor].questionNo)
+      if (value !== expected || !beforeNumbers.has(value)) break
+      repeatedQuestionNos.push(String(value))
+      expected += 1
+    }
+    if (repeatedQuestionNos.length < 3) continue
+
+    return {
+      start: first.lineStart,
+      repeatedQuestionNos,
+      firstQuestionNoAfterHeading: first.questionNo,
+    }
+  }
+  return undefined
+}
+
 export function classifyQuestionDocumentLayout(
   markdown: string,
   config: ImportFlowV2ParserConfig = getParserConfig(),
@@ -204,6 +236,9 @@ export function classifyQuestionDocumentLayout(
     questionMatches,
     [...answerMarkers, ...analysisMarkers].sort((left, right) => left - right),
   )
+  const restartedAppendix = globalSection || markerAppendix
+    ? undefined
+    : restartedQuestionAppendixStart(source, questionMatches)
   const firstAnswerOffset = answerMarkers[0]
   const firstAnalysisOffset = analysisMarkers[0]
   const evidence: QuestionDocumentLayoutEvidence = {
@@ -215,10 +250,10 @@ export function classifyQuestionDocumentLayout(
     firstAnalysisOffset,
     firstAnswerPage: pageForOffset(pageMarkers, firstAnswerOffset),
     firstAnalysisPage: pageForOffset(pageMarkers, firstAnalysisOffset),
-    globalSolutionHeadingOffset: globalSection?.section.start ?? markerAppendix?.start,
-    globalSolutionHeadingTitle: globalSection?.section.title,
-    repeatedQuestionNosAfterHeading: globalSection?.repeatedQuestionNos || markerAppendix?.repeatedQuestionNos || [],
-    firstQuestionNoAfterHeading: globalSection?.firstQuestionNoAfterHeading || markerAppendix?.firstQuestionNoAfterHeading,
+    globalSolutionHeadingOffset: globalSection?.section.start ?? markerAppendix?.start ?? restartedAppendix?.start,
+    globalSolutionHeadingTitle: globalSection?.section.title || (restartedAppendix ? '同文档题号序列重启' : undefined),
+    repeatedQuestionNosAfterHeading: globalSection?.repeatedQuestionNos || markerAppendix?.repeatedQuestionNos || restartedAppendix?.repeatedQuestionNos || [],
+    firstQuestionNoAfterHeading: globalSection?.firstQuestionNoAfterHeading || markerAppendix?.firstQuestionNoAfterHeading || restartedAppendix?.firstQuestionNoAfterHeading,
   }
 
   if (!questionMatches.length) {
@@ -254,6 +289,16 @@ export function classifyQuestionDocumentLayout(
       cleaningRule: 'same_document_appendix',
       confidence: 0.78,
       solutionStart: markerAppendix.start,
+      evidence,
+    }
+  }
+
+  if (restartedAppendix) {
+    return {
+      layout: 'appendix_solution',
+      cleaningRule: 'same_document_appendix',
+      confidence: 0.84,
+      solutionStart: restartedAppendix.start,
       evidence,
     }
   }

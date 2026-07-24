@@ -873,7 +873,11 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
   }
 
   async function handleContinueCheck(item: ImportV2SourceDocument) {
-    navigateToCandidates(item.id)
+    if ((item.importStats?.candidateCount || 0) > 0) {
+      navigateToCandidates(item.id)
+    } else {
+      navigateToDocument(item.id)
+    }
   }
 
   async function loadCandidatesForSourceDocument(
@@ -890,6 +894,12 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
       }
       const result = await fetchCandidates(item.id, { force: Boolean(options.showLoadedNotice) })
       const unified = (result.items || []).map(fromCandidate)
+      if (isCandidatesRoute && unified.length === 0) {
+        setShowCheckArea(false)
+        setActiveStepTab('upload')
+        navigateToDocument(item.id, { replace: true })
+        return
+      }
       setQuestions(unified)
       setDiagnostics(result.diagnostics || null)
       setCommittedIds(new Set(unified.filter((q) => q.status === 'committed').map((q) => q.id)))
@@ -1210,6 +1220,49 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
       showNotice(target.id === activeQuestion.id
         ? '图片用途已更新。'
         : `图片已移动到第 ${target.questionNo || '未编号'} 题。`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function handleDeleteCandidateFigure(figure: UnifiedQuestion['figures'][number]) {
+    if (!activeQuestion || activeQuestionCommitted) return
+    if (!window.confirm(`确定删除题图 ${figure.id || ''} 吗？正文中的对应图片占位符也会一并移除。`)) return
+
+    const identifiers = [figure.id, figure.blockId, figure.sourceBlockId].filter(Boolean).map(String)
+    const removeMarkers = (value: string) => {
+      let next = String(value || '')
+      for (const identifier of identifiers) {
+        const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        next = next.replace(new RegExp(`\\n?\\s*<!--\\s*DOC2X_FIGURE:${escaped}\\s*-->\\s*\\n?`, 'g'), '\n')
+      }
+      return next.replace(/\n{3,}/g, '\n\n').trim()
+    }
+    const nextFigures = activeQuestion.figures.filter((item) => item !== figure && item.id !== figure.id)
+    setBusy(`delete-figure-${figure.id}`)
+    setError('')
+    try {
+      await importV2Api.updateCandidate(activeQuestion.id, {
+        figures: nextFigures,
+        stemMarkdown: removeMarkers(activeQuestion.stemMarkdown),
+        answerText: removeMarkers(activeQuestion.answerText),
+        analysisMarkdown: removeMarkers(activeQuestion.analysisMarkdown),
+      }, activeQuestion.rawItem?.contentRevision)
+      const sourceDocumentId = String(activeQuestion.rawItem?.sourceDocumentId || selectedDoc?.id || sourceDocumentIdFromPath || '')
+      if (sourceDocumentId) {
+        invalidateImportV2Queries()
+        const result = await fetchCandidates(sourceDocumentId, { force: true })
+        setQuestions((result.items || []).map(fromCandidate))
+        setDiagnostics(result.diagnostics || null)
+      }
+      setFigureMoveDrafts((current) => {
+        const next = { ...current }
+        delete next[`${activeQuestion.id}:${figure.id}`]
+        return next
+      })
+      showNotice('题图已删除。')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -1588,6 +1641,16 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
                 <option key={preset.id} value={preset.id}>{preset.name}</option>
               ))}
             </select>
+            <Button
+              size="sm"
+              variant="outline"
+              icon={busy === `reclean-${selectedDoc.id}` ? LoaderCircle : RefreshCcw}
+              disabled={Boolean(busy) || !selectedParserPresetId || !canRecleanSelectedDoc}
+              onClick={handleApplySelectedParserPreset}
+              title={selectedDocCommittedCount > 0 ? '该批次已有题目入库，暂不支持重新解析。' : '按当前所选预设重新生成未入库候选题。'}
+            >
+              {busy === `reclean-${selectedDoc.id}` ? '解析中...' : '重新解析'}
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -2510,6 +2573,9 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
                             optionLabel: figure.optionLabel || 'A',
                           }
                           const moving = busy === `move-figure-${figure.id}`
+                          const deleting = busy === `delete-figure-${figure.id}`
+                          const figurePath = String(figure.path || '').trim()
+                          const renderableFigure = Boolean(figurePath) && !figurePath.startsWith('<')
                           const unchanged = draft.candidateId === activeQuestion.id
                             && draft.usage === currentUsage
                             && (draft.usage !== 'options' || draft.optionLabel === (figure.optionLabel || 'A'))
@@ -2518,10 +2584,14 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
                               <button
                                 type="button"
                                 className="flex h-20 w-28 items-center justify-center overflow-hidden rounded-md border border-border bg-white"
-                                onClick={() => window.open(assetUrl(figure.path), '_blank', 'noopener,noreferrer')}
+                                onClick={() => renderableFigure ? window.open(assetUrl(figure.path), '_blank', 'noopener,noreferrer') : undefined}
                                 title="查看原图"
                               >
-                                <img src={assetUrl(figure.path)} alt={`题图 ${index + 1}`} className="h-full w-full object-contain" />
+                                {renderableFigure ? (
+                                  <img src={assetUrl(figure.path)} alt={`题图 ${index + 1}`} className="h-full w-full object-contain" />
+                                ) : (
+                                  <span className="px-2 text-center text-[10px] leading-4 text-amber-700">该资源不是图片<br />可能是表格内容</span>
+                                )}
                               </button>
                               <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(9rem,1fr)_minmax(8rem,0.8fr)_4.5rem]">
                                 <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
@@ -2576,15 +2646,26 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
                                   </label>
                                 ) : null}
                               </div>
-                              <Button
-                                size="xs"
-                                variant="outline"
-                                icon={moving ? LoaderCircle : ArrowRightLeft}
-                                disabled={activeQuestionCommitted || Boolean(busy) || unchanged}
-                                onClick={() => handleMoveCandidateFigure(figure)}
-                              >
-                                {moving ? '处理中…' : draft.candidateId === activeQuestion.id ? '应用' : '移动'}
-                              </Button>
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  icon={moving ? LoaderCircle : ArrowRightLeft}
+                                  disabled={activeQuestionCommitted || Boolean(busy) || unchanged}
+                                  onClick={() => handleMoveCandidateFigure(figure)}
+                                >
+                                  {moving ? '处理中…' : draft.candidateId === activeQuestion.id ? '应用' : '移动'}
+                                </Button>
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  icon={deleting ? LoaderCircle : Trash2}
+                                  disabled={activeQuestionCommitted || Boolean(busy)}
+                                  onClick={() => handleDeleteCandidateFigure(figure)}
+                                >
+                                  {deleting ? '删除中…' : '删除'}
+                                </Button>
+                              </div>
                             </div>
                           )
                         })}

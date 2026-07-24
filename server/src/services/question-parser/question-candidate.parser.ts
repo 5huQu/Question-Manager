@@ -500,8 +500,48 @@ function mergeSolutionMatch(target: SolutionMatch | undefined, patch: SolutionMa
   }
 }
 
+function inferUnmarkedStandaloneAnswer(body: string, offset: number): SolutionMatch | undefined {
+  const source = String(body || '')
+  const lines = source.split(/(?<=\n)/)
+  let lineOffset = 0
+  let answerStart = -1
+  let answerEnd = -1
+  let answerText = ''
+
+  for (const lineWithNewline of lines) {
+    const line = lineWithNewline.replace(/\n$/, '')
+    const trimmed = line.trim()
+    if (trimmed && !/^<!--\s*(?:GLM|DOC2X)_PAGE:\s*\d+\s*-->$/.test(trimmed)) {
+      answerStart = lineOffset + line.indexOf(trimmed)
+      answerEnd = answerStart + trimmed.length
+      answerText = trimmed
+      break
+    }
+    lineOffset += lineWithNewline.length
+  }
+
+  if (!answerText || answerText.length > 80) return undefined
+  if (/[。！？；]/.test(answerText)) return undefined
+  if (/^(?:[（(]\s*\d+\s*[)）]|解|证明|因为|由|设|当|若|故|所以|分析|详解)/.test(answerText)) return undefined
+
+  const restStart = answerEnd
+  const analysisMarkdown = source.slice(restStart)
+    .replace(/<!--\s*(?:GLM|DOC2X)_PAGE:\s*\d+\s*-->/g, '')
+    .trim()
+  return {
+    answerText,
+    analysisMarkdown: analysisMarkdown || undefined,
+    answerRange: { start: offset + answerStart, end: offset + answerEnd },
+    analysisRange: analysisMarkdown ? { start: offset + restStart, end: offset + source.length } : undefined,
+  }
+}
+
 function solutionMatchFromWholeDocumentChunk(body: string, offset: number, fallbackRange: MarkdownRange): SolutionMatch {
   const fields = splitQuestionFields(body, offset)
+  if (!fields.hasFieldMarkers) {
+    const inferred = inferUnmarkedStandaloneAnswer(body, offset)
+    if (inferred) return inferred
+  }
   const inferredLeadingAnswer = !fields.answerText && fields.analysisMarkdown ? nonEmpty(fields.stemMarkdown) : undefined
   const answerText = nonEmpty(fields.answerText) || inferredLeadingAnswer
   const analysisMarkdown = nonEmpty(fields.analysisMarkdown) || (!answerText ? nonEmpty(fields.stemMarkdown) : undefined)

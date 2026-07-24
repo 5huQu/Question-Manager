@@ -20,6 +20,14 @@ function inlineFigureIds(content: string) {
   return new Set(Array.from(String(content || '').matchAll(DOC2X_FIGURE_MARKER), (match) => match[1]))
 }
 
+function figureMarkerIds(figure: QuestionFigure) {
+  return [figure.id, figure.blockId].map((value) => String(value || '').trim()).filter(Boolean)
+}
+
+function isInlineFigure(figure: QuestionFigure, inlineIds: Set<string>) {
+  return figureMarkerIds(figure).some((id) => inlineIds.has(id))
+}
+
 function InlineFigure({ figure, index }: { figure: QuestionFigure; index: number }) {
   const [preview, setPreview] = useState(false)
   const [error, setError] = useState(false)
@@ -50,7 +58,10 @@ function InlineFigure({ figure, index }: { figure: QuestionFigure; index: number
 /** Render Doc2X figures exactly where their source Markdown placed them. */
 export function MarkdownWithInlineFigures({ content, figures = [], className = '' }: { content: string; figures?: QuestionFigure[]; className?: string }) {
   const source = String(content || '')
-  const figureById = new Map(figures.filter((figure) => figure.path).map((figure) => [String(figure.blockId || figure.id), figure]))
+  const figureById = new Map<string, QuestionFigure>()
+  for (const figure of figures.filter((item) => item.path)) {
+    for (const id of figureMarkerIds(figure)) figureById.set(id, figure)
+  }
   const nodes: ReactNode[] = []
   let cursor = 0
   let match: RegExpExecArray | null
@@ -107,7 +118,7 @@ export function SolutionDisclosure({
             <section className="rounded-xl border bg-zinc-50 p-3">
               <p className="mb-1 text-xs text-zinc-500">解析</p>
               {hasAnalysis ? <MarkdownWithInlineFigures className="text-sm leading-6" content={analysisText} figures={analysisFigures} /> : <span className="text-xs text-zinc-400">暂无解析</span>}
-              <FigureGallery figures={analysisFigures.filter((figure) => !analysisInlineIds.has(String(figure.blockId || figure.id)) && !answerInlineIds.has(String(figure.blockId || figure.id)))} className="mt-3" />
+              <FigureGallery figures={analysisFigures.filter((figure) => !isInlineFigure(figure, analysisInlineIds) && !isInlineFigure(figure, answerInlineIds))} className="mt-3" />
             </section>
           </div>
         </div>
@@ -137,7 +148,7 @@ export function QuestionMarkdownContent({ content, figures = [], className = '',
       <MarkdownWithInlineFigures content={stemContent} figures={visibleFigures} />
       {parsedChoice ? <ChoiceOptions options={parsedChoice.options} figures={optionFigures} /> : null}
       {parsedChoice?.remainder ? <MarkdownWithInlineFigures className="mt-3" content={parsedChoice.remainder} figures={visibleFigures} /> : null}
-      {visibleFigures.length ? <FigureGallery figures={visibleFigures.filter((figure) => !inlineIds.has(String(figure.blockId || figure.id)))} className="mt-3" /> : null}
+      {visibleFigures.length ? <FigureGallery figures={visibleFigures.filter((figure) => !isInlineFigure(figure, inlineIds))} className="mt-3" /> : null}
     </div>
   )
 }

@@ -77,6 +77,15 @@ function builtinParserPresets(): ImportParserPreset[] {
       builtIn: true,
     },
     {
+      id: 'same_document_appendix',
+      name: '同文档前题干后答案',
+      description: '同一文档前半部分为题干，后半部分题号从 1 重新开始并给出答案或解析。',
+      config: normalizeParserConfig({ ...defaultParserConfig, solutionBindingStrategy: 'heading_then_question' }),
+      createdAt: now,
+      updatedAt: now,
+      builtIn: true,
+    },
+    {
       id: 'mixed_inline_solution',
       name: '题干答案混排 · 有答案表',
       description: '题干中直接带答案、解析标记，同时允许答案汇总表补充空缺。',

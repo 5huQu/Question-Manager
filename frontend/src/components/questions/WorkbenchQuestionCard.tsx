@@ -4,7 +4,7 @@ import { questionBankApi } from '@/api/questionBank'
 import { learningTagsApi } from '@/api/learningTags'
 import { FigureCropDialog } from '@/components/questions/FigureDialogs'
 import { EditDialog } from '@/components/questions/EditDialog'
-import { QuestionMarkdownContent } from '@/components/questions/QuestionContent'
+import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import { Badge, Button, Empty, TagRow } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { QuestionBankResponse, QuestionItem, TagLibraries } from '@/types'
@@ -146,13 +146,13 @@ export function WorkbenchQuestionCard({
             <div>
               <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【答案】</span>
               <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                <QuestionMarkdownContent content={answer || '暂无答案'} figures={item.figures} />
+                <MarkdownWithInlineFigures content={answer || '暂无答案'} figures={item.figures} />
               </div>
             </div>
             <div>
               <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【解析】</span>
               <div className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                <QuestionMarkdownContent content={analysis || '暂无解析'} figures={item.figures} />
+                <MarkdownWithInlineFigures content={analysis || '暂无解析'} figures={item.figures} />
               </div>
             </div>
           </div>
@@ -326,13 +326,13 @@ function QuestionBankDraftCard({
             <div>
               <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【答案】</span>
               <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                <QuestionMarkdownContent content={answer || '暂无答案'} figures={item.figures} />
+                <MarkdownWithInlineFigures content={answer || '暂无答案'} figures={item.figures} />
               </div>
             </div>
             <div>
               <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【解析】</span>
               <div className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                <QuestionMarkdownContent content={analysis || '暂无解析'} figures={item.figures} />
+                <MarkdownWithInlineFigures content={analysis || '暂无解析'} figures={item.figures} />
               </div>
             </div>
           </div>

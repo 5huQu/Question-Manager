@@ -444,6 +444,44 @@ assert.match(appendixSolutionWithoutHeadingWithLeadAnswerCandidates[0].analysisM
 assert.equal(appendixSolutionWithoutHeadingWithLeadAnswerCandidates.some((candidate) => candidate.issues.some((issue) => issue.code === 'duplicate_question_no')), false)
 assert.doesNotMatch(appendixSolutionWithoutHeadingWithLeadAnswerCandidates[0].stemMarkdown, /^A$/)
 
+const appendixSolutionWithoutAnyHeadingDocument = {
+  ...ocrDocument,
+  id: 'ocr_appendix_solution_without_any_heading_test',
+  markdown: [
+    '<!-- GLM_PAGE:1 -->',
+    '# 数学试卷',
+    '## 一、选择题',
+    '1. 第一题题干，以下四个选项中只有一个符合要求。',
+    '',
+    '2. 第二题题干，以下四个选项中只有一个符合要求。',
+    '',
+    '3. 第三题题干，以下四个选项中只有一个符合要求。',
+    '',
+    '4. 第四题题干，以下四个选项中只有一个符合要求。',
+    '',
+    '<!-- GLM_PAGE:5 -->',
+    '1. A',
+    '',
+    '2. B',
+    '',
+    '3. C',
+    '',
+    '4. D',
+    '第四题解析正文。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const appendixSolutionWithoutAnyHeadingClassification = classifyQuestionDocumentLayout(appendixSolutionWithoutAnyHeadingDocument.markdown)
+assert.equal(appendixSolutionWithoutAnyHeadingClassification.layout, 'appendix_solution')
+assert.match(appendixSolutionWithoutAnyHeadingDocument.markdown.slice(appendixSolutionWithoutAnyHeadingClassification.solutionStart), /^1\. A/)
+assert.deepEqual(appendixSolutionWithoutAnyHeadingClassification.evidence.repeatedQuestionNosAfterHeading, ['1', '2', '3', '4'])
+const appendixSolutionWithoutAnyHeadingCandidates = parseQuestionCandidates(appendixSolutionWithoutAnyHeadingDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.deepEqual(appendixSolutionWithoutAnyHeadingCandidates.map((candidate) => candidate.questionNo), ['1', '2', '3', '4'])
+assert.deepEqual(appendixSolutionWithoutAnyHeadingCandidates.map((candidate) => candidate.answerText), ['A', 'B', 'C', 'D'])
+assert.match(appendixSolutionWithoutAnyHeadingCandidates[3].analysisMarkdown, /第四题解析正文/)
+assert.equal(appendixSolutionWithoutAnyHeadingCandidates.some((candidate) => candidate.issues.some((issue) => issue.code === 'duplicate_question_no')), false)
+
 const appendixSolutionWithLooseNumberMarkersDocument = {
   ...ocrDocument,
   id: 'ocr_appendix_solution_loose_number_markers_test',

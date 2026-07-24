@@ -22,7 +22,7 @@ import {
 import type { ActivityHeatmapDay, ActivityHeatmapResponse, ActivityHoursResponse } from '@/api/dashboard'
 import type { ExportRecordsResponse } from '@/api/exportRecords'
 import { richBlocksPlainText } from '@/components/RichContent'
-import { QuestionMarkdownContent } from '@/components/questions/QuestionContent'
+import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import type { ExportRecord, OcrSettings, QuestionBankResponse, QuestionItem } from '@/types'
 import { addQuestionToActiveBasket } from '@/utils/questionBasket'
 import { difficultyLabel10, displaySource } from '@/utils/questionDisplay'
@@ -439,13 +439,13 @@ function WorkbenchQuestionPreview({
             <div>
               <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【答案】</span>
               <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                <QuestionMarkdownContent content={answer || '暂无答案'} figures={question.figures} />
+                <MarkdownWithInlineFigures content={answer || '暂无答案'} figures={question.figures} />
               </div>
             </div>
             <div>
               <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【解析】</span>
               <div className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                <QuestionMarkdownContent content={analysis || '暂无解析'} figures={question.figures} />
+                <MarkdownWithInlineFigures content={analysis || '暂无解析'} figures={question.figures} />
               </div>
             </div>
           </div>

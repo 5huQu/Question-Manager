@@ -6,7 +6,7 @@ import { layoutDraftsApi } from '../api/layoutDrafts'
 import { useAsync } from '../hooks/useAsync'
 import type { Basket, CollectionExport, CollectionSummary, QuestionItem, BasketQuestion } from '../types'
 import { Button, Empty, Badge } from './ui'
-import { QuestionMarkdownContent } from './questions/QuestionContent'
+import { MarkdownWithInlineFigures, QuestionMarkdownContent } from './questions/QuestionContent'
 import { richBlocksPlainText } from './RichContent'
 import { difficultyLabel10, displaySource } from '../utils/questionDisplay'
 
@@ -312,13 +312,13 @@ export function QuestionBasket({ mode = 'drawer' }: { mode?: 'drawer' | 'page' }
                             <div>
                               <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【答案】</span>
                               <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                                <QuestionMarkdownContent content={answer || '暂无答案'} figures={entry.item.figures} />
+                                <MarkdownWithInlineFigures content={answer || '暂无答案'} figures={entry.item.figures} />
                               </div>
                             </div>
                             <div>
                               <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【解析】</span>
                               <div className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                                <QuestionMarkdownContent content={analysis || '暂无解析'} figures={entry.item.figures} />
+                                <MarkdownWithInlineFigures content={analysis || '暂无解析'} figures={entry.item.figures} />
                               </div>
                             </div>
                           </div>

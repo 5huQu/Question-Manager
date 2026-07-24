@@ -318,6 +318,13 @@ export default function ImportJobsListPage() {
     return candidateReviewPath(importJobDocumentPath(job.importJob.id, sourceDocumentId))
   }
 
+  function getDocumentUrl(job: ImportV2ImportJobDetail) {
+    const sourceDocumentId = getReviewSourceDocumentId(job)
+    return sourceDocumentId
+      ? importJobDocumentPath(job.importJob.id, sourceDocumentId)
+      : importJobPath(job.importJob.id)
+  }
+
   function getDocStatusBadge(status: string) {
     switch (status) {
       case 'uploaded':
@@ -533,13 +540,22 @@ export default function ImportJobsListPage() {
                             >
                               查看入库
                             </Button>
-                          ) : (
+                          ) : job.stats.candidateCount > 0 && !ocrPending ? (
                             <Button
                               size="xs"
                               onClick={() => navigate(getReviewUrl(job))}
                               icon={ArrowRight}
                             >
                               核对入库
+                            </Button>
+                          ) : (
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              onClick={() => navigate(getDocumentUrl(job))}
+                              icon={ArrowRight}
+                            >
+                              查看识别进度
                             </Button>
                           )}
                           <button
