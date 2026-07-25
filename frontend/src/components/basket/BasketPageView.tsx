@@ -1,4 +1,4 @@
-import { BookOpen, Calendar, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, EyeOff, FileCode2, FileDown, FileText, GripVertical, HelpCircle, NotebookPen, PencilLine, Save, Search, Settings2, ShoppingBag, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
+import { BookOpen, Calendar, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, EyeOff, FileCode2, FileDown, FileText, GripVertical, HelpCircle, NotebookPen, PencilLine, Save, Settings2, ShoppingBag, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
 import type { CollectionSummary } from '../../types'
 import { Button } from '../ui'
 import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '../questions/QuestionContent'
@@ -28,16 +28,11 @@ export function BasketPageView({ state }: { state: BasketState }) {
     savingPaper,
     saveNotice,
     showMoreSettings, setShowMoreSettings,
-    showPaperLibrary, setShowPaperLibrary,
-    paperSearch, setPaperSearch,
-    setPaperPage,
     active, layoutDrafts,
     totalScore, activeQuestions, allExpanded,
-    savedPapers, filteredPapers, pagedPapers,
-    totalPaperPages, safePaperPage,
+    savedPapers,
     toggleExpandAll,
     openPaper, backToBasket, deletePaper,
-    openPaperLibrary,
     openSaveDialog, closeSaveDialog, confirmSavePaper, overwriteSavePaper,
     patchCollection, patchItem, removeItem, clearCollection, moveItem,
     openEditor, saveEditedQuestion,
@@ -332,7 +327,7 @@ export function BasketPageView({ state }: { state: BasketState }) {
                 <span className="font-mono text-[10px] font-semibold text-zinc-400 dark:text-zinc-500">{savedPapers.length}</span>
               </div>
               {savedPapers.length ? (
-                <button type="button" onClick={openPaperLibrary} className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
+                <button type="button" onClick={() => navigate('/questions/papers')} className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
                   查看全部
                   <ChevronRight className="size-3" />
                 </button>
@@ -466,45 +461,6 @@ export function BasketPageView({ state }: { state: BasketState }) {
               <Button size="sm" onClick={() => void confirmSavePaper()} disabled={savingPaper || !paperTitleInput.trim()}>
                 {savingPaper ? '保存中…' : '保存试卷'}
               </Button>
-            </div>
-          </div>
-        </Modal>
-      ) : null}
-      {showPaperLibrary ? (
-        <Modal
-          wide
-          title="我的试卷"
-          desc={`共 ${savedPapers.length} 份试卷${paperSearch.trim() ? `，匹配 ${filteredPapers.length} 份` : ''}，点击任意一份即可打开编辑。`}
-          onClose={() => setShowPaperLibrary(false)}
-        >
-          <div className="space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
-              <input
-                autoFocus
-                value={paperSearch}
-                onChange={(event) => { setPaperSearch(event.target.value); setPaperPage(1) }}
-                placeholder="搜索试卷标题…"
-                className="w-full rounded-md border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-200"
-              />
-            </div>
-
-            {pagedPapers.length ? (
-              <div className="space-y-2">
-                {pagedPapers.map((paper) => renderPaperRow(paper, (paperId) => { openPaper(paperId); setShowPaperLibrary(false) }))}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-dashed border-zinc-200 px-3 py-8 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-                未找到匹配「{paperSearch.trim()}」的试卷
-              </div>
-            )}
-
-            <div className="flex items-center justify-between border-t border-zinc-100 pt-3 dark:border-zinc-900">
-              <span className="text-xs text-zinc-400 dark:text-zinc-500">第 {safePaperPage} / {totalPaperPages} 页 · 共 {filteredPapers.length} 份</span>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => setPaperPage(safePaperPage - 1)} disabled={safePaperPage <= 1}>上一页</Button>
-                <Button variant="outline" size="sm" onClick={() => setPaperPage(safePaperPage + 1)} disabled={safePaperPage >= totalPaperPages}>下一页</Button>
-              </div>
             </div>
           </div>
         </Modal>

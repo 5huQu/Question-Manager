@@ -27,6 +27,7 @@ const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const ExportRecordsPage = lazy(() => import('@/pages/ExportRecordsPage'))
 const SetupPage = lazy(() => import('@/pages/SetupPage').then(module => ({ default: module.SetupPage })))
 const QuestionBasket = lazy(() => import('@/components/QuestionBasket').then(module => ({ default: module.QuestionBasket })))
+const PaperCenterPage = lazy(() => import('@/pages/questions/PaperCenterPage'))
 const CandidateFixWorkbenchPage = lazy(() => import('@/pages/import-v2/CandidateFixWorkbenchPage'))
 const QuestionEditorMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/QuestionEditorMockPage')) : null
 
@@ -193,6 +194,7 @@ export default function App() {
                 <Route path="/questions" element={<QuestionBankPage />} />
                 <Route path="/questions/new" element={<QuestionCreatePage />} />
                 <Route path="/questions/basket" element={<QuestionBasket mode="page" />} />
+                <Route path="/questions/papers" element={<PaperCenterPage />} />
                 <Route path="/questions/collections/:id/markdown-preview" element={<MarkdownPreviewPage />} />
                 <Route path="/questions/collections/:id/layout-drafts/:draftId" element={<LayoutWorkbenchPage />} />
                 <Route path="/questions/layout-drafts" element={<LayoutDraftsPage />} />

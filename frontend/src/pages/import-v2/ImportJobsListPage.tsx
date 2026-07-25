@@ -61,8 +61,10 @@ export default function ImportJobsListPage() {
   const [stageFilter, setStageFilter] = useState('')
   const [subjectFilter, setSubjectFilter] = useState('')
   const [paperKindFilter, setPaperKindFilter] = useState('')
-  const [regionFilter, setRegionFilter] = useState('')
+  const [provinceFilter, setProvinceFilter] = useState('')
+  const [cityFilter, setCityFilter] = useState('')
   const [yearFilter, setYearFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
 
   // 折叠状态，记录展开的 jobId
   const [expandedJobIds, setExpandedJobIds] = useState<Set<string>>(new Set())
@@ -130,28 +132,93 @@ export default function ImportJobsListPage() {
       if (stageFilter && job.importJob.stage !== stageFilter) return false
       if (subjectFilter && job.importJob.subject !== subjectFilter) return false
       if (paperKindFilter && job.importJob.paperKind !== paperKindFilter) return false
-      if (regionFilter && getJobRegionText(job) !== regionFilter) return false
+      if (provinceFilter && (job.importJob.province || '') !== provinceFilter) return false
+      if (cityFilter && (job.importJob.city || '') !== cityFilter) return false
       if (yearFilter && String(job.importJob.examYear || '') !== yearFilter) return false
+      if (statusFilter && getJobStatusKey(job) !== statusFilter) return false
       return true
     })
-  }, [jobs, paperKindFilter, regionFilter, stageFilter, subjectFilter, yearFilter])
+  }, [jobs, paperKindFilter, provinceFilter, cityFilter, yearFilter, stageFilter, subjectFilter, statusFilter])
 
-  const regionFilterOptions = useMemo(() => {
-    return Array.from(new Set(jobs.map(getJobRegionText).filter(Boolean)))
+  function getJobStatusKey(job: ImportV2ImportJobDetail): string {
+    const totalDocs = job.documents.length
+    const runningDocs = job.documents.filter(d => d.sourceDocument.status === 'ocr_running').length
+    const failedDocs = job.documents.filter(d => d.sourceDocument.status === 'ocr_failed').length
+    const uploadedDocs = job.documents.filter(d => d.sourceDocument.status === 'uploaded').length
+
+    if (runningDocs > 0) return 'ocr_running'
+    if (uploadedDocs > 0) return 'waiting_ocr'
+    if (failedDocs > 0 && failedDocs === totalDocs) return 'ocr_failed'
+    if (failedDocs > 0) return 'partial_ocr_failed'
+
+    const candidateCount = job.stats.candidateCount || 0
+    const committedCount = job.stats.committedCandidateCount || 0
+    if (candidateCount > 0) {
+      if (committedCount === candidateCount) return 'all_committed'
+      if (committedCount > 0) return 'partial_committed'
+      return 'pending_review'
+    }
+
+    const firstStatus = job.documents[0]?.sourceDocument.status
+    if (firstStatus === 'ocr_succeeded') return 'parsed'
+    return 'waiting_ocr'
+  }
+
+  const statusFilterOptions = useMemo(() => {
+    const labelMap: Record<string, string> = {
+      waiting_ocr: '等待识别',
+      ocr_running: '识别中',
+      ocr_failed: '识别失败',
+      partial_ocr_failed: '部分识别失败',
+      parsed: '已识别待解析',
+      pending_review: '待核对',
+      partial_committed: '部分入库',
+      all_committed: '已全部入库',
+    }
+    const order = ['waiting_ocr', 'ocr_running', 'ocr_failed', 'partial_ocr_failed', 'parsed', 'pending_review', 'partial_committed', 'all_committed']
+    const present = new Set(jobs.map(getJobStatusKey))
+    return order.filter(key => present.has(key)).map(key => labelMap[key])
   }, [jobs])
+
+  const statusLabelToKey = useMemo(() => {
+    const map: Record<string, string> = {
+      '等待识别': 'waiting_ocr',
+      '识别中': 'ocr_running',
+      '识别失败': 'ocr_failed',
+      '部分识别失败': 'partial_ocr_failed',
+      '已识别待解析': 'parsed',
+      '待核对': 'pending_review',
+      '部分入库': 'partial_committed',
+      '已全部入库': 'all_committed',
+    }
+    return map
+  }, [])
+
+  const provinceFilterOptions = useMemo(() => {
+    return Array.from(new Set(jobs.map(job => job.importJob.province).filter(Boolean)))
+  }, [jobs])
+
+  const cityFilterOptions = useMemo(() => {
+    if (provinceFilter) {
+      return Array.from(new Set(jobs.filter(job => job.importJob.province === provinceFilter).map(job => job.importJob.city).filter(Boolean)))
+    }
+    return Array.from(new Set(jobs.map(job => job.importJob.city).filter(Boolean)))
+  }, [jobs, provinceFilter])
 
   const yearFilterOptions = useMemo(() => {
     return Array.from(new Set(jobs.map(job => job.importJob.examYear).filter(Boolean).map(String))).sort((a, b) => Number(a) - Number(b))
   }, [jobs])
 
-  const hasActiveFilters = Boolean(stageFilter || subjectFilter || paperKindFilter || regionFilter || yearFilter)
+  const hasActiveFilters = Boolean(stageFilter || subjectFilter || paperKindFilter || provinceFilter || cityFilter || yearFilter || statusFilter)
 
   function resetFilters() {
     setStageFilter('')
     setSubjectFilter('')
     setPaperKindFilter('')
-    setRegionFilter('')
+    setProvinceFilter('')
+    setCityFilter('')
     setYearFilter('')
+    setStatusFilter('')
   }
 
   function toggleExpand(jobId: string) {
@@ -380,7 +447,7 @@ export default function ImportJobsListPage() {
         </div>
       )}
 
-      <Panel title="导入批次列表" className="sf-glass rounded-2xl overflow-hidden">
+      <Panel title="导入批次列表" className="sf-glass rounded-2xl overflow-visible">
         {loading && jobs.length === 0 ? (
           <div className="flex h-36 items-center justify-center">
             <LoaderCircle className="size-6 animate-spin text-zinc-400" />
@@ -393,47 +460,68 @@ export default function ImportJobsListPage() {
         ) : (
           <div className="space-y-3">
             <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/20 lg:flex-row lg:items-center lg:justify-between">
-              <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[760px] lg:grid-cols-5">
-                <select
-                  className="h-9 min-w-0 rounded-md border border-zinc-200 bg-background px-3 text-xs outline-none transition-all focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800"
+              <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[840px] lg:grid-cols-7">
+                <SearchableSelect
                   value={stageFilter}
-                  onChange={(event) => setStageFilter(event.target.value)}
-                >
-                  <option value="">全部学段</option>
-                  {stageFilterOptions.map(option => <option key={option} value={option}>{option}</option>)}
-                </select>
-                <select
-                  className="h-9 min-w-0 rounded-md border border-zinc-200 bg-background px-3 text-xs outline-none transition-all focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800"
+                  options={stageFilterOptions}
+                  onChange={setStageFilter}
+                  placeholder="全部学段"
+                  searchPlaceholder="搜索学段"
+                  allowClear
+                />
+                <SearchableSelect
                   value={subjectFilter}
-                  onChange={(event) => setSubjectFilter(event.target.value)}
-                >
-                  <option value="">全部科目</option>
-                  {subjectFilterOptions.map(option => <option key={option} value={option}>{option}</option>)}
-                </select>
-                <select
-                  className="h-9 min-w-0 rounded-md border border-zinc-200 bg-background px-3 text-xs outline-none transition-all focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800"
-                  value={paperKindFilter}
-                  onChange={(event) => setPaperKindFilter(event.target.value)}
-                >
-                  <option value="">全部类型</option>
-                  {paperKindOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-                <select
-                  className="h-9 min-w-0 rounded-md border border-zinc-200 bg-background px-3 text-xs outline-none transition-all focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800"
-                  value={regionFilter}
-                  onChange={(event) => setRegionFilter(event.target.value)}
-                >
-                  <option value="">全部地区</option>
-                  {regionFilterOptions.map(option => <option key={option} value={option}>{option}</option>)}
-                </select>
-                <select
-                  className="h-9 min-w-0 rounded-md border border-zinc-200 bg-background px-3 text-xs outline-none transition-all focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800"
+                  options={subjectFilterOptions}
+                  onChange={setSubjectFilter}
+                  placeholder="全部科目"
+                  searchPlaceholder="搜索科目"
+                  allowClear
+                />
+                <SearchableSelect
+                  value={paperKindFilter ? (paperKindOptions.find(o => o.value === paperKindFilter)?.label || '') : ''}
+                  options={paperKindOptions.map(o => o.label)}
+                  onChange={(label) => setPaperKindFilter(paperKindOptions.find(o => o.label === label)?.value || '')}
+                  placeholder="全部类型"
+                  searchPlaceholder="搜索类型"
+                  allowClear
+                />
+                <SearchableSelect
+                  value={provinceFilter}
+                  options={provinceFilterOptions}
+                  onChange={(province) => {
+                    setProvinceFilter(province)
+                    if (cityFilter && province && !cityOptionsForProvince(province).includes(cityFilter)) {
+                      setCityFilter('')
+                    }
+                  }}
+                  placeholder="全部省份"
+                  searchPlaceholder="搜索省份"
+                  allowClear
+                />
+                <SearchableSelect
+                  value={cityFilter}
+                  options={cityFilterOptions}
+                  onChange={setCityFilter}
+                  placeholder="全部城市"
+                  searchPlaceholder="搜索城市"
+                  allowClear
+                />
+                <SearchableSelect
                   value={yearFilter}
-                  onChange={(event) => setYearFilter(event.target.value)}
-                >
-                  <option value="">全部年份</option>
-                  {yearFilterOptions.map(option => <option key={option} value={option}>{option}年</option>)}
-                </select>
+                  options={yearFilterOptions}
+                  onChange={setYearFilter}
+                  placeholder="全部年份"
+                  searchPlaceholder="搜索年份"
+                  allowClear
+                />
+                <SearchableSelect
+                  value={statusFilter ? (statusFilterOptions.find(label => statusLabelToKey[label] === statusFilter) || '') : ''}
+                  options={statusFilterOptions}
+                  onChange={(label) => setStatusFilter(label ? (statusLabelToKey[label] || '') : '')}
+                  placeholder="全部状态"
+                  searchPlaceholder="搜索状态"
+                  allowClear
+                />
               </div>
               <div className="flex items-center justify-between gap-3 text-[11px] text-zinc-500 dark:text-zinc-400">
                 <span>显示 {filteredJobs.length} / {jobs.length} 个批次</span>
@@ -461,7 +549,6 @@ export default function ImportJobsListPage() {
                       <th className="py-2.5 px-3 w-8"></th>
                       <th className="py-2.5 px-3">试卷批次名称</th>
                       <th className="py-2.5 px-3 w-40">创建时间</th>
-                      <th className="py-2.5 px-3 w-28">模式</th>
                       <th className="py-2.5 px-3 w-40">学段/科目/类型</th>
                       <th className="py-2.5 px-3 w-40">地区/年份</th>
                       <th className="py-2.5 px-3 w-40">状态</th>
@@ -494,13 +581,6 @@ export default function ImportJobsListPage() {
                         </td>
                         <td className="py-3 px-3 text-zinc-500 dark:text-zinc-400">
                           {new Date(job.importJob.createdAt).toLocaleString()}
-                        </td>
-                        <td className="py-3 px-3">
-                          {isSeparated ? (
-                            <span className="text-amber-700 bg-amber-50 border border-amber-200 dark:bg-amber-955/20 dark:text-amber-400 px-1.5 py-0.5 rounded text-[10px] font-semibold">双文档题解分离</span>
-                          ) : (
-                            <span className="text-zinc-600 bg-zinc-100 border border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 px-1.5 py-0.5 rounded text-[10px]">单文档</span>
-                          )}
                         </td>
                         <td className="py-3 px-3 text-zinc-500 dark:text-zinc-400">
                           {job.importJob.stage} / {job.importJob.subject} / {paperKindOptions.find(o => o.value === job.importJob.paperKind)?.label || '未定义'}
@@ -571,7 +651,7 @@ export default function ImportJobsListPage() {
                       {/* 展开双文档面板 */}
                       {isSeparated && (
                         <tr className="bg-zinc-50/20 dark:bg-zinc-900/10">
-                          <td colSpan={8} className={`p-0 transition-all duration-300 ${isExpanded ? 'border-b border-zinc-100 dark:border-zinc-900' : 'border-transparent'}`}>
+                          <td colSpan={7} className={`p-0 transition-all duration-300 ${isExpanded ? 'border-b border-zinc-100 dark:border-zinc-900' : 'border-transparent'}`}>
                             <div className={`grid transition-[grid-template-rows] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                               <div className="overflow-hidden">
                                 <div className="pl-10 pr-6 py-2.5 space-y-3">

@@ -7,11 +7,11 @@ import { useAsync } from '../../hooks/useAsync'
 import type { Basket, CollectionSummary, QuestionItem } from '../../types'
 import { basketUpdatedEvent, DEFAULT_BASKET_ID, getDefaultScore, notifyBasketUpdated } from './constants'
 
-export function useBasketState() {
+export function useBasketState(options?: { initialPaperId?: string | null }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(true)
-  const [editingPaperId, setEditingPaperId] = useState<string | null>(null)
+  const [editingPaperId, setEditingPaperId] = useState<string | null>(options?.initialPaperId ?? null)
   const activeId = editingPaperId ?? DEFAULT_BASKET_ID
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -29,9 +29,6 @@ export function useBasketState() {
   const [savingPaper, setSavingPaper] = useState(false)
   const [saveNotice, setSaveNotice] = useState('')
   const [showMoreSettings, setShowMoreSettings] = useState(false)
-  const [showPaperLibrary, setShowPaperLibrary] = useState(false)
-  const [paperSearch, setPaperSearch] = useState('')
-  const [paperPage, setPaperPage] = useState(1)
 
   const collections = useAsync<{ items: CollectionSummary[] }>(() => {
     return collectionsApi.listCollections()
@@ -84,17 +81,6 @@ export function useBasketState() {
     return (collections.data?.items ?? []).filter((item) => item.id !== DEFAULT_BASKET_ID)
   }, [collections.data])
 
-  const filteredPapers = useMemo(() => {
-    const keyword = paperSearch.trim().toLowerCase()
-    if (!keyword) return savedPapers
-    return savedPapers.filter((paper) => (paper.title || '').toLowerCase().includes(keyword))
-  }, [savedPapers, paperSearch])
-
-  const PAPER_PAGE_SIZE = 10
-  const totalPaperPages = Math.max(1, Math.ceil(filteredPapers.length / PAPER_PAGE_SIZE))
-  const safePaperPage = Math.min(paperPage, totalPaperPages)
-  const pagedPapers = filteredPapers.slice((safePaperPage - 1) * PAPER_PAGE_SIZE, safePaperPage * PAPER_PAGE_SIZE)
-
   function openPaper(paperId: string) {
     setExpandedQuestionIds(new Set())
     setEditingPaperId(paperId)
@@ -111,12 +97,6 @@ export function useBasketState() {
     if (editingPaperId === paper.id) setEditingPaperId(null)
     collections.reload()
     notifyBasketUpdated()
-  }
-
-  function openPaperLibrary() {
-    setPaperSearch('')
-    setPaperPage(1)
-    setShowPaperLibrary(true)
   }
 
   function showSaveNotice(message: string) {
@@ -297,17 +277,12 @@ export function useBasketState() {
     savingPaper,
     saveNotice,
     showMoreSettings, setShowMoreSettings,
-    showPaperLibrary, setShowPaperLibrary,
-    paperSearch, setPaperSearch,
-    paperPage, setPaperPage,
     collections, active, layoutDrafts,
     totalScore, activeQuestions, allExpanded,
-    savedPapers, filteredPapers, pagedPapers,
-    totalPaperPages, safePaperPage,
+    savedPapers,
     isBasketPage,
     toggleExpandAll,
     openPaper, backToBasket, deletePaper,
-    openPaperLibrary,
     openSaveDialog, closeSaveDialog, confirmSavePaper, overwriteSavePaper,
     patchCollection, patchItem, removeItem, clearCollection, moveItem,
     openEditor, saveEditedQuestion,
