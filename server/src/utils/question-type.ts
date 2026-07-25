@@ -12,7 +12,7 @@ export function normalizeChoiceMarkers(value: string) {
   const lineMatches = Array.from(source.matchAll(/(?:^|\n)[ \t]*([A-D])\s*[.．、:：]\s*/g))
   if (lineMatches.length >= 4) return source
   let markerCount = 0
-  const marked = source.replace(/(?<![A-Za-z0-9])([A-D])\s*[.．、:：]\s*/g, (match, label: string, offset: number) => {
+  const marked = source.replace(/(?<![A-Za-z])([A-D])\s*[.．、:：]\s*/g, (match, label: string, offset: number) => {
     markerCount += 1
     return `${offset === 0 ? '' : '\n'}${label}. `
   })
@@ -71,8 +71,11 @@ export function hasChoiceAnswerCue(stem: string, answer: string) {
 
 export function hasOpenEndedCue(stem: string, answer: string) {
   const text = `${stem}\n${answer}`
-  return /(?:^|[^\d])[(（]\s*[1-9]\s*[)）]/.test(stem)
-    || /(?:^|[^\d])[(（]\s*[1-9]\s*[)）]/.test(answer)
+  // Sub-question markers like (1)/(2) must not be preceded by a letter or CJK
+  // character, otherwise function calls such as f(1) or g(2) would false-positive.
+  const subQuestionPattern = /(?:^|[^A-Za-z\u4e00-\u9fff\d])[(（]\s*[1-9]\s*[)）]/
+  return subQuestionPattern.test(stem)
+    || subQuestionPattern.test(answer)
     || /证明见解析|答案见解析|过程见解析|证明[:：]|求证|证明|求值|求解|计算|作图|求(?:[^\n，。；;]{0,24})(?:最小|最大|范围|长度|面积|体积|方程|坐标|轨迹)/.test(text)
 }
 
@@ -108,6 +111,10 @@ export function inferQuestionType(stem: string, answer: string, fallback = '解�
     if (!selected.size) return '单选题'
     return selected.size > 1 ? '多选题' : '单选题'
   }
+  // Bare single-letter answer (A-D) is a strong choice signal when no open-ended
+  // cue was found above. This catches OCR outputs where option markers are
+  // mangled beyond recognition but the answer still reveals the question type.
+  if (/^[A-D]$/.test(String(answer || '').trim())) return '单选题'
   return fallback
 }
 
