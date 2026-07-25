@@ -35,7 +35,7 @@ export function SummaryGrid({ items }: { items: Array<[string, unknown]> }) {
   return <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">{items.map(([labelText, value]) => <div key={labelText} className="rounded-xl border bg-card p-4 text-card-foreground shadow-sm"><p className="text-xs font-medium text-muted-foreground">{labelText}</p><p className="mt-1 text-2xl font-bold">{displayValue(value)}</p></div>)}</div>
 }
 
-export function Button({ children, icon: Icon, variant = 'default', size = 'default', className = '', asLink, to = '', disabled, onClick, type = 'button', title }: { children: ReactNode; icon?: LucideIcon; variant?: 'default' | 'outline' | 'danger'; size?: 'default' | 'sm' | 'xs'; className?: string; asLink?: boolean; to?: string; disabled?: boolean; onClick?: ButtonClickHandler; type?: 'button' | 'submit' | 'reset'; title?: string }) {
+export function Button({ children, icon: Icon, variant = 'default', size = 'default', className = '', asLink, to = '', disabled, onClick, onMouseDown, type = 'button', title }: { children: ReactNode; icon?: LucideIcon; variant?: 'default' | 'outline' | 'danger'; size?: 'default' | 'sm' | 'xs'; className?: string; asLink?: boolean; to?: string; disabled?: boolean; onClick?: ButtonClickHandler; onMouseDown?: MouseEventHandler<HTMLButtonElement>; type?: 'button' | 'submit' | 'reset'; title?: string }) {
   const variantClass = variant === 'danger'
     ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground border border-transparent'
     : variant === 'default'
@@ -53,7 +53,7 @@ export function Button({ children, icon: Icon, variant = 'default', size = 'defa
         }
       }
     : undefined
-  return asLink ? <Link className={classes} title={title} to={to}>{content}</Link> : <button className={classes} disabled={disabled} onClick={handleClick} title={title} type={type}>{content}</button>
+  return asLink ? <Link className={classes} title={title} to={to}>{content}</Link> : <button className={classes} disabled={disabled} onClick={handleClick} onMouseDown={onMouseDown} title={title} type={type}>{content}</button>
 }
 
 export function Badge({ children, variant = 'default', className = '', title }: { children: ReactNode; variant?: 'default' | 'success' | 'warning' | 'danger' | 'outline'; className?: string; title?: string }) {

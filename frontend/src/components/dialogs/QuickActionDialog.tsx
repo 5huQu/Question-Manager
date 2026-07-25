@@ -30,6 +30,7 @@ import {
   type RandomPaperSummary,
 } from '@/api/questionBank'
 import { collectionsApi } from '@/api/collections'
+import { BASKET_COLLECTION_ID } from '@/utils/questionBasket'
 import { notifyBasketUpdated, stripLeadingQuestionNo } from '../QuestionBasket'
 import { QuestionMarkdownContent } from '../questions/QuestionContent'
 
@@ -306,7 +307,7 @@ export function QuickActionDialog({ initialMode, onClose }: QuickActionDialogPro
     if (!randomResult || randomResult.questions.length === 0) return
     setBasketSuccess(false)
     try {
-      const activeBasketId = localStorage.getItem('question-manager.activeCollectionId') || 'basket'
+      const activeBasketId = BASKET_COLLECTION_ID
       await collectionsApi.updateCollection(activeBasketId, {
         addQuestionIds: randomResult.questions.map(q => q.id)
       })

@@ -21,7 +21,7 @@ export function ManualFixHeader({ candidate, pdfName, saving, finalizing, textDi
           type="button"
           onClick={onBack}
           aria-label="返回候选题"
-          className="sf-pressable flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200/60 bg-white text-zinc-700 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+          className="sf-pressable flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200/60 bg-white text-zinc-700 shadow-xs transition-transform duration-150 hover:-translate-x-0.5 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
         >
           <ArrowLeft className="size-4" />
         </button>
@@ -29,7 +29,7 @@ export function ManualFixHeader({ candidate, pdfName, saving, finalizing, textDi
           <h2 className="sf-title text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
             候选题手动修正
           </h2>
-          <p className="sf-subtitle max-w-lg truncate text-xs" title={pdfName}>
+          <p className="sf-subtitle max-w-lg truncate text-xs text-zinc-500 dark:text-zinc-400" title={pdfName}>
             {candidate?.questionNo ? `第 ${candidate.questionNo} 题 · ` : ''}{pdfName}
           </p>
         </div>
@@ -45,12 +45,12 @@ export function ManualFixHeader({ candidate, pdfName, saving, finalizing, textDi
             保存中…
           </span>
         ) : (
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors duration-200 ${
             textDirty
               ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
               : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
           }`}>
-            <span className={`size-1.5 rounded-full ${textDirty ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+            <span className={`size-1.5 rounded-full transition-colors duration-200 ${textDirty ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
             {textDirty ? '未保存' : '已保存'}
           </span>
         )}

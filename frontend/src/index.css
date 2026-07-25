@@ -78,8 +78,10 @@
   font-size: 16px;
 }
 
-* {
-  border-color: oklch(var(--border));
+@layer base {
+  * {
+    border-color: oklch(var(--border));
+  }
 }
 
 body {
@@ -95,6 +97,38 @@ body {
 
 #root {
   min-height: 100vh;
+}
+
+/* Browser printing must escape the fixed desktop shell. Without these
+   overrides Chromium clips printable routes to the current scroll viewport. */
+@media print {
+  html,
+  body,
+  #root,
+  [data-slot="sidebar-wrapper"],
+  [data-slot="sidebar-inset"],
+  [data-slot="app-scroll-container"],
+  [data-slot="app-content-container"] {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  [data-slot="sidebar-wrapper"],
+  [data-slot="sidebar-inset"] {
+    display: block !important;
+  }
+
+  [data-slot="sidebar-wrapper"] > :not([data-slot="sidebar-inset"]) {
+    display: none !important;
+  }
+
+  [data-slot="app-content-container"] {
+    gap: 0 !important;
+    max-width: none !important;
+    padding: 0 !important;
+  }
 }
 
 .markdown-content {
@@ -630,10 +664,49 @@ input[type=number] {
   color: oklch(var(--muted-foreground));
 }
 
-/* 4. Reduced Motion & Reduced Transparency Accessibility */
+/* 4. Dialog Materialize Entrance (scale + fade, spring easing) */
+@keyframes sf-dialog-in {
+  from { opacity: 0; transform: scale(0.97) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes sf-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.sf-dialog-enter { animation: sf-dialog-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.sf-backdrop-enter { animation: sf-backdrop-in 200ms ease-out both; }
+
+@keyframes sf-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sf-slide-up-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes sf-scale-fade-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+@utility animate-fade-in {
+  animation: sf-fade-in 200ms ease-out both;
+}
+@utility animate-slide-up-in {
+  animation: sf-slide-up-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@utility animate-scale-fade-in {
+  animation: sf-scale-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* 5. Reduced Motion & Reduced Transparency Accessibility */
 @media (prefers-reduced-motion: reduce) {
   .sf-pressable,
   .sf-spring-smooth,
+  .sf-dialog-enter,
+  .sf-backdrop-enter,
+  .animate-fade-in,
+  .animate-slide-up-in,
+  .animate-scale-fade-in,
   .animate-command-bar {
     transition: opacity 150ms ease !important;
     transform: none !important;
@@ -650,4 +723,3 @@ input[type=number] {
     -webkit-backdrop-filter: none !important;
   }
 }
-

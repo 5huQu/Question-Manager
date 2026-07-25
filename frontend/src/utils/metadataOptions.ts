@@ -52,3 +52,8 @@ export function cityOptionsForProvince(province: string) {
   if (matched) return matched.cities
   return Array.from(new Set(provinceCityOptions.flatMap((item) => item.cities)))
 }
+
+export function provinceForCity(city: string) {
+  const normalizedCity = city.trim()
+  return provinceCityOptions.find((item) => item.cities.includes(normalizedCity))?.province || ''
+}

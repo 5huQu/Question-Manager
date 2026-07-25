@@ -226,7 +226,7 @@ export const candidatePairEnvelopeSchema = schema.object({
 
 const markdownRangeSchema = schema.object({ start: nonNegativeInteger, end: nonNegativeInteger })
 const parserDiagnosticSchema = schema.object({
-  code: schema.string({ enum: ['solution_heading_without_following_question', 'question_before_solution_heading', 'metadata_used_as_answer', 'table_answer_blocked_by_existing_answer', 'missing_analysis', 'unmatched_solution'] }),
+  code: nonEmptyString,
   severity: schema.string({ enum: ['info', 'warning', 'error'] }),
   questionNo: schema.optional(string), message: string,
   start: schema.optional(nonNegativeInteger), end: schema.optional(nonNegativeInteger),

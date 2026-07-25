@@ -1,5 +1,5 @@
 import type { OCRDocument } from '../../types/ocr-document.js'
-import type { QuestionCandidate } from '../../types/question-candidate.js'
+import type { CandidateParseDiagnostic, QuestionCandidate } from '../../types/question-candidate.js'
 import {
   defaultParserConfig,
   type ImportFlowV2ParserConfig,
@@ -55,13 +55,7 @@ export type MarkdownStructureToken = {
 }
 
 export type ParserDiagnostic = {
-  code:
-    | 'solution_heading_without_following_question'
-    | 'question_before_solution_heading'
-    | 'metadata_used_as_answer'
-    | 'table_answer_blocked_by_existing_answer'
-    | 'missing_analysis'
-    | 'unmatched_solution'
+  code: CandidateParseDiagnostic['code']
   severity: 'info' | 'warning' | 'error'
   questionNo?: string
   message: string

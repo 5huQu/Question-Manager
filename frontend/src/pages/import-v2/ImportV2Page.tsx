@@ -2185,7 +2185,7 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
                     key={item.key}
                     type="button"
                     onClick={() => setReviewTab(item.key)}
-                    className={`relative flex h-10 shrink-0 items-center gap-1.5 px-2 text-[11px] transition-colors after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 ${
+                    className={`relative flex h-10 shrink-0 items-center gap-1.5 px-2 text-[11px] transition-colors duration-150 active:scale-[0.97] after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:transition-all after:duration-200 after:ease-out ${
                       activeTab === item.key
                         ? 'font-semibold text-foreground after:bg-primary'
                         : 'text-muted-foreground hover:text-foreground after:bg-transparent'
@@ -2202,7 +2202,7 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
                   onClick={handleSelectAll}
                   className="flex min-w-0 flex-1 items-center gap-2 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  <span className={`flex size-3.5 shrink-0 items-center justify-center rounded-[3px] border transition-colors ${
+                  <span className={`flex size-3.5 shrink-0 items-center justify-center rounded-[3px] border transition-all duration-150 active:scale-90 ${
                     allSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background'
                   }`}>
                     {allSelected ? <Check className="size-2.5 stroke-[3]" /> : null}
@@ -2228,76 +2228,72 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
               </div>
             </div>
 
-            <div ref={candidateListRef} data-testid="candidate-list-scroll" className="flex-1 overflow-y-auto overscroll-contain bg-background">
+            <div ref={candidateListRef} data-testid="candidate-list-scroll" className="flex-1 overflow-y-auto overscroll-contain bg-muted/10 p-2">
               {filteredQuestions.length === 0 ? (
                 <div className="flex h-48 items-center justify-center px-6 text-center text-xs text-muted-foreground">此筛选条件下暂无题目</div>
               ) : (
-                filteredQuestions.map((q) => {
-                  const isCommitted = q.status === 'committed' || committedIds.has(q.id)
-                  const isSelected = selectedIds.has(q.id)
-                  const isActive = q.id === activeQuestionId
-                  const preview = q.stemMarkdown.replace(/\$\$?[^$]+\$\$?/g, '[公式]').replace(/[#*_~`>|\\]/g, '').trim().slice(0, 50)
-                  const reviewState = questionReviewState(q, isCommitted)
+                <div className="flex flex-col gap-1.5">
+                  {filteredQuestions.map((q) => {
+                    const isCommitted = q.status === 'committed' || committedIds.has(q.id)
+                    const isSelected = selectedIds.has(q.id)
+                    const isActive = q.id === activeQuestionId
+                    const reviewState = questionReviewState(q, isCommitted)
 
-                  return (
-                    <div
-                      key={q.id}
-                      ref={(node) => {
-                        if (node) candidateItemRefs.current.set(q.id, node)
-                        else candidateItemRefs.current.delete(q.id)
-                      }}
-                      className={`relative flex min-h-[4.5rem] items-start border-b border-border/70 transition-colors before:absolute before:inset-y-0 before:left-0 before:w-0.5 ${
-                        isActive ? 'bg-accent/70 before:bg-primary' : 'bg-background hover:bg-muted/50 before:bg-transparent'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        aria-label={`选择第 ${q.questionNo || '未编号'} 题`}
-                        disabled={isCommitted}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleSelectToggle(q.id)
+                    return (
+                      <div
+                        key={q.id}
+                        ref={(node) => {
+                          if (node) candidateItemRefs.current.set(q.id, node)
+                          else candidateItemRefs.current.delete(q.id)
                         }}
-                        className={`ml-3 mt-4 flex size-3.5 shrink-0 items-center justify-center rounded-[3px] border transition-colors ${isCommitted ? 'cursor-not-allowed opacity-25' : ''} ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background hover:border-foreground/40'}`}
+                        className={`flex items-center gap-2 rounded-lg border py-2 pl-2.5 pr-3 transition-all duration-150 ease-out ${
+                          isActive
+                            ? 'border-primary/50 bg-accent/60'
+                            : 'border-border/60 bg-background hover:border-border hover:bg-accent/30'
+                        }`}
                       >
-                        {isSelected ? <Check className="size-2.5 stroke-[3]" /> : null}
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`打开第 ${q.questionNo || '未编号'} 题`}
-                        aria-current={isActive ? 'true' : undefined}
-                        onClick={() => {
-                          setActiveQuestionId(q.id)
-                          const sourceDocId = q.rawItem?.sourceDocumentId || selectedDoc?.id || sourceDocumentIdFromPath
-                          if (sourceDocId) navigateToCandidate(sourceDocId, q.id)
-                        }}
-                        className="min-w-0 flex-1 px-3 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                      >
-                        <div className="flex min-w-0 items-center gap-1.5">
-                          <span className="text-xs font-semibold text-foreground">第 {q.questionNo || '？'} 题</span>
-                          {q.questionType ? <span className="truncate text-[10px] text-muted-foreground">{q.questionType}</span> : null}
-                          {q.hasFigures ? <ImageIcon className="size-3 shrink-0 text-muted-foreground" aria-label="包含题图" /> : null}
-                          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[10px]">
-                            <span className={`size-1.5 rounded-full ${reviewState.dotClass}`} />
+                        <button
+                          type="button"
+                          aria-label={`选择第 ${q.questionNo || '未编号'} 题`}
+                          disabled={isCommitted}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleSelectToggle(q.id)
+                          }}
+                          className={`flex size-3.5 shrink-0 items-center justify-center rounded-[3px] border transition-all duration-150 active:scale-90 ${isCommitted ? 'cursor-not-allowed opacity-25' : ''} ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background hover:border-foreground/40'}`}
+                        >
+                          {isSelected ? <Check className="size-2.5 stroke-[3]" /> : null}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`打开第 ${q.questionNo || '未编号'} 题`}
+                          aria-current={isActive ? 'true' : undefined}
+                          onClick={() => {
+                            setActiveQuestionId(q.id)
+                            const sourceDocId = q.rawItem?.sourceDocumentId || selectedDoc?.id || sourceDocumentIdFromPath
+                            if (sourceDocId) navigateToCandidate(sourceDocId, q.id)
+                          }}
+                          className="sf-pressable flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                        >
+                          <span className="shrink-0 text-xs font-semibold tracking-tight text-foreground">第 {q.questionNo || '？'} 题</span>
+                          {q.questionType ? <span className="min-w-0 truncate text-[10px] text-muted-foreground">{q.questionType}</span> : null}
+                          {q.hasFigures ? <ImageIcon className="size-3 shrink-0 text-muted-foreground/70" aria-label="包含题图" /> : null}
+                          <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-[10px]">
+                            <span className={`size-1.5 rounded-full transition-colors duration-200 ${reviewState.dotClass}`} />
                             <span className={reviewState.textClass}>{reviewState.label}</span>
                           </span>
-                        </div>
-                        {preview ? (
-                          <p className="mt-1 line-clamp-2 text-[11px] leading-[1.55] text-muted-foreground">{preview}</p>
-                        ) : (
-                          <p className="mt-1 text-[11px] italic text-muted-foreground">题干识别为空</p>
-                        )}
-                      </button>
-                    </div>
-                  )
-                })
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </div>
             {selectedIds.size > 0 ? (
-              <div className="flex shrink-0 items-center gap-2 border-t border-border bg-background p-2.5">
+              <div className="flex shrink-0 animate-slide-up-in items-center gap-2 border-t border-border bg-background p-2.5">
                 <span className="min-w-0 flex-1 truncate pl-1 text-[11px] font-medium text-muted-foreground">已选 {selectedIds.size} 题</span>
-                <Button size="xs" variant="outline" icon={SkipForward} disabled={Boolean(busy)} onClick={handleBulkSkip}>跳过</Button>
-                <Button size="xs" icon={CheckCircle2} disabled={Boolean(busy)} onClick={handleBulkConfirm}>批量入库</Button>
+                <Button size="xs" variant="outline" icon={SkipForward} disabled={Boolean(busy)} onClick={handleBulkSkip} className="sf-pressable">跳过</Button>
+                <Button size="xs" icon={CheckCircle2} disabled={Boolean(busy)} onClick={handleBulkConfirm} className="sf-pressable">批量入库</Button>
               </div>
             ) : null}
           </aside>

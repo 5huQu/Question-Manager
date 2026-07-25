@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FileText, LoaderCircle, PencilLine, Save, X } from 'lucide-react'
+import { Braces, FileText, ListPlus, LoaderCircle, PencilLine, Save, X } from 'lucide-react'
 import {
   importV2Api,
   type ImportFlowV2ParserConfig,
@@ -80,6 +80,7 @@ export function MarkdownStructurePreviewDialog({
   const markdownTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const markdownLineNumbersRef = useRef<HTMLDivElement | null>(null)
   const scrollAnchorRef = useRef<MarkdownScrollAnchor>({ lineNo: 0, lineProgress: 0 })
+  const markdownSelectionRef = useRef({ start: 0, end: 0 })
 
   const availableDocuments = useMemo(() => {
     const seen = new Set<string>()
@@ -182,6 +183,51 @@ export function MarkdownStructurePreviewDialog({
     scrollAnchorRef.current = textareaAnchorFromScrollTop(textarea.scrollTop)
   }
 
+  function captureMarkdownSelection() {
+    const textarea = markdownTextareaRef.current
+    if (!textarea) return
+    markdownSelectionRef.current = {
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd,
+    }
+  }
+
+  function insertMarkerAtCurrentLine(marker: string) {
+    const textarea = markdownTextareaRef.current
+    if (!textarea) return
+    const activeOffset = document.activeElement === textarea
+      ? textarea.selectionStart
+      : markdownSelectionRef.current.start
+    const previousScrollTop = textarea.scrollTop
+    const lineStart = markdownDraft.lastIndexOf('\n', Math.max(0, activeOffset - 1)) + 1
+    const markerLine = `${marker}\n`
+    const nextDraft = `${markdownDraft.slice(0, lineStart)}${markerLine}${markdownDraft.slice(lineStart)}`
+    const nextCursor = lineStart + markerLine.length
+    markdownSelectionRef.current = { start: nextCursor, end: nextCursor }
+    setMarkdownDraft(nextDraft)
+    window.requestAnimationFrame(() => {
+      const nextTextarea = markdownTextareaRef.current
+      if (!nextTextarea) return
+      nextTextarea.focus()
+      nextTextarea.setSelectionRange(nextCursor, nextCursor)
+      nextTextarea.scrollTop = previousScrollTop
+      if (markdownLineNumbersRef.current) markdownLineNumbersRef.current.scrollTop = previousScrollTop
+    })
+  }
+
+  function insertManualQuestionMarker() {
+    const suggestedQuestionNo = questionNo || ''
+    const value = window.prompt('请输入从当前位置开始的题号', suggestedQuestionNo)
+    if (value === null) return
+    const normalizedQuestionNo = value.trim().replace(/^第\s*/, '').replace(/\s*题$/, '')
+    if (!/^[0-9０-９]{1,3}$/.test(normalizedQuestionNo)) {
+      setError('题号必须是 1-3 位数字。')
+      return
+    }
+    setError('')
+    insertMarkerAtCurrentLine(`<!-- QM:QUESTION ${normalizedQuestionNo} -->`)
+  }
+
   async function rerunParserPreview(nextConfig: ImportFlowV2ParserConfig) {
     if (!effectiveOcrDocumentId) return
     setWorkingConfig(nextConfig)
@@ -234,13 +280,13 @@ export function MarkdownStructurePreviewDialog({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm">
-      <div className="flex h-[min(900px,calc(100vh-2rem))] w-[min(1500px,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="sf-backdrop-enter fixed inset-0 z-[100] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm">
+      <div className="sf-dialog-enter flex h-[min(900px,calc(100vh-2rem))] w-[min(1500px,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-[0_24px_80px_-12px_rgba(0,0,0,0.18),0_8px_24px_-8px_rgba(0,0,0,0.08)] dark:border-zinc-800 dark:bg-zinc-950 dark:shadow-[0_24px_80px_-12px_rgba(0,0,0,0.6),0_8px_24px_-8px_rgba(0,0,0,0.4)]">
         <div className="flex shrink-0 flex-col gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <FileText className="size-4 text-zinc-500" />
-              <h2 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+              <FileText className="size-4 text-zinc-400" />
+              <h2 className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
                 {title || '模型识别稿 / 结构预览'}
               </h2>
               {loading || parserLoading ? <LoaderCircle className="size-3.5 animate-spin text-zinc-400" /> : null}
@@ -268,7 +314,7 @@ export function MarkdownStructurePreviewDialog({
                       aria-selected={active}
                       title={`${option.label}${option.description ? `：${option.description}` : ''}\n${option.ocrDocumentId}`}
                       onClick={() => setActiveOcrDocumentId(option.ocrDocumentId)}
-                      className={`h-7 max-w-32 shrink-0 rounded px-2.5 text-xs font-semibold transition-colors ${
+                      className={`h-7 max-w-32 shrink-0 rounded px-2.5 text-xs font-semibold transition-all duration-200 active:scale-[0.97] ${
                         active
                           ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-950 dark:text-zinc-50'
                           : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
@@ -287,6 +333,7 @@ export function MarkdownStructurePreviewDialog({
                   icon={savingMarkdown ? LoaderCircle : Save}
                   disabled={savingMarkdown || loading || parserLoading}
                   onClick={saveMarkdownDraft}
+                  className="sf-pressable"
                 >
                   {savingMarkdown ? '保存中...' : '保存识别稿'}
                 </Button>
@@ -294,6 +341,7 @@ export function MarkdownStructurePreviewDialog({
                   size="sm"
                   variant="outline"
                   disabled={savingMarkdown}
+                  className="sf-pressable"
                   onClick={() => {
                     captureTextareaAnchor()
                     setMarkdownDraft(markdownPreview?.markdown || '')
@@ -309,9 +357,11 @@ export function MarkdownStructurePreviewDialog({
                 variant="outline"
                 icon={PencilLine}
                 disabled={!markdownPreview || loading || parserLoading}
+                title="编辑识别稿，或插入人工题目/答案/解析标记"
+                className="sf-pressable"
                 onClick={() => setEditingMarkdown(true)}
               >
-                编辑识别稿
+                编辑识别稿 / 人工标记
               </Button>
             )}
             {onApplyConfig ? (
@@ -319,19 +369,20 @@ export function MarkdownStructurePreviewDialog({
                 size="sm"
                 icon={applying ? LoaderCircle : FileText}
                 disabled={!workingConfig || editingMarkdown || loading || parserLoading || savingMarkdown || Boolean(applying)}
+                className="sf-pressable"
                 onClick={() => workingConfig && onApplyConfig(workingConfig)}
               >
-                {applying ? '重解析中...' : '用当前策略重解析'}
+                {applying ? '重解析中...' : '用当前设置重解析'}
               </Button>
             ) : null}
-            <Button size="sm" variant="outline" icon={X} onClick={onClose}>
+            <Button size="sm" variant="outline" icon={X} onClick={onClose} className="sf-pressable">
               关闭
             </Button>
           </div>
         </div>
 
         {error ? (
-          <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+          <div className="animate-fade-in border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
             {error}
           </div>
         ) : null}
@@ -340,7 +391,42 @@ export function MarkdownStructurePreviewDialog({
           {editingMarkdown ? (
             <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-zinc-50/70 dark:bg-zinc-950">
               <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950">
-                <span className="truncate text-xs font-semibold text-zinc-600 dark:text-zinc-300">编辑 OCR Markdown</span>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="truncate text-xs font-semibold text-zinc-600 dark:text-zinc-300">编辑 OCR Markdown</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    icon={ListPlus}
+                    title="在光标所在行前插入人工题目边界（⌘/Ctrl + Enter）"
+                    className="sf-pressable"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={insertManualQuestionMarker}
+                  >
+                    插入题目分割
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    icon={Braces}
+                    title="从光标所在行开始标记为当前题答案"
+                    className="sf-pressable"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => insertMarkerAtCurrentLine('<!-- QM:ANSWER -->')}
+                  >
+                    标记答案
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    icon={Braces}
+                    title="从光标所在行开始标记为当前题解析"
+                    className="sf-pressable"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => insertMarkerAtCurrentLine('<!-- QM:ANALYSIS -->')}
+                  >
+                    标记解析
+                  </Button>
+                </div>
                 <span className="shrink-0 text-[11px] text-zinc-400">{markdownLineCount} 行</span>
               </div>
               <div className="flex min-h-0 flex-1 overflow-hidden bg-white dark:bg-zinc-950">
@@ -348,7 +434,7 @@ export function MarkdownStructurePreviewDialog({
                   ref={markdownLineNumbersRef}
                   data-testid="markdown-draft-line-numbers"
                   aria-hidden="true"
-                  className="w-[4.5rem] shrink-0 overflow-hidden border-r border-zinc-200 bg-zinc-50 py-3 font-mono text-[11px] leading-5 text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
+                  className="w-[4.5rem] shrink-0 overflow-hidden border-r border-zinc-200 bg-zinc-50 py-3 font-mono text-[11px] leading-5 text-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-600"
                 >
                   {markdownLineNumbers}
                 </div>
@@ -361,6 +447,15 @@ export function MarkdownStructurePreviewDialog({
                   wrap="off"
                   onChange={(event) => setMarkdownDraft(event.target.value)}
                   onScroll={captureTextareaAnchor}
+                  onSelect={captureMarkdownSelection}
+                  onClick={captureMarkdownSelection}
+                  onKeyUp={captureMarkdownSelection}
+                  onKeyDown={(event) => {
+                    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                      event.preventDefault()
+                      insertManualQuestionMarker()
+                    }
+                  }}
                 />
               </div>
             </div>

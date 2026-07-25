@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Database, LoaderCircle, RefreshCcw, Replace, Tags } from 'lucide-react'
+import { ChevronDown, ChevronUp, Database, LoaderCircle, RefreshCcw, Replace, Tags } from 'lucide-react'
 import { collectionsApi } from '@/api/collections'
 import { importV2Api, type ImportV2JobQuestionsResponse } from '@/api/importV2'
 import { learningTagsApi } from '@/api/learningTags'
 import { questionBankApi } from '@/api/questionBank'
-import { getActiveCollectionId, basketUpdatedEvent, notifyBasketUpdated } from '@/components/QuestionBasket'
+import { basketUpdatedEvent, notifyBasketUpdated } from '@/components/QuestionBasket'
 import { WorkbenchQuestionCard } from '@/components/questions/WorkbenchQuestionCard'
 import { Button, Empty, Input, SelectFilter } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { QuestionItem, TagLibraries } from '@/types'
-import { addQuestionToActiveBasket } from '@/utils/questionBasket'
+import { addQuestionToBasket, BASKET_COLLECTION_ID } from '@/utils/questionBasket'
 import { importJobDocumentPath } from './importV2Routes'
 
 export function ImportJobQuestionsPage() {
@@ -26,6 +26,7 @@ export function ImportJobQuestionsPage() {
   const [difficulty, setDifficulty] = useState('')
   const [knowledgePoint, setKnowledgePoint] = useState('')
   const [solutionMethod, setSolutionMethod] = useState('')
+  const [expandAll, setExpandAll] = useState(false)
 
   const { data, error, loading, reload } = useAsync<ImportV2JobQuestionsResponse>(
     () => importV2Api.listImportJobQuestions(decodedJobId),
@@ -33,7 +34,7 @@ export function ImportJobQuestionsPage() {
   )
   const tagLibraries = useAsync<TagLibraries>(() => learningTagsApi.getQuestionBankTagLibraries(), [])
 
-  const activeBasketId = getActiveCollectionId()
+  const activeBasketId = BASKET_COLLECTION_ID
   const basket = useAsync(() => collectionsApi.getCollection(activeBasketId), [activeBasketId])
 
   useEffect(() => {
@@ -62,7 +63,7 @@ export function ImportJobQuestionsPage() {
   }
 
   async function addToBasket(id: string) {
-    await addQuestionToActiveBasket(id)
+    await addQuestionToBasket(id)
   }
 
   async function deleteQuestion(id: string) {
@@ -168,6 +169,16 @@ export function ImportJobQuestionsPage() {
           <Button size="sm" variant="outline" onClick={reload} icon={RefreshCcw} className="sf-pressable rounded-xl">
             刷新
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            icon={expandAll ? ChevronUp : ChevronDown}
+            onClick={() => setExpandAll((value) => !value)}
+            disabled={!items.length}
+            className="sf-pressable rounded-xl"
+          >
+            {expandAll ? '收起全部解析' : '展开所有解析'}
+          </Button>
         </div>
       </div>
 
@@ -198,6 +209,7 @@ export function ImportJobQuestionsPage() {
             onQuestionSaved={replaceQuestion}
             isInBasket={basketQuestionIds.has(item.id)}
             showFigureAction
+            expandAll={expandAll}
           />
         ))}
         {!items.length ? (

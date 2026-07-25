@@ -299,3 +299,9 @@ export function parsePaperQuestionsFromJsonText(text: string) {
   }
   return { ...prepared, payload, questions, previews: questions.map(buildPaperQuestionPreview) }
 }
+
+export function parseStrictQuestionsFromJsonText(text: string) {
+  const payload: unknown = JSON.parse(text)
+  const questions = questionsFromPayload(payload)
+  return { payload, questions, previews: questions.map(buildPaperQuestionPreview) }
+}

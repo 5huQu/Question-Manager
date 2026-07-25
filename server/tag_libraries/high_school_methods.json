@@ -4,8 +4,8 @@
   "subject": "数学",
   "stage": "high_school",
   "locale": "zh-CN",
-  "version": "1.0.0",
-  "source": "system-default",
+  "version": "1.1.0",
+  "source": "local-edit",
   "libraryType": "method_tag",
   "baseKnowledgeLibraryCode": "high_school_math_cn_default",
   "groups": [
@@ -222,6 +222,61 @@
             "导数中的恒成立、有解与参数范围"
           ],
           "sortOrder": 20
+        },
+        {
+          "code": "MT_DIRECT_DIFFERENTIATION",
+          "name": "直接求导法",
+          "description": "直接利用导数公式求导，并代入点、区间或斜率条件完成计算。",
+          "tagType": "method",
+          "appliesTo": [
+            "导数公式与运算法则 (和、差、积、商、复合)",
+            "导数概念、几何意义与切线方程",
+            "利用导数研究函数单调性"
+          ],
+          "sortOrder": 21
+        },
+        {
+          "code": "MT_TANGENT_EQUATION",
+          "name": "切线方程法",
+          "description": "设切点或利用已知切点，结合导数几何意义和点斜式建立切线方程。",
+          "tagType": "method",
+          "appliesTo": [
+            "导数概念、几何意义与切线方程"
+          ],
+          "sortOrder": 22
+        },
+        {
+          "code": "MT_TANGENT_COUNT",
+          "name": "切线条数判定法",
+          "description": "设切点参数并建立切线条件，通过方程实根个数判定切线条数。",
+          "tagType": "method",
+          "appliesTo": [
+            "导数概念、几何意义与切线方程",
+            "函数零点 (存在性定理、二分法)"
+          ],
+          "sortOrder": 23
+        },
+        {
+          "code": "MT_DERIVATIVE_INTERVAL_ANALYSIS",
+          "name": "导数判区间法",
+          "description": "通过导数符号表判定函数在各区间的单调性及极值变化。",
+          "tagType": "method",
+          "appliesTo": [
+            "利用导数研究函数单调性",
+            "函数的极值、最值及其应用"
+          ],
+          "sortOrder": 24
+        },
+        {
+          "code": "MT_CRITICAL_ENDPOINT_COMPARISON",
+          "name": "临界点与端点比较法",
+          "description": "在闭区间或有界区间上比较临界点与端点函数值以确定最值或值域。",
+          "tagType": "method",
+          "appliesTo": [
+            "函数值域与最值 (配方、判别式、单调性、换元)",
+            "函数的极值、最值及其应用"
+          ],
+          "sortOrder": 25
         }
       ]
     },

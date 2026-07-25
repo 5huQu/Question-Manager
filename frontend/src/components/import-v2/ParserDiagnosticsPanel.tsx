@@ -57,7 +57,7 @@ export function ParserDiagnosticsPanel({ preview, config, loading, focusQuestion
           <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
             <div className="mb-1 flex items-center gap-1.5 font-semibold">
               <CheckCircle2 className="size-3.5" />
-              推荐：{preview.strategyRecommendation.strategy === 'question_then_heading' ? '题号在参考答案前' : '题号在参考答案后'}
+              推荐：{preview.strategyRecommendation.strategy === 'question_then_heading' ? '题号后按标题切分' : '标题后按题号切分'}
             </div>
             <p className="leading-relaxed">{preview.strategyRecommendation.reason}</p>
           </div>

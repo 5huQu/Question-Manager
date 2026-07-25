@@ -631,7 +631,7 @@ export default function CandidateFixWorkbenchPage() {
 
   if (loading) {
     return (
-      <div className="flex h-[80vh] items-center justify-center">
+      <div className="flex h-[80vh] animate-fade-in items-center justify-center">
         <LoaderCircle className="size-8 animate-spin text-zinc-900 dark:text-zinc-100" />
       </div>
     )
@@ -639,7 +639,7 @@ export default function CandidateFixWorkbenchPage() {
 
   if (candidate?.status === 'committed') {
     return (
-      <div className="mx-auto max-w-xl rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="mx-auto max-w-xl animate-scale-fade-in rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">该候选题已入库</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-500">候选内容已锁定，请在正式题目中继续编辑，避免两份内容分叉。</p>
         <div className="mt-5 flex gap-2">
@@ -651,7 +651,7 @@ export default function CandidateFixWorkbenchPage() {
   }
 
   if (loadError || !candidate || !session) {
-    return <div className="rounded-lg border border-red-200 bg-red-50/30 p-4 text-sm text-red-800 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400">加载手动修正会话失败：{loadError || '未找到可用的修正会话。'}</div>
+    return <div className="animate-fade-in rounded-lg border border-red-200 bg-red-50/30 p-4 text-sm text-red-800 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400">加载手动修正会话失败：{loadError || '未找到可用的修正会话。'}</div>
   }
 
   return (
@@ -660,7 +660,7 @@ export default function CandidateFixWorkbenchPage() {
 
       <div className="grid h-auto grid-cols-1 items-stretch gap-5 overflow-visible xl:h-[calc(100vh-7rem)] xl:min-h-[680px] xl:grid-cols-12 xl:overflow-hidden">
         {/* 左侧：PDF 渲染展示与划框区域 (7格) */}
-        <div className="flex min-h-[640px] flex-col overflow-hidden rounded-xl border bg-zinc-50/50 shadow-sm xl:col-span-7 xl:min-h-0 dark:bg-zinc-955">
+        <div className="flex min-h-[640px] flex-col overflow-hidden rounded-xl border bg-zinc-50/50 shadow-sm transition-colors duration-200 xl:col-span-7 xl:min-h-0 dark:bg-zinc-955">
           <ManualFixViewerToolbar pageBrowseMode={pageBrowseMode} regionView={regionView} sourceProfiles={sourceProfileEntries} activeSourceDocumentId={activeSourceDocumentId} currentPage={currentPage} maxPages={maxPages} onBrowseModeChange={setPageBrowseMode} onRegionViewChange={handleRegionViewChange} onSourceChange={(sourceId) => { setActiveSourceDocumentId(sourceId); setCurrentPage(1); setRect({ x: 0, y: 0, width: 0, height: 0 }); setSelectedRegionId(null) }} onPageChange={(page) => { setCurrentPage(Math.min(maxPages, Math.max(1, page))); setRect({ x: 0, y: 0, width: 0, height: 0 }); setSelectedRegionId(null) }} />
 
           <ManualFixDocumentViewer candidate={candidate} activeSourceDocumentId={activeSourceDocumentId} currentPage={currentPage} pageBrowseMode={pageBrowseMode} pageNumbers={pageNumbers} rect={rect} scrollAreaRef={scrollAreaRef} pageContainerRefs={pageContainerRefs} getPageImageRef={getPageImageRef} canvasBoxesForPage={canvasBoxesForPage} selectedBoxIdForPage={selectedBoxIdForPage} onSelectBoxId={handleSelectBoxId} onRectChange={handleRectChange} onDeleteSelected={handleDeleteSelected} onNaturalSizeReady={(size, page) => { if (currentPage === page) setNaturalSize(size) }} onFocusPage={(page) => focusPage(page, { scroll: true })} />

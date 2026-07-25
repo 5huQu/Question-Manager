@@ -162,8 +162,11 @@ export default function App() {
             ? <QuestionBankHeaderActions />
             : undefined
         } />
-        <div className="flex-1 overflow-auto">
-          <div className={`flex w-full flex-col gap-6 p-4 md:p-6 ${fluidContent ? 'max-w-none' : 'mx-auto max-w-7xl'}`}>
+        <div className="flex-1 overflow-auto" data-slot="app-scroll-container">
+          <div
+            className={`flex w-full flex-col gap-6 p-4 md:p-6 ${fluidContent ? 'max-w-none' : 'mx-auto max-w-7xl'}`}
+            data-slot="app-content-container"
+          >
             <Suspense fallback={
               <div className="flex h-[50vh] items-center justify-center">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-950 border-t-transparent dark:border-zinc-50" />

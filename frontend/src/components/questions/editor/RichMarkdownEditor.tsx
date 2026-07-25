@@ -3,11 +3,12 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { TableKit } from '@tiptap/extension-table'
 import Placeholder from '@tiptap/extension-placeholder'
-import { AlertTriangle, Bold, Braces, Code2, Italic, List, ListOrdered, Redo2, Sigma, Table2, Undo2 } from 'lucide-react'
+import { AlertTriangle, Bold, Braces, Code2, Italic, List, ListOrdered, Redo2, Sigma, Table2, TextCursorInput, Undo2 } from 'lucide-react'
 import { FormulaBlock, FormulaInline } from './FormulaNode'
 import { FormulaEditorDialog } from './FormulaEditorDialog'
 import { editorJsonToMarkdown, markdownToEditorHtml } from './markdownAdapter'
 import { sanitizePastedHtml } from '@/utils/questionContentCodec'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface RichMarkdownEditorProps {
   id: string
@@ -26,17 +27,24 @@ const rawPattern = /```|<\/?[a-z][^>]*>/i
 
 function IconButton({ label, active, disabled, onClick, children }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={active}
-      disabled={disabled}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
-      className={`flex size-8 items-center justify-center rounded-md text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:pointer-events-none disabled:opacity-35 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 ${active ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50' : ''}`}
-    >
-      {children}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">
+          <button
+            type="button"
+            aria-label={label}
+            aria-pressed={active}
+            disabled={disabled}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onClick}
+            className={`flex size-8 items-center justify-center rounded-md text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:pointer-events-none disabled:opacity-35 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 ${active ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50' : ''}`}
+          >
+            {children}
+          </button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={6}>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -126,6 +134,8 @@ export function RichMarkdownEditor({ id, label, value, onChange, placeholder = '
               <IconButton label="打开行内公式键盘" onClick={() => setFormulaMode('inline')}><Sigma className="size-4" /></IconButton>
               <IconButton label="打开块级公式键盘" onClick={() => setFormulaMode('block')}><Braces className="size-4" /></IconButton>
               <IconButton label="插入三列表格" onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}><Table2 className="size-4" /></IconButton>
+              <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-800" />
+              <IconButton label="插入填空线" onClick={() => editor.chain().focus().insertContent('___').run()}><TextCursorInput className="size-4" /></IconButton>
             </div> : null}
             <EditorContent editor={editor} />
           </>

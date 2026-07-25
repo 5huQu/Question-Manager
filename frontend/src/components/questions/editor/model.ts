@@ -16,7 +16,10 @@ export interface StructuredChoice {
   content: string
 }
 
-const CHOICE_LINE = /^\s*([A-D])[.、．:)）]\s*(.+?)\s*$/i
+// Empty choices are valid while a question is being composed. In particular,
+// joinChoices trims the final line's trailing space, leaving the last choice
+// as `D.` until the user enters its content.
+const CHOICE_LINE = /^\s*([A-D])[.、．:)）]\s*(.*?)\s*$/i
 
 export function splitChoices(markdown: string): { body: string; choices: StructuredChoice[] } {
   const lines = markdown.split('\n')

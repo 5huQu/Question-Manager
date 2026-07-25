@@ -202,13 +202,7 @@ export type MarkdownStructureToken = {
 }
 
 export type ParserDiagnostic = {
-  code:
-    | 'solution_heading_without_following_question'
-    | 'question_before_solution_heading'
-    | 'metadata_used_as_answer'
-    | 'table_answer_blocked_by_existing_answer'
-    | 'missing_analysis'
-    | 'unmatched_solution'
+  code: string
   severity: 'info' | 'warning' | 'error'
   questionNo?: string
   message: string

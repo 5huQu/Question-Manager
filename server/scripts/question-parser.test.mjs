@@ -1316,4 +1316,58 @@ assert.match(ocrSpacedFormulaCandidates[0].stemMarkdown, /x _ \{1\} \+ x _ \{2\}
   assert.match(disabledSolutions.get('19')?.analysisMarkdown || '', /2 \\cdot/)
 }
 
+// Manual semantic markers provide a deterministic escape hatch when OCR does
+// not preserve question numbers or field headings.
+{
+  const manuallyMarkedDocument = {
+    ...ocrDocument,
+    id: 'ocr_manual_markers_test',
+    markdown: [
+      '<!-- QM:QUESTION 7 -->',
+      '求 $6 \\times 7$ 的值。',
+      '<!-- QM:ANSWER -->',
+      '42',
+      '<!-- QM:ANALYSIS -->',
+      '直接计算可得 $6 \\times 7=42$。',
+      '',
+      '<!-- QM:QUESTION 8 -->',
+      '求 $8+1$ 的值。',
+      '<!-- QM:ANSWER -->',
+      '9',
+    ].join('\n'),
+    pages: [],
+    assets: [],
+  }
+  const manuallyMarkedCandidates = parseQuestionCandidates(manuallyMarkedDocument, {
+    now: '2026-07-24T00:00:00.000Z',
+  })
+  assert.deepEqual(manuallyMarkedCandidates.map((candidate) => candidate.questionNo), ['7', '8'])
+  assert.equal(manuallyMarkedCandidates[0].answerText, '42')
+  assert.match(manuallyMarkedCandidates[0].analysisMarkdown, /直接计算/)
+  assert.doesNotMatch(manuallyMarkedCandidates[0].stemMarkdown, /QM:/)
+  assert.equal(manuallyMarkedCandidates[1].answerText, '9')
+}
+
+{
+  const markedAnswerAppendix = {
+    ...ocrDocument,
+    id: 'ocr_manual_answer_appendix_test',
+    markdown: [
+      '1. 选择题题干',
+      '2. 选择题题干',
+      '<!-- QM:ANSWER -->',
+      '## 一、选择题',
+      '1-2 BC',
+    ].join('\n'),
+    pages: [],
+    assets: [],
+  }
+  const appendixCandidates = parseQuestionCandidates(markedAnswerAppendix, {
+    now: '2026-07-24T00:00:00.000Z',
+  })
+  assert.deepEqual(appendixCandidates.map((candidate) => candidate.questionNo), ['1', '2'])
+  assert.equal(appendixCandidates[0].answerText, 'B')
+  assert.equal(appendixCandidates[1].answerText, 'C')
+}
+
 console.log('question parser ok')

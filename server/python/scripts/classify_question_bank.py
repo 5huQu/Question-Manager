@@ -55,6 +55,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scope-id", default="", help="题目批次范围 ID")
     parser.add_argument("--limit", type=int, default=0, help="限制处理题目数量；0 表示全量")
     parser.add_argument("--only-missing", action="store_true", help="只处理还没有标签的题目")
+    parser.add_argument("--import-source-prefix", default="", help="只处理 import_source_id 以前缀匹配的题目")
+    parser.add_argument("--tags-only", action="store_true", help="只更新知识点和解题方法，不改难度或章节")
     parser.add_argument("--concurrency", type=int, default=4, help="并发数，最大 10")
     return parser.parse_args()
 
@@ -75,6 +77,11 @@ def normalize_tags(value: object) -> list[str]:
         seen.add(tag)
         tags.append(tag[:40])
     return tags[:8]
+
+
+def library_tags(value: object, allowed: set[str]) -> list[str]:
+    """Keep only exact controlled-vocabulary values returned by the model."""
+    return [tag for tag in normalize_tags(value) if tag in allowed]
 
 
 def difficulty_score(value: object) -> int:
@@ -241,16 +248,20 @@ def classify(row: sqlite3.Row, libraries: dict[str, list[str]], cfg: dict[str, s
     if not cfg["api_base_url"] or not cfg["api_key"] or not cfg["model"]:
         raise RuntimeError("缺少分类模型配置：OCR_CLEANUP_API_BASE_URL / OCR_CLEANUP_API_KEY / OCR_CLEANUP_MODEL")
     context = row_context(row, scope_context)
+    classification_context = {
+        key: value for key, value in context.items()
+        if key in {"stage", "subject", "paperKind", "examYear"}
+    }
     model_input = {
         "problem_text": row["stem_markdown"],
         "answer": row["answer_text"],
         "analysis": row["analysis_markdown"],
-        "classification_context": context,
+        "classification_context": classification_context,
         "allowed_knowledge_points": libraries["knowledge_points"],
         "allowed_solution_methods": libraries["solution_methods"],
     }
     prompts = prompt_settings()
-    system_prompt = prompts.get("classification_system_prompt", SYSTEM_PROMPT) + "\n" + classification_context_block(context)
+    system_prompt = prompts.get("classification_system_prompt", SYSTEM_PROMPT) + "\n" + classification_context_block(classification_context)
     user_template = prompts.get("classification_user_prompt", USER_PROMPT)
     payload = {
         "model": cfg["model"],
@@ -277,8 +288,8 @@ def classify(row: sqlite3.Row, libraries: dict[str, list[str]], cfg: dict[str, s
                 result = extract_json(text)
                 return {
                     "id": row["id"],
-                    "knowledge_points": normalize_tags(result.get("knowledge_points")),
-                    "solution_methods": normalize_tags(result.get("solution_methods")),
+                    "knowledge_points": library_tags(result.get("knowledge_points"), set(libraries["knowledge_points"])),
+                    "solution_methods": library_tags(result.get("solution_methods"), set(libraries["solution_methods"])),
                     "difficulty_score_10": difficulty_score(result.get("difficulty_score_10")),
                     "difficulty_label": str(result.get("difficulty_label") or ""),
                 }
@@ -380,6 +391,9 @@ def main() -> int:
     conn.commit()
     scope_type, scope_id = classification_scope(args)
     where_clauses, params = scoped_where(conn, scope_type, scope_id)
+    if args.import_source_prefix:
+        where_clauses.append("import_source_id LIKE ?")
+        params.append(f"{args.import_source_prefix}%")
     if args.only_missing:
         where_clauses.append("(knowledge_points_json = '[]' OR solution_methods_json = '[]' OR difficulty_score_10 = 0 OR difficulty_label = '')")
     where = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
@@ -410,17 +424,27 @@ def main() -> int:
                 score = int(result["difficulty_score_10"] or 0)
                 label = str(result.get("difficulty_label") or difficulty_label(score))
                 results.append(result)
-                conn.execute(
-                    "UPDATE question_bank_items SET knowledge_points_json = ?, solution_methods_json = ?, difficulty_score_10 = ?, difficulty_label = ?, chapter = COALESCE(NULLIF(?, ''), chapter), updated_at = datetime('now') WHERE id = ?",
-                    (
-                        json.dumps(result["knowledge_points"], ensure_ascii=False),
-                        json.dumps(result["solution_methods"], ensure_ascii=False),
-                        score,
-                        label,
-                        (result["knowledge_points"] or [""])[0],
-                        qid,
-                    ),
-                )
+                if args.tags_only:
+                    conn.execute(
+                        "UPDATE question_bank_items SET knowledge_points_json = ?, solution_methods_json = ?, updated_at = datetime('now') WHERE id = ?",
+                        (
+                            json.dumps(result["knowledge_points"], ensure_ascii=False),
+                            json.dumps(result["solution_methods"], ensure_ascii=False),
+                            qid,
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE question_bank_items SET knowledge_points_json = ?, solution_methods_json = ?, difficulty_score_10 = ?, difficulty_label = ?, chapter = COALESCE(NULLIF(?, ''), chapter), updated_at = datetime('now') WHERE id = ?",
+                        (
+                            json.dumps(result["knowledge_points"], ensure_ascii=False),
+                            json.dumps(result["solution_methods"], ensure_ascii=False),
+                            score,
+                            label,
+                            (result["knowledge_points"] or [""])[0],
+                            qid,
+                        ),
+                    )
                 conn.commit()
             except Exception as exc:
                 failures.append({"id": qid, "error": str(exc)})

@@ -8,7 +8,7 @@ import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '@/components
 import { Badge, Button, Empty, TagRow } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { QuestionBankResponse, QuestionItem, TagLibraries } from '@/types'
-import { addQuestionToActiveBasket } from '@/utils/questionBasket'
+import { addQuestionToBasket } from '@/utils/questionBasket'
 import { difficultyLabel10, displaySource } from '@/utils/questionDisplay'
 import { richBlocksPlainText } from '@/components/RichContent'
 
@@ -20,6 +20,7 @@ export function WorkbenchQuestionCard({
   onQuestionSaved,
   isInBasket = false,
   showFigureAction = true,
+  expandAll,
 }: {
   item: QuestionItem
   onAddToBasket: (id: string) => void
@@ -28,6 +29,7 @@ export function WorkbenchQuestionCard({
   onQuestionSaved?: (item: QuestionItem) => void
   isInBasket?: boolean
   showFigureAction?: boolean
+  expandAll?: boolean
 }) {
   const [cropOpen, setCropOpen] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -38,6 +40,10 @@ export function WorkbenchQuestionCard({
   useEffect(() => {
     setDraft(item)
   }, [item])
+
+  useEffect(() => {
+    if (expandAll !== undefined) setShowAnalysis(expandAll)
+  }, [expandAll])
 
   async function addFigure(payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
     return questionBankApi.createFigure(item.id, { usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox })
@@ -73,7 +79,7 @@ export function WorkbenchQuestionCard({
 
   return (
     <article
-      className="group relative flex flex-col gap-3 rounded-lg border bg-white p-5 text-left transition-all duration-150 border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700 dark:bg-zinc-950"
+      className="group relative flex flex-col gap-3 rounded-lg border bg-white p-5 text-left transition-all duration-200 border-zinc-200 hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:hover:border-zinc-700 dark:bg-zinc-950"
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -526,7 +532,7 @@ export function BankTab({
       alert('已将模拟题目加入试题篮 (静态操作)')
       return
     }
-    await addQuestionToActiveBasket(id)
+    await addQuestionToBasket(id)
     reload()
   }
 

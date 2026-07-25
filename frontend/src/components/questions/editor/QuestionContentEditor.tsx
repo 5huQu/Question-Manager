@@ -3,6 +3,7 @@ import { AlertTriangle, Check, FileText, Plus, RotateCcw, Save, Sigma, X } from 
 import { RichMarkdownEditor } from './RichMarkdownEditor'
 import { FormulaEditorDialog } from './FormulaEditorDialog'
 import { contentEquals, detectCompatibilityWarnings, joinChoices, splitChoices, type QuestionContentValue, type QuestionEditorVariant, type StructuredChoice } from './model'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 export interface QuestionEditorConflict {
   message: string
@@ -86,15 +87,19 @@ function StructuredChoiceRow({ id, choice, onChange }: { id: string; choice: Str
         hideHeader
         hideToolbar
       />
-      <button
-        type="button"
-        aria-label={`为选项 ${choice.label} 打开公式键盘`}
-        title="插入公式"
-        className="flex size-8 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-        onClick={() => setFormulaOpen(true)}
-      >
-        <Sigma className="size-4" />
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={`为选项 ${choice.label} 打开公式键盘`}
+            className="flex size-8 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+            onClick={() => setFormulaOpen(true)}
+          >
+            <Sigma className="size-4" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={6}>插入公式</TooltipContent>
+      </Tooltip>
       {formulaOpen ? (
         <FormulaEditorDialog
           title={`为选项 ${choice.label} 插入公式`}

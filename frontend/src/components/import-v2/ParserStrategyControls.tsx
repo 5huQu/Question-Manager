@@ -1,9 +1,9 @@
 import type { AnswerTablePolicy, ImportFlowV2ParserConfig, SolutionBindingStrategy } from '@/api/importV2'
 
 const strategyOptions: Array<{ value: SolutionBindingStrategy; label: string }> = [
-  { value: 'heading_then_question', label: '题号在参考答案后' },
-  { value: 'question_then_heading', label: '题号在参考答案前' },
-  { value: 'auto', label: '自动推荐' },
+  { value: 'auto', label: '自动判断' },
+  { value: 'heading_then_question', label: '标题后按题号切分' },
+  { value: 'question_then_heading', label: '题号后按标题切分' },
 ]
 
 const answerTableOptions: Array<{ value: AnswerTablePolicy; label: string }> = [
@@ -32,7 +32,7 @@ export function ParserStrategyControls({ config, loading, onChange }: ParserStra
   return (
     <div className="grid gap-2">
       <label className="space-y-1">
-        <span className="text-[10px] font-semibold text-zinc-500">解析策略</span>
+        <span className="text-[10px] font-semibold text-zinc-500">答案/解析绑定方式</span>
         <select
           className="h-8 w-full rounded-md border border-zinc-200 bg-white px-2 text-xs outline-none focus:ring-1 focus:ring-zinc-900 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950"
           disabled={loading}

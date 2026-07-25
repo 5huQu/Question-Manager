@@ -46,8 +46,8 @@ type PageMarker = {
 }
 
 const PAGE_MARKER_RE = /<!--\s*(?:GLM|DOC2X)_PAGE:\s*(\d+)\s*-->/g
-const ANSWER_MARKER_RE = /【\s*答案\s*】|答案\s*[:：]/g
-const ANALYSIS_MARKER_RE = /【\s*(?:解析|分析|详解)\s*】|(?:解析|分析|详解)\s*[:：]/g
+const ANSWER_MARKER_RE = /<!--\s*QM:ANSWER\s*-->|【\s*答案\s*】|答案\s*[:：]/g
+const ANALYSIS_MARKER_RE = /<!--\s*QM:ANALYSIS\s*-->|【\s*(?:解析|分析|详解)\s*】|(?:解析|分析|详解)\s*[:：]/g
 
 function collectRegexOffsets(pattern: RegExp, source: string) {
   const matches: number[] = []
@@ -157,10 +157,21 @@ function markerDrivenAppendixStart(
 ): { start: number; repeatedQuestionNos: string[]; firstQuestionNoAfterHeading?: string } | undefined {
   if (questionMatches.length < 2 || !markerOffsets.length) return undefined
   const firstMarker = markerOffsets[0]
-  if (firstMarker < source.length * 0.35) return undefined
   const beforeMarker = questionMatches.filter((item) => item.start < firstMarker)
   const after = questionMatches.filter((item) => item.start > firstMarker)
   if (beforeMarker.length < 2) return undefined
+
+  // An explicit QM:ANSWER marker is a user assertion that the following
+  // content is a solution appendix, even when the appendix contains only an
+  // answer table and no repeated question numbers.
+  if (/^\s*<!--\s*QM:ANSWER\s*-->\s*$/m.test(source.slice(firstMarker, firstMarker + 80))) {
+    return {
+      start: Math.max(0, source.lastIndexOf('\n', Math.max(0, firstMarker - 1)) + 1),
+      repeatedQuestionNos: [],
+      firstQuestionNoAfterHeading: after[0]?.questionNo,
+    }
+  }
+  if (firstMarker < source.length * 0.35) return undefined
 
   const lastBeforeMarker = beforeMarker[beforeMarker.length - 1]
   const earlierBeforeNos = new Set(beforeMarker.slice(0, -1).map((item) => item.questionNo))

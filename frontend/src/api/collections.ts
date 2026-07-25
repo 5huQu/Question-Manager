@@ -30,6 +30,9 @@ export const collectionsApi = {
       body: JSON.stringify(payload),
     })
   },
+  deleteCollection(id: string) {
+    return api<Basket>(`/api/question-bank/collections/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  },
   addItem(collectionId: string, payload: { questionId: string; score?: number; sectionName?: string }) {
     return api<Basket>(`/api/question-bank/collections/${encodeURIComponent(collectionId)}/items`, {
       method: 'POST',

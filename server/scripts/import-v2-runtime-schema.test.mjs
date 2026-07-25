@@ -53,6 +53,23 @@ const parserPreview = {
   diagnostics: [],
 }
 assert.equal(assertWithSchema(parserPreview, parserPreviewResponseSchema), parserPreview)
+const candidateDiagnosticPreview = {
+  ...parserPreview,
+  diagnostics: [{
+    code: 'missing_answer',
+    severity: 'warning',
+    questionNo: '1',
+    message: '未匹配到答案。',
+  }],
+}
+assert.equal(assertWithSchema(candidateDiagnosticPreview, parserPreviewResponseSchema), candidateDiagnosticPreview)
+assert.throws(
+  () => assertWithSchema({
+    ...parserPreview,
+    diagnostics: [{ code: '', severity: 'warning', questionNo: '1', message: '无效诊断。' }],
+  }, parserPreviewResponseSchema),
+  /diagnostics\[0\]\.code.*长度不能小于 1/,
+)
 assert.throws(
   () => assertWithSchema({ ...parserPreview, structures: [{ ...parserPreview.structures[0], lineStart: 0 }] }, parserPreviewResponseSchema),
   /structures\[0\]\.lineStart.*不能小于 1/,

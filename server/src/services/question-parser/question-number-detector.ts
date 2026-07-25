@@ -31,6 +31,8 @@ const BUILTIN_SOLUTION_QUESTION_PATTERNS = [
   '^\\s*(?:#{1,6}\\s*)?([0-9０-９](?:\\s+[0-9０-９]){1,2})\\s*(?:\\\\cdot|[.．、·•:：])',
 ]
 
+const MANUAL_QUESTION_MARKER_RE = /^\s*<!--\s*QM:QUESTION\s+([0-9０-９]{1,3})\s*-->\s*$/
+
 function uniquePatterns(patterns: string[]) {
   return Array.from(new Set(patterns))
 }
@@ -65,6 +67,21 @@ function detectQuestionNumbersWithPatterns(markdown: string, patterns: string[],
   let offset = 0
   let regularCount = 0
   for (const line of lines) {
+    const manualMarker = MANUAL_QUESTION_MARKER_RE.exec(line)
+    if (manualMarker) {
+      const markerIndex = offset + line.indexOf(line.trim())
+      const raw = line.trim()
+      matches.push({
+        questionNo: normalizeDetectedQuestionNo(manualMarker[1]),
+        raw,
+        start: markerIndex,
+        contentStart: markerIndex + raw.length,
+        lineStart: markerIndex,
+      })
+      regularCount += 1
+      offset += line.length
+      continue
+    }
     const found = matchLine(line, patterns)
     if (!found) { offset += line.length; continue }
     if (isFigureCaptionQuestionMarker(line, found.raw)) { offset += line.length; continue }

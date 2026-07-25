@@ -24,7 +24,7 @@ import type { ExportRecordsResponse } from '@/api/exportRecords'
 import { richBlocksPlainText } from '@/components/RichContent'
 import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import type { ExportRecord, OcrSettings, QuestionBankResponse, QuestionItem } from '@/types'
-import { addQuestionToActiveBasket } from '@/utils/questionBasket'
+import { addQuestionToBasket } from '@/utils/questionBasket'
 import { difficultyLabel10, displaySource } from '@/utils/questionDisplay'
 import { QuickActionDialog } from '@/components/dialogs/QuickActionDialog'
 
@@ -392,7 +392,7 @@ function WorkbenchQuestionPreview({
     if (isInBasket || adding) return
     setAdding(true)
     try {
-      await addQuestionToActiveBasket(question.id)
+      await addQuestionToBasket(question.id)
     } finally {
       setAdding(false)
     }

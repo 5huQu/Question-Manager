@@ -59,7 +59,7 @@ export function ManualFixInspector(props: Props) {
   return (
     <aside className="xl:col-span-5 flex min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
       <div className="border-b border-zinc-100 bg-zinc-50/50 p-4 dark:border-zinc-900 dark:bg-zinc-900/10">
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-400">
+        <div className="flex animate-fade-in items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-400">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <div className="min-w-0">
             <p className="text-[13px] font-medium">当前修正任务</p>
@@ -68,14 +68,14 @@ export function ManualFixInspector(props: Props) {
         </div>
         <div className="mt-3 grid grid-cols-3 rounded-lg border border-zinc-200/50 bg-zinc-100/80 p-0.5 dark:border-zinc-800/50 dark:bg-zinc-900/80">
           {tabs.map(({ value, label, icon: Icon }) => (
-            <button key={value} type="button" onClick={() => props.onTabChange(value)} className={`flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors ${props.activeTab === value ? 'border border-zinc-200/20 bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`}>
+            <button key={value} type="button" onClick={() => props.onTabChange(value)} className={`flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-all duration-150 active:scale-[0.97] ${props.activeTab === value ? 'border border-zinc-200/20 bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`}>
               <Icon className="size-3.5" />{label}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5">
+      <div className="flex-1 overflow-y-auto overscroll-contain p-5">
         {props.activeTab === 'content' && (
           <div className="space-y-4">
             {props.recoveredDraft ? (

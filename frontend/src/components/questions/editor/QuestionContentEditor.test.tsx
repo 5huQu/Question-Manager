@@ -104,4 +104,14 @@ describe('structured choice helpers', () => {
     expect(parsed.choices.map((choice) => choice.label)).toEqual(['A', 'B', 'C', 'D'])
     expect(joinChoices(parsed.body, parsed.choices)).toBe(initial.stemMarkdown)
   })
+
+  it('recognizes empty A-D choices after they are added', () => {
+    const markdown = joinChoices('题干', ['A', 'B', 'C', 'D'].map((label) => ({ label, content: '' })))
+
+    expect(markdown).toBe('题干\n\nA. \nB. \nC. \nD.')
+    expect(splitChoices(markdown)).toEqual({
+      body: '题干',
+      choices: ['A', 'B', 'C', 'D'].map((label) => ({ label, content: '' })),
+    })
+  })
 })

@@ -59,7 +59,7 @@ export function MarkdownPreviewPage() {
   }
 
   return (
-    <section className="mock-page-root flex min-h-[calc(100vh-6rem)] w-full select-none flex-col overflow-y-auto bg-zinc-100/70 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
+    <section className="markdown-preview-print-root mock-page-root flex min-h-[calc(100vh-6rem)] w-full select-none flex-col overflow-y-auto bg-zinc-100/70 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
       <style>{`
         .markdown-preview-paper {
           box-sizing: border-box;
@@ -206,21 +206,19 @@ export function MarkdownPreviewPage() {
           aside, nav, header, .no-print, button, .button {
             display: none !important;
           }
-          main {
+          main,
+          .markdown-preview-print-root,
+          .markdown-preview-print-content {
+            display: block !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
             padding: 0 !important;
             margin: 0 !important;
-            min-height: auto !important;
             background: white !important;
           }
-          section {
-            max-width: 100% !important;
-            width: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-          }
-          article {
+          .markdown-preview-paper {
             border: none !important;
             box-shadow: none !important;
             padding: 0 !important;
@@ -229,10 +227,35 @@ export function MarkdownPreviewPage() {
             max-width: 100% !important;
             background: white !important;
             color: black !important;
-          }
-          .markdown-preview-paper {
             min-height: 0 !important;
             font-size: 12pt !important;
+            line-height: 1.65;
+            orphans: 3;
+            widows: 3;
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+          }
+          .markdown-preview-paper .markdown-content h1,
+          .markdown-preview-paper .markdown-content h2,
+          .markdown-preview-paper .markdown-content h3 {
+            break-after: avoid-page;
+            page-break-after: avoid;
+          }
+          .markdown-preview-paper .question-content,
+          .markdown-preview-paper .choice-options,
+          .markdown-preview-paper .question-table-wrap,
+          .markdown-preview-paper .markdown-content img,
+          .markdown-preview-paper .katex-display {
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+          }
+          .markdown-preview-paper .question-table-wrap,
+          .markdown-preview-paper .katex-display {
+            max-width: 100%;
+            overflow: visible !important;
+          }
+          .markdown-preview-paper .markdown-content img {
+            max-height: 80mm;
           }
           @page {
             size: A4;
@@ -283,7 +306,7 @@ export function MarkdownPreviewPage() {
         </div>
       </header>
 
-      <div className="flex-1 p-4 sm:p-6 lg:p-8">
+      <div className="markdown-preview-print-content flex-1 p-4 sm:p-6 lg:p-8">
         {preview.loading && !preview.data ? <Empty text="正在生成预览..." /> : null}
         {preview.error ? <Empty text={preview.error} /> : null}
         {preview.data ? (

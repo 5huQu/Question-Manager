@@ -6,12 +6,14 @@ import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import { normalizeLatexMathDelimiters } from '@/utils/mathMarkdown'
+import { blankNodeToHast, remarkFillBlank } from '@/utils/fillBlankMarkdown'
 
 export const MarkdownContent = memo(function MarkdownContent({ content, className = '' }: { content: string; className?: string }) {
   return (
     <div className={`markdown-content min-w-0 max-w-none text-zinc-950 dark:text-zinc-50 ${className}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkMath, remarkGfm, remarkBreaks]}
+        remarkPlugins={[remarkMath, remarkGfm, remarkBreaks, remarkFillBlank]}
+        remarkRehypeOptions={{ handlers: { blank: blankNodeToHast } as any }}
         rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
         urlTransform={markdownUrlTransform}
         components={{
@@ -25,6 +27,11 @@ export const MarkdownContent = memo(function MarkdownContent({ content, classNam
           span: ({ className, children, node: _node, ...props }) => String(className || '').includes('katex-error')
             ? <span {...props} className="inline-flex items-baseline gap-1 rounded bg-amber-50 px-1 text-amber-900"><code>{children}</code><span className="text-[10px] text-amber-700">公式未规范化</span></span>
             : <span {...props} className={className}>{children}</span>,
+          ['blank' as any]: ({ node }: any) => {
+            const count = Number((node?.properties as { dataBlank?: string } | undefined)?.dataBlank) || 3
+            const width = `${Math.min(2 + count * 0.35, 8)}em`
+            return <span aria-label="填空" className="mx-0.5 inline-block h-[1.15em] translate-y-[0.18em] border-b border-zinc-500 align-baseline dark:border-zinc-400" style={{ width }} />
+          },
           pre: ({ children }) => <pre className="my-2 overflow-auto rounded-lg border bg-zinc-50 p-3 text-xs leading-5">{children}</pre>,
           table: ({ children }) => <div className="question-table-wrap"><table className="question-table">{children}</table></div>,
           th: ({ children }) => <th>{children}</th>,

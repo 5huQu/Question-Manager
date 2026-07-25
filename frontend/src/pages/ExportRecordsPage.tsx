@@ -15,7 +15,8 @@ import {
 import { collectionsApi } from '@/api/collections'
 import { exportRecordsApi } from '@/api/exportRecords'
 import { questionBankApi } from '@/api/questionBank'
-import { getActiveCollectionId, notifyBasketUpdated } from '@/components/QuestionBasket'
+import { BASKET_COLLECTION_ID } from '@/utils/questionBasket'
+import { notifyBasketUpdated } from '@/components/QuestionBasket'
 import { QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import { useAsync } from '@/hooks/useAsync'
 import type { ExportRecord, QuestionItem } from '@/types'
@@ -144,7 +145,7 @@ export function ExportRecordsPage() {
       return
     }
 
-    const collectionId = getActiveCollectionId()
+    const collectionId = BASKET_COLLECTION_ID
     setIsRestoring(record.id)
     try {
       const current = await collectionsApi.getCollection(collectionId)

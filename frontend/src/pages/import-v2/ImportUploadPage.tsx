@@ -17,7 +17,7 @@ import { settingsApi } from '@/api/settings'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { PageTitle, Panel, Button } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
-import { cityOptionsForProvince, provinceOptions, yearOptionsFromServerYear } from '@/utils/metadataOptions'
+import { cityOptionsForProvince, provinceForCity, provinceOptions, yearOptionsFromServerYear } from '@/utils/metadataOptions'
 import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
 import { importJobDocumentPath, importJobPath } from './importV2Routes'
 
@@ -506,7 +506,7 @@ export default function ImportUploadPage() {
                       <SearchableSelect
                         value={metadataDraft.city}
                         options={visibleCityOptions}
-                        onChange={(city) => setMetadataDraft((d) => ({ ...d, city }))}
+                        onChange={(city) => setMetadataDraft((d) => ({ ...d, city, province: provinceForCity(city) || d.province }))}
                         placeholder={metadataDraft.province ? '请选择城市' : '可先选择省份'}
                         searchPlaceholder="搜索城市"
                         allowClear

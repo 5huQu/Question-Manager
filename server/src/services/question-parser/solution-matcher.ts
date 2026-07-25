@@ -49,11 +49,12 @@ export type InlineAnswerTableBlock = {
 }
 
 const PAGE_MARKER_RE = /<!--\s*(?:GLM|DOC2X)_PAGE:\d+\s*-->/g
-const ANSWER_MARKER_RE = /【\s*答案\s*】|答案\s*[:：]/
-const ANALYSIS_MARKER_RE = /【\s*(?:解析|分析|详解)\s*】|(?:解析|分析|详解)\s*[:：]/
+const ANSWER_MARKER_RE = /<!--\s*QM:ANSWER\s*-->|【\s*答案\s*】|答案\s*[:：]/
+const ANALYSIS_MARKER_RE = /<!--\s*QM:ANALYSIS\s*-->|【\s*(?:解析|分析|详解)\s*】|(?:解析|分析|详解)\s*[:：]/
 const ANSWER_TABLE_RE = /<table\b[^>]*>[\s\S]*?<\/table>/gi
 const INLINE_ANSWER_MARKER_RE = /(?:^|\s)([0-9０-９]{1,3})\s*(?:\\cdot|[、:：]|[.．](?![0-9０-９]))\s*/g
 const COMPACT_NUMERIC_INLINE_ANSWER_MARKER_RE = /(?:^|\s)([0-9０-９]{1,3})\s*[.．]\s*/g
+const COMPACT_RANGE_ANSWER_RE = /(?:^|\s)([0-9０-９]{1,3})\s*[-－至到]\s*([0-9０-９]{1,3})\s+([A-Ha-h]+)(?=\s|$)/g
 
 function cleanField(value: string) {
   return String(value || '').replace(PAGE_MARKER_RE, '').trim()
@@ -211,6 +212,28 @@ function inlineAnswerEntriesFromMatches(line: string, offset: number, matches: R
   return entries
 }
 
+function compactRangeAnswerEntries(line: string, offset: number) {
+  const entries: InlineAnswerTableEntry[] = []
+  COMPACT_RANGE_ANSWER_RE.lastIndex = 0
+  for (const match of line.matchAll(COMPACT_RANGE_ANSWER_RE)) {
+    const startNo = Number.parseInt(normalizeDigits(match[1] || ''), 10)
+    const endNo = Number.parseInt(normalizeDigits(match[2] || ''), 10)
+    const answers = String(match[3] || '').toUpperCase()
+    if (!Number.isFinite(startNo) || !Number.isFinite(endNo) || endNo < startNo) continue
+    if (answers.length !== endNo - startNo + 1) continue
+    const matchStart = match.index || 0
+    const matchEnd = matchStart + match[0].length
+    for (let index = 0; index < answers.length; index += 1) {
+      entries.push({
+        questionNo: String(startNo + index),
+        answerText: answers[index],
+        range: { start: offset + matchStart, end: offset + matchEnd },
+      })
+    }
+  }
+  return entries
+}
+
 export function extractInlineAnswerTableBlocks(markdown: string): InlineAnswerTableBlock[] {
   const source = String(markdown || '')
   const blocks: InlineAnswerTableBlock[] = []
@@ -228,6 +251,10 @@ export function extractInlineAnswerTableBlocks(markdown: string): InlineAnswerTa
         matches = compactMatches
         entries = inlineAnswerEntriesFromMatches(line, offset, matches)
       }
+    }
+
+    if (entries.length < 2) {
+      entries = compactRangeAnswerEntries(line, offset)
     }
 
     if (entries.length < 2) {
