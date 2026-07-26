@@ -29,7 +29,11 @@ const SetupPage = lazy(() => import('@/pages/SetupPage').then(module => ({ defau
 const QuestionBasket = lazy(() => import('@/components/QuestionBasket').then(module => ({ default: module.QuestionBasket })))
 const PaperCenterPage = lazy(() => import('@/pages/questions/PaperCenterPage'))
 const CandidateFixWorkbenchPage = lazy(() => import('@/pages/import-v2/CandidateFixWorkbenchPage'))
+const TeachingDocumentsPage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentsPage'))
+const TeachingDocumentEditorPage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentEditorPage'))
 const QuestionEditorMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/QuestionEditorMockPage')) : null
+const TeachingDocumentMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/TeachingDocumentMockPage')) : null
+const EditorRedesignMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/editor-redesign/EditorRedesignMockPage')) : null
 
 function NavigateToWorkbench() {
   const navigate = useNavigate()
@@ -146,6 +150,7 @@ export default function App() {
 
   const fluidContent = location.pathname.startsWith('/questions')
     || location.pathname.startsWith('/tools')
+    || location.pathname.startsWith('/teaching-documents')
     || location.pathname === '/learning-tags'
     || location.pathname === '/exports'
 
@@ -202,10 +207,14 @@ export default function App() {
                 <Route path="/learning-tags" element={<LearningTagsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/exports" element={<ExportRecordsPage />} />
+                <Route path="/teaching-documents" element={<TeachingDocumentsPage />} />
+                <Route path="/teaching-documents/:documentId" element={<TeachingDocumentEditorPage />} />
                 <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<LegacyPdfSlicerRunRedirect />} />
                 <Route path="/tools/pdf-slicer/*" element={<LegacyPdfSlicerGone />} />
                 <Route path="/tools/import/candidates/:candidateId/manual-fix" element={<LegacyCandidateFixRedirect />} />
                 {QuestionEditorMockPage ? <Route path="/mock/question-editor" element={<QuestionEditorMockPage />} /> : null}
+                {TeachingDocumentMockPage ? <Route path="/mock/teaching-document" element={<TeachingDocumentMockPage />} /> : null}
+                {EditorRedesignMockPage ? <Route path="/mock/editor-redesign" element={<EditorRedesignMockPage />} /> : null}
 
               </Routes>
             </Suspense>

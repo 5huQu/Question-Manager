@@ -1,0 +1,157 @@
+/**
+ * TeachingDocument 渲染样式
+ * 盒子色调 CSS 变量 + 深色模式 + 分页标记
+ */
+
+/* ─── 盒子色调变量（浅色） ─────────────────────────────────────────────── */
+
+.td-document {
+  --box-neutral-border: #e4e4e7;
+  --box-neutral-header: #fafafa;
+  --box-neutral-body: #ffffff;
+  --box-neutral-accent: #71717a;
+
+  --box-blue-border: #bfdbfe;
+  --box-blue-header: #eff6ff;
+  --box-blue-body: #ffffff;
+  --box-blue-accent: #2563eb;
+
+  --box-green-border: #bbf7d0;
+  --box-green-header: #f0fdf4;
+  --box-green-body: #ffffff;
+  --box-green-accent: #16a34a;
+
+  --box-amber-border: #fde68a;
+  --box-amber-header: #fffbeb;
+  --box-amber-body: #ffffff;
+  --box-amber-accent: #d97706;
+
+  --box-red-border: #fecaca;
+  --box-red-header: #fef2f2;
+  --box-red-body: #ffffff;
+  --box-red-accent: #dc2626;
+
+  --box-violet-border: #ddd6fe;
+  --box-violet-header: #f5f3ff;
+  --box-violet-body: #ffffff;
+  --box-violet-accent: #7c3aed;
+}
+
+/*
+ * Stable measurement boundary. flow-root contains child margins so a block's
+ * DOMRect includes its visual vertical spacing instead of losing collapsed
+ * margins at pagination boundaries.
+ */
+.td-block-shell {
+  display: flow-root;
+  min-width: 0;
+}
+
+/* ─── 深色模式 ─────────────────────────────────────────────────────────── */
+
+.dark .td-document {
+  --box-neutral-border: #3f3f46;
+  --box-neutral-header: #27272a;
+  --box-neutral-body: #18181b;
+  --box-neutral-accent: #a1a1aa;
+
+  --box-blue-border: #1e40af;
+  --box-blue-header: #172554;
+  --box-blue-body: #18181b;
+  --box-blue-accent: #60a5fa;
+
+  --box-green-border: #166534;
+  --box-green-header: #052e16;
+  --box-green-body: #18181b;
+  --box-green-accent: #4ade80;
+
+  --box-amber-border: #92400e;
+  --box-amber-header: #451a03;
+  --box-amber-body: #18181b;
+  --box-amber-accent: #fbbf24;
+
+  --box-red-border: #991b1b;
+  --box-red-header: #450a0a;
+  --box-red-body: #18181b;
+  --box-red-accent: #f87171;
+
+  --box-violet-border: #5b21b6;
+  --box-violet-header: #2e1065;
+  --box-violet-body: #18181b;
+  --box-violet-accent: #a78bfa;
+}
+
+/* ─── 分页标记（屏幕预览用虚线，打印时生效） ──────────────────────────── */
+
+.td-page-break {
+  break-before: page;
+}
+
+@media print {
+  .td-page-break {
+    visibility: hidden;
+    height: 0;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* ─── 盒子避免分页 ────────────────────────────────────────────────────── */
+
+.td-box[data-break-behavior="avoid"] {
+  break-inside: avoid;
+}
+
+.td-box[data-break-behavior="force-before"] {
+  break-before: page;
+}
+
+/* ─── 图片对齐 ────────────────────────────────────────────────────────── */
+
+.td-figure[data-alignment="left"] {
+  text-align: left;
+}
+
+.td-figure[data-alignment="center"] {
+  text-align: center;
+}
+
+.td-figure[data-alignment="right"] {
+  text-align: right;
+}
+
+/* ─── 基础排版 ────────────────────────────────────────────────────────── */
+
+.td-document {
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.td-block-math .katex-display {
+  margin: 0;
+}
+
+/* A4 experiment: physical page geometry lives on the page shell. */
+.td-paper-page .td-document {
+  color: #18181b;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.td-paper-page .td-figure img {
+  max-height: var(--td-paper-content-height, 70vh);
+}
+
+.td-paper-page .td-block-selected {
+  border-radius: 4px;
+  outline: 2px solid #18181b;
+  outline-offset: 2px;
+}
+
+.dark .td-paper-page .td-document,
+.dark .td-paper-page .td-document h1,
+.dark .td-paper-page .td-document h2,
+.dark .td-paper-page .td-document h3,
+.dark .td-paper-page .td-document h4 {
+  color: #18181b;
+}

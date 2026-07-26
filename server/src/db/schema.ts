@@ -11,6 +11,7 @@ import { candidateFixDomainMigration } from './migrations/candidate-fix-domain.j
 import { sourceDocumentOcrTasksMigration } from './migrations/source-document-ocr-tasks.js'
 import { v1ImportMappingMigration } from './migrations/v1-import-mapping.js'
 import { importProvenanceArchiveMigration } from './migrations/import-provenance-archive.js'
+import { teachingDocumentsMigration } from './migrations/teaching-documents.js'
 import path from 'node:path'
 import { dataDir } from '../config.js'
 
@@ -580,6 +581,7 @@ export const applicationMigrations: DatabaseMigration[] = [
   sourceDocumentOcrTasksMigration,
   v1ImportMappingMigration,
   importProvenanceArchiveMigration,
+  teachingDocumentsMigration,
 ]
 
 /** Run the ordered, checksummed database migrations. */
