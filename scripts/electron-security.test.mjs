@@ -186,6 +186,30 @@ assert.deepEqual(new PdfExportController().cancel(), { success: true })
   assert.equal(controller.activeContext, null)
 }
 
+// PDF 结构校验失败必须阻断成功结果，并清理已写入的无效产物。
+{
+  const controller = new PdfExportController()
+  const deps = makeDeps({
+    verify: async () => ({ success: false, warnings: ['Page count mismatch: /Users/private/report.pdf'] }),
+  })
+  const result = await controller.runExport({ documentId: 'doc-1' }, deps)
+  assert.equal(result.success, false)
+  assert.match(result.error, /PDF 文件校验失败/)
+  assert.equal(deps.calls.unlink.length, 1)
+}
+
+// 导出错误不得把用户选定的绝对路径返回给 renderer。
+{
+  const controller = new PdfExportController()
+  const deps = makeDeps({
+    writeFile: () => { throw new Error('无法写入 /Users/private/secret.pdf') },
+  })
+  const result = await controller.runExport({ documentId: 'doc-1' }, deps)
+  assert.equal(result.success, false)
+  assert.equal(result.error.includes('/Users/private/secret.pdf'), false)
+  assert.match(result.error, /路径/)
+}
+
 // 用户在对话框取消：不创建窗口，锁释放。
 {
   const controller = new PdfExportController()

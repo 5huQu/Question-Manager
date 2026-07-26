@@ -21,6 +21,13 @@
 
 const { validatePdfExportOptions, buildPrintUrl } = require('./pdf-export-helpers.cjs')
 
+function sanitizeExportError(error) {
+  const message = error instanceof Error ? error.message : String(error)
+  return message
+    .replace(/[A-Za-z]:\\(?:[^\\\s]+\\)*[^\\\s]*/g, '[路径]')
+    .replace(/\/(?:[^/\s]+\/)+[^/\s]*/g, '[路径]')
+}
+
 class PdfExportController {
   constructor() {
     /** 并发锁：同一时刻最多一个导出在运行。 */
@@ -154,11 +161,18 @@ class PdfExportController {
       if (deps.verify) {
         try {
           const verifyResult = await deps.verify(context.savePath, reportedPages)
+          if (verifyResult && verifyResult.success === false) {
+            throw new Error('PDF 文件校验失败，请重新导出。')
+          }
           if (verifyResult && Array.isArray(verifyResult.warnings) && verifyResult.warnings.length) {
             verificationWarnings = verifyResult.warnings
           }
         } catch (verifyErr) {
-          verificationWarnings.push(`PDF 校验脚本执行异常：${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`)
+          throw new Error(
+            verifyErr instanceof Error && verifyErr.message === 'PDF 文件校验失败，请重新导出。'
+              ? verifyErr.message
+              : 'PDF 文件校验进程异常，请重新导出。',
+          )
         }
       }
 
@@ -181,7 +195,7 @@ class PdfExportController {
       }
       return {
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: sanitizeExportError(error),
       }
     } finally {
       // 只清理当前 context 自己的窗口；旧 context 的 finally 不会触碰新 context。

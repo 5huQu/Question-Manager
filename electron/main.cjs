@@ -279,7 +279,7 @@ function runPythonVerify(pythonPath, scriptPath, pdfPath, expectedPages) {
       if (settled) return
       settled = true
       if (!child.killed) child.kill()
-      resolve({ warnings: ['PDF 校验超时（10s）'] })
+      resolve({ success: false, warnings: ['PDF 校验超时（10s）'] })
     }, 10000)
     child.stdout.on('data', (chunk) => { stdout += chunk })
     child.stderr.on('data', (chunk) => { stderr += chunk })
@@ -298,13 +298,13 @@ function runPythonVerify(pythonPath, scriptPath, pdfPath, expectedPages) {
           warnings.push(stderr.trim() || `PDF 校验返回非零退出码 (${code})`)
         }
       }
-      resolve({ warnings })
+      resolve({ success: code === 0, warnings })
     })
     child.on('error', (err) => {
       if (settled) return
       settled = true
       clearTimeout(timeout)
-      resolve({ warnings: [`PDF 校验进程启动失败：${err.message}`] })
+      resolve({ success: false, warnings: ['PDF 校验进程启动失败。'] })
     })
   })
 }
