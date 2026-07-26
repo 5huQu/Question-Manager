@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Box, Check, Copy, ImagePlus,
@@ -14,7 +14,8 @@ import type {
 } from '@/types/teachingDocument'
 import { questionBankApi } from '@/api/questionBank'
 import { ApiError } from '@/api/client'
-import { A4PaginationPreview } from '@/components/teaching-document/A4PaginationPreview'
+import { A4PaginationPreview, type A4PaginationState } from '@/components/teaching-document/A4PaginationPreview'
+import { ExportPdfPanel } from '@/components/teaching-document/ExportPdfPanel'
 import { BlockRenderer, type QuestionResolution } from '@/components/teaching-document/blocks/BlockRenderer'
 import {
   A4_MARGIN_PRESETS,
@@ -82,6 +83,7 @@ export default function TeachingDocumentEditorPage() {
   const [canvasMode, setCanvasMode] = useState<'continuous' | 'a4'>('continuous')
   const [paper, setPaper] = useState<PaperSpec>(A4_MARGIN_PRESETS.normal)
   const [paperZoom, setPaperZoom] = useState(0.75)
+  const [paginationState, setPaginationState] = useState<A4PaginationState | null>(null)
 
   const questionIds = useMemo(() => {
     const ids = new Set<string>()
@@ -111,16 +113,19 @@ export default function TeachingDocumentEditorPage() {
     }
   }, [questionIds, questionMap])
 
-  if (editor.loading) return <div className="flex h-[60vh] items-center justify-center text-sm text-zinc-500"><LoaderCircle className="mr-2 size-4 animate-spin" />正在读取讲义文档…</div>
-  if (!editor.document || !editor.record || !editor.history) {
-    return <div className="rounded-lg border border-red-200 bg-red-50/30 p-4 text-sm text-red-700">{editor.loadError || '讲义文档加载失败或不存在。'}</div>
-  }
-
-  const document = editor.document
-  const selected = findSelected(document, selectedId)
-  const assetMap = new Map(editor.record.assets.map((asset) => [asset.id, asset.url]))
-  const resolveQuestion = (id: string) => questionMap[id] || { status: 'missing' as const, message: `题目不可用（ID: ${id || '未设置'}）` }
-  const resolveFigure = (asset: FigureAssetRef) => {
+  // resolver 与回调必须保持稳定引用：A4PaginationPreview 的测量 effect 依赖 resolveQuestion，
+  // 若每次 render 重建，会形成 onPaginationState 回写父状态 → 父 render → resolver 引用变化
+  // → effect 重跑 → measurement generation 无限增长的循环（实测 g15716 + resource-timeout）。
+  // useCallback/useMemo 仅依赖真实数据源（questionMap/assetMap），题目或素材变化仍会正确触发重测。
+  const assetMap = useMemo(
+    () => new Map((editor.record?.assets ?? []).map((asset) => [asset.id, asset.url])),
+    [editor.record?.assets],
+  )
+  const resolveQuestion = useCallback(
+    (id: string) => questionMap[id] || { status: 'missing' as const, message: `题目不可用（ID: ${id || '未设置'}）` },
+    [questionMap],
+  )
+  const resolveFigure = useCallback((asset: FigureAssetRef) => {
     if (asset.type === 'documentAsset') return assetMap.get(asset.assetId) || { status: 'missing' as const }
     if (asset.type === 'legacyPath') return asset.path ? assetUrl(asset.path) : { status: 'missing' as const }
     const question = questionMap[asset.questionId]
@@ -130,7 +135,16 @@ export default function TeachingDocumentEditorPage() {
       : { status: 'missing' as const, message: question.message }
     const figure = question.figures?.find((item) => String(item.id || item.blockId || '') === asset.figureId)
     return figure?.path ? assetUrl(figure.path) : { status: 'missing' as const }
+  }, [assetMap, questionMap])
+  const selectBlock = useCallback((blockId: string) => setSelectedId(blockId), [])
+
+  if (editor.loading) return <div className="flex h-[60vh] items-center justify-center text-sm text-zinc-500"><LoaderCircle className="mr-2 size-4 animate-spin" />正在读取讲义文档…</div>
+  if (!editor.document || !editor.record || !editor.history) {
+    return <div className="rounded-lg border border-red-200 bg-red-50/30 p-4 text-sm text-red-700">{editor.loadError || '讲义文档加载失败或不存在。'}</div>
   }
+
+  const document = editor.document
+  const selected = findSelected(document, selectedId)
   const renderResourceVersion = questionIds
     .map((id) => {
       const resolution = questionMap[id]
@@ -262,6 +276,7 @@ export default function TeachingDocumentEditorPage() {
             ) : null}
           </div>
           {canvasMode === 'a4' ? (
+            <>
             <A4PaginationPreview
               document={document}
               resolveQuestion={resolveQuestion}
@@ -270,8 +285,20 @@ export default function TeachingDocumentEditorPage() {
               zoom={paperZoom}
               selectedBlockId={selectedId}
               renderVersion={renderResourceVersion}
-              onBlockSelect={(blockId) => setSelectedId(blockId)}
+              onBlockSelect={selectBlock}
+              onPaginationState={setPaginationState}
             />
+            <div className="mx-auto mt-3 max-w-3xl">
+              <ExportPdfPanel
+                documentId={editor.record.id}
+                documentTitle={document.title}
+                revision={editor.record.revision}
+                saveState={editor.saveState}
+                hasRevisionConflict={Boolean(editor.conflict)}
+                paginationState={paginationState}
+              />
+            </div>
+            </>
           ) : (
             <div className="mx-auto max-w-3xl rounded-xl border border-zinc-200 bg-white px-6 py-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
               <h1 className="mb-8 text-center text-2xl font-bold">{document.title}</h1>

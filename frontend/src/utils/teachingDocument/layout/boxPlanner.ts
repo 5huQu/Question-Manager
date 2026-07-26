@@ -1,4 +1,4 @@
-import type { BoxBlock, ParagraphBlock } from '@/types/teachingDocument'
+import type { BoxBlock, ParagraphBlock, QuestionBlock } from '@/types/teachingDocument'
 import type { BoxMeasurement } from './boxMeasurement'
 import {
   blockSourcePathKey,
@@ -7,6 +7,8 @@ import {
 } from './fragment'
 import type { ParagraphMeasurement } from './paragraphMeasurement'
 import { planParagraphFragments, type ParagraphSplitOptions } from './paragraphPlanner'
+import type { QuestionMeasurement } from './questionMeasurement'
+import { planQuestionFragments } from './questionPlanner'
 import type { RenderDiagnostic } from './types'
 
 export interface BoxFragmentPlan {
@@ -25,6 +27,7 @@ export function planBoxFragments(input: {
   sourceIndex: number
   measurement: BoxMeasurement
   paragraphMeasurements: Map<string, ParagraphMeasurement>
+  questionMeasurements?: Map<string, QuestionMeasurement>
   firstPageAvailableHeight: number
   pageContentHeight: number
   paragraphSplitOptions?: ParagraphSplitOptions
@@ -124,11 +127,66 @@ export function planBoxFragments(input: {
     }
 
     let draft = ensureDraft(currentOffset)
-    if (child.type !== 'paragraph' || childMeasurement.height <= childCapacity(draft) + 0.01) {
+    if (child.type !== 'paragraph' && child.type !== 'question') {
+      placeWholeChild(child, childIndex, childMeasurement.height)
+      return
+    }
+    if (childMeasurement.height <= childCapacity(draft) + 0.01) {
       placeWholeChild(child, childIndex, childMeasurement.height)
       return
     }
 
+    // ── Question child fragmentation ──────────────────────────────────
+    if (child.type === 'question') {
+      const questionMeasurement = input.questionMeasurements?.get(
+        blockSourcePathKey(childMeasurement.sourcePath),
+      )
+      if (!questionMeasurement) {
+        diagnostics.push({
+          code: 'question-measurement-missing',
+          severity: 'warning',
+          blockId: child.id,
+          message: `盒子 ${block.id} 的题目子块 ${childIndex}:${child.id} 缺少区域测量，按整体子块保留。`,
+        })
+        placeWholeChild(child, childIndex, childMeasurement.height)
+        return
+      }
+      const plan = planQuestionFragments({
+        block: child as QuestionBlock,
+        measurement: questionMeasurement,
+        firstPageAvailableHeight: childCapacity(draft),
+        pageContentHeight: fullPageChildCapacity,
+        paragraphSplitOptions: input.paragraphSplitOptions,
+      })
+      diagnostics.push(...plan.diagnostics)
+      if (!plan.fragments.length
+        || plan.diagnostics.some((item) => item.code === 'question-fragment-invalid' && item.severity === 'error')) {
+        placeWholeChild(child, childIndex, childMeasurement.height)
+        return
+      }
+      const baseOffset = currentOffset
+      plan.fragments.forEach((fragment) => {
+        const pageOffset = baseOffset + fragment.pageOffset
+        const target = ensureDraft(pageOffset)
+        target.childItems.push({
+          kind: 'question-child-fragment',
+          sourcePath: childMeasurement.sourcePath,
+          parentBlockId: block.id,
+          childBlockId: child.id,
+          childIndex,
+          questionId: (child as QuestionBlock).questionId,
+          fragmentIndex: fragment.fragmentIndex,
+          regionItems: fragment.regionItems,
+          continuation: fragment.continuation,
+          height: fragment.height,
+        })
+        target.childHeight += fragment.height
+        currentOffset = Math.max(currentOffset, pageOffset)
+      })
+      return
+    }
+
+    // ── Paragraph child fragmentation ─────────────────────────────────
     const paragraphMeasurement = paragraphMeasurements.get(
       blockSourcePathKey(childMeasurement.sourcePath),
     )

@@ -65,15 +65,22 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
   const paragraphMeasurements = input.paragraphMeasurements || []
   const boxMeasurements = input.boxMeasurements || []
   const questionMeasurements = input.questionMeasurements || []
+  const boxChildQuestionMeasurements = [...(input.boxChildQuestionMeasurements?.values() || [])]
   const paragraphVersion = paragraphMeasurementsVersion(paragraphMeasurements)
   const boxVersion = boxMeasurementsVersion(boxMeasurements)
-  const questionVersion = questionMeasurementsVersion(questionMeasurements)
-  const metrics = paperMetrics(paper)
+  const topLevelQuestionVersion = questionMeasurementsVersion(questionMeasurements)
+  const boxChildQuestionVersion = questionMeasurementsVersion(boxChildQuestionMeasurements)
+  // box 子题的 measurement version 与诊断必须进入最终 pagination 与 export readiness。
+  const questionVersion = boxChildQuestionVersion
+    ? `${topLevelQuestionVersion}|box:${boxChildQuestionVersion}`
+    : topLevelQuestionVersion
+  const metrics = input.metrics ?? paperMetrics(paper)
   const diagnostics: RenderDiagnostic[] = [
     ...measurements.diagnostics,
     ...paragraphMeasurements.flatMap((measurement) => measurement.diagnostics),
     ...boxMeasurements.flatMap((measurement) => measurement.diagnostics),
     ...questionMeasurements.flatMap((measurement) => measurement.diagnostics),
+    ...boxChildQuestionMeasurements.flatMap((measurement) => measurement.diagnostics),
     ...validatePaperSpec(paper),
     ...duplicateDocumentIdDiagnostics(document.content),
   ]
@@ -301,6 +308,7 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
         sourceIndex,
         measurement: boxMeasurement,
         paragraphMeasurements: paragraphsByPath,
+        questionMeasurements: input.boxChildQuestionMeasurements,
         firstPageAvailableHeight: available,
         pageContentHeight: metrics.contentHeightPx,
         paragraphSplitOptions: input.paragraphSplitOptions,

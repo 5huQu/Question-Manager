@@ -22,8 +22,32 @@ declare global {
         onProgress: (callback: (payload: UpdateProgress) => void) => () => void
         onStatus: (callback: (payload: UpdateStatus) => void) => () => void
       }
+      pdfExport?: {
+        start: (options: {
+          documentId: string
+          revision?: number
+          pageCount?: number
+          title?: string
+        }) => Promise<PdfExportResult>
+        cancel: () => Promise<{ success: boolean }>
+        notifyReady: (payload: {
+          pageCount?: number
+          warnings?: string[]
+          error?: string
+        }) => void
+      }
     }
   }
+}
+
+export interface PdfExportResult {
+  success: boolean
+  canceled?: boolean
+  fileName?: string
+  fileSize?: number
+  htmlPageCount?: number
+  warnings?: string[]
+  error?: string
 }
 
 export type UpdateAsset = {

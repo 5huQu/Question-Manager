@@ -33,6 +33,7 @@ import {
   type PaginatedQuestionRegionItem,
   type ParagraphBoxChildFragmentPaginationItem,
   type ParagraphFragmentPaginationItem,
+  type QuestionBoxChildFragmentPaginationItem,
   type QuestionFragmentPaginationItem,
 } from '@/utils/teachingDocument/layout'
 import {
@@ -533,7 +534,7 @@ export function QuestionFragmentRenderer({
   )
 }
 
-function QuestionPlaceholder({
+export function QuestionPlaceholder({
   block,
   message,
   status,
@@ -692,6 +693,52 @@ export function BoxFragmentRenderer({
                 item={childItem}
                 selected={selectedBlockId === child.id}
               />
+            )
+          }
+          if (childItem.kind === 'question-child-fragment' && child.type === 'question') {
+            const resolution = resolvers.resolveQuestion?.(childItem.questionId)
+            if (!resolution || 'status' in resolution) {
+              // resolver 失效：渲染稳定占位，不回退 BlockRenderer 整题，
+              // 避免多 fragment 场景下同一题在每页重复整题。
+              if (childItem.fragmentIndex > 0) return null
+              const status = resolution && 'status' in resolution ? resolution.status : 'missing'
+              return (
+                <QuestionPlaceholder
+                  key={`question-child-fallback:${childItem.childIndex}`}
+                  block={child}
+                  message={status === 'loading'
+                    ? '题目加载中…'
+                    : status === 'error'
+                      ? `题目加载失败：${resolution && 'message' in resolution ? resolution.message : '未知错误'}`
+                      : `题目不可用（ID: ${child.questionId || '未设置'}）`}
+                  status={status === 'loading' ? 'loading' : status === 'error' ? 'error' : 'missing'}
+                  tone={status === 'error' ? 'error' : 'neutral'}
+                />
+              )
+            }
+            return (
+              <div
+                key={`question-child:${childItem.childIndex}:${childItem.fragmentIndex}`}
+                className={`td-question-fragment td-block-shell ${selectedBlockId === child.id ? 'td-block-selected' : ''}`}
+                {...{
+                  [TEACHING_DOM.fragment]: '',
+                  [TEACHING_DOM.fragmentType]: 'question',
+                  [TEACHING_DOM.fragmentIndex]: childItem.fragmentIndex,
+                  [TEACHING_DOM.fragmentContinuation]: childItem.continuation,
+                  [TEACHING_DOM.sourceBlockId]: child.id,
+                  [TEACHING_DOM.sourceIndex]: item.sourceIndex,
+                  [TEACHING_DOM.parentBlockId]: block.id,
+                  [TEACHING_DOM.childIndex]: childItem.childIndex,
+                  [TEACHING_DOM.questionSourceId]: childItem.questionId,
+                }}
+              >
+                <QuestionRuntimeContent
+                  block={child}
+                  model={createQuestionRuntimeModel(child, resolution)}
+                  continuation={childItem.continuation}
+                  regionItems={childItem.regionItems}
+                />
+              </div>
             )
           }
           return (

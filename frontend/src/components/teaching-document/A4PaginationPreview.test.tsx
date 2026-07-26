@@ -7,9 +7,11 @@ import type {
   GeometryAdapter,
   BoxChromeGeometryAdapter,
   ParagraphRangeGeometryAdapter,
+  PrintLayoutSpec,
   RenderReadinessResult,
 } from '@/utils/teachingDocument'
-import { A4PaginationPreview } from './A4PaginationPreview'
+import { createDefaultPrintLayout, DEFAULT_A4_PAPER } from '@/utils/teachingDocument'
+import { A4PaginationPreview, type A4PaginationState } from './A4PaginationPreview'
 
 const ready: RenderReadinessResult = {
   ready: true,
@@ -381,5 +383,67 @@ describe('A4PaginationPreview', () => {
     expect(container.querySelectorAll('[data-teaching-page-index]')).toHaveLength(1)
     expect(container.querySelector('[data-teaching-block-id="old-a"]')).toBeNull()
     expect(container.querySelector('[data-teaching-block-id="latest"]')).not.toBeNull()
+  })
+
+  it('re-measures when the print layout (header/footer) changes', async () => {
+    const states: A4PaginationState[] = []
+    const container = document.createElement('div')
+    root = createRoot(container)
+    const layoutA = createDefaultPrintLayout(DEFAULT_A4_PAPER)
+    // 加大页眉高度 → effective metrics 内容高变化，必须触发重新测量。
+    const layoutB: PrintLayoutSpec = {
+      ...layoutA,
+      header: { ...layoutA.header, heightMm: layoutA.header.heightMm + 20 },
+    }
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={documentWith(['a'])}
+          geometryAdapter={geometry}
+          readinessWait={readinessWait}
+          printLayout={layoutA}
+          onPaginationState={(state) => states.push(state)}
+        />,
+      )
+    })
+    expect(states[states.length - 1].measurementGeneration).toBe(1)
+
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={documentWith(['a'])}
+          geometryAdapter={geometry}
+          readinessWait={readinessWait}
+          printLayout={layoutB}
+          onPaginationState={(state) => states.push(state)}
+        />,
+      )
+    })
+    // printLayout 变化触发新一轮测量：generation 递增，且过程中发布了 preparing/null。
+    expect(states[states.length - 1].measurementGeneration).toBe(2)
+    expect(states.some((state) => state.measurementGeneration === 2 && state.pagination === null)).toBe(true)
+  })
+
+  it('publishes a stable failed state when readiness waiting rejects', async () => {
+    const states: A4PaginationState[] = []
+    const rejectingReadiness = () => Promise.reject(new Error('readiness boom'))
+    const container = document.createElement('div')
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={documentWith(['a'])}
+          geometryAdapter={geometry}
+          readinessWait={rejectingReadiness}
+          onPaginationState={(state) => states.push(state)}
+        />,
+      )
+    })
+    // rejection 后发布稳定失败态：pagination 为 null、readiness timedOut，导出被阻塞。
+    const last = states[states.length - 1]
+    expect(last.pagination).toBeNull()
+    expect(last.readiness.timedOut).toBe(true)
+    expect(last.readiness.diagnostics.some((d) => d.code === 'resource-timeout')).toBe(true)
+    expect(container.querySelectorAll('[data-teaching-page-index]')).toHaveLength(0)
   })
 })

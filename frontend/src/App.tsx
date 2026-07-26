@@ -26,6 +26,7 @@ const LearningTagsPage = lazy(() => import('@/pages/LearningTagsPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const ExportRecordsPage = lazy(() => import('@/pages/ExportRecordsPage'))
 const SetupPage = lazy(() => import('@/pages/SetupPage').then(module => ({ default: module.SetupPage })))
+const TeachingDocumentPrintPage = lazy(() => import('@/pages/print/TeachingDocumentPrintPage'))
 const QuestionBasket = lazy(() => import('@/components/QuestionBasket').then(module => ({ default: module.QuestionBasket })))
 const PaperCenterPage = lazy(() => import('@/pages/questions/PaperCenterPage'))
 const CandidateFixWorkbenchPage = lazy(() => import('@/pages/import-v2/CandidateFixWorkbenchPage'))
@@ -134,6 +135,19 @@ export default function App() {
     const description = document.querySelector('meta[name="description"]') || document.head.appendChild(document.createElement('meta'))
     description.setAttribute('name', 'description')
     description.setAttribute('content', next.siteDescription)
+  }
+
+  // Print route bypasses setup/settings gates and app shell.
+  // Used by the Electron hidden window for PDF export; must render even when
+  // first-run setup is incomplete so the hidden window never shows SetupPage.
+  if (location.pathname.startsWith('/print/')) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-white" />}>
+        <Routes>
+          <Route path="/print/teaching-document" element={<TeachingDocumentPrintPage />} />
+        </Routes>
+      </Suspense>
+    )
   }
 
   if (!settingsReady) {

@@ -41,6 +41,19 @@ export const TEACHING_DOM = {
   fragmentIndex: 'data-teaching-fragment-index',
   fragmentContinuation: 'data-teaching-fragment-continuation',
   sourceBlockId: 'data-teaching-source-block-id',
+  // ─── Print DOM contract ─────────────────────────────────────────────
+  printDocument: 'data-teaching-print-document',
+  paperPage: 'data-teaching-paper-page',
+  pageIndex: 'data-teaching-page-index',
+  pageCount: 'data-page-count',
+  pageHeader: 'data-teaching-page-header',
+  pageContent: 'data-teaching-page-content',
+  pageFooter: 'data-teaching-page-footer',
+  printOnly: 'data-teaching-print-only',
+  screenOnly: 'data-teaching-screen-only',
+  readinessComplete: 'data-teaching-readiness-complete',
+  paginationGeneration: 'data-teaching-pagination-generation',
+  exportRevision: 'data-teaching-export-revision',
 } as const
 
 export const TEACHING_DOM_SELECTORS = {

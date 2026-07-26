@@ -115,8 +115,16 @@ export interface PaginationInput {
   paragraphMeasurements?: import('./paragraphMeasurement').ParagraphMeasurement[]
   boxMeasurements?: import('./boxMeasurement').BoxMeasurement[]
   questionMeasurements?: import('./questionMeasurement').QuestionMeasurement[]
+  /** Box child question measurements keyed by blockSourcePathKey */
+  boxChildQuestionMeasurements?: Map<string, import('./questionMeasurement').QuestionMeasurement>
   paragraphSplitOptions?: import('./paragraphPlanner').ParagraphSplitOptions
   paper: PaperSpec
+  /**
+   * 可选的有效页面度量。当页眉页脚参与分页有效高度时，
+   * 传入 effectivePaperMetrics(printLayout)（已扣除页眉页脚）；
+   * 未提供时按 paper 计算 paperMetrics(paper)。
+   */
+  metrics?: PaperMetrics
 }
 
 export interface PaginationResult {

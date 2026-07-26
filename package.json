@@ -67,6 +67,7 @@
       "server/python/scripts/classify_question_bank.py",
       "server/python/scripts/crop_manual_annotation.py",
       "server/python/scripts/render_pdf_page.py",
+      "server/python/scripts/verify_teaching_pdf.py",
       "server/tag_libraries/**",
       "templates/**",
       "LICENSE",

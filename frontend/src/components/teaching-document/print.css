@@ -1,0 +1,181 @@
+/**
+ * TeachingDocument 打印样式
+ * 用于 Chromium PDF 导出和浏览器打印
+ * 与 teaching-document.css 配合使用
+ */
+
+/* ─── @page 规则 ────────────────────────────────────────────────────────────── */
+
+@page {
+  size: A4;
+  margin: 0;
+}
+
+/* ─── 打印根容器 ────────────────────────────────────────────────────────────── */
+
+[data-teaching-print-document] {
+  background: #ffffff;
+}
+
+/* ─── 每个 A4 页面严格分页 ──────────────────────────────────────────────────── */
+
+[data-teaching-paper-page] {
+  width: 210mm;
+  height: 297mm;
+  overflow: hidden;
+  box-sizing: border-box;
+  position: relative;
+  background: #ffffff;
+  /* 屏幕预览时的间距和阴影在打印时移除 */
+}
+
+[data-teaching-paper-page] + [data-teaching-paper-page] {
+  break-before: page;
+}
+
+/* 最后一页不产生额外空白页 */
+[data-teaching-paper-page]:last-child {
+  break-after: auto;
+}
+
+/* ─── 打印时隐藏屏幕 UI ────────────────────────────────────────────────────── */
+
+@media print {
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+  }
+
+  /* 隐藏应用 shell、侧边栏、工具栏 */
+  [data-teaching-screen-only],
+  .app-sidebar,
+  .app-header,
+  .td-pagination-experiment > div:first-child {
+    display: none !important;
+  }
+
+  /* 隐藏测量树：测量根仅供分页几何采集，不得出现在打印输出中 */
+  [data-teaching-measure-root] {
+    display: none !important;
+  }
+
+  /* 打印时移除屏幕装饰 */
+  [data-teaching-paper-page] {
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    transform: none !important;
+  }
+
+  /* 页面容器无间距 */
+  [data-teaching-print-document] {
+    display: block;
+  }
+
+  /* 选中框和诊断浮层不打印 */
+  .td-block-selected {
+    outline: none !important;
+  }
+
+  /* 暗色主题不污染纸张 */
+  .dark [data-teaching-paper-page],
+  .dark [data-teaching-paper-page] * {
+    color: #18181b;
+  }
+
+  .dark .td-document {
+    --box-neutral-border: #e4e4e7;
+    --box-neutral-header: #fafafa;
+    --box-neutral-body: #ffffff;
+    --box-neutral-accent: #71717a;
+    --box-blue-border: #bfdbfe;
+    --box-blue-header: #eff6ff;
+    --box-blue-body: #ffffff;
+    --box-blue-accent: #2563eb;
+    --box-green-border: #bbf7d0;
+    --box-green-header: #f0fdf4;
+    --box-green-body: #ffffff;
+    --box-green-accent: #16a34a;
+    --box-amber-border: #fde68a;
+    --box-amber-header: #fffbeb;
+    --box-amber-body: #ffffff;
+    --box-amber-accent: #d97706;
+    --box-red-border: #fecaca;
+    --box-red-header: #fef2f2;
+    --box-red-body: #ffffff;
+    --box-red-accent: #dc2626;
+    --box-violet-border: #ddd6fe;
+    --box-violet-header: #f5f3ff;
+    --box-violet-body: #ffffff;
+    --box-violet-accent: #7c3aed;
+  }
+}
+
+/* ─── 页眉页脚 ──────────────────────────────────────────────────────────────── */
+
+[data-teaching-page-header] {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 9px;
+  line-height: 1.4;
+  color: #71717a;
+  border-bottom: 0.5px solid #e4e4e7;
+  padding-bottom: 2mm;
+}
+
+[data-teaching-page-footer] {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  font-size: 9px;
+  line-height: 1.4;
+  color: #a1a1aa;
+  border-top: 0.5px solid #e4e4e7;
+  padding-top: 2mm;
+}
+
+/* 首页页眉/页脚占位：showOnFirstPage=false 时不渲染内容，
+   但分页按保守统一扣除假定其高度；占位元素保持 DOM 与分页一致，不显示边线。 */
+[data-teaching-page-header][data-header-spacer="true"] {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+[data-teaching-page-footer][data-footer-spacer="true"] {
+  border-top: none;
+  padding-top: 0;
+}
+
+/* ─── 打印模式下的内容区（不改变宽度、字体、字号或行高） ───────────────────── */
+
+[data-teaching-page-content] {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ─── 背景打印控制 ──────────────────────────────────────────────────────────── */
+
+@media print {
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* ─── 字体确保与屏幕一致 ───────────────────────────────────────────────────── */
+
+[data-teaching-print-document] .td-document {
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  font-size: 15px;
+  line-height: 1.75;
+  color: #18181b;
+}
+
+/* KaTeX 字体完整加载 */
+[data-teaching-print-document] .katex {
+  font-size: 1em;
+}

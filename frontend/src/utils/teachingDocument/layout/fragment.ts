@@ -82,9 +82,24 @@ export interface ParagraphBoxChildFragmentPaginationItem {
   height: number
 }
 
+export interface QuestionBoxChildFragmentPaginationItem {
+  kind: 'question-child-fragment'
+  sourcePath: BlockSourcePath
+  parentBlockId: string
+  childBlockId: string
+  childIndex: number
+  questionId: string
+  fragmentIndex: number
+  /** question planner 生成的 region items */
+  regionItems: PaginatedQuestionRegionItem[]
+  continuation: FragmentContinuation
+  height: number
+}
+
 export type PaginatedBoxChildItem =
   | WholeBoxChildPaginationItem
   | ParagraphBoxChildFragmentPaginationItem
+  | QuestionBoxChildFragmentPaginationItem
 
 export interface BoxFragmentPaginationItem {
   kind: 'fragment'

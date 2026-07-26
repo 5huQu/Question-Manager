@@ -7,9 +7,10 @@ import {
   measureTeachingDocument,
   measureTeachingDocumentParagraphs,
   measureTeachingDocumentQuestions,
+  measureBoxChildQuestions,
   paginateTeachingDocument,
-  paperMetrics,
-  TEACHING_DOM,
+  createDefaultPrintLayout,
+  effectivePaperMetrics,
   waitForRenderReadiness,
   type GeometryAdapter,
   type BoxChromeGeometryAdapter,
@@ -17,21 +18,18 @@ import {
   type QuestionChromeGeometryAdapter,
   type PaginationResult,
   type PaperSpec,
+  type PrintLayoutSpec,
   type RenderReadinessResult,
 } from '@/utils/teachingDocument'
 import {
   TeachingDocumentRenderer,
-  TeachingDocumentFrame,
   type TeachingDocumentRendererProps,
 } from './TeachingDocumentRenderer'
 import {
-  BlockRenderer,
-  BoxFragmentRenderer,
-  ParagraphFragmentRenderer,
-  QuestionFragmentRenderer,
   type FigureResolution,
   type QuestionResolution,
 } from './blocks/BlockRenderer'
+import { PaperPageView } from './PaperPageView'
 
 const PREPARING_READINESS: RenderReadinessResult = {
   ready: false,
@@ -44,15 +42,25 @@ const PREPARING_READINESS: RenderReadinessResult = {
   diagnostics: [],
 }
 
+export interface A4PaginationState {
+  pagination: PaginationResult | null
+  readiness: RenderReadinessResult
+  measurementGeneration: number
+}
+
 export interface A4PaginationPreviewProps {
   document: TeachingDocumentV1
   resolveQuestion?: (questionId: string) => QuestionResolution
   resolveFigure?: (asset: FigureAssetRef) => FigureResolution
   paper?: PaperSpec
+  /** 打印布局（页眉页脚）；默认使用 createDefaultPrintLayout(paper)。 */
+  printLayout?: PrintLayoutSpec
   zoom?: number
   selectedBlockId?: string
   renderVersion?: string
   onBlockSelect?: (blockId: string, pageIndex: number) => void
+  /** 分页状态变化回调，供外部获取 pagination/readiness/generation */
+  onPaginationState?: (state: A4PaginationState) => void
   /** 测试注入点：JSDOM 不提供真实 geometry。 */
   geometryAdapter?: GeometryAdapter
   paragraphGeometryAdapter?: ParagraphRangeGeometryAdapter
@@ -66,10 +74,12 @@ export function A4PaginationPreview({
   resolveQuestion,
   resolveFigure,
   paper = DEFAULT_A4_PAPER,
+  printLayout: printLayoutProp,
   zoom = 0.8,
   selectedBlockId,
   renderVersion = '',
   onBlockSelect,
+  onPaginationState,
   geometryAdapter,
   paragraphGeometryAdapter,
   boxGeometryAdapter,
@@ -82,7 +92,13 @@ export function A4PaginationPreview({
   const [pagination, setPagination] = useState<PaginationResult | null>(null)
   const [measurementGeneration, setMeasurementGeneration] = useState(0)
   const [paragraphLineCount, setParagraphLineCount] = useState(0)
-  const metrics = useMemo(() => paperMetrics(paper), [paper])
+  const printLayout = useMemo(
+    () => printLayoutProp ?? createDefaultPrintLayout(paper),
+    [printLayoutProp, paper],
+  )
+  // 页眉页脚参与分页有效高度。保守统一扣除：即使 showOnFirstPage=false，
+  // 首页也扣除页眉高度（已知风险：首页页眉区域留白）。
+  const metrics = useMemo(() => effectivePaperMetrics(printLayout), [printLayout])
   const safeZoom = Math.min(1.5, Math.max(0.35, zoom))
 
   useEffect(() => {
@@ -93,6 +109,10 @@ export function A4PaginationPreview({
     const controller = new AbortController()
     setReadiness(PREPARING_READINESS)
     setPagination(null)
+    setMeasurementGeneration(generation)
+    // 新 generation 开始即向父层发布 preparing/null，
+    // 使导出 readiness 在重新测量期间被 stale generation 与空分页阻塞。
+    onPaginationState?.({ pagination: null, readiness: PREPARING_READINESS, measurementGeneration: generation })
 
     void readinessWait(root, { timeoutMs: 8_000, stableFrames: 2, signal: controller.signal })
       .then((nextReadiness) => {
@@ -115,22 +135,52 @@ export function A4PaginationPreview({
           paragraphGeometryAdapter,
           questionGeometryAdapter,
         )
+        const boxChildQuestionMeasurements = measureBoxChildQuestions(
+          root,
+          document,
+          measurement,
+          resolveQuestion,
+          geometryAdapter,
+          paragraphGeometryAdapter,
+          questionGeometryAdapter,
+        )
         measurement.diagnostics.push(...nextReadiness.diagnostics)
         if (controller.signal.aborted || generation !== generationRef.current) return
         setParagraphLineCount(paragraphMeasurements.reduce((total, paragraph) => total + paragraph.lines.length, 0))
         setMeasurementGeneration(generation)
-        setPagination(paginateTeachingDocument({
+        const paginationResult = paginateTeachingDocument({
           document,
           measurements: measurement,
           paragraphMeasurements,
           boxMeasurements,
           questionMeasurements,
+          boxChildQuestionMeasurements,
           paper,
-        }))
+          metrics,
+        })
+        setPagination(paginationResult)
+        onPaginationState?.({ pagination: paginationResult, readiness: nextReadiness, measurementGeneration: generation })
+      })
+      .catch((error) => {
+        // readiness 等待被拒绝（非中断/非过期 generation）时发布稳定失败态：
+        // 清空分页并标记 timedOut，使导出 readiness 被阻塞，避免悬挂的未处理 rejection。
+        if (controller.signal.aborted || generation !== generationRef.current) return
+        const failedReadiness: RenderReadinessResult = {
+          ...PREPARING_READINESS,
+          timedOut: true,
+          diagnostics: [{
+            code: 'resource-timeout',
+            severity: 'error',
+            message: error instanceof Error ? error.message : '排版资源准备失败。',
+          }],
+        }
+        setReadiness(failedReadiness)
+        setPagination(null)
+        onPaginationState?.({ pagination: null, readiness: failedReadiness, measurementGeneration: generation })
       })
 
     return () => controller.abort()
-  }, [boxGeometryAdapter, document, geometryAdapter, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion])
+  }, [boxGeometryAdapter, document, geometryAdapter, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion])
 
   const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure'> = {
     resolveQuestion,
@@ -156,6 +206,7 @@ export function A4PaginationPreview({
     <div className="td-pagination-experiment min-w-0">
       <div
         aria-hidden="true"
+        data-teaching-measure-root=""
         className="pointer-events-none fixed -left-[100000px] top-0 overflow-visible opacity-0"
         style={{
           width: `${metrics.contentWidthPx}px`,
@@ -213,114 +264,30 @@ export function A4PaginationPreview({
       ) : null}
 
       <div className="space-y-5">
-        {(pagination?.pages || []).map((page) => {
-          return (
-            <div
-              key={page.index}
-              className="relative mx-auto"
-              style={{ width: metrics.pageWidthPx * safeZoom, height: metrics.pageHeightPx * safeZoom }}
-            >
-              <section
-                className="td-paper-page absolute left-0 top-0 overflow-hidden border border-zinc-300 bg-white shadow-sm"
-                data-teaching-page-index={page.index}
-                data-page-overflow={page.overflow ? 'true' : 'false'}
-                style={{
-                  width: `${paper.widthMm}mm`,
-                  height: `${paper.heightMm}mm`,
-                  padding: `${paper.marginTopMm}mm ${paper.marginRightMm}mm ${paper.marginBottomMm}mm ${paper.marginLeftMm}mm`,
-                  boxSizing: 'border-box',
-                  transform: `scale(${safeZoom})`,
-                  transformOrigin: 'top left',
-                  '--td-paper-content-height': `${metrics.contentHeightPx}px`,
-                } as CSSProperties}
-                onClick={(event) => {
-                  const target = event.target
-                  if (!(target instanceof Element)) return
-                  const block = target.closest<HTMLElement>(`[${TEACHING_DOM.blockId}], [${TEACHING_DOM.sourceBlockId}]`)
-                  const blockId = block?.getAttribute(TEACHING_DOM.blockId)
-                    || block?.getAttribute(TEACHING_DOM.sourceBlockId)
-                  if (blockId) onBlockSelect?.(blockId, page.index)
-                }}
-              >
-                <TeachingDocumentFrame
-                  document={document}
-                  showTitle={page.showDocumentHeader}
-                  surface="paper"
-                >
-                  {page.items.map((item) => {
-                    const block = document.content[item.sourceIndex]
-                    if (!block || block.id !== item.blockId) return null
-                    if (item.kind === 'fragment'
-                      && item.fragmentType === 'paragraph'
-                      && block.type === 'paragraph') {
-                      return (
-                        <ParagraphFragmentRenderer
-                          key={`fragment:${item.sourceIndex}:${item.fragmentIndex}`}
-                          block={block}
-                          item={item}
-                          selected={selectedBlockId === block.id}
-                        />
-                      )
-                    }
-                    if (item.kind === 'fragment'
-                      && item.fragmentType === 'box'
-                      && block.type === 'box') {
-                      return (
-                        <BoxFragmentRenderer
-                          key={`box-fragment:${item.sourceIndex}:${item.fragmentIndex}`}
-                          block={block}
-                          item={item}
-                          resolvers={{ ...rendererProps }}
-                          selectedBlockId={selectedBlockId}
-                        />
-                      )
-                    }
-                    if (item.kind === 'fragment'
-                      && item.fragmentType === 'question'
-                      && block.type === 'question') {
-                      const resolution = resolveQuestion?.(block.questionId)
-                      if (!resolution || 'status' in resolution) {
-                        return (
-                          <BlockRenderer
-                            key={`question-fallback:${item.sourceIndex}`}
-                            block={block}
-                            resolvers={{ ...rendererProps }}
-                            sourceIndex={item.sourceIndex}
-                            selectedBlockId={selectedBlockId}
-                          />
-                        )
-                      }
-                      return (
-                        <QuestionFragmentRenderer
-                          key={`question-fragment:${item.sourceIndex}:${item.fragmentIndex}`}
-                          block={block}
-                          question={resolution}
-                          item={item}
-                          selected={selectedBlockId === block.id}
-                        />
-                      )
-                    }
-                    return (
-                      <BlockRenderer
-                        key={`whole:${item.sourceIndex}`}
-                        block={block}
-                        resolvers={{ ...rendererProps }}
-                        sourceIndex={item.sourceIndex}
-                        selectedBlockId={selectedBlockId}
-                      />
-                    )
-                  })}
-                  {!page.items.length && !page.showDocumentHeader ? (
-                    <span className="sr-only">空白页</span>
-                  ) : null}
-                </TeachingDocumentFrame>
-                <span className="absolute bottom-[6mm] left-0 right-0 text-center text-[9px] text-zinc-400">
-                  {page.index + 1}
-                </span>
-              </section>
-            </div>
-          )
-        })}
+        {(pagination?.pages || []).map((page) => (
+          <div
+            key={page.index}
+            className="relative mx-auto"
+            style={{ width: metrics.pageWidthPx * safeZoom, height: metrics.pageHeightPx * safeZoom }}
+          >
+            <PaperPageView
+              page={page}
+              document={document}
+              paper={paper}
+              printLayout={printLayout}
+              totalPages={pagination?.pages.length ?? 0}
+              resolvers={rendererProps}
+              selectedBlockId={selectedBlockId}
+              onBlockSelect={onBlockSelect}
+              className="absolute left-0 top-0 overflow-hidden border border-zinc-300 bg-white shadow-sm"
+              style={{
+                transform: `scale(${safeZoom})`,
+                transformOrigin: 'top left',
+                '--td-paper-content-height': `${metrics.contentHeightPx}px`,
+              } as CSSProperties}
+            />
+          </div>
+        ))}
       </div>
     </div>
   )
