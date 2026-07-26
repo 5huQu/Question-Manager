@@ -32,6 +32,8 @@ export type RenderDiagnosticCode =
   | 'question-analysis-overflow'
   | 'question-fragment-invalid'
   | 'question-resource-unresolved'
+  | 'rawmarkdown-overflow'
+  | 'table-overflow'
 
 export interface RenderDiagnostic {
   code: RenderDiagnosticCode
@@ -74,6 +76,8 @@ export interface BlockMeasurement extends BlockGeometry {
   childIndex?: number
   depth: number
   childMeasurements: BlockMeasurement[]
+  /** rawMarkdown 块内最大表格的测量高度（无表格时为 undefined）。 */
+  maxTableHeight?: number
 }
 
 export interface TeachingDocumentMeasurement {

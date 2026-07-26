@@ -36,6 +36,8 @@ export interface PaperPageViewProps {
   totalPages: number
   resolvers: TeachingDocumentResolvers
   selectedBlockId?: string
+  /** 本页存在超页诊断的块 ID（由 pagination diagnostics 计算），用于渲染可识别占位警告。 */
+  overflowBlockIds?: ReadonlySet<string>
   /** 附加到 section 的类名（预览用于边框阴影定位等屏幕装饰） */
   className?: string
   /** 附加到 section 的样式（预览缩放、CSS 变量等） */
@@ -51,6 +53,7 @@ export function PaperPageView({
   totalPages,
   resolvers,
   selectedBlockId,
+  overflowBlockIds,
   className,
   style,
   onBlockSelect,
@@ -174,6 +177,9 @@ export function PaperPageView({
                 resolvers={resolvers}
                 sourceIndex={item.sourceIndex}
                 selectedBlockId={selectedBlockId}
+                rawMarkdownOverflowWarning={block.type === 'rawMarkdown' && overflowBlockIds?.has(block.id)
+                  ? '内容超过单页内容区高度，无法安全分页，导出已阻止。'
+                  : undefined}
               />
             )
           })}

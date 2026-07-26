@@ -796,7 +796,7 @@ function PageBreakBlockView({ block }: { block: PageBreakBlock }) {
   )
 }
 
-function RawMarkdownBlockView({ block }: { block: RawMarkdownBlock }) {
+function RawMarkdownBlockView({ block, overflowWarning }: { block: RawMarkdownBlock; overflowWarning?: string }) {
   return (
     <div
       className="td-raw-markdown my-3"
@@ -804,6 +804,15 @@ function RawMarkdownBlockView({ block }: { block: RawMarkdownBlock }) {
       data-block-type="rawMarkdown"
     >
       <MarkdownContent content={block.markdown} />
+      {overflowWarning ? (
+        <div
+          className="td-rawmarkdown-overflow-warning mt-2 flex items-start gap-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
+          data-rawmarkdown-overflow="true"
+        >
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <span>{overflowWarning}</span>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -823,6 +832,19 @@ function UnknownBlockView({ block }: { block: UnknownBlock }) {
   )
 }
 
+// ─── rawMarkdown 表格静态检测 ────────────────────────────────────────────────
+
+const TABLE_SEPARATOR_RE = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/
+
+/** 确定性检测 markdown 源码中是否包含 GFM 表格（无需 DOM）。 */
+export function rawMarkdownContainsTable(markdown: string): boolean {
+  const lines = markdown.split('\n')
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    if (lines[index].includes('|') && TABLE_SEPARATOR_RE.test(lines[index + 1])) return true
+  }
+  return false
+}
+
 // ─── 统一块分发 ──────────────────────────────────────────────────────────────
 
 export function BlockRenderer({
@@ -832,6 +854,7 @@ export function BlockRenderer({
   sourceIndex,
   childIndex,
   selectedBlockId,
+  rawMarkdownOverflowWarning,
 }: {
   block: TeachingBlock
   resolvers: TeachingDocumentResolvers
@@ -839,6 +862,8 @@ export function BlockRenderer({
   sourceIndex?: number
   childIndex?: number
   selectedBlockId?: string
+  /** 分页诊断产生的 rawMarkdown 超页警告文本（仅 paper surface 传入）。 */
+  rawMarkdownOverflowWarning?: string
 }) {
   let content: ReactNode
   switch (block.type) {
@@ -870,7 +895,7 @@ export function BlockRenderer({
       content = <PageBreakBlockView block={block} />
       break
     case 'rawMarkdown':
-      content = <RawMarkdownBlockView block={block} />
+      content = <RawMarkdownBlockView block={block} overflowWarning={rawMarkdownOverflowWarning} />
       break
     case 'unknown':
       content = <UnknownBlockView block={block} />
@@ -881,7 +906,11 @@ export function BlockRenderer({
   return (
     <div
       className={`td-block-shell ${selectedBlockId === block.id ? 'td-block-selected' : ''}`}
-      {...blockDomAttributes(block, parentBlockId, sourceIndex, childIndex)}
+      {...blockDomAttributes(block, parentBlockId, sourceIndex, childIndex, {
+        rawMarkdownContainsTable: block.type === 'rawMarkdown'
+          ? rawMarkdownContainsTable(block.markdown)
+          : undefined,
+      })}
     >
       {content}
     </div>

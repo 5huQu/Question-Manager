@@ -30,6 +30,7 @@ export const TEACHING_DOM = {
   resource: 'data-teaching-resource',
   resourceId: 'data-teaching-resource-id',
   resourceStatus: 'data-teaching-resource-status',
+  rawMarkdownTable: 'data-teaching-rawmarkdown-contains-table',
   inline: 'data-teaching-inline',
   inlineIndex: 'data-teaching-inline-index',
   inlineType: 'data-teaching-inline-type',
@@ -81,7 +82,7 @@ export function splitPolicyForBlock(block: TeachingBlock): SplitPolicy {
     case 'pageBreak':
       return 'forced-break'
     case 'rawMarkdown':
-      return 'paragraph'
+      return 'never'
     case 'unknown':
       return 'unknown'
     default:
@@ -94,6 +95,7 @@ export function blockDomAttributes(
   parentBlockId?: string,
   sourceIndex?: number,
   childIndex?: number,
+  options?: { rawMarkdownContainsTable?: boolean },
 ) {
   return {
     [TEACHING_DOM.block]: '',
@@ -104,6 +106,9 @@ export function blockDomAttributes(
     [TEACHING_DOM.childIndex]: childIndex,
     [TEACHING_DOM.splitPolicy]: splitPolicyForBlock(block),
     [TEACHING_DOM.breakBehavior]: block.type === 'box' ? block.breakBehavior : undefined,
+    [TEACHING_DOM.rawMarkdownTable]: block.type === 'rawMarkdown' && options?.rawMarkdownContainsTable
+      ? 'true'
+      : undefined,
   }
 }
 

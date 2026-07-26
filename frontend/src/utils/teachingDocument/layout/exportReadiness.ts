@@ -52,6 +52,8 @@ const BLOCKING_CODES = new Set<string>([
   'question-option-overflow',
   'question-answer-overflow',
   'question-analysis-overflow',
+  'rawmarkdown-overflow',
+  'table-overflow',
 ])
 
 /** 允许导出但发出警告的 code */

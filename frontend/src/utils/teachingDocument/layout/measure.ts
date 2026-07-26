@@ -34,6 +34,22 @@ function allDocumentBlocks(document: TeachingDocumentV1) {
   return blocks
 }
 
+/** rawMarkdown 块内最大表格高度；无表格时返回 undefined。 */
+function maxTableHeightIn(
+  element: HTMLElement,
+  root: HTMLElement,
+  geometry: GeometryAdapter,
+): number | undefined {
+  const tables = element.querySelectorAll<HTMLElement>('table')
+  if (!tables.length) return undefined
+  let max = 0
+  for (const table of tables) {
+    const rect = geometry.measure(table, root)
+    if (Number.isFinite(rect.height) && rect.height > max) max = rect.height
+  }
+  return max
+}
+
 function measurementVersion(blocks: BlockMeasurement[], headerHeight: number) {
   const flatten = (block: BlockMeasurement): Array<string | number> => [
     block.blockId,
@@ -44,6 +60,7 @@ function measurementVersion(blocks: BlockMeasurement[], headerHeight: number) {
     block.bottom,
     block.sourceIndex ?? '',
     block.childIndex ?? '',
+    block.maxTableHeight ?? '',
     ...block.childMeasurements.flatMap(flatten),
   ]
   const source = [headerHeight, ...blocks.flatMap(flatten)].join('|')
@@ -118,6 +135,9 @@ export function measureTeachingDocument(
       childIndex: Number.isInteger(childIndex) ? childIndex : undefined,
       depth: parent ? 1 : 0,
       childMeasurements: [],
+      maxTableHeight: blockType === 'rawMarkdown'
+        ? maxTableHeightIn(element, root, geometry)
+        : undefined,
     })
   }
 

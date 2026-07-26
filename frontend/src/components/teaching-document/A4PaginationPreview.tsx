@@ -186,6 +186,18 @@ export function A4PaginationPreview({
     resolveQuestion,
     resolveFigure,
   }
+  const overflowIdsByPage = useMemo(() => {
+    const map = new Map<number, Set<string>>()
+    for (const diagnostic of pagination?.diagnostics || []) {
+      if (diagnostic.severity !== 'error' || !diagnostic.blockId) continue
+      if (diagnostic.code !== 'rawmarkdown-overflow' && diagnostic.code !== 'table-overflow') continue
+      const pageIndex = diagnostic.pageIndex ?? 0
+      const set = map.get(pageIndex) || new Set<string>()
+      set.add(diagnostic.blockId)
+      map.set(pageIndex, set)
+    }
+    return map
+  }, [pagination])
   const fragmentCount = pagination?.pages.reduce(
     (total, page) => total + page.items.reduce((pageTotal, item) => {
       if (item.kind !== 'fragment') return pageTotal
@@ -278,6 +290,7 @@ export function A4PaginationPreview({
               totalPages={pagination?.pages.length ?? 0}
               resolvers={rendererProps}
               selectedBlockId={selectedBlockId}
+              overflowBlockIds={overflowIdsByPage.get(page.index)}
               onBlockSelect={onBlockSelect}
               className="absolute left-0 top-0 overflow-hidden border border-zinc-300 bg-white shadow-sm"
               style={{

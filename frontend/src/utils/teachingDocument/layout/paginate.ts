@@ -147,13 +147,34 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
     }
     const pageIndex = current.index
     if (height > metrics.contentHeightPx) {
-      diagnostics.push({
-        code: 'block-overflow',
-        severity: 'error',
-        blockId: block.id,
-        pageIndex,
-        message: `块 ${block.id} 高 ${height.toFixed(1)}px，超过单页内容区 ${metrics.contentHeightPx.toFixed(1)}px。`,
-      })
+      if (block.type === 'rawMarkdown') {
+        const tableHeight = measurement?.maxTableHeight
+        if (tableHeight !== undefined && tableHeight > metrics.contentHeightPx) {
+          diagnostics.push({
+            code: 'table-overflow',
+            severity: 'error',
+            blockId: block.id,
+            pageIndex,
+            message: `rawMarkdown 块 ${block.id} 内的表格高 ${tableHeight.toFixed(1)}px，超过单页内容区 ${metrics.contentHeightPx.toFixed(1)}px，表格不可拆分。`,
+          })
+        } else {
+          diagnostics.push({
+            code: 'rawmarkdown-overflow',
+            severity: 'error',
+            blockId: block.id,
+            pageIndex,
+            message: `rawMarkdown 块 ${block.id} 高 ${height.toFixed(1)}px，超过单页内容区 ${metrics.contentHeightPx.toFixed(1)}px，V1 不支持拆分。`,
+          })
+        }
+      } else {
+        diagnostics.push({
+          code: 'block-overflow',
+          severity: 'error',
+          blockId: block.id,
+          pageIndex,
+          message: `块 ${block.id} 高 ${height.toFixed(1)}px，超过单页内容区 ${metrics.contentHeightPx.toFixed(1)}px。`,
+        })
+      }
       if (measurement?.splitPolicy === 'paragraph' || measurement?.splitPolicy === 'children') {
         diagnostics.push({
           code: 'unsupported-split',

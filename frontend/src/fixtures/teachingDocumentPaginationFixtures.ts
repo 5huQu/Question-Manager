@@ -431,3 +431,116 @@ export const TEACHING_DOCUMENT_QUESTION_PAGINATION_ABNORMAL_FIXTURE: TeachingDoc
     },
   ],
 }
+
+// ─── rawMarkdown 与表格分页 fixture ─────────────────────────────────────────────
+
+const NORMAL_TABLE_MARKDOWN = [
+  '| 知识点 | 难度 | 分值 |',
+  '| --- | --- | --- |',
+  '| 函数与导数 | 中等 | 5 |',
+  '| 解析几何 | 较难 | 12 |',
+  '| 概率统计 | 容易 | 5 |',
+].join('\n')
+
+const TALL_TABLE_MARKDOWN = [
+  '| 序号 | 内容 |',
+  '| --- | --- |',
+  ...Array.from({ length: 80 }, (_, index) => `| ${index + 1} | 超高表格的第 ${index + 1} 行，用于稳定触发表格超页诊断。 |`),
+].join('\n')
+
+/** rawMarkdown 分页正常样本：短内容、普通表格、pageBreak 前后。 */
+export const TEACHING_DOCUMENT_RAWMD_PAGINATION_NORMAL_FIXTURE: TeachingDocumentV1 = {
+  version: 1,
+  documentType: 'lecture',
+  title: 'rawMarkdown 分页 · 正常样本',
+  metadata: { fixtureKind: 'rawmd-pagination-normal' },
+  content: [
+    {
+      type: 'rawMarkdown',
+      id: 'rawmd-normal-short',
+      markdown: '短 rawMarkdown 内容，包含 **加粗** 与 $a^2+b^2=c^2$。',
+      reason: 'user-inserted',
+    },
+    {
+      type: 'rawMarkdown',
+      id: 'rawmd-normal-table',
+      markdown: NORMAL_TABLE_MARKDOWN,
+      reason: 'unsupported-structure',
+    },
+    { type: 'pageBreak', id: 'rawmd-normal-break' },
+    {
+      type: 'rawMarkdown',
+      id: 'rawmd-normal-after-break',
+      markdown: '分页符之后的短 rawMarkdown。',
+      reason: 'user-inserted',
+    },
+  ],
+}
+
+/** rawMarkdown 分页边界样本：页尾临界换页与 pageBreak 组合。 */
+export const TEACHING_DOCUMENT_RAWMD_PAGINATION_BOUNDARY_FIXTURE: TeachingDocumentV1 = {
+  version: 1,
+  documentType: 'worksheet',
+  title: 'rawMarkdown 分页 · 边界样本',
+  metadata: { fixtureKind: 'rawmd-pagination-boundary' },
+  content: [
+    ...shortParagraphs(16).map((block, index) => ({ ...block, id: `rawmd-boundary-prefill-${index + 1}` })),
+    {
+      type: 'rawMarkdown',
+      id: 'rawmd-boundary-table',
+      markdown: NORMAL_TABLE_MARKDOWN,
+      reason: 'unsupported-structure',
+    },
+    { type: 'pageBreak', id: 'rawmd-boundary-break' },
+    {
+      type: 'rawMarkdown',
+      id: 'rawmd-boundary-after-break',
+      markdown: Array.from({ length: 12 }, (_, index) => `第 ${index + 1} 段内容位于分页符之后，用于验证换页后的确定性放置。`).join('\n\n'),
+      reason: 'user-inserted',
+    },
+  ],
+}
+
+/** rawMarkdown 分页异常样本：超长内容与超高表格必须产生阻塞诊断。 */
+export const TEACHING_DOCUMENT_RAWMD_PAGINATION_ABNORMAL_FIXTURE: TeachingDocumentV1 = {
+  version: 1,
+  documentType: 'exam',
+  title: 'rawMarkdown 分页 · 异常样本',
+  metadata: { fixtureKind: 'rawmd-pagination-abnormal' },
+  content: [
+    {
+      type: 'rawMarkdown',
+      id: 'rawmd-abnormal-oversized',
+      markdown: Array.from({ length: 90 }, (_, index) => `${index + 1}. 单一 rawMarkdown 块中的超长段落，用于稳定触发单块超页与 rawmarkdown-overflow 诊断。`).join('\n\n'),
+      reason: 'user-inserted',
+    },
+    {
+      type: 'rawMarkdown',
+      id: 'rawmd-abnormal-tall-table',
+      markdown: TALL_TABLE_MARKDOWN,
+      reason: 'unsupported-structure',
+    },
+    {
+      type: 'box',
+      id: 'rawmd-abnormal-box',
+      templateId: 'practice',
+      title: 'box 内 rawMarkdown 降级',
+      breakBehavior: 'allow',
+      children: [
+        {
+          type: 'unknown',
+          id: 'rawmd-abnormal-box-child',
+          originalType: 'rawMarkdown',
+          rawData: { type: 'rawMarkdown', markdown: '盒子内的 rawMarkdown 在解析时已降级为 unknown 子节点。' },
+        },
+        { type: 'divider', id: 'rawmd-abnormal-box-divider' },
+      ],
+    },
+    {
+      type: 'unknown',
+      id: 'rawmd-abnormal-unknown',
+      originalType: 'futureWidget',
+      rawData: { preserved: true },
+    },
+  ],
+}
