@@ -337,3 +337,97 @@ export const TEACHING_DOCUMENT_BOX_PAGINATION_ABNORMAL_FIXTURE: TeachingDocument
     },
   ],
 }
+
+/** 题目拆分正常样本：短题、长题干、选项行、图片、答案和多页解析。 */
+export const TEACHING_DOCUMENT_QUESTION_PAGINATION_NORMAL_FIXTURE: TeachingDocumentV1 = {
+  version: 1,
+  documentType: 'worksheet',
+  title: '题目分页 · 正常样本',
+  metadata: { fixtureKind: 'question-pagination-normal' },
+  content: [
+    {
+      type: 'question',
+      id: 'question-pagination-short',
+      questionId: 'fixture-choice',
+      display: { displayNumber: '1', showAnswer: false, showAnalysis: false },
+    },
+    {
+      type: 'question',
+      id: 'question-pagination-long-choice',
+      questionId: 'fixture-question-long-choice',
+      display: { displayNumber: '2', showAnswer: true, showAnalysis: true },
+    },
+    { type: 'pageBreak', id: 'question-pagination-before-analysis' },
+    {
+      type: 'question',
+      id: 'question-pagination-long-analysis',
+      questionId: 'fixture-question-long-analysis',
+      display: { displayNumber: '3', showAnswer: true, showAnalysis: true },
+    },
+    {
+      type: 'question',
+      id: 'question-pagination-hidden-solution',
+      questionId: 'fixture-question-long-analysis',
+      display: { displayNumber: '4', showAnswer: false, showAnalysis: false },
+    },
+  ],
+}
+
+/** 题目拆分边界样本：页尾题号、连续题、选项页尾和手动分页。 */
+export const TEACHING_DOCUMENT_QUESTION_PAGINATION_BOUNDARY_FIXTURE: TeachingDocumentV1 = {
+  version: 1,
+  documentType: 'exam',
+  title: '题目分页 · 边界样本',
+  metadata: { fixtureKind: 'question-pagination-boundary' },
+  content: [
+    ...shortParagraphs(15).map((block, index) => ({
+      ...block,
+      id: `question-pagination-boundary-prefill-${index + 1}`,
+    })),
+    {
+      type: 'question',
+      id: 'question-pagination-heading-boundary',
+      questionId: 'fixture-question-long-choice',
+      display: { displayNumber: '临界 1' },
+    },
+    {
+      type: 'question',
+      id: 'question-pagination-option-boundary',
+      questionId: 'fixture-choice',
+      display: { displayNumber: '临界 2', showAnswer: true, showAnalysis: true },
+    },
+    { type: 'pageBreak', id: 'question-pagination-boundary-break' },
+    {
+      type: 'question',
+      id: 'question-pagination-after-break',
+      questionId: 'fixture-question-long-analysis',
+      display: { displayNumber: '临界 3', showAnalysis: true },
+    },
+  ],
+}
+
+/** 题目拆分异常样本：缺失题、缺失图片及不可拆超高区域。 */
+export const TEACHING_DOCUMENT_QUESTION_PAGINATION_ABNORMAL_FIXTURE: TeachingDocumentV1 = {
+  version: 1,
+  documentType: 'exam',
+  title: '题目分页 · 异常样本',
+  metadata: { fixtureKind: 'question-pagination-abnormal' },
+  content: [
+    {
+      type: 'question',
+      id: 'question-pagination-missing',
+      questionId: 'fixture-question-does-not-exist',
+      display: { displayNumber: '缺失' },
+    },
+    {
+      type: 'question',
+      id: 'question-pagination-oversized',
+      questionId: 'fixture-question-abnormal',
+      display: {
+        displayNumber: '异常',
+        showAnswer: true,
+        showAnalysis: true,
+      },
+    },
+  ],
+}

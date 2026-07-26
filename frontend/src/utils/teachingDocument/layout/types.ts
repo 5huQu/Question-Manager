@@ -22,6 +22,16 @@ export type RenderDiagnosticCode =
   | 'box-measurement-missing'
   | 'box-child-overflow'
   | 'box-overflow'
+  | 'question-measurement-missing'
+  | 'question-region-missing'
+  | 'question-heading-orphan'
+  | 'question-stem-overflow'
+  | 'question-option-overflow'
+  | 'question-options-fragment-invalid'
+  | 'question-answer-overflow'
+  | 'question-analysis-overflow'
+  | 'question-fragment-invalid'
+  | 'question-resource-unresolved'
 
 export interface RenderDiagnostic {
   code: RenderDiagnosticCode
@@ -30,6 +40,9 @@ export interface RenderDiagnostic {
   pageIndex?: number
   fragmentIndex?: number
   lineIndex?: number
+  questionId?: string
+  region?: string
+  optionIndex?: number
   message: string
 }
 
@@ -101,6 +114,7 @@ export interface PaginationInput {
   measurements: TeachingDocumentMeasurement
   paragraphMeasurements?: import('./paragraphMeasurement').ParagraphMeasurement[]
   boxMeasurements?: import('./boxMeasurement').BoxMeasurement[]
+  questionMeasurements?: import('./questionMeasurement').QuestionMeasurement[]
   paragraphSplitOptions?: import('./paragraphPlanner').ParagraphSplitOptions
   paper: PaperSpec
 }
@@ -111,4 +125,5 @@ export interface PaginationResult {
   measurementVersion: string
   paragraphMeasurementVersion: string
   boxMeasurementVersion: string
+  questionMeasurementVersion: string
 }

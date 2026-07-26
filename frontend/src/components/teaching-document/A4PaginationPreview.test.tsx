@@ -1,6 +1,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { QuestionItem } from '@/types'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import type {
   GeometryAdapter,
@@ -272,6 +273,80 @@ describe('A4PaginationPreview', () => {
     const child = fragments[1].querySelector<HTMLElement>('[data-teaching-block-id="child-b"]')
     act(() => child?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(selected).toEqual(['child-b'])
+  })
+
+  it('renders a long question as source-backed regions and selects the source question', async () => {
+    const selected: string[] = []
+    const container = document.createElement('div')
+    root = createRoot(container)
+    const question: QuestionItem = {
+      id: 'long-question',
+      serialNo: null,
+      questionNo: '8',
+      stage: '高中',
+      questionType: '解答题',
+      difficultyScore: 3,
+      difficultyScore10: 6,
+      difficultyLabel: '中等',
+      chapter: '',
+      knowledgePoints: [],
+      solutionMethods: [],
+      sourceTitle: '',
+      bankStatus: 'ready',
+      stemMarkdown: '甲'.repeat(60),
+      answerText: '',
+      analysisMarkdown: '',
+      totalScore: 12,
+      scoringRubric: [],
+      sliceImagePath: '',
+      figures: [],
+      sourceRunId: '',
+      updatedAt: '',
+      hasFigures: false,
+    }
+    const questionDocument: TeachingDocumentV1 = {
+      ...documentWith([]),
+      content: [{
+        type: 'question',
+        id: 'long-question-block',
+        questionId: question.id,
+        display: { displayNumber: '8' },
+      }],
+    }
+    const questionBlockGeometry: GeometryAdapter = {
+      measure(element) {
+        if (element.matches('[data-teaching-document-header]')) {
+          return { width: 600, height: 0, top: 0, bottom: 0 }
+        }
+        const region = element.getAttribute('data-teaching-question-region')
+        const height = region === 'heading' ? 20 : region === 'stem' ? 1200 : 1220
+        return { width: 600, height, top: 0, bottom: height }
+      },
+    }
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={questionDocument}
+          resolveQuestion={() => question}
+          geometryAdapter={questionBlockGeometry}
+          paragraphGeometryAdapter={lineGeometry}
+          questionGeometryAdapter={{ margins: () => ({ marginTop: 10, marginBottom: 10 }) }}
+          readinessWait={readinessWait}
+          onBlockSelect={(blockId) => selected.push(blockId)}
+        />,
+      )
+    })
+
+    const fragments = container.querySelectorAll<HTMLElement>(
+      '[data-teaching-fragment-type="question"]',
+    )
+    expect(fragments).toHaveLength(2)
+    expect(fragments[0].textContent).toContain('8.')
+    expect(fragments[1].textContent).not.toContain('8.')
+    expect(fragments[1].textContent).toContain('续题')
+    expect(container.textContent).not.toContain('unsupported-split')
+    act(() => fragments[1].dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(selected).toEqual(['long-question-block'])
   })
 
   it('ignores stale readiness completions from an older document generation', async () => {

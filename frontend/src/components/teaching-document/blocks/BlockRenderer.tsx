@@ -30,12 +30,23 @@ import {
   TEACHING_DOM,
   type BoxFragmentPaginationItem,
   type InlineRange,
+  type PaginatedQuestionRegionItem,
   type ParagraphBoxChildFragmentPaginationItem,
   type ParagraphFragmentPaginationItem,
+  type QuestionFragmentPaginationItem,
 } from '@/utils/teachingDocument/layout'
+import {
+  createQuestionRuntimeModel,
+  type QuestionRuntimeModel,
+  type QuestionRuntimeRegion,
+} from '@/utils/teachingDocument/layout/questionRegions'
 import { assetUrl } from '@/utils/questionDisplay'
 import { MarkdownContent } from '@/components/MarkdownContent'
-import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '@/components/questions/QuestionContent'
+import {
+  ChoiceOptions,
+  FigureGallery,
+  MarkdownWithInlineFigures,
+} from '@/components/questions/QuestionContent'
 import { InlineContent } from './InlineContent'
 
 // ─── Resolver 类型 ───────────────────────────────────────────────────────────
@@ -303,6 +314,167 @@ function FigureBlockView({
   )
 }
 
+function questionLayoutOverride(layout: 'quad' | 'double' | 'single') {
+  return layout === 'quad' ? 'four' : layout === 'double' ? 'two' : 'one'
+}
+
+function QuestionRegionContent({
+  region,
+  item,
+}: {
+  region: QuestionRuntimeRegion
+  item?: PaginatedQuestionRegionItem
+}) {
+  if (region.kind === 'heading') return null
+  if (region.kind === 'paragraph') {
+    const range = item?.kind === 'question-paragraph-fragment' ? item.range : undefined
+    return (
+      <p className="td-question-paragraph my-2 text-sm leading-7 text-zinc-900 dark:text-zinc-100">
+        <InlineContent inlines={region.paragraph.content} range={range} />
+      </p>
+    )
+  }
+  if (region.kind === 'markdown') {
+    return <MarkdownContent className="text-sm leading-7" content={region.markdown} />
+  }
+  if (region.kind === 'math') {
+    return <MarkdownContent className="text-sm leading-7" content={`$$${region.latex}$$`} />
+  }
+  if (region.kind === 'figure') {
+    const visibleFigures = region.figures.filter((figure) => Boolean(figure.path))
+    return visibleFigures.length ? (
+      <FigureGallery figures={visibleFigures} className="my-3" />
+    ) : (
+      <div
+        className="my-3 rounded-lg border border-dashed border-amber-300 bg-amber-50/40 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300"
+        {...{
+          [TEACHING_DOM.resource]: 'image',
+          [TEACHING_DOM.resourceId]: region.missingFigureId || region.key,
+          [TEACHING_DOM.resourceStatus]: 'missing',
+        }}
+      >
+        题图资源缺失（{region.missingFigureId || '未提供资源路径'}）
+      </div>
+    )
+  }
+  if (region.kind === 'options-row') {
+    return (
+      <>
+        <ChoiceOptions
+          options={region.options}
+          figures={region.figures}
+          layout={questionLayoutOverride(region.layout)}
+          optionIndexOffset={region.optionStart}
+          optionDomAttributes={(optionIndex) => ({
+            [TEACHING_DOM.questionOptionIndex]: optionIndex,
+            [TEACHING_DOM.questionOptionRow]: region.rowIndex,
+          })}
+        />
+        {region.figures.filter((figure) => !figure.path).map((figure, index) => (
+          <div
+            className="mt-2 rounded border border-dashed border-amber-300 px-2 py-1 text-xs text-amber-700 dark:border-amber-900 dark:text-amber-300"
+            key={figure.id || figure.blockId || `missing-option-figure-${index}`}
+            {...{
+              [TEACHING_DOM.resource]: 'image',
+              [TEACHING_DOM.resourceId]: figure.id || figure.blockId || `${region.key}:${index}`,
+              [TEACHING_DOM.resourceStatus]: 'missing',
+            }}
+          >
+            选项 {figure.optionLabel || ''} 的图片资源缺失
+          </div>
+        ))}
+      </>
+    )
+  }
+  if (region.kind === 'answer') {
+    return (
+      <div className="border-t border-zinc-100 pt-2 dark:border-zinc-800">
+        <span className="text-xs font-semibold text-zinc-500">参考答案：</span>
+        <MarkdownWithInlineFigures
+          className="mt-1 text-sm text-zinc-800 dark:text-zinc-200"
+          content={region.markdown}
+          figures={region.figures}
+        />
+      </div>
+    )
+  }
+  return <span className="text-xs font-semibold text-zinc-500">{region.label}</span>
+}
+
+export function QuestionRuntimeContent({
+  block,
+  model,
+  continuation = 'single',
+  regionItems,
+}: {
+  block: QuestionBlock
+  model: QuestionRuntimeModel
+  continuation?: 'single' | 'start' | 'middle' | 'end'
+  regionItems?: PaginatedQuestionRegionItem[]
+}) {
+  const marginClass = {
+    single: 'my-4',
+    start: 'mt-4 mb-0',
+    middle: 'my-0',
+    end: 'mt-0 mb-4',
+  }[continuation]
+  const itemByKey = new Map(regionItems?.map((item) => [item.regionKey, item]))
+  const regions = regionItems
+    ? regionItems
+        .map((item) => model.regions.find((region) => region.key === item.regionKey))
+        .filter((region): region is QuestionRuntimeRegion => Boolean(region))
+    : model.regions
+
+  return (
+    <div
+      className={`td-question ${marginClass}`}
+      {...{
+        [TEACHING_DOM.questionRoot]: '',
+        [TEACHING_DOM.questionSourceId]: model.questionId,
+        [TEACHING_DOM.questionDisplayNumber]: model.displayNumber,
+        [TEACHING_DOM.questionSplitPolicy]: 'regions',
+        [TEACHING_DOM.resource]: 'question',
+        [TEACHING_DOM.resourceId]: block.id,
+        [TEACHING_DOM.resourceStatus]: 'ready',
+      }}
+    >
+      {continuation === 'middle' || continuation === 'end' ? (
+        <div className="mb-1 text-[10px] font-medium text-zinc-400">续题</div>
+      ) : null}
+      {regions.map((region) => {
+        const item = itemByKey.get(region.key)
+        return (
+          <div
+            className="td-question-region flow-root"
+            key={`${region.key}:${item?.kind === 'question-paragraph-fragment' ? item.fragmentIndex : 0}`}
+            {...{
+              [TEACHING_DOM.questionRegion]: region.type,
+              [TEACHING_DOM.questionRegionKey]: region.key,
+              [TEACHING_DOM.questionRegionIndex]: region.index,
+              [TEACHING_DOM.questionSplitPolicy]: region.splitPolicy,
+              ...(region.kind === 'options-row'
+                ? {
+                    [TEACHING_DOM.questionOptionRow]: region.rowIndex,
+                    [TEACHING_DOM.questionOptionStart]: region.optionStart,
+                    [TEACHING_DOM.questionOptionEnd]: region.optionEnd,
+                  }
+                : {}),
+            }}
+          >
+            {region.kind === 'heading' ? (
+              <div className="mb-1.5 flex items-baseline gap-2">
+                {model.displayNumber ? <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{model.displayNumber}.</span> : null}
+                {model.score ? <span className="text-xs text-zinc-400">（{model.score} 分）</span> : null}
+                {model.questionType ? <span className="text-xs text-zinc-400">{model.questionType}</span> : null}
+              </div>
+            ) : <QuestionRegionContent region={region} item={item} />}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function QuestionBlockView({ block, resolveQuestion }: { block: QuestionBlock; resolveQuestion?: (id: string) => QuestionResolution }) {
   const resolution = resolveQuestion?.(block.questionId)
 
@@ -324,43 +496,39 @@ function QuestionBlockView({ block, resolveQuestion }: { block: QuestionBlock; r
     return <QuestionPlaceholder block={block} message={`题目不可用（ID: ${block.questionId || '未设置'}）`} status="missing" />
   }
 
-  const displayNumber = block.display?.displayNumber || question.questionNo || ''
-  const score = block.display?.scoreOverride ?? question.totalScore
+  return <QuestionRuntimeContent block={block} model={createQuestionRuntimeModel(block, question)} />
+}
 
+export function QuestionFragmentRenderer({
+  block,
+  question,
+  item,
+  selected = false,
+}: {
+  block: QuestionBlock
+  question: QuestionItem
+  item: QuestionFragmentPaginationItem
+  selected?: boolean
+}) {
   return (
     <div
-      className="td-question my-4"
-      data-block-id={block.id}
-      data-block-type="question"
-      data-question-id={block.questionId}
+      className={`td-question-fragment td-block-shell ${selected ? 'td-block-selected' : ''}`}
       {...{
-        [TEACHING_DOM.resource]: 'question',
-        [TEACHING_DOM.resourceId]: block.id,
-        [TEACHING_DOM.resourceStatus]: 'ready',
+        [TEACHING_DOM.fragment]: '',
+        [TEACHING_DOM.fragmentType]: 'question',
+        [TEACHING_DOM.fragmentIndex]: item.fragmentIndex,
+        [TEACHING_DOM.fragmentContinuation]: item.continuation,
+        [TEACHING_DOM.sourceBlockId]: block.id,
+        [TEACHING_DOM.sourceIndex]: item.sourceIndex,
+        [TEACHING_DOM.questionSourceId]: item.questionId,
       }}
     >
-      <div className="mb-1.5 flex items-baseline gap-2">
-        {displayNumber ? <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{displayNumber}.</span> : null}
-        {score ? <span className="text-xs text-zinc-400">（{score} 分）</span> : null}
-        {question.questionType ? <span className="text-xs text-zinc-400">{question.questionType}</span> : null}
-      </div>
-      <div className="text-sm leading-7 text-zinc-900 dark:text-zinc-100">
-        <QuestionMarkdownContent content={question.stemMarkdown || '题干为空'} figures={question.figures} />
-      </div>
-      {block.display?.showAnswer && question.answerText ? (
-        <div className="mt-3 border-t border-zinc-100 pt-2 dark:border-zinc-800">
-          <span className="text-xs font-semibold text-zinc-500">参考答案：</span>
-          <MarkdownWithInlineFigures className="mt-1 text-sm text-zinc-800 dark:text-zinc-200" content={question.answerText} figures={question.figures} />
-        </div>
-      ) : null}
-      {block.display?.showAnalysis && question.analysisMarkdown ? (
-        <div className="mt-2">
-          <span className="text-xs font-semibold text-zinc-500">解析：</span>
-          <div className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">
-            <MarkdownWithInlineFigures content={question.analysisMarkdown} figures={question.figures} />
-          </div>
-        </div>
-      ) : null}
+      <QuestionRuntimeContent
+        block={block}
+        model={createQuestionRuntimeModel(block, question)}
+        continuation={item.continuation}
+        regionItems={item.regionItems}
+      />
     </div>
   )
 }
@@ -387,6 +555,9 @@ function QuestionPlaceholder({
       data-block-type="question"
       data-question-state={tone}
       {...{
+        [TEACHING_DOM.questionRoot]: '',
+        [TEACHING_DOM.questionSourceId]: block.questionId,
+        [TEACHING_DOM.questionSplitPolicy]: 'never',
         [TEACHING_DOM.resource]: 'question',
         [TEACHING_DOM.resourceId]: block.id,
         [TEACHING_DOM.resourceStatus]: status,

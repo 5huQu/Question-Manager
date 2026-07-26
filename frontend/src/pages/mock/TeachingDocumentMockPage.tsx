@@ -23,6 +23,9 @@ import {
   TEACHING_DOCUMENT_PARAGRAPH_PAGINATION_NORMAL_FIXTURE,
   TEACHING_DOCUMENT_BOX_PAGINATION_ABNORMAL_FIXTURE,
   TEACHING_DOCUMENT_BOX_PAGINATION_NORMAL_FIXTURE,
+  TEACHING_DOCUMENT_QUESTION_PAGINATION_ABNORMAL_FIXTURE,
+  TEACHING_DOCUMENT_QUESTION_PAGINATION_BOUNDARY_FIXTURE,
+  TEACHING_DOCUMENT_QUESTION_PAGINATION_NORMAL_FIXTURE,
 } from '@/fixtures/teachingDocumentPaginationFixtures'
 import type { QuestionItem } from '@/types'
 import type { FigureAssetRef, QuestionBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
@@ -49,6 +52,9 @@ type FixtureKind =
   | 'paragraph-abnormal'
   | 'box-normal'
   | 'box-abnormal'
+  | 'question-normal'
+  | 'question-boundary'
+  | 'question-abnormal'
 
 const FIXTURE_OPTIONS: Array<{ kind: FixtureKind; label: string }> = [
   { kind: 'normal', label: '渲染正常' },
@@ -58,6 +64,9 @@ const FIXTURE_OPTIONS: Array<{ kind: FixtureKind; label: string }> = [
   { kind: 'paragraph-abnormal', label: '段落异常' },
   { kind: 'box-normal', label: '盒子正常' },
   { kind: 'box-abnormal', label: '盒子异常' },
+  { kind: 'question-normal', label: '题目正常' },
+  { kind: 'question-boundary', label: '题目边界' },
+  { kind: 'question-abnormal', label: '题目异常' },
 ]
 
 export default function TeachingDocumentMockPage() {
@@ -78,6 +87,9 @@ export default function TeachingDocumentMockPage() {
     'paragraph-abnormal': TEACHING_DOCUMENT_PARAGRAPH_PAGINATION_ABNORMAL_FIXTURE,
     'box-normal': TEACHING_DOCUMENT_BOX_PAGINATION_NORMAL_FIXTURE,
     'box-abnormal': TEACHING_DOCUMENT_BOX_PAGINATION_ABNORMAL_FIXTURE,
+    'question-normal': TEACHING_DOCUMENT_QUESTION_PAGINATION_NORMAL_FIXTURE,
+    'question-boundary': TEACHING_DOCUMENT_QUESTION_PAGINATION_BOUNDARY_FIXTURE,
+    'question-abnormal': TEACHING_DOCUMENT_QUESTION_PAGINATION_ABNORMAL_FIXTURE,
   }[fixtureKind]
   const renderedDocument = useMemo(() => appendRealQuestion(baseDocument, realQuestion), [baseDocument, realQuestion])
   const validation = useMemo(() => renderedDocument ? validateTeachingDocument(renderedDocument) : null, [renderedDocument])
@@ -85,7 +97,19 @@ export default function TeachingDocumentMockPage() {
   const questionResolver = useMemo(() => {
     return (questionId: string): QuestionResolution => {
       const fixture = TEACHING_DOCUMENT_QUESTION_FIXTURES[questionId]
-      if (fixture) return fixture
+      if (fixture) {
+        return {
+          ...fixture,
+          figures: fixture.figures.map((figure) => ({
+            ...figure,
+            path: figure.path === '__teaching_fixture_wide__'
+              ? new URL(wideFixtureUrl, window.location.origin).href
+              : figure.path === '__teaching_fixture_tall__'
+                ? new URL(tallFixtureUrl, window.location.origin).href
+                : figure.path,
+          })),
+        }
+      }
       if (realQuestion.id !== questionId) {
         return { status: 'missing', message: `题目不存在（ID: ${questionId || '未设置'}）` }
       }

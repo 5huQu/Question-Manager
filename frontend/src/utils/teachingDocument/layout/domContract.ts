@@ -16,6 +16,17 @@ export const TEACHING_DOM = {
   boxHeader: 'data-teaching-box-header',
   boxBody: 'data-teaching-box-body',
   boxTemplate: 'data-teaching-box-template',
+  questionRoot: 'data-teaching-question-root',
+  questionRegion: 'data-teaching-question-region',
+  questionRegionKey: 'data-teaching-question-region-key',
+  questionRegionIndex: 'data-teaching-question-region-index',
+  questionOptionIndex: 'data-teaching-question-option-index',
+  questionOptionRow: 'data-teaching-question-option-row',
+  questionOptionStart: 'data-teaching-question-option-start',
+  questionOptionEnd: 'data-teaching-question-option-end',
+  questionSourceId: 'data-teaching-question-source-id',
+  questionDisplayNumber: 'data-teaching-question-display-number',
+  questionSplitPolicy: 'data-teaching-question-split-policy',
   resource: 'data-teaching-resource',
   resourceId: 'data-teaching-resource-id',
   resourceStatus: 'data-teaching-resource-status',
@@ -42,6 +53,8 @@ export const TEACHING_DOM_SELECTORS = {
   mathResource: `[${TEACHING_DOM.resource}="math"]`,
   inline: `[${TEACHING_DOM.inline}]`,
   fragment: `[${TEACHING_DOM.fragment}]`,
+  questionRoot: `[${TEACHING_DOM.questionRoot}]`,
+  questionRegion: `[${TEACHING_DOM.questionRegion}]`,
 } as const
 
 export function splitPolicyForBlock(block: TeachingBlock): SplitPolicy {
@@ -50,6 +63,8 @@ export function splitPolicyForBlock(block: TeachingBlock): SplitPolicy {
       return 'paragraph'
     case 'box':
       return block.breakBehavior === 'avoid' ? 'never' : 'children'
+    case 'question':
+      return 'children'
     case 'pageBreak':
       return 'forced-break'
     case 'rawMarkdown':

@@ -99,10 +99,52 @@ export interface BoxFragmentPaginationItem {
   height: number
 }
 
+export interface WholeQuestionRegionPaginationItem {
+  kind: 'whole-question-region'
+  regionKey: string
+  regionType: import('./questionRegions').QuestionRegionType
+  regionIndex: number
+  height: number
+  optionStart?: number
+  optionEnd?: number
+  rowIndex?: number
+}
+
+export interface QuestionParagraphFragmentPaginationItem {
+  kind: 'question-paragraph-fragment'
+  regionKey: string
+  regionType: 'stem' | 'analysis'
+  regionIndex: number
+  fragmentIndex: number
+  range: InlineRange
+  continuation: ParagraphContinuation
+  lineStart: number
+  lineEnd: number
+  height: number
+}
+
+export type PaginatedQuestionRegionItem =
+  | WholeQuestionRegionPaginationItem
+  | QuestionParagraphFragmentPaginationItem
+
+export interface QuestionFragmentPaginationItem {
+  kind: 'fragment'
+  fragmentType: 'question'
+  blockId: string
+  sourceIndex: number
+  questionId: string
+  fragmentIndex: number
+  pageOffset: number
+  continuation: FragmentContinuation
+  regionItems: PaginatedQuestionRegionItem[]
+  height: number
+}
+
 export type PaginatedItem =
   | WholeBlockPaginationItem
   | ParagraphFragmentPaginationItem
   | BoxFragmentPaginationItem
+  | QuestionFragmentPaginationItem
 
 export interface SlicedTeachingInline {
   inline: TeachingInline

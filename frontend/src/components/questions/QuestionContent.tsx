@@ -167,13 +167,29 @@ export function QuestionDocumentMarkdownContent({ content, className = '' }: { c
   )
 }
 
-export function ChoiceOptions({ options, figures = [], layout: layoutOverride }: { options: ChoiceOption[]; figures?: QuestionFigure[]; layout?: 'four' | 'two' | 'one' }) {
+export function ChoiceOptions({
+  options,
+  figures = [],
+  layout: layoutOverride,
+  optionIndexOffset = 0,
+  optionDomAttributes,
+}: {
+  options: ChoiceOption[]
+  figures?: QuestionFigure[]
+  layout?: 'four' | 'two' | 'one'
+  optionIndexOffset?: number
+  optionDomAttributes?: (optionIndex: number) => Record<string, string | number | undefined>
+}) {
   const layout = layoutOverride || choiceLayoutForTexts(options.map((option) => option.content), figures.some((figure) => Boolean(figure.path)))
   const layoutClass = layout === 'four' ? 'quad' : layout === 'two' ? 'double' : layout === 'one' ? 'single' : layout
   return (
     <div className={`choice-options choice-options-${layoutClass}`} data-layout={layout}>
-      {options.map((option) => (
-        <div className="choice-option" key={option.label}>
+      {options.map((option, index) => (
+        <div
+          className="choice-option"
+          key={option.label}
+          {...optionDomAttributes?.(optionIndexOffset + index)}
+        >
           <span className="choice-label">{option.label}</span>
           <div className="min-w-0">
             <MarkdownContent className="choice-markdown" content={withoutInlineFigureMarkers(option.content)} />
@@ -187,19 +203,42 @@ export function ChoiceOptions({ options, figures = [], layout: layoutOverride }:
 
 export function FigureGallery({ figures, className = '', compact = false }: { figures: QuestionFigure[]; className?: string; compact?: boolean }) {
   const [preview, setPreview] = useState<QuestionFigure | null>(null)
+  const [failed, setFailed] = useState<Set<string>>(() => new Set())
   const visible = figures.filter((figure) => figure.path && !String(figure.path).trim().startsWith('<'))
   if (!visible.length) return null
   return (
     <>
       <div className={`grid gap-3 ${compact ? 'grid-cols-1' : 'sm:grid-cols-2'} ${className}`}>
-        {visible.map((figure, index) => (
-          <figure key={figure.id || `${figure.path}-${index}`} className={`overflow-hidden rounded-lg border bg-white ${compact ? 'max-w-40' : 'max-w-[26rem]'}`}>
-            <button className={`flex w-full cursor-zoom-in justify-center bg-white p-2 text-left ${compact ? 'h-32' : 'h-44'}`} onClick={() => setPreview(figure)} type="button">
-              <img alt={figureAlt(figure, index)} className="block h-full w-full object-contain bg-white" src={assetUrl(String(figure.path || ''))} />
+        {visible.map((figure, index) => {
+          const resourceId = String(figure.id || figure.blockId || figure.path || index)
+          const resourceKey = `${resourceId}:${String(figure.path || '')}`
+          const hasFailed = failed.has(resourceKey)
+          return (
+          <figure
+            key={resourceKey}
+            className={`overflow-hidden rounded-lg border bg-white ${compact ? 'max-w-40' : 'max-w-[26rem]'}`}
+            data-teaching-resource="image"
+            data-teaching-resource-id={resourceId}
+            data-teaching-resource-status={hasFailed ? 'error' : 'ready'}
+          >
+            <button className={`flex w-full justify-center bg-white p-2 text-left ${compact ? 'h-32' : 'h-44'} ${hasFailed ? 'cursor-default' : 'cursor-zoom-in'}`} onClick={() => !hasFailed && setPreview(figure)} type="button">
+              {hasFailed ? (
+                <span className="flex h-full w-full items-center justify-center bg-zinc-50 text-xs text-zinc-400">
+                  图片加载失败
+                </span>
+              ) : (
+                <img
+                  alt={figureAlt(figure, index)}
+                  className="block h-full w-full object-contain bg-white"
+                  src={assetUrl(String(figure.path || ''))}
+                  onError={() => setFailed((current) => new Set(current).add(resourceKey))}
+                />
+              )}
             </button>
             <figcaption className="border-t px-2.5 py-1.5 text-xs text-zinc-500">{figureCaption(figure, index)}</figcaption>
           </figure>
-        ))}
+          )
+        })}
       </div>
       {preview ? (
         <LargeImageDialog

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { BoxBlock, ParagraphBlock, TeachingBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { QuestionItem } from '@/types'
+import type { BoxBlock, ParagraphBlock, QuestionBlock, TeachingBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
 import {
   A4_MARGIN_PRESETS,
   DEFAULT_A4_PAPER,
@@ -7,8 +8,10 @@ import {
   type BlockMeasurement,
   type BoxMeasurement,
   type ParagraphMeasurement,
+  type QuestionMeasurement,
   type TeachingDocumentMeasurement,
 } from '.'
+import { createQuestionRuntimeModel } from './questionRegions'
 
 function paragraph(id: string): ParagraphBlock {
   return { type: 'paragraph', id, content: [{ type: 'text', text: id }] }
@@ -80,6 +83,61 @@ function boxMeasurement(block: BoxBlock, sourceIndex: number, childHeights: numb
         childPath: [{ childIndex, blockId: child.id }],
       },
     })),
+  }
+}
+
+function longQuestionMeasurement(
+  block: QuestionBlock,
+  sourceIndex: number,
+): QuestionMeasurement {
+  const question: QuestionItem = {
+    id: block.questionId,
+    serialNo: null,
+    questionNo: '1',
+    stage: '高中',
+    questionType: '解答题',
+    difficultyScore: 3,
+    difficultyScore10: 6,
+    difficultyLabel: '中等',
+    chapter: '',
+    knowledgePoints: [],
+    solutionMethods: [],
+    sourceTitle: '',
+    bankStatus: 'ready',
+    stemMarkdown: '甲'.repeat(60),
+    answerText: '',
+    analysisMarkdown: '',
+    totalScore: 10,
+    scoringRubric: [],
+    sliceImagePath: '',
+    figures: [],
+    sourceRunId: '',
+    updatedAt: '',
+    hasFigures: false,
+  }
+  const model = createQuestionRuntimeModel(block, question)
+  return {
+    blockId: block.id,
+    questionId: block.questionId,
+    sourceIndex,
+    totalHeight: 1220,
+    headingHeight: 20,
+    fragmentChrome: { single: 20, start: 10, middle: 0, end: 10 },
+    model,
+    regions: model.regions.map((region) => ({
+      key: region.key,
+      type: region.type,
+      index: region.index,
+      splitPolicy: region.splitPolicy,
+      height: region.kind === 'heading' ? 20 : 1200,
+      top: 0,
+      bottom: region.kind === 'heading' ? 20 : 1200,
+      paragraphMeasurement: region.kind === 'paragraph'
+        ? paragraphLines(region.paragraph.id, sourceIndex, 60)
+        : undefined,
+    })),
+    diagnostics: [],
+    measurementVersion: 'long-question-v1',
   }
 }
 
@@ -286,6 +344,61 @@ describe('paginateTeachingDocument', () => {
     expect(fragments[0].range.end).toEqual(fragments[1].range.start)
     expect(fragments[1].range.end).toEqual({ inlineIndex: 1 })
     expect(result.diagnostics.some((item) => item.code === 'unsupported-split')).toBe(false)
+  })
+
+  it('splits a measured long question into deterministic source-backed fragments', () => {
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'long-question-block',
+      questionId: 'long-question',
+    }
+    const input = {
+      document: documentWith([block]),
+      measurements: measurements([
+        measurement(block.id, 1220, {
+          blockType: 'question',
+          splitPolicy: 'children',
+          sourceIndex: 0,
+        }),
+      ]),
+      questionMeasurements: [longQuestionMeasurement(block, 0)],
+      paper: DEFAULT_A4_PAPER,
+    }
+    const result = paginateTeachingDocument(input)
+    const fragments = result.pages.flatMap((page) => page.items).filter(
+      (item) => item.kind === 'fragment' && item.fragmentType === 'question',
+    )
+    expect(fragments).toHaveLength(2)
+    expect(fragments.map((fragment) => fragment.continuation)).toEqual(['start', 'end'])
+    expect(fragments[0].regionItems[0].regionType).toBe('heading')
+    expect(fragments[1].regionItems.some((region) => region.regionType === 'heading')).toBe(false)
+    expect(result.diagnostics.some((item) => item.code === 'unsupported-split')).toBe(false)
+    expect(paginateTeachingDocument(input)).toEqual(result)
+  })
+
+  it('falls back to the whole question when an internal region measurement is missing', () => {
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'unsafe-question-block',
+      questionId: 'unsafe-question',
+    }
+    const questionMeasurement = longQuestionMeasurement(block, 0)
+    questionMeasurement.regions = questionMeasurement.regions.slice(0, 1)
+    const result = paginateTeachingDocument({
+      document: documentWith([block]),
+      measurements: measurements([
+        measurement(block.id, 1220, {
+          blockType: 'question',
+          splitPolicy: 'children',
+          sourceIndex: 0,
+        }),
+      ]),
+      questionMeasurements: [questionMeasurement],
+      paper: DEFAULT_A4_PAPER,
+    })
+    expect(result.pages[0].items[0]).toMatchObject({ kind: 'whole', blockId: block.id })
+    expect(result.diagnostics.some((item) => item.code === 'question-fragment-invalid'))
+      .toBe(true)
   })
 
   it('keeps manual page breaks around paragraph fragments', () => {

@@ -6,6 +6,7 @@ import {
   measureTeachingDocumentBoxes,
   measureTeachingDocument,
   measureTeachingDocumentParagraphs,
+  measureTeachingDocumentQuestions,
   paginateTeachingDocument,
   paperMetrics,
   TEACHING_DOM,
@@ -13,6 +14,7 @@ import {
   type GeometryAdapter,
   type BoxChromeGeometryAdapter,
   type ParagraphRangeGeometryAdapter,
+  type QuestionChromeGeometryAdapter,
   type PaginationResult,
   type PaperSpec,
   type RenderReadinessResult,
@@ -26,6 +28,7 @@ import {
   BlockRenderer,
   BoxFragmentRenderer,
   ParagraphFragmentRenderer,
+  QuestionFragmentRenderer,
   type FigureResolution,
   type QuestionResolution,
 } from './blocks/BlockRenderer'
@@ -54,6 +57,7 @@ export interface A4PaginationPreviewProps {
   geometryAdapter?: GeometryAdapter
   paragraphGeometryAdapter?: ParagraphRangeGeometryAdapter
   boxGeometryAdapter?: BoxChromeGeometryAdapter
+  questionGeometryAdapter?: QuestionChromeGeometryAdapter
   readinessWait?: typeof waitForRenderReadiness
 }
 
@@ -69,6 +73,7 @@ export function A4PaginationPreview({
   geometryAdapter,
   paragraphGeometryAdapter,
   boxGeometryAdapter,
+  questionGeometryAdapter,
   readinessWait = waitForRenderReadiness,
 }: A4PaginationPreviewProps) {
   const measurementRootRef = useRef<HTMLDivElement>(null)
@@ -101,6 +106,15 @@ export function A4PaginationPreview({
           measurement,
           boxGeometryAdapter,
         )
+        const questionMeasurements = measureTeachingDocumentQuestions(
+          root,
+          document,
+          measurement,
+          resolveQuestion,
+          geometryAdapter,
+          paragraphGeometryAdapter,
+          questionGeometryAdapter,
+        )
         measurement.diagnostics.push(...nextReadiness.diagnostics)
         if (controller.signal.aborted || generation !== generationRef.current) return
         setParagraphLineCount(paragraphMeasurements.reduce((total, paragraph) => total + paragraph.lines.length, 0))
@@ -110,12 +124,13 @@ export function A4PaginationPreview({
           measurements: measurement,
           paragraphMeasurements,
           boxMeasurements,
+          questionMeasurements,
           paper,
         }))
       })
 
     return () => controller.abort()
-  }, [boxGeometryAdapter, document, geometryAdapter, paper, paragraphGeometryAdapter, readinessWait, renderVersion])
+  }, [boxGeometryAdapter, document, geometryAdapter, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion])
 
   const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure'> = {
     resolveQuestion,
@@ -125,8 +140,13 @@ export function A4PaginationPreview({
     (total, page) => total + page.items.reduce((pageTotal, item) => {
       if (item.kind !== 'fragment') return pageTotal
       if (item.fragmentType === 'paragraph') return pageTotal + 1
-      return pageTotal + 1 + item.childItems.filter(
-        (child) => child.kind === 'paragraph-child-fragment',
+      if (item.fragmentType === 'box') {
+        return pageTotal + 1 + item.childItems.filter(
+          (child) => child.kind === 'paragraph-child-fragment',
+        ).length
+      }
+      return pageTotal + 1 + item.regionItems.filter(
+        (region) => region.kind === 'question-paragraph-fragment',
       ).length
     }, 0),
     0,
@@ -252,6 +272,31 @@ export function A4PaginationPreview({
                           item={item}
                           resolvers={{ ...rendererProps }}
                           selectedBlockId={selectedBlockId}
+                        />
+                      )
+                    }
+                    if (item.kind === 'fragment'
+                      && item.fragmentType === 'question'
+                      && block.type === 'question') {
+                      const resolution = resolveQuestion?.(block.questionId)
+                      if (!resolution || 'status' in resolution) {
+                        return (
+                          <BlockRenderer
+                            key={`question-fallback:${item.sourceIndex}`}
+                            block={block}
+                            resolvers={{ ...rendererProps }}
+                            sourceIndex={item.sourceIndex}
+                            selectedBlockId={selectedBlockId}
+                          />
+                        )
+                      }
+                      return (
+                        <QuestionFragmentRenderer
+                          key={`question-fragment:${item.sourceIndex}:${item.fragmentIndex}`}
+                          block={block}
+                          question={resolution}
+                          item={item}
+                          selected={selectedBlockId === block.id}
                         />
                       )
                     }

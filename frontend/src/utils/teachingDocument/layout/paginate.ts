@@ -4,6 +4,11 @@ import { planBoxFragments } from './boxPlanner'
 import { blockSourcePathKey } from './fragment'
 import { paragraphMeasurementsVersion, type ParagraphMeasurement } from './paragraphMeasurement'
 import { planParagraphFragments } from './paragraphPlanner'
+import {
+  questionMeasurementsVersion,
+  type QuestionMeasurement,
+} from './questionMeasurement'
+import { planQuestionFragments } from './questionPlanner'
 import { paperMetrics, validatePaperSpec } from './paper'
 import type {
   BlockMeasurement,
@@ -38,6 +43,10 @@ function boxMeasurementBySource(measurements: BoxMeasurement[]) {
   return new Map(measurements.map((measurement) => [measurement.sourceIndex, measurement]))
 }
 
+function questionMeasurementBySource(measurements: QuestionMeasurement[]) {
+  return new Map(measurements.map((measurement) => [measurement.sourceIndex, measurement]))
+}
+
 function duplicateDocumentIdDiagnostics(blocks: TeachingBlock[]): RenderDiagnostic[] {
   const counts = new Map<string, number>()
   for (const block of blocks) counts.set(block.id, (counts.get(block.id) || 0) + 1)
@@ -55,13 +64,16 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
   const { document, measurements, paper } = input
   const paragraphMeasurements = input.paragraphMeasurements || []
   const boxMeasurements = input.boxMeasurements || []
+  const questionMeasurements = input.questionMeasurements || []
   const paragraphVersion = paragraphMeasurementsVersion(paragraphMeasurements)
   const boxVersion = boxMeasurementsVersion(boxMeasurements)
+  const questionVersion = questionMeasurementsVersion(questionMeasurements)
   const metrics = paperMetrics(paper)
   const diagnostics: RenderDiagnostic[] = [
     ...measurements.diagnostics,
     ...paragraphMeasurements.flatMap((measurement) => measurement.diagnostics),
     ...boxMeasurements.flatMap((measurement) => measurement.diagnostics),
+    ...questionMeasurements.flatMap((measurement) => measurement.diagnostics),
     ...validatePaperSpec(paper),
     ...duplicateDocumentIdDiagnostics(document.content),
   ]
@@ -73,6 +85,7 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
       measurementVersion: measurements.measurementVersion,
       paragraphMeasurementVersion: paragraphVersion,
       boxMeasurementVersion: boxVersion,
+      questionMeasurementVersion: questionVersion,
     }
   }
 
@@ -80,6 +93,7 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
   const paragraphs = paragraphMeasurementBySource(paragraphMeasurements)
   const paragraphsByPath = paragraphMeasurementByPath(paragraphMeasurements)
   const boxes = boxMeasurementBySource(boxMeasurements)
+  const questions = questionMeasurementBySource(questionMeasurements)
   const pages: PaginatedPage[] = []
   let current: PaginatedPage = {
     index: 0,
@@ -172,6 +186,68 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
         pageIndex: current.index,
         message: `块 ${block.id} 缺少顶层测量结果，已以 0 高度保留在分页结果中。`,
       })
+    }
+
+    if (block.type === 'question') {
+      const height = measurement && Number.isFinite(measurement.height) && measurement.height >= 0
+        ? measurement.height
+        : 0
+      const available = Math.max(0, metrics.contentHeightPx - current.usedHeight)
+      if (height <= available) {
+        addWhole(block, sourceIndex, measurement)
+        return
+      }
+      if (height <= metrics.contentHeightPx) {
+        addWhole(block, sourceIndex, measurement, true)
+        return
+      }
+      const questionMeasurement = questions.get(sourceIndex)
+      if (!questionMeasurement
+        || questionMeasurement.blockId !== block.id
+        || questionMeasurement.questionId !== block.questionId) {
+        diagnostics.push({
+          code: 'question-measurement-missing',
+          severity: 'warning',
+          blockId: block.id,
+          questionId: block.questionId,
+          pageIndex: current.index,
+          message: `题目 ${block.questionId} 缺少内部区域测量，回退为整体分页。`,
+        })
+        addWhole(block, sourceIndex, measurement)
+        return
+      }
+      const plan = planQuestionFragments({
+        block,
+        measurement: questionMeasurement,
+        firstPageAvailableHeight: available,
+        pageContentHeight: metrics.contentHeightPx,
+        paragraphSplitOptions: input.paragraphSplitOptions,
+      })
+      diagnostics.push(...plan.diagnostics)
+      if (!plan.fragments.length
+        || plan.diagnostics.some((item) => item.code === 'question-fragment-invalid' && item.severity === 'error')) {
+        addWhole(block, sourceIndex, measurement)
+        return
+      }
+      const basePageIndex = current.index
+      for (const fragment of plan.fragments) {
+        while (current.index < basePageIndex + fragment.pageOffset) commitPage()
+        current.items.push(fragment)
+        current.usedHeight += fragment.height
+        if (current.usedHeight > metrics.contentHeightPx + 0.01) {
+          current.overflow = true
+          diagnostics.push({
+            code: 'question-fragment-invalid',
+            severity: 'error',
+            blockId: block.id,
+            questionId: block.questionId,
+            pageIndex: current.index,
+            fragmentIndex: fragment.fragmentIndex,
+            message: `题目 ${block.questionId} 的片段 ${fragment.fragmentIndex + 1} 超过第 ${current.index + 1} 页。`,
+          })
+        }
+      }
+      return
     }
 
     if (block.type === 'box') {
@@ -335,5 +411,6 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
     measurementVersion: measurements.measurementVersion,
     paragraphMeasurementVersion: paragraphVersion,
     boxMeasurementVersion: boxVersion,
+    questionMeasurementVersion: questionVersion,
   }
 }
