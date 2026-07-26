@@ -11,17 +11,21 @@ import type {
   FigureAssetRef,
   TeachingBlock,
   TeachingDocumentV1,
+  TeachingInline,
 } from '@/types/teachingDocument'
 import { questionBankApi } from '@/api/questionBank'
 import { ApiError } from '@/api/client'
 import { A4PaginationPreview, type A4PaginationState } from '@/components/teaching-document/A4PaginationPreview'
 import { ExportPdfPanel } from '@/components/teaching-document/ExportPdfPanel'
 import { BlockRenderer, type QuestionResolution } from '@/components/teaching-document/blocks/BlockRenderer'
+import { BlockInlineEditor } from '@/components/teaching-document/BlockInlineEditor/BlockInlineEditor'
 import {
   A4_MARGIN_PRESETS,
   BUILTIN_BOX_TEMPLATES,
+  hasProtectedInlineContent,
   migrateDocumentIds,
   newTeachingBlock,
+  protectedInlineReason,
   type PaperSpec,
 } from '@/utils/teachingDocument'
 import { assetUrl } from '@/utils/questionDisplay'
@@ -65,12 +69,9 @@ function findSelected(document: TeachingDocumentV1, id: string): SelectedLocatio
   return null
 }
 
-function canEditInline(block: TeachingBlock) {
-  if (block.type !== 'heading' && block.type !== 'paragraph') return false
-  return block.content.length === 1
-    && block.content[0].type === 'text'
-    && !block.content[0].marks?.length
-    && !block.content[0].unknownMarks?.length
+function inlineContentOf(block: TeachingBlock): TeachingInline[] {
+  if (block.type !== 'heading' && block.type !== 'paragraph') return []
+  return block.content
 }
 
 export default function TeachingDocumentEditorPage() {
@@ -387,12 +388,16 @@ function PropertiesPanel(props: {
         </div>
       </div>
 
-      {(block.type === 'heading' || block.type === 'paragraph') ? canEditInline(block) ? (
-        <label className="block text-xs font-medium text-zinc-500">文字
-          <textarea className={areaClass} value={block.content[0].type === 'text' ? block.content[0].text : ''} onChange={(event) => props.onUpdate({ content: [{ type: 'text', text: event.target.value }] }, `text:${block.id}`)} />
-        </label>
-      ) : (
-        <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">该文字块包含公式、marks 或未知行内数据，当前保持只读，避免编辑时丢失结构。</div>
+      {(block.type === 'heading' || block.type === 'paragraph') ? (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-zinc-500">文字</p>
+          <BlockInlineEditor
+            inlines={inlineContentOf(block)}
+            protectedReason={hasProtectedInlineContent(block.content) ? protectedInlineReason(block.content) : undefined}
+            onChange={(content) => props.onUpdate({ content }, `text:${block.id}`)}
+            ariaLabel={`${BLOCK_LABEL[block.type]}文字内容`}
+          />
+        </div>
       ) : null}
       {block.type === 'heading' ? <label className="block text-xs font-medium text-zinc-500">标题级别<select className={fieldClass} value={block.level} onChange={(event) => props.onUpdate({ level: Number(event.target.value) as 1 | 2 | 3 | 4 })}>{[1, 2, 3, 4].map((level) => <option key={level} value={level}>H{level}</option>)}</select></label> : null}
       {block.type === 'blockMath' ? <>

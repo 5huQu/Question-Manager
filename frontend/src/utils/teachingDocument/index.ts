@@ -4,6 +4,13 @@ export type { BoxTemplateDefinition, BoxToneStyle } from './boxTemplates'
 export { markdownToTeachingBlocks, teachingBlocksToMarkdown, parseInlineMarkdown } from './markdownCompat'
 export type { MarkdownConversionResult } from './markdownCompat'
 export {
+  teachingInlinesToTiptapDoc,
+  tiptapDocToTeachingInlines,
+  hasProtectedInlineContent,
+  protectedInlineReason,
+  pastedHtmlToSafeInlines,
+} from './inlineAdapter'
+export {
   applyTeachingDocumentCommand,
   createTeachingDocumentHistory,
   executeTeachingDocumentCommand,
