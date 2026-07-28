@@ -28,7 +28,7 @@ function isInlineFigure(figure: QuestionFigure, inlineIds: Set<string>) {
   return figureMarkerIds(figure).some((id) => inlineIds.has(id))
 }
 
-function InlineFigure({ figure, index }: { figure: QuestionFigure; index: number }) {
+function InlineFigure({ figure, index, showCaption = true }: { figure: QuestionFigure; index: number; showCaption?: boolean }) {
   const [preview, setPreview] = useState(false)
   const [error, setError] = useState(false)
   return (
@@ -48,7 +48,9 @@ function InlineFigure({ figure, index }: { figure: QuestionFigure; index: number
             />
           )}
         </button>
-        <figcaption className="border-t px-2.5 py-1.5 text-xs text-zinc-500">{figureCaption(figure, index)}</figcaption>
+        {showCaption ? (
+          <figcaption className="border-t px-2.5 py-1.5 text-xs text-zinc-500">{figureCaption(figure, index)}</figcaption>
+        ) : null}
       </figure>
       {preview && !error ? <LargeImageDialog caption={figureCaption(figure, index)} imageUrl={assetUrl(String(figure.path || ''))} onClose={() => setPreview(false)} title="题图预览" /> : null}
     </>
@@ -56,7 +58,17 @@ function InlineFigure({ figure, index }: { figure: QuestionFigure; index: number
 }
 
 /** Render Doc2X figures exactly where their source Markdown placed them. */
-export function MarkdownWithInlineFigures({ content, figures = [], className = '' }: { content: string; figures?: QuestionFigure[]; className?: string }) {
+export function MarkdownWithInlineFigures({
+  content,
+  figures = [],
+  className = '',
+  showFigureCaptions = true,
+}: {
+  content: string
+  figures?: QuestionFigure[]
+  className?: string
+  showFigureCaptions?: boolean
+}) {
   const source = String(content || '')
   const figureById = new Map<string, QuestionFigure>()
   for (const figure of figures.filter((item) => item.path)) {
@@ -71,7 +83,14 @@ export function MarkdownWithInlineFigures({ content, figures = [], className = '
     const before = source.slice(cursor, match.index)
     if (before.trim()) nodes.push(<MarkdownContent className={className} content={before} key={`text-${index}`} />)
     const figure = figureById.get(match[1])
-    if (figure) nodes.push(<InlineFigure figure={figure} index={index} key={`figure-${match[1]}-${index}`} />)
+    if (figure) nodes.push(
+      <InlineFigure
+        figure={figure}
+        index={index}
+        key={`figure-${match[1]}-${index}`}
+        showCaption={showFigureCaptions}
+      />,
+    )
     cursor = match.index + match[0].length
     index += 1
   }
@@ -173,12 +192,14 @@ export function ChoiceOptions({
   layout: layoutOverride,
   optionIndexOffset = 0,
   optionDomAttributes,
+  showFigureCaptions = true,
 }: {
   options: ChoiceOption[]
   figures?: QuestionFigure[]
   layout?: 'four' | 'two' | 'one'
   optionIndexOffset?: number
   optionDomAttributes?: (optionIndex: number) => Record<string, string | number | undefined>
+  showFigureCaptions?: boolean
 }) {
   const hasFigures = figures.some((figure) => Boolean(figure.path))
 
@@ -271,7 +292,12 @@ export function ChoiceOptions({
           <span className="choice-label">{option.label}</span>
           <div className="min-w-0">
             <MarkdownContent className="choice-markdown" content={withoutInlineFigureMarkers(option.content)} />
-            <FigureGallery figures={figures.filter((figure) => String(figure.optionLabel || '').toUpperCase() === option.label)} className="mt-2" compact />
+            <FigureGallery
+              figures={figures.filter((figure) => String(figure.optionLabel || '').toUpperCase() === option.label)}
+              className="mt-2"
+              compact
+              showCaption={showFigureCaptions}
+            />
           </div>
         </div>
       ))}
@@ -279,7 +305,17 @@ export function ChoiceOptions({
   )
 }
 
-export function FigureGallery({ figures, className = '', compact = false }: { figures: QuestionFigure[]; className?: string; compact?: boolean }) {
+export function FigureGallery({
+  figures,
+  className = '',
+  compact = false,
+  showCaption = true,
+}: {
+  figures: QuestionFigure[]
+  className?: string
+  compact?: boolean
+  showCaption?: boolean
+}) {
   const [preview, setPreview] = useState<QuestionFigure | null>(null)
   const [failed, setFailed] = useState<Set<string>>(() => new Set())
   const visible = figures.filter((figure) => figure.path && !String(figure.path).trim().startsWith('<'))
@@ -313,7 +349,9 @@ export function FigureGallery({ figures, className = '', compact = false }: { fi
                 />
               )}
             </button>
-            <figcaption className="border-t px-2.5 py-1.5 text-xs text-zinc-500">{figureCaption(figure, index)}</figcaption>
+            {showCaption ? (
+              <figcaption className="border-t px-2.5 py-1.5 text-xs text-zinc-500">{figureCaption(figure, index)}</figcaption>
+            ) : null}
           </figure>
           )
         })}

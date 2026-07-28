@@ -47,6 +47,8 @@ export interface PaginatedCanvasProps {
   printLayout: PrintLayoutSpec
   /** 字体 CSS 变量（如 --td-body-font / --td-heading-font）。 */
   fontVars?: Record<string, string>
+  /** 仅影响编辑画布显示，不参与分页测量。 */
+  zoom?: number
   /** 资源版本号（题目/图片装载状态），变化触发重新测量。 */
   renderVersion?: string
   resolveQuestion: (questionId: string) => QuestionResolution
@@ -86,6 +88,7 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
     paper,
     printLayout,
     fontVars,
+    zoom = 1,
     renderVersion,
     resolveQuestion,
     resolveFigure,
@@ -112,6 +115,7 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
   } = props
 
   const metrics = useMemo(() => printLayoutMetrics(printLayout), [printLayout])
+  const viewZoom = Math.min(1.5, Math.max(0.5, zoom))
   const {
     contentWidthPx,
     pageWidthPx,
@@ -248,7 +252,7 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
       </div>
 
       {/* 纸张列：内容区宽度 = contentWidthPx，居中。 */}
-      <div className="pb-8">
+      <div className="pb-8" style={{ zoom: viewZoom }}>
         <div
           className="td-editor-fonts td-paper-page td-editor-chrome relative mx-auto border border-zinc-200 bg-white shadow-sm dark:border-zinc-800"
           style={{

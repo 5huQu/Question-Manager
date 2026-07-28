@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   classifyDiagnostics,
   evaluateExportReadiness,
+  inspectRenderedPaperOverflow,
   type ExportReadinessInput,
 } from './exportReadiness'
 import type { PaginationResult, RenderDiagnostic, RenderReadinessResult } from './types'
@@ -73,6 +74,37 @@ describe('classifyDiagnostics', () => {
     ]
     const { blocking } = classifyDiagnostics(diagnostics)
     expect(blocking).toHaveLength(1)
+  })
+})
+
+describe('inspectRenderedPaperOverflow', () => {
+  function renderedPage(clientHeight: number, scrollHeight: number, pageIndex = 0) {
+    const root = document.createElement('div')
+    root.innerHTML = `
+      <section data-teaching-paper-page data-teaching-page-index="${pageIndex}">
+        <main data-teaching-page-content></main>
+      </section>
+    `
+    const content = root.querySelector<HTMLElement>('[data-teaching-page-content]')!
+    Object.defineProperty(content, 'clientHeight', { configurable: true, value: clientHeight })
+    Object.defineProperty(content, 'scrollHeight', { configurable: true, value: scrollHeight })
+    return root
+  }
+
+  it('accepts final paper content that fits within the rendered content box', () => {
+    expect(inspectRenderedPaperOverflow(renderedPage(900, 901))).toEqual([])
+  })
+
+  it('blocks export when final paper content would be clipped', () => {
+    const diagnostics = inspectRenderedPaperOverflow(renderedPage(900, 934, 2))
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]).toMatchObject({
+      code: 'page-overflow',
+      severity: 'error',
+      pageIndex: 2,
+    })
+    expect(diagnostics[0].message).toContain('第 3 页')
+    expect(diagnostics[0].message).toContain('34px')
   })
 })
 

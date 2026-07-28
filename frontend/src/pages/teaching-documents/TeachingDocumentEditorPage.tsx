@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { AlertTriangle, Bold, Italic, LoaderCircle, Minus, PanelLeft, Plus, RefreshCcw } from 'lucide-react'
+import { AlertTriangle, Bold, Italic, LoaderCircle, PanelLeft, RefreshCcw } from 'lucide-react'
 import type { QuestionItem } from '@/types'
 import type {
   BoxBlock,
@@ -278,7 +278,7 @@ export default function TeachingDocumentEditorPage() {
     [editor.document?.style],
   )
   const paper = useMemo<PaperSpec>(() => logicalPagePaper(sheetPaper), [sheetPaper])
-  const [paperZoom, setPaperZoom] = useState(0.75)
+  const [viewZoom, setViewZoom] = useState(1)
   const [paginationState, setPaginationState] = useState<A4PaginationState | null>(null)
   const [chromePanelOpen, setChromePanelOpen] = useState(false)
   const [editingChromeSlot, setEditingChromeSlot] = useState<{ section: PrintChromeSection; slot: PrintChromeSlotPosition } | null>(null)
@@ -570,6 +570,7 @@ export default function TeachingDocumentEditorPage() {
             canUndo={editor.canUndo}
             canRedo={editor.canRedo}
             canvasMode={canvasMode}
+            zoom={viewZoom}
             onBack={() => {
               if (['dirty', 'saving', 'failed', 'conflict'].includes(editor.saveState) && !window.confirm('当前文档仍有未保存内容，确定离开吗？')) return
               navigate('/teaching-documents')
@@ -578,6 +579,7 @@ export default function TeachingDocumentEditorPage() {
             onUndo={editor.undo}
             onRedo={editor.redo}
             onCanvasModeChange={setCanvasMode}
+            onZoomChange={setViewZoom}
             onInsert={(type) => insertBlock(type)}
             paperActions={paperActions}
             printActions={canvasMode === 'a4' ? (
@@ -618,7 +620,7 @@ export default function TeachingDocumentEditorPage() {
                 sheetPaper={sheetPaper}
                 printLayout={printLayout}
                 fontVars={fontVars}
-                zoom={paperZoom}
+                zoom={viewZoom}
                 selectedBlockId={selectedId}
                 renderVersion={renderResourceVersion}
                 onBlockSelect={selectBlock}
@@ -660,36 +662,6 @@ export default function TeachingDocumentEditorPage() {
                   <span className="mx-1.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
                   <button
                     type="button"
-                    onClick={() => setPaperZoom((zoom) => Math.max(0.45, Math.round((zoom - 0.05) * 100) / 100))}
-                    className="flex size-7 items-center justify-center rounded-full text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                    title="缩小"
-                  >
-                    <Minus className="size-3.5" />
-                  </button>
-                  <input
-                    className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-100"
-                    type="range"
-                    min={45}
-                    max={110}
-                    step={5}
-                    value={paperZoom * 100}
-                    onChange={(event) => setPaperZoom(Number(event.target.value) / 100)}
-                    aria-label="缩放比例"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setPaperZoom((zoom) => Math.min(1.1, Math.round((zoom + 0.05) * 100) / 100))}
-                    className="flex size-7 items-center justify-center rounded-full text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                    title="放大"
-                  >
-                    <Plus className="size-3.5" />
-                  </button>
-                  <span className="w-9 text-center text-[11px] font-medium tabular-nums text-zinc-600 dark:text-zinc-300">
-                    {Math.round(paperZoom * 100)}%
-                  </span>
-                  <span className="mx-1.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-                  <button
-                    type="button"
                     onClick={() => setChromePanelOpen((value) => !value)}
                     className={`h-7 rounded-full px-2.5 text-[11px] font-normal tracking-wide transition-colors ${
                       chromePanelOpen
@@ -710,6 +682,7 @@ export default function TeachingDocumentEditorPage() {
                 paper={paper}
                 printLayout={printLayout}
                 fontVars={fontVars}
+                zoom={viewZoom}
                 renderVersion={renderResourceVersion}
                 resolveQuestion={resolveQuestion}
                 resolveFigure={resolveFigure}
@@ -734,7 +707,7 @@ export default function TeachingDocumentEditorPage() {
             <>
             <div
               className="td-editor-fonts td-paper-page td-editor-chrome rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950 mx-auto my-5 max-w-3xl lg:max-w-4xl"
-              style={fontVars as CSSProperties}
+              style={{ ...fontVars, zoom: viewZoom } as CSSProperties}
             >
               {printLayout.header.enabled ? <PrintChrome section="header" slots={printLayout.header.slots} documentTitle={document.title} documentType={document.documentType} pageNumber={1} totalPages={paginationState?.pagination?.pages.length || 1} printLayout={printLayout} activeSlot={editingChromeSlot?.section === 'header' ? editingChromeSlot.slot : undefined} onSlotEdit={openChromeSlot} /> : null}
               <div data-teaching-page-content="">

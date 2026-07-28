@@ -31,6 +31,7 @@ import {
   createDocumentPrintLayout,
   effectivePaperMetrics,
   evaluateExportReadiness,
+  inspectRenderedPaperOverflow,
   TEACHING_DOM,
   waitForRenderReadiness,
   type PaginationResult,
@@ -66,6 +67,7 @@ export default function TeachingDocumentPrintPage() {
   const [questionMap, setQuestionMap] = useState<Record<string, QuestionResolution>>({})
 
   const measurementRootRef = useRef<HTMLDivElement>(null)
+  const printRootRef = useRef<HTMLDivElement>(null)
   const generationRef = useRef(0)
   const notifiedRef = useRef(false)
 
@@ -277,12 +279,21 @@ export default function TeachingDocumentPrintPage() {
       return
     }
     if (state === 'ready' && pagination && readiness) {
+      const renderedOverflowDiagnostics = printRootRef.current
+        ? inspectRenderedPaperOverflow(printRootRef.current)
+        : []
+      const verifiedPagination = renderedOverflowDiagnostics.length
+        ? {
+            ...pagination,
+            diagnostics: [...pagination.diagnostics, ...renderedOverflowDiagnostics],
+          }
+        : pagination
       // 复用导出 readiness 分类：readiness 未就绪（timedOut/not-ready）或分页存在阻塞诊断时
       // 立即 notifyReady({error})，禁止错误分页导出；仅允许明确的降级 warning。
       const evaluation = evaluateExportReadiness({
         documentRevision: record?.revision ?? revisionParam,
         paginationGeneration: generationRef.current,
-        pagination,
+        pagination: verifiedPagination,
         renderReadiness: readiness,
         hasUnsavedChanges: false,
         hasRevisionConflict: revisionMismatch,
@@ -322,6 +333,7 @@ export default function TeachingDocumentPrintPage() {
 
   return (
     <div
+      ref={printRootRef}
       className="td-theme-print"
       style={{
         ...fontVars,

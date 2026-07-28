@@ -67,7 +67,10 @@ export function exportCollectionWorksheetPdfWithDiagnostics(
   const baseName = `${safeName(collection.title || '练习单')}-${templateName}-${variant === 'teacher' ? 'teacher' : 'student'}`
   const texPath = path.join(exportRoot, `${baseName}.tex`)
   const pdfPath = path.join(exportRoot, `${baseName}.pdf`)
-  fs.rmSync(pdfPath, { force: true })
+  // `fs.rmSync(..., { force: true })` can terminate Node 24 on Windows when
+  // the existing export file has a Unicode name. This target is always a file,
+  // so use the narrower unlink operation instead.
+  if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath)
   const adjustments = new Map<string, number>()
   let knownWarnings: LayoutWarning[] = []
   try {
@@ -89,8 +92,13 @@ export function exportCollectionWorksheetPdfWithDiagnostics(
     const uniqueWarnings = [...new Map(warnings.map((warning) => [`${warning.code}:${warning.questionId}:${warning.figureId || ''}:${warning.page || ''}`, warning])).values()]
     return { pdfPath, texPath, logPath, warnings: uniqueWarnings, questionTelemetry }
   } catch (error) {
-    if (error && typeof error === 'object') Object.assign(error, { layoutWarnings: knownWarnings })
-    throw error
+    const errObj = error instanceof Error ? error : new Error(String(error))
+    try {
+      Object.defineProperty(errObj, 'layoutWarnings', { value: knownWarnings, writable: true, configurable: true, enumerable: true })
+    } catch {
+      // Ignore property definition failure
+    }
+    throw errObj
   }
 }
 

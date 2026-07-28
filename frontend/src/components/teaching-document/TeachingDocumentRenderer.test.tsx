@@ -109,6 +109,17 @@ describe('ParagraphFragmentRenderer', () => {
 })
 
 describe('TeachingDocumentRenderer fallbacks', () => {
+  it('marks continuous and paper surfaces explicitly for stable layout scoping', () => {
+    const continuous = renderToStaticMarkup(
+      <TeachingDocumentRenderer document={documentWith([])} />,
+    )
+    const paper = renderToStaticMarkup(
+      <TeachingDocumentRenderer document={documentWith([])} surface="paper" />,
+    )
+    expect(continuous).toContain('data-teaching-document-surface="continuous"')
+    expect(paper).toContain('data-teaching-document-surface="paper"')
+  })
+
   it('never renders the internal document type as a visible marker', () => {
     const html = renderToStaticMarkup(
       <TeachingDocumentRenderer

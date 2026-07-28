@@ -2,7 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { QuestionFigure, QuestionItem } from '@/types'
-import { MarkdownWithInlineFigures, QuestionMarkdownContent } from './QuestionContent'
+import { FigureGallery, MarkdownWithInlineFigures, QuestionMarkdownContent } from './QuestionContent'
 import { WorkbenchQuestionCard } from './WorkbenchQuestionCard'
 
 const figure = {
@@ -54,6 +54,16 @@ describe('question figure rendering', () => {
     })
 
     expect(container.querySelectorAll('img')).toHaveLength(1)
+  })
+
+  it('can hide figure captions on teaching-document surfaces', async () => {
+    await act(async () => {
+      root.render(<FigureGallery figures={[figure]} showCaption={false} />)
+    })
+
+    expect(container.querySelectorAll('img')).toHaveLength(1)
+    expect(container.querySelector('figcaption')).toBeNull()
+    expect(container.textContent).not.toContain('题干图')
   })
 
   it('keeps stem figures out of the answer and analysis sections', async () => {

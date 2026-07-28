@@ -368,7 +368,7 @@ function QuestionRegionContent({
       : ''
     return visibleFigures.length ? (
       <div className={`relative my-3 ${alignClass}`} style={widthStyle}>
-        <FigureGallery figures={visibleFigures} />
+        <FigureGallery figures={visibleFigures} showCaption={false} />
         {layoutEditor?.selected ? (
           <ImageResizeOverlay
             currentWidthMm={figureRegion.widthOverrideMm ?? Math.min(layoutEditor.contentWidthMm, 100)}
@@ -399,6 +399,7 @@ function QuestionRegionContent({
           figures={region.figures}
           layout={questionLayoutOverride(region.layout)}
           optionIndexOffset={region.optionStart}
+          showFigureCaptions={false}
           optionDomAttributes={(optionIndex) => ({
             [TEACHING_DOM.questionOptionIndex]: optionIndex,
             [TEACHING_DOM.questionOptionRow]: region.rowIndex,
@@ -428,6 +429,7 @@ function QuestionRegionContent({
           className="mt-1 text-sm text-zinc-800 dark:text-zinc-200"
           content={region.markdown}
           figures={region.figures}
+          showFigureCaptions={false}
         />
       </div>
     )

@@ -141,6 +141,7 @@
     "unzipper": "^0.12.5"
   },
   "devDependencies": {
+    "@emnapi/runtime": "^1.11.3",
     "@tailwindcss/vite": "^4.3.0",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.0.0",

@@ -1,5 +1,24 @@
 import { describe,expect,it } from 'vitest'
-import { parseChoiceQuestion } from './questionDisplay'
+import type { QuestionFigure } from '@/types'
+import { figureDisplayLabels, parseChoiceQuestion } from './questionDisplay'
+
+describe('figureDisplayLabels', () => {
+ it('uses semantic names and numbers each usage in display order', () => {
+  const figures = [
+   { id: 'internal-stem-1', usage: 'stem' },
+   { id: 'internal-stem-2', category: 'question' },
+   { id: 'internal-option-a', usage: 'options', optionLabel: 'a' },
+   { id: 'internal-analysis-1', usage: 'analysis' },
+  ] as QuestionFigure[]
+
+  expect(figureDisplayLabels(figures)).toEqual([
+   '题干图 1',
+   '题干图 2',
+   '选项图 1 · 选项 A',
+   '解析图 1',
+  ])
+ })
+})
 
 describe('parseChoiceQuestion',()=>{
  it('parses four choices written on the same source line',()=>{

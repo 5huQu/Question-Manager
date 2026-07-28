@@ -86,7 +86,7 @@ export function A4PaginationPreview({
   sheetPaper: sheetPaperProp,
   printLayout: printLayoutProp,
   fontVars,
-  zoom = 0.8,
+  zoom = 1,
   selectedBlockId,
   renderVersion = '',
   onBlockSelect,

@@ -257,6 +257,23 @@ body {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/*
+ * Paper surfaces have fixed physical geometry. Their layout must not respond
+ * to the browser viewport because the hidden measurement tree, editor preview,
+ * browser print dialog, and Electron printToPDF must use identical dimensions.
+ */
+[data-teaching-document-surface="paper"] .choice-options-quad {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+[data-teaching-document-surface="paper"] .choice-options-double {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+[data-teaching-document-surface="paper"] .choice-options-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .choice-option {
   display: grid;
   grid-template-columns: 1.8em minmax(0, 1fr);
@@ -329,11 +346,11 @@ body {
 }
 
 @container (max-width: 42rem) {
-  .choice-options-quad {
+  [data-teaching-document-surface="continuous"] .choice-options-quad {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .choice-options-double {
+  [data-teaching-document-surface="continuous"] .choice-options-double {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -348,8 +365,8 @@ body {
   }
 }
 
-@media (max-width: 900px) {
-  .choice-options-quad {
+@media screen and (max-width: 900px) {
+  [data-teaching-document-surface="continuous"] .choice-options-quad {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .template-preview-root .choice-options-quad {
@@ -357,10 +374,10 @@ body {
   }
 }
 
-@media (max-width: 560px) {
-  .choice-options,
-  .choice-options-quad,
-  .choice-options-double {
+@media screen and (max-width: 560px) {
+  [data-teaching-document-surface="continuous"] .choice-options,
+  [data-teaching-document-surface="continuous"] .choice-options-quad,
+  [data-teaching-document-surface="continuous"] .choice-options-double {
     grid-template-columns: minmax(0, 1fr);
   }
   .template-preview-root .choice-options-quad {
