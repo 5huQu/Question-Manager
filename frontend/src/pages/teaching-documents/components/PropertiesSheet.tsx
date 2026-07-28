@@ -14,6 +14,7 @@ import { BlockInlineEditor } from '@/components/teaching-document/BlockInlineEdi
 import { FormulaLiveInput } from '@/components/questions/editor/FormulaLiveInput'
 import { springPanel } from '@/components/teaching-document/motion'
 import { BUILTIN_BOX_TEMPLATES, hasProtectedInlineContent, protectedInlineReason } from '@/utils/teachingDocument'
+import { figureDisplayLabels } from '@/utils/questionDisplay'
 import { CARD_CHILD_TYPES, USER_BLOCK_LABEL } from './blockLabels'
 
 export type SelectedLocation = {
@@ -321,6 +322,7 @@ function QuestionSettings(props: {
 }) {
   const { block } = props
   const answerSpace = block.display?.answerSpace
+  const figureLabels = figureDisplayLabels(props.question?.figures || [])
 
   return (
     <div className="space-y-3">
@@ -420,9 +422,10 @@ function QuestionSettings(props: {
           {props.question.figures.map((figure, index) => {
             const key = figure.id || figure.blockId || `figure-${index + 1}`
             const override = block.display?.figureOverrides?.[key]
+            const displayLabel = figureLabels[index]
             return (
               <div key={key} className="space-y-1.5">
-                <span className="block truncate text-[11px] text-zinc-500">{key}</span>
+                <span className="block truncate text-[11px] text-zinc-500" title={String(key)}>{displayLabel}</span>
                 <input
                   type="range"
                   min={20}

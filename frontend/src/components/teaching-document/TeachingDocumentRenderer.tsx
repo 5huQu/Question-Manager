@@ -54,7 +54,10 @@ export function TeachingDocumentFrame({
       className={`td-document ${surfaceClass} text-zinc-900 dark:text-zinc-100 ${className}`}
       data-document-version={document.version}
       data-document-type={document.documentType}
-      {...{ [TEACHING_DOM.document]: '' }}
+      {...{
+        [TEACHING_DOM.document]: '',
+        [TEACHING_DOM.documentSurface]: surface,
+      }}
     >
       {showTitle && document.title ? (
         <header className="td-document-header mb-8 text-center" {...{ [TEACHING_DOM.documentHeader]: '' }}>

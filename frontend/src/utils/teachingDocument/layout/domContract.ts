@@ -3,6 +3,7 @@ import type { SplitPolicy } from './types'
 
 export const TEACHING_DOM = {
   document: 'data-teaching-document',
+  documentSurface: 'data-teaching-document-surface',
   documentHeader: 'data-teaching-document-header',
   block: 'data-teaching-block',
   blockId: 'data-teaching-block-id',
