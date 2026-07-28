@@ -1,5 +1,6 @@
 import type { QuestionContentDraft } from '@/types/questionContent'
 import { markdownToEditorDocument } from '@/utils/questionContentCodec'
+import { parseChoiceQuestion } from '@/utils/questionDisplay'
 
 export type QuestionContentValue = QuestionContentDraft
 
@@ -14,6 +15,11 @@ export interface QuestionContentEditorWarning {
 export interface StructuredChoice {
   label: string
   content: string
+}
+
+export interface ChoiceConversionSuggestion {
+  body: string
+  choices: StructuredChoice[]
 }
 
 // Empty choices are valid while a question is being composed. In particular,
@@ -37,6 +43,24 @@ export function splitChoices(markdown: string): { body: string; choices: Structu
 export function joinChoices(body: string, choices: StructuredChoice[]): string {
   if (!choices.length) return body
   return `${body.trimEnd()}\n\n${choices.map((choice) => `${choice.label}. ${choice.content.trim()}`).join('\n')}`.trim()
+}
+
+/**
+ * Detect legacy inline/two-per-line A-D options without mutating the source.
+ * The editor presents this result for explicit confirmation before rewriting
+ * the Markdown into the canonical one-option-per-line form.
+ */
+export function suggestChoiceConversion(markdown: string): ChoiceConversionSuggestion | null {
+  if (splitChoices(markdown).choices.length) return null
+  const parsed = parseChoiceQuestion(markdown)
+  if (!parsed || parsed.remainder || parsed.options.length !== 4) return null
+  return {
+    body: parsed.stem,
+    choices: parsed.options.map((option) => ({
+      label: option.label,
+      content: option.content,
+    })),
+  }
 }
 
 export function detectCompatibilityWarnings(value: QuestionContentValue): QuestionContentEditorWarning[] {

@@ -2,7 +2,7 @@ import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { QuestionContentEditor } from './QuestionContentEditor'
-import { joinChoices, splitChoices, type QuestionContentValue } from './model'
+import { joinChoices, splitChoices, suggestChoiceConversion, type QuestionContentValue } from './model'
 
 const initial: QuestionContentValue = {
   stemMarkdown: '计算 $x+1$。\n\nA. 1\nB. 2\nC. 3\nD. 4',
@@ -74,6 +74,27 @@ describe('QuestionContentEditor', () => {
     expect(container.querySelector<HTMLTextAreaElement>('[aria-label="题干与选项 Markdown 源码"]')?.value).toContain('legacy')
   })
 
+  it('previews and applies inline legacy choices without mutating before confirmation', async () => {
+    const onChange = vi.fn()
+    const value = {
+      ...initial,
+      stemMarkdown: '记事件 A：乘积为偶数，则 $P(A)=$\n\nA. $\\frac{3}{8}$ B. $\\frac{7}{8}$\n\nC. $\\frac{5}{8}$ D. $\\frac{1}{8}$',
+    }
+    await act(async () => {
+      root.render(<QuestionContentEditor entityKey="question:legacy-choice" value={value} onChange={onChange} />)
+    })
+    expect(container.textContent).toContain('从题干识别到 A–D 四个选项')
+    expect(container.textContent).toContain('应用识别结果')
+    expect(onChange).not.toHaveBeenCalled()
+
+    const apply = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('应用识别结果'))!
+    await act(async () => { apply.click() })
+    expect(onChange).toHaveBeenCalledOnce()
+    expect(onChange.mock.calls[0][0].stemMarkdown).toBe(
+      '记事件 A：乘积为偶数，则 $P(A)=$\n\nA. $\\frac{3}{8}$\nB. $\\frac{7}{8}$\nC. $\\frac{5}{8}$\nD. $\\frac{1}{8}$',
+    )
+  })
+
   it('is controlled and saves changed content with Ctrl+S', async () => {
     const save = vi.fn()
     function Harness() {
@@ -112,6 +133,19 @@ describe('structured choice helpers', () => {
     expect(splitChoices(markdown)).toEqual({
       body: '题干',
       choices: ['A', 'B', 'C', 'D'].map((label) => ({ label, content: '' })),
+    })
+  })
+
+  it('suggests conversion for two-options-per-line legacy content', () => {
+    const suggestion = suggestChoiceConversion('题干\n\nA. 甲 B. 乙\n\nC. 丙 D. 丁')
+    expect(suggestion).toEqual({
+      body: '题干',
+      choices: [
+        { label: 'A', content: '甲' },
+        { label: 'B', content: '乙' },
+        { label: 'C', content: '丙' },
+        { label: 'D', content: '丁' },
+      ],
     })
   })
 })

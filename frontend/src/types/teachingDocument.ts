@@ -1,0 +1,343 @@
+/**
+ * TeachingDocumentV1 — 结构化教学文档模型
+ *
+ * 用于讲义、试卷、练习单的统一内容表示。
+ * 设计原则：
+ * - 可辨识联合类型块节点
+ * - 稳定 id 用于未来编辑和分页引擎
+ * - 不保存任意 CSS 字符串
+ * - 未知节点/版本不静默丢失
+ * - 保留 marks、表格、嵌套结构的扩展空间
+ */
+
+import type { QuestionContentDraft } from './questionContent'
+import type { PaperOrientation, PaperSize } from '@/utils/teachingDocument/layout/types'
+
+// ─── 文档类型 ────────────────────────────────────────────────────────────────
+
+export type TeachingDocumentType = 'worksheet' | 'exam' | 'lecture'
+
+// ─── 行内节点 ────────────────────────────────────────────────────────────────
+
+export interface InlineText {
+  type: 'text'
+  text: string
+  /** 支持的受约束 marks。 */
+  marks?: InlineMark[]
+  /** 行内字体覆盖，存字体 id（见 lectureFonts TEXT_FONT_OPTIONS）；缺省 = 继承文档默认字体。 */
+  font?: string
+  /** 解析旧数据时保留暂不支持的 mark 原值。 */
+  unknownMarks?: unknown[]
+}
+
+export interface InlineMath {
+  type: 'inlineMath'
+  latex: string
+}
+
+export interface InlineHardBreak {
+  type: 'hardBreak'
+}
+
+export type InlineMark = 'bold' | 'italic' | 'underline' | 'strikethrough' | 'code'
+
+/** 未识别的行内节点：读取异常数据时保留完整原值。 */
+export interface UnknownInline {
+  type: 'unknown'
+  originalType: string
+  rawData: unknown
+}
+
+export type TeachingInline = InlineText | InlineMath | InlineHardBreak | UnknownInline
+
+// ─── 块节点 ──────────────────────────────────────────────────────────────────
+
+export interface HeadingBlock {
+  type: 'heading'
+  id: string
+  level: 1 | 2 | 3 | 4
+  content: TeachingInline[]
+}
+
+export interface ParagraphBlock {
+  type: 'paragraph'
+  id: string
+  content: TeachingInline[]
+}
+
+export interface BlockMathBlock {
+  type: 'blockMath'
+  id: string
+  latex: string
+  /** 可选编号，如 (1)、(2) */
+  label?: string
+}
+
+export type FigureAlignment = 'left' | 'center' | 'right'
+
+/**
+ * 稳定资源引用：持久化数据不应依赖可变文件路径。
+ * - questionFigure: 引用题库题目的图片（通过 questionId + figureId 定位）
+ * - documentAsset: 引用文档级上传资源（通过 assetId 定位）
+ * - legacyPath: 兼容已有实验数据中的相对路径
+ */
+export type FigureAssetRef =
+  | { type: 'questionFigure'; questionId: string; figureId: string }
+  | { type: 'documentAsset'; assetId: string }
+  | { type: 'legacyPath'; path: string }
+
+export interface FigureBlock {
+  type: 'figure'
+  id: string
+  /** 稳定资源引用（不保存 base64，不复制文件） */
+  asset: FigureAssetRef
+  alt?: string
+  alignment: FigureAlignment
+  /** 宽度比例 0.1 ~ 1.0，相对于内容区域（旧数据兼容） */
+  widthRatio?: number
+  /** 物理宽度 mm；优先级高于 widthRatio */
+  widthMm?: number
+  /** 是否锁定宽高比（默认 true） */
+  lockAspectRatio?: boolean
+  caption?: string
+}
+
+export interface QuestionDisplayOptions {
+  showAnswer?: boolean
+  showAnalysis?: boolean
+  /** 是否显示每题分数（默认不显示） */
+  showScore?: boolean
+  /** 覆盖题库中的分值 */
+  scoreOverride?: number
+  /** 覆盖题号显示 */
+  displayNumber?: string
+  /** 题目回答留空 */
+  answerSpace?: {
+    heightMm: number
+    style: 'blank' | 'lines' | 'grid'
+  }
+  /** 题目级图片尺寸覆盖，key 为 figure id */
+  figureOverrides?: Record<string, {
+    widthMm: number
+    alignment?: 'left' | 'center' | 'right'
+  }>
+}
+
+/** 题目分页策略：默认自动流动；avoid 保持整题；force-before 从新页开始。 */
+export type QuestionBreakBehavior = 'auto' | 'avoid' | 'force-before'
+
+export interface QuestionBlock {
+  type: 'question'
+  id: string
+  /** 引用题库 question_bank_items.id */
+  questionId: string
+  /** 缺省 auto：按题干行、选项区域等安全边界自动跨页。 */
+  breakBehavior?: QuestionBreakBehavior
+  display?: QuestionDisplayOptions
+  /** 文档本地题目内容覆盖；不回填题库时保存于此，渲染优先于题库 */
+  localContent?: QuestionContentDraft
+}
+
+export type BoxBreakBehavior = 'auto' | 'avoid' | 'allow' | 'force-before'
+
+export interface BoxBlock {
+  type: 'box'
+  id: string
+  /** 引用盒子模板注册表中的 templateId */
+  templateId: string
+  title?: string
+  /** 语义图标标记，如 "lightbulb"、"alert" */
+  icon?: string
+  breakBehavior: BoxBreakBehavior
+  /** 盒子子内容：允许段落、公式、图片、题目，但不允许嵌套盒子 */
+  children: BoxChildBlock[]
+}
+
+/** 盒子内允许的子块类型（不包含 BoxBlock 本身，避免无限递归） */
+export type BoxChildBlock =
+  | ParagraphBlock
+  | BlockMathBlock
+  | FigureBlock
+  | QuestionBlock
+  | DividerBlock
+  | SpacerBlock
+  | UnknownBlock
+
+export interface DividerBlock {
+  type: 'divider'
+  id: string
+}
+
+export interface SpacerBlock {
+  type: 'spacer'
+  id: string
+  /** 留白高度（em 单位），受约束 0.5 ~ 8（旧数据兼容） */
+  heightEm: number
+  /** 物理高度 mm；优先级高于 heightEm */
+  heightMm?: number
+}
+
+export interface PageBreakBlock {
+  type: 'pageBreak'
+  id: string
+}
+
+export interface RawMarkdownBlock {
+  type: 'rawMarkdown'
+  id: string
+  markdown: string
+  /** 保留原因：降级展示或用户主动插入 */
+  reason?: 'fallback' | 'user-inserted' | 'unsupported-structure'
+}
+
+/** 未知块：反序列化时遇到未识别 type 时保留原始数据 */
+export interface UnknownBlock {
+  type: 'unknown'
+  id: string
+  /** 原始 type 值 */
+  originalType: string
+  /** 原始 JSON 值；允许保留 null、字符串等异常节点。 */
+  rawData: unknown
+}
+
+// ─── 块联合类型 ──────────────────────────────────────────────────────────────
+
+export type TeachingBlock =
+  | HeadingBlock
+  | ParagraphBlock
+  | BlockMathBlock
+  | FigureBlock
+  | QuestionBlock
+  | BoxBlock
+  | DividerBlock
+  | SpacerBlock
+  | PageBreakBlock
+  | RawMarkdownBlock
+  | UnknownBlock
+
+// ─── 文档顶层 ────────────────────────────────────────────────────────────────
+
+export type TeachingMarginPreset = 'compact' | 'normal' | 'relaxed'
+/** 文档内相邻题目的垂直间距。 */
+export type TeachingQuestionSpacing = 'compact' | 'normal' | 'relaxed'
+
+export type PrintChromeSlotPosition = 'left' | 'center' | 'right'
+export type PrintChromeContentType = 'none' | 'customText' | 'documentTitle' | 'documentType' | 'pageNumber' | 'totalPages' | 'date'
+export type PrintChromeAlignment = 'left' | 'center' | 'right'
+export type PrintPageNumberFormat = 'number' | 'page' | 'fraction' | 'page-total' | 'dash'
+/** 页眉页脚允许使用的受控字体；inherit 跟随文档正文字体。 */
+export type PrintChromeFont = 'inherit' | 'songti' | 'heiti' | 'kaiti' | 'fangsong' | 'times' | 'georgia' | 'arial'
+/** 受控字号（px），避免任意 CSS 值影响分页稳定性。 */
+export type PrintChromeFontSize = 8 | 9 | 10 | 11 | 12 | 14
+
+/** 受控的页眉/页脚栏位；禁止存入 HTML 或 CSS。 */
+export interface PrintChromeSlot {
+  type: PrintChromeContentType
+  text?: string
+  align?: PrintChromeAlignment
+  font?: PrintChromeFont
+  fontSize?: PrintChromeFontSize
+  bold?: boolean
+  italic?: boolean
+}
+
+export type PrintChromeSlots = Record<PrintChromeSlotPosition, PrintChromeSlot>
+
+export interface PrintChromeSectionOptions {
+  left?: PrintChromeSlot
+  center?: PrintChromeSlot
+  right?: PrintChromeSlot
+}
+
+export interface PrintPageNumberOptions {
+  format?: PrintPageNumberFormat
+  prefix?: string
+  suffix?: string
+  /** false 时所有含总页数的模板安全回退为仅显示当前页。 */
+  showTotalPages?: boolean
+}
+
+/**
+ * 文档级打印版式偏好。所有字段均可选，缺省时回退到打印默认值，
+ * 以兼容已有文档并避免把展示配置混入内容块。
+ */
+export interface TeachingDocumentPrintOptions {
+  headerEnabled?: boolean
+  headerShowOnFirstPage?: boolean
+  footerEnabled?: boolean
+  header?: PrintChromeSectionOptions
+  footer?: PrintChromeSectionOptions
+  pageNumber?: PrintPageNumberOptions
+  /** 文档标题下方的类型标识，例如“试卷”。 */
+  showDocumentType?: boolean
+  /** @deprecated 旧文档字段，解析时迁移为 header 三栏配置。 */
+  headerShowTitle?: boolean
+  /** @deprecated 旧文档字段，解析时迁移为 header 三栏配置。 */
+  headerSubtitle?: string
+  /** @deprecated 旧文档字段，解析时迁移为 footer 三栏配置。 */
+  footerShowPageNumber?: boolean
+  /** @deprecated 旧文档字段，解析时迁移为 pageNumber 配置。 */
+  footerShowTotalPages?: boolean
+  /** @deprecated 旧文档字段，解析时迁移为 footer 三栏配置。 */
+  footerCustomText?: string
+}
+
+/**
+ * 文档级纸张选项。所有字段均可选，缺省时回退到 A4 portrait + normal margins，
+ * 以兼容旧文档（无 style.paper 字段）。
+ */
+export interface TeachingDocumentPaperOptions {
+  /** 纸张尺寸；缺省 'A4' */
+  size?: PaperSize
+  /** 纸张方向；缺省 'portrait' */
+  orientation?: PaperOrientation
+  /** 自定义边距 mm；优先级高于 marginPreset */
+  margins?: { topMm: number; rightMm: number; bottomMm: number; leftMm: number }
+}
+
+/**
+ * 文档级打印样式：正文/标题字体与页边距的唯一数据源。
+ * 编辑视图、A4 预览、PDF 导出均从此读取，保证“所见即所得”（预览与输出一致）。
+ * 仅存受约束的 id / 枚举，不存任意 CSS。
+ */
+export interface TeachingDocumentStyle {
+  /** 正文字体 id（见 lectureFonts BODY_FONT_OPTIONS）；缺省 = 默认正文字体 */
+  bodyFont?: string
+  /** 标题字体 id（见 lectureFonts HEADING_FONT_OPTIONS）；缺省 = 默认标题字体 */
+  headingFont?: string
+  /** 页边距预设（见 MARGIN_PRESETS）；缺省 = normal */
+  marginPreset?: TeachingMarginPreset
+  /** 题目间距；缺省 compact，适合试卷高密度排版。 */
+  questionSpacing?: TeachingQuestionSpacing
+  /** 纸张选项（尺寸、方向、自定义边距）；缺省 = A4 portrait */
+  paper?: TeachingDocumentPaperOptions
+  /** 页眉、页脚及标题区的打印偏好。 */
+  print?: TeachingDocumentPrintOptions
+}
+
+export interface TeachingDocumentV1 {
+  version: 1
+  documentType: TeachingDocumentType
+  title: string
+  metadata: Record<string, unknown>
+  content: TeachingBlock[]
+  /** 文档级打印样式（字体、边距）；缺省 = 全部使用默认值 */
+  style?: TeachingDocumentStyle
+}
+
+/** 顶层文档联合：未来版本扩展 */
+export type TeachingDocument = TeachingDocumentV1
+
+// ─── 验证结果 ────────────────────────────────────────────────────────────────
+
+export interface DocumentValidationIssue {
+  level: 'error' | 'warning'
+  blockId?: string
+  code: string
+  message: string
+}
+
+export interface DocumentValidationResult {
+  valid: boolean
+  issues: DocumentValidationIssue[]
+}

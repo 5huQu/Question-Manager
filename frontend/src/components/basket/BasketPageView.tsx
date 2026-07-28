@@ -37,6 +37,7 @@ export function BasketPageView({ state }: { state: BasketState }) {
     patchCollection, patchItem, removeItem, clearCollection, moveItem,
     openEditor, saveEditedQuestion,
     exportCollection, createLayoutDraft,
+    importingDocument, importToTeachingDocument,
     handleDragDrop,
   } = state
 
@@ -411,6 +412,15 @@ export function BasketPageView({ state }: { state: BasketState }) {
             onClick={() => navigate(`/questions/collections/${encodeURIComponent(activeId)}/layout-drafts/${encodeURIComponent(layoutDrafts.data!.items[0].id)}`)}
             className="mb-2 w-full text-xs text-zinc-600 underline underline-offset-2 dark:text-zinc-400"
           >继续上次排版：{layoutDrafts.data.items[0].name}</button> : null}
+          <button
+            onClick={() => void importToTeachingDocument()}
+            disabled={importingDocument || !active.data?.questionCount}
+            title="将当前题目一键生成为文档，题目按题型自动分组，随后可在文档编辑器中继续编辑"
+            className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-md border border-zinc-300 bg-white py-2.5 text-xs font-semibold text-zinc-800 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
+          >
+            <NotebookPen className="size-3.5" />
+            {importingDocument ? '正在生成文档…' : '导入为文档'}
+          </button>
           <button
             onClick={() => void createLayoutDraft()}
             disabled={exporting || !active.data?.questionCount || pageVariant === 'error_notebook'}

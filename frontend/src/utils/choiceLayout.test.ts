@@ -14,4 +14,13 @@ describe('choiceLayoutForTexts', () => {
   it('keeps short plain-text choices compact', () => {
     expect(choiceLayoutForTexts(['第一象限', '第二象限', '第三象限', '第四象限'])).toBe('quad')
   })
+
+  it('keeps short vector fractions in one four-column row', () => {
+    expect(choiceLayoutForTexts([
+      '$\\frac{3}{2}\\overrightarrow{CA}$',
+      '$-\\frac{3}{2}\\overrightarrow{CA}$',
+      '$\\frac{1}{2}\\overrightarrow{CA}$',
+      '$-\\frac{1}{2}\\overrightarrow{CA}$',
+    ])).toBe('quad')
+  })
 })

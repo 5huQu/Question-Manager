@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Check, FileText, Plus, RotateCcw, Save, Sigma, X } from 'lucide-react'
+import { AlertTriangle, Check, FileText, ListPlus, Plus, RotateCcw, Save, Sigma, X } from 'lucide-react'
+import { MarkdownContent } from '@/components/MarkdownContent'
 import { RichMarkdownEditor } from './RichMarkdownEditor'
 import { FormulaEditorDialog } from './FormulaEditorDialog'
-import { contentEquals, detectCompatibilityWarnings, joinChoices, splitChoices, type QuestionContentValue, type QuestionEditorVariant, type StructuredChoice } from './model'
+import { contentEquals, detectCompatibilityWarnings, joinChoices, splitChoices, suggestChoiceConversion, type ChoiceConversionSuggestion, type QuestionContentValue, type QuestionEditorVariant, type StructuredChoice } from './model'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 export interface QuestionEditorConflict {
@@ -36,12 +37,51 @@ const tabs: Array<{ key: EditorField; label: string }> = [
   { key: 'analysisMarkdown', label: '解析' },
 ]
 
-function StructuredChoicesEditor({ entityKey, choices, onChange }: { entityKey: string; choices: StructuredChoice[]; onChange: (choices: StructuredChoice[]) => void }) {
+function StructuredChoicesEditor({
+  entityKey,
+  choices,
+  suggestion,
+  onChange,
+  onApplySuggestion,
+}: {
+  entityKey: string
+  choices: StructuredChoice[]
+  suggestion?: ChoiceConversionSuggestion | null
+  onChange: (choices: StructuredChoice[]) => void
+  onApplySuggestion?: () => void
+}) {
   if (!choices.length) {
     return (
-      <button type="button" className="flex h-9 items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900" onClick={() => onChange(['A', 'B', 'C', 'D'].map((label) => ({ label, content: '' })))}>
-        <Plus className="size-3.5" />添加结构化选项
-      </button>
+      <div className="space-y-2">
+        {suggestion ? (
+          <div className="rounded-lg border border-zinc-300 bg-zinc-50/60 p-3 dark:border-zinc-700 dark:bg-zinc-900/30" role="status">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200">从题干识别到 A–D 四个选项</p>
+                <p className="mt-0.5 text-[11px] text-zinc-500">确认后会整理为结构化选项，保存前仍可逐项修改。</p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-zinc-900 px-3 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                onClick={onApplySuggestion}
+              >
+                <ListPlus className="size-3.5" />应用识别结果
+              </button>
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              {suggestion.choices.map((choice) => (
+                <div key={choice.label} className="flex min-w-0 items-start gap-2 rounded-md border border-zinc-200 bg-white px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-950">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded bg-zinc-100 text-[11px] font-semibold dark:bg-zinc-800">{choice.label}</span>
+                  <MarkdownContent className="min-w-0 text-xs" content={choice.content} />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <button type="button" className="flex h-9 items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900" onClick={() => onChange(['A', 'B', 'C', 'D'].map((label) => ({ label, content: '' })))}>
+          <Plus className="size-3.5" />添加空白结构化选项
+        </button>
+      </div>
     )
   }
   return (
@@ -139,6 +179,10 @@ export function QuestionContentEditor({
   const dirty = dirtyOverride ?? !contentEquals(value, savedValue ?? baseline.current)
   const warnings = useMemo(() => detectCompatibilityWarnings(value), [value])
   const stem = useMemo(() => splitChoices(value.stemMarkdown), [value.stemMarkdown])
+  const choiceSuggestion = useMemo(
+    () => stem.choices.length ? null : suggestChoiceConversion(value.stemMarkdown),
+    [stem.choices.length, value.stemMarkdown],
+  )
   const compact = variant === 'compact'
 
   useEffect(() => {
@@ -223,7 +267,17 @@ export function QuestionContentEditor({
         <div id={`${entityKey}-${activeField}-panel`} role="tabpanel" aria-label={tabs.find((tab) => tab.key === activeField)?.label}>
           {editorForField(activeField)}
         </div>
-        {activeField === 'stemMarkdown' ? <StructuredChoicesEditor entityKey={entityKey} choices={stem.choices} onChange={(choices) => updateField('stemMarkdown', joinChoices(stem.body, choices))} /> : null}
+        {activeField === 'stemMarkdown' ? (
+          <StructuredChoicesEditor
+            entityKey={entityKey}
+            choices={stem.choices}
+            suggestion={choiceSuggestion}
+            onApplySuggestion={choiceSuggestion
+              ? () => updateField('stemMarkdown', joinChoices(choiceSuggestion.body, choiceSuggestion.choices))
+              : undefined}
+            onChange={(choices) => updateField('stemMarkdown', joinChoices(stem.body, choices))}
+          />
+        ) : null}
       </div>
 
       <footer className="sticky bottom-0 z-10 flex items-center justify-between gap-4 border-t border-zinc-200 bg-white/90 px-5 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/90">

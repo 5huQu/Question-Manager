@@ -167,6 +167,14 @@ const expectedRoutes = new Set([
   'GET /api/question-bank/quick-action-metadata',
   'GET /api/question-bank/daily-question',
   'POST /api/question-bank/random-paper',
+  'GET /api/teaching-documents',
+  'POST /api/teaching-documents',
+  'GET /api/teaching-documents/:id',
+  'PATCH /api/teaching-documents/:id',
+  'POST /api/teaching-documents/:id/duplicate',
+  'DELETE /api/teaching-documents/:id',
+  'POST /api/teaching-documents/:id/assets',
+  'GET /api/teaching-document-assets/:assetId',
 ].filter((route) => !route.includes('/api/tools/pdf-slicer') && route !== 'POST /api/question-bank/import-json-from-slices'))
 
 function mountedRoutes(expressApp) {

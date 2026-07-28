@@ -26,10 +26,15 @@ const LearningTagsPage = lazy(() => import('@/pages/LearningTagsPage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const ExportRecordsPage = lazy(() => import('@/pages/ExportRecordsPage'))
 const SetupPage = lazy(() => import('@/pages/SetupPage').then(module => ({ default: module.SetupPage })))
+const TeachingDocumentPrintPage = lazy(() => import('@/pages/print/TeachingDocumentPrintPage'))
 const QuestionBasket = lazy(() => import('@/components/QuestionBasket').then(module => ({ default: module.QuestionBasket })))
 const PaperCenterPage = lazy(() => import('@/pages/questions/PaperCenterPage'))
 const CandidateFixWorkbenchPage = lazy(() => import('@/pages/import-v2/CandidateFixWorkbenchPage'))
+const TeachingDocumentsPage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentsPage'))
+const TeachingDocumentEditorPage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentEditorPage'))
 const QuestionEditorMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/QuestionEditorMockPage')) : null
+const TeachingDocumentMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/TeachingDocumentMockPage')) : null
+const EditorRedesignMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/editor-redesign/EditorRedesignMockPage')) : null
 
 function NavigateToWorkbench() {
   const navigate = useNavigate()
@@ -132,6 +137,19 @@ export default function App() {
     description.setAttribute('content', next.siteDescription)
   }
 
+  // Print route bypasses setup/settings gates and app shell.
+  // Used by the Electron hidden window for PDF export; must render even when
+  // first-run setup is incomplete so the hidden window never shows SetupPage.
+  if (location.pathname.startsWith('/print/')) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-white" />}>
+        <Routes>
+          <Route path="/print/teaching-document" element={<TeachingDocumentPrintPage />} />
+        </Routes>
+      </Suspense>
+    )
+  }
+
   if (!settingsReady) {
     return <div className="min-h-screen bg-background" />
   }
@@ -146,6 +164,7 @@ export default function App() {
 
   const fluidContent = location.pathname.startsWith('/questions')
     || location.pathname.startsWith('/tools')
+    || location.pathname.startsWith('/teaching-documents')
     || location.pathname === '/learning-tags'
     || location.pathname === '/exports'
 
@@ -158,11 +177,14 @@ export default function App() {
       />
 
       <SidebarInset className="h-screen min-w-0 overflow-hidden transition-colors duration-150">
-        <AppPageHeader actions={
-          location.pathname === '/questions'
-            ? <QuestionBankHeaderActions />
-            : undefined
-        } />
+        {/* 讲义编辑器拥有独立顶栏，隐藏全局面包屑 */}
+        {/^\/teaching-documents\/.+/.test(location.pathname) ? null : (
+          <AppPageHeader actions={
+            location.pathname === '/questions'
+              ? <QuestionBankHeaderActions />
+              : undefined
+          } />
+        )}
         <div className="flex-1 overflow-auto" data-slot="app-scroll-container">
           <div
             className={`flex w-full flex-col gap-6 p-4 md:p-6 ${fluidContent ? 'max-w-none' : 'mx-auto max-w-7xl'}`}
@@ -202,10 +224,14 @@ export default function App() {
                 <Route path="/learning-tags" element={<LearningTagsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/exports" element={<ExportRecordsPage />} />
+                <Route path="/teaching-documents" element={<TeachingDocumentsPage />} />
+                <Route path="/teaching-documents/:documentId" element={<TeachingDocumentEditorPage />} />
                 <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<LegacyPdfSlicerRunRedirect />} />
                 <Route path="/tools/pdf-slicer/*" element={<LegacyPdfSlicerGone />} />
                 <Route path="/tools/import/candidates/:candidateId/manual-fix" element={<LegacyCandidateFixRedirect />} />
                 {QuestionEditorMockPage ? <Route path="/mock/question-editor" element={<QuestionEditorMockPage />} /> : null}
+                {TeachingDocumentMockPage ? <Route path="/mock/teaching-document" element={<TeachingDocumentMockPage />} /> : null}
+                {EditorRedesignMockPage ? <Route path="/mock/editor-redesign" element={<EditorRedesignMockPage />} /> : null}
 
               </Routes>
             </Suspense>

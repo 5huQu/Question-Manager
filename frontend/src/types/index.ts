@@ -308,6 +308,7 @@ export type OcrSettings = {
   worksheetWatermark: string
   examWatermark: string
   lectureWatermark: string
+  lectureFontScheme: 'screen' | 'print'
   teachingStages: string[]
   sofficePath: string
   sofficeAvailable: boolean

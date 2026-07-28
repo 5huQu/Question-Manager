@@ -3,6 +3,10 @@ import multer from 'multer'
 import { RouteError } from '../utils/http-error.js'
 
 export const jsonErrorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+  if (error instanceof SyntaxError && 'status' in error && error.status === 400) {
+    res.status(400).json({ error: '请求 JSON 格式无效。', code: 'INVALID_JSON' })
+    return
+  }
   if (error instanceof multer.MulterError) {
     const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400
     res.status(status).json({

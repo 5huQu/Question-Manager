@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { BookOpen, X } from 'lucide-react'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { RichContent, richBlocksPlainText } from '@/components/RichContent'
@@ -167,13 +167,107 @@ export function QuestionDocumentMarkdownContent({ content, className = '' }: { c
   )
 }
 
-export function ChoiceOptions({ options, figures = [], layout: layoutOverride }: { options: ChoiceOption[]; figures?: QuestionFigure[]; layout?: 'four' | 'two' | 'one' }) {
-  const layout = layoutOverride || choiceLayoutForTexts(options.map((option) => option.content), figures.some((figure) => Boolean(figure.path)))
-  const layoutClass = layout === 'four' ? 'quad' : layout === 'two' ? 'double' : layout === 'one' ? 'single' : layout
+export function ChoiceOptions({
+  options,
+  figures = [],
+  layout: layoutOverride,
+  optionIndexOffset = 0,
+  optionDomAttributes,
+}: {
+  options: ChoiceOption[]
+  figures?: QuestionFigure[]
+  layout?: 'four' | 'two' | 'one'
+  optionIndexOffset?: number
+  optionDomAttributes?: (optionIndex: number) => Record<string, string | number | undefined>
+}) {
+  const hasFigures = figures.some((figure) => Boolean(figure.path))
+
+  // ─── 自适应测量：无显式 layout 时，根据实际渲染宽度决定列数 ───
+  const containerRef = useRef<HTMLDivElement>(null)
+  const probeRef = useRef<HTMLDivElement>(null)
+  const [adaptiveColumns, setAdaptiveColumns] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (layoutOverride) return
+    if (hasFigures || options.length !== 4) {
+      // 含图选项或非 4 选项：直接单列，无需测量
+      setAdaptiveColumns(1)
+      return
+    }
+    const container = containerRef.current
+    const probe = probeRef.current
+    if (!container || !probe) return
+
+    const measure = () => {
+      const containerWidth = container.clientWidth
+      if (containerWidth <= 0) return
+      const naturalWidths = Array.from(probe.children).map(
+        (child) => (child as HTMLElement).getBoundingClientRect().width,
+      )
+      const maxWidth = Math.max(...naturalWidths, 0)
+      const columnGap = 16 // .choice-options gap: 0.75rem 1rem
+      const fits = (columns: number) => columns * maxWidth + (columns - 1) * columnGap <= containerWidth
+      setAdaptiveColumns(fits(4) ? 4 : fits(2) ? 2 : 1)
+    }
+
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(container)
+    observer.observe(probe)
+    // 字体加载完成后重新测量（字体切换 / 异步字体加载）
+    const fonts = document.fonts
+    if (fonts?.ready) {
+      fonts.ready.then(() => measure()).catch(() => undefined)
+    }
+    return () => observer.disconnect()
+  }, [layoutOverride, options, hasFigures])
+
+  // ─── 布局决策：显式指定 > 测量结果 > 启发式回退 ───
+  const resolvedLayout = layoutOverride
+    || (adaptiveColumns === 4 ? 'four' : adaptiveColumns === 2 ? 'two' : adaptiveColumns === 1 ? 'one' : null)
+    || (choiceLayoutForTexts(options.map((option) => option.content), hasFigures) === 'quad' ? 'four'
+      : choiceLayoutForTexts(options.map((option) => option.content), hasFigures) === 'double' ? 'two' : 'one')
+
+  const isAdaptive = !layoutOverride && adaptiveColumns !== null
+  const layoutClass = resolvedLayout === 'four' ? 'quad' : resolvedLayout === 'two' ? 'double' : 'single'
+
   return (
-    <div className={`choice-options choice-options-${layoutClass}`} data-layout={layout}>
-      {options.map((option) => (
-        <div className="choice-option" key={option.label}>
+    <div
+      ref={containerRef}
+      className={`choice-options ${isAdaptive ? '' : `choice-options-${layoutClass}`}`.trim()}
+      data-layout={isAdaptive ? `adaptive-${adaptiveColumns}` : resolvedLayout}
+      style={isAdaptive ? {
+        gridTemplateColumns: adaptiveColumns === 4
+          ? 'repeat(4, minmax(0, 1fr))'
+          : adaptiveColumns === 2
+            ? 'repeat(2, minmax(0, 1fr))'
+            : 'minmax(0, 1fr)',
+      } : undefined}
+    >
+      {/* 隐藏测量探针：以自然宽度渲染各选项，供自适应算法读取实际渲染宽度 */}
+      {!layoutOverride && !hasFigures && options.length === 4 ? (
+        <div
+          ref={probeRef}
+          aria-hidden="true"
+          className="pointer-events-none invisible absolute left-0 top-0 flex w-max"
+          style={{ gap: '1rem' }}
+        >
+          {options.map((option) => (
+            <div className="choice-option" key={`probe-${option.label}`} style={{ width: 'max-content' }}>
+              <span className="choice-label">{option.label}</span>
+              <div className="choice-markdown" style={{ width: 'max-content' }}>
+                <MarkdownContent content={withoutInlineFigureMarkers(option.content)} />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {options.map((option, index) => (
+        <div
+          className="choice-option"
+          key={option.label}
+          {...optionDomAttributes?.(optionIndexOffset + index)}
+        >
           <span className="choice-label">{option.label}</span>
           <div className="min-w-0">
             <MarkdownContent className="choice-markdown" content={withoutInlineFigureMarkers(option.content)} />
@@ -187,19 +281,42 @@ export function ChoiceOptions({ options, figures = [], layout: layoutOverride }:
 
 export function FigureGallery({ figures, className = '', compact = false }: { figures: QuestionFigure[]; className?: string; compact?: boolean }) {
   const [preview, setPreview] = useState<QuestionFigure | null>(null)
+  const [failed, setFailed] = useState<Set<string>>(() => new Set())
   const visible = figures.filter((figure) => figure.path && !String(figure.path).trim().startsWith('<'))
   if (!visible.length) return null
   return (
     <>
       <div className={`grid gap-3 ${compact ? 'grid-cols-1' : 'sm:grid-cols-2'} ${className}`}>
-        {visible.map((figure, index) => (
-          <figure key={figure.id || `${figure.path}-${index}`} className={`overflow-hidden rounded-lg border bg-white ${compact ? 'max-w-40' : 'max-w-[26rem]'}`}>
-            <button className={`flex w-full cursor-zoom-in justify-center bg-white p-2 text-left ${compact ? 'h-32' : 'h-44'}`} onClick={() => setPreview(figure)} type="button">
-              <img alt={figureAlt(figure, index)} className="block h-full w-full object-contain bg-white" src={assetUrl(String(figure.path || ''))} />
+        {visible.map((figure, index) => {
+          const resourceId = String(figure.id || figure.blockId || figure.path || index)
+          const resourceKey = `${resourceId}:${String(figure.path || '')}`
+          const hasFailed = failed.has(resourceKey)
+          return (
+          <figure
+            key={resourceKey}
+            className={`overflow-hidden rounded-lg border bg-white ${compact ? 'max-w-40' : 'max-w-[26rem]'}`}
+            data-teaching-resource="image"
+            data-teaching-resource-id={resourceId}
+            data-teaching-resource-status={hasFailed ? 'error' : 'ready'}
+          >
+            <button className={`flex w-full justify-center bg-white p-2 text-left ${compact ? 'h-32' : 'h-44'} ${hasFailed ? 'cursor-default' : 'cursor-zoom-in'}`} onClick={() => !hasFailed && setPreview(figure)} type="button">
+              {hasFailed ? (
+                <span className="flex h-full w-full items-center justify-center bg-zinc-50 text-xs text-zinc-400">
+                  图片加载失败
+                </span>
+              ) : (
+                <img
+                  alt={figureAlt(figure, index)}
+                  className="block h-full w-full object-contain bg-white"
+                  src={assetUrl(String(figure.path || ''))}
+                  onError={() => setFailed((current) => new Set(current).add(resourceKey))}
+                />
+              )}
             </button>
             <figcaption className="border-t px-2.5 py-1.5 text-xs text-zinc-500">{figureCaption(figure, index)}</figcaption>
           </figure>
-        ))}
+          )
+        })}
       </div>
       {preview ? (
         <LargeImageDialog

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Question Manager 资料录入"
+  short_description: "Extract, validate, and safely import question materials"
+  default_prompt: "Use $question-manager-ingestion to extract questions from these materials, review issues with me, and import only confirmed records."

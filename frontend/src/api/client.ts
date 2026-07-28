@@ -1,3 +1,5 @@
+import type { PaperSpec } from '@/utils/teachingDocument/layout/types'
+
 export const jsonHeaders = { 'Content-Type': 'application/json' }
 
 export class ApiError extends Error {
@@ -22,8 +24,34 @@ declare global {
         onProgress: (callback: (payload: UpdateProgress) => void) => () => void
         onStatus: (callback: (payload: UpdateStatus) => void) => () => void
       }
+      pdfExport?: {
+        start: (options: {
+          documentId: string
+          revision?: number
+          pageCount?: number
+          title?: string
+          /** 文档纸张规格：供主进程生成 printToPDF 参数与打印页交叉校验。 */
+          paper?: PaperSpec
+        }) => Promise<PdfExportResult>
+        cancel: () => Promise<{ success: boolean }>
+        notifyReady: (payload: {
+          pageCount?: number
+          warnings?: string[]
+          error?: string
+        }) => void
+      }
     }
   }
+}
+
+export interface PdfExportResult {
+  success: boolean
+  canceled?: boolean
+  fileName?: string
+  fileSize?: number
+  htmlPageCount?: number
+  warnings?: string[]
+  error?: string
 }
 
 export type UpdateAsset = {

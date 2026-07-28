@@ -3,8 +3,10 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { collectionsApi } from '../../api/collections'
 import { layoutDraftsApi } from '../../api/layoutDrafts'
 import { questionBankApi } from '../../api/questionBank'
+import { teachingDocumentsApi } from '../../api/teachingDocuments'
 import { useAsync } from '../../hooks/useAsync'
 import type { Basket, CollectionSummary, QuestionItem } from '../../types'
+import { buildExamDocumentFromQuestions } from '../../utils/teachingDocument/importFromBasket'
 import { basketUpdatedEvent, DEFAULT_BASKET_ID, getDefaultScore, notifyBasketUpdated } from './constants'
 
 export function useBasketState(options?: { initialPaperId?: string | null }) {
@@ -27,6 +29,7 @@ export function useBasketState(options?: { initialPaperId?: string | null }) {
   const [paperSaveAction, setPaperSaveAction] = useState<'save_clear' | 'save_copy' | 'save_as' | null>(null)
   const [paperTitleInput, setPaperTitleInput] = useState('')
   const [savingPaper, setSavingPaper] = useState(false)
+  const [importingDocument, setImportingDocument] = useState(false)
   const [saveNotice, setSaveNotice] = useState('')
   const [showMoreSettings, setShowMoreSettings] = useState(false)
 
@@ -233,6 +236,27 @@ export function useBasketState(options?: { initialPaperId?: string | null }) {
     }
   }
 
+  /** 一键将当前题目列表快照为讲义文档（试卷型），题目按题型分大题，随后跳转编辑器 */
+  async function importToTeachingDocument() {
+    if (importingDocument || !activeQuestions.length) return
+    setImportingDocument(true)
+    try {
+      const entries = activeQuestions.map((entry) => ({
+        questionId: entry.item.id,
+        questionType: entry.item.questionType || '',
+        score: Number(entry.score || getDefaultScore(entry.item.questionType)),
+      }))
+      const title = localTitle.trim() || '未命名试卷'
+      const content = buildExamDocumentFromQuestions(entries, title)
+      const record = await teachingDocumentsApi.createDocument({ title, documentType: 'exam', content })
+      navigate(`/teaching-documents/${encodeURIComponent(record.id)}`)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : String(error))
+    } finally {
+      setImportingDocument(false)
+    }
+  }
+
   async function createLayoutDraft() {
     if (exporting || !active.data?.questionCount) return
     setExporting(true)
@@ -287,6 +311,7 @@ export function useBasketState(options?: { initialPaperId?: string | null }) {
     patchCollection, patchItem, removeItem, clearCollection, moveItem,
     openEditor, saveEditedQuestion,
     exportCollection, createLayoutDraft,
+    importingDocument, importToTeachingDocument,
     handleDragDrop,
   }
 }

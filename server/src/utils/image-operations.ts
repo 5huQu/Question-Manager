@@ -34,7 +34,7 @@ export function imageDimensions(imagePath: string) {
     '-c',
     'from PIL import Image; import json, sys; im=Image.open(sys.argv[1]); print(json.dumps({"width": im.width, "height": im.height}))',
     imagePath,
-  ], { encoding: 'utf8' })) as { width: number; height: number }
+  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) as { width: number; height: number }
 }
 
 function cropScript() {

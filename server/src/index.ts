@@ -18,6 +18,7 @@ import { mountQuickActionsRoutes } from './routes/question-bank/quick-actions.js
 import { mountImportFlowV2Routes } from './routes/import-flow-v2.js'
 import { mountCandidateFixRoutes } from './routes/candidate-fix.js'
 import { mountLayoutDraftRoutes } from './routes/question-bank/layout-drafts.js'
+import { mountTeachingDocumentRoutes } from './routes/teaching-documents.js'
 import { recoverInterruptedLayoutPreviews } from './services/question-bank/layout-drafts.service.js'
 import { mountErrorMiddleware } from './middleware/error-handler.js'
 import {
@@ -42,6 +43,7 @@ mountQuickActionsRoutes(app)
 mountImportFlowV2Routes(app)
 mountCandidateFixRoutes(app)
 mountLayoutDraftRoutes(app)
+mountTeachingDocumentRoutes(app)
 mountErrorMiddleware(app)
 
 // Re-export for Electron and smoke tests
