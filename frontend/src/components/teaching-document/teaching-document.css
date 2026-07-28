@@ -35,6 +35,46 @@
   --box-violet-header: #f5f3ff;
   --box-violet-body: #ffffff;
   --box-violet-accent: #7c3aed;
+
+  /* ─── 跨页拆分 Token ─────────────────────────────────────────────────── */
+
+  /* 几何 */
+  --box-radius: 6px;
+  --box-border-width: 1px;
+  --box-header-height: 28px;
+  --box-continuation-header-height: 22px;
+  --box-accent-width: 3px;
+  --box-icon-size: 14px;
+
+  /* 间距 */
+  --box-margin-block: 20px;
+  --box-body-padding-block: 12px;
+  --box-body-padding-inline: 16px;
+  --box-continuation-padding-block: 4px;
+  --box-continuation-padding-inline: 16px;
+  --box-continuation-label-gap: 6px;
+
+  /* 字体 */
+  --box-title-size: 12.5px;
+  --box-title-weight: 600;
+  --box-continuation-title-size: 11px;
+  --box-continuation-title-weight: 500;
+  --box-continuation-label-size: 9px;
+
+  /* 颜色（灰度骨架） */
+  --box-border-style-solid: solid;
+  --box-border-style-dashed: dashed;
+  --box-continuation-label-color: #a1a1aa;
+  --box-continuation-title-color: #71717a;
+  --box-header-divider-width: 0.5px;
+  --box-header-divider-color: color-mix(in srgb, var(--box-neutral-border) 60%, transparent);
+
+  /* 编辑辅助（不进入打印） */
+  --box-selected-outline: 2px solid #18181b;
+  --box-selected-offset: 2px;
+  --box-overflow-border: 2px dashed #dc2626;
+  --box-strategy-badge-bg: #f4f4f5;
+  --box-strategy-badge-color: #71717a;
 }
 
 /*
@@ -45,6 +85,272 @@
 .td-block-shell {
   display: flow-root;
   min-width: 0;
+}
+
+/*
+ * 编辑块选中态与悬浮态绘制在块的边缘外侧，保留足够的呼吸空间（inset: -4px -10px）。
+ * 伪元素不参与排版；微小位移和阴影只表达层级，不改变分页测量尺寸。
+ */
+.td-document-editor .td-node-selectable,
+.td-paper-page .td-block-selected,
+.td-paper-page .td-block-shell {
+  position: relative;
+  border-radius: 8px;
+  margin-left: -10px;
+  margin-right: -10px;
+  padding-left: 10px;
+  padding-right: 10px;
+  transition:
+    transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 160ms ease,
+    background-color 140ms ease;
+}
+
+.td-document-editor .td-node-selectable::after,
+.td-paper-page .td-block-selected::after,
+.td-paper-page .td-block-shell::after {
+  position: absolute;
+  z-index: 20;
+  inset: -4px 0;
+  border: 1.5px solid transparent;
+  border-radius: 8px;
+  content: '';
+  pointer-events: none;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease;
+}
+
+/* 悬浮态：未选中的块悬浮时提供更细腻的背景微显、轻微阴影与手势指示 */
+.td-document-editor .td-node-selectable:not(.is-selected):hover,
+.td-paper-page .td-block-shell:not(.td-block-selected):hover {
+  cursor: pointer;
+  background-color: rgb(244 244 245 / 55%);
+  box-shadow:
+    0 1px 3px rgb(24 24 27 / 4%),
+    0 4px 10px -2px rgb(24 24 27 / 5%);
+}
+
+.td-document-editor .td-node-selectable:not(.is-selected):hover::after,
+.td-paper-page .td-block-shell:not(.td-block-selected):hover::after {
+  border-color: rgb(161 161 170 / 70%);
+  box-shadow: 0 0 0 1px rgb(161 161 170 / 12%);
+}
+
+.dark .td-document-editor .td-node-selectable:not(.is-selected):hover,
+.dark .td-paper-page .td-block-shell:not(.td-block-selected):hover {
+  background-color: rgb(39 39 42 / 35%);
+  box-shadow:
+    0 1px 3px rgb(0 0 0 / 18%),
+    0 4px 10px -2px rgb(0 0 0 / 22%);
+}
+
+.dark .td-document-editor .td-node-selectable:not(.is-selected):hover::after,
+.dark .td-paper-page .td-block-shell:not(.td-block-selected):hover::after {
+  border-color: rgb(161 161 170 / 55%);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 8%);
+}
+
+/* 选中态：明确的高亮边框与抬升阴影 */
+.td-document-editor .td-node-selectable.is-selected,
+.td-paper-page .td-block-selected {
+  z-index: 2;
+  transform: translateY(-1px);
+  background-color: rgb(255 255 255 / 70%);
+  box-shadow:
+    0 1px 3px rgb(24 24 27 / 8%),
+    0 8px 20px -4px rgb(24 24 27 / 10%);
+}
+
+.td-document-editor .td-node-selectable.is-selected::after,
+.td-paper-page .td-block-selected::after {
+  border-color: #18181b;
+  box-shadow: 0 0 0 1px rgb(24 24 27 / 8%);
+}
+
+.dark .td-document-editor .td-node-selectable.is-selected,
+.dark .td-paper-page .td-block-selected {
+  background-color: rgb(24 24 27 / 35%);
+  box-shadow:
+    0 1px 3px rgb(0 0 0 / 30%),
+    0 8px 20px -4px rgb(0 0 0 / 24%);
+}
+
+.dark .td-document-editor .td-node-selectable.is-selected::after,
+.dark .td-paper-page .td-block-selected::after {
+  border-color: #fafafa;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 15%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .td-document-editor .td-node-selectable,
+  .td-paper-page .td-block-selected,
+  .td-paper-page .td-block-shell {
+    transition: box-shadow 80ms ease, background-color 80ms ease;
+  }
+
+  .td-document-editor .td-node-selectable.is-selected,
+  .td-paper-page .td-block-selected {
+    transform: none;
+  }
+}
+
+.td-document-reserve-header > .td-document-header {
+  visibility: hidden;
+}
+
+/*
+ * Paginated canvas: the editor text must span exactly the paper content width
+ * (contentWidthPx) so its line wrapping matches the hidden measurement tree
+ * and the standalone print preview. Strip the editor's own horizontal padding
+ * inside the paginated surface; vertical padding is absorbed by the boundary
+ * proportional mapping.
+ */
+.td-paginated-canvas .td-document-editor {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* ProseMirror 分页装饰会真实占据布局高度，正文不会绘制到页间隙下方。 */
+.td-page-transition-widget {
+  position: relative;
+  display: block;
+  width: var(--td-page-content-width);
+  pointer-events: none;
+  user-select: none;
+}
+.td-page-transition-widget > span { display: block; }
+.td-page-transition-filler { height: var(--td-page-leading-blank); }
+.td-page-transition-footer {
+  height: var(--td-page-footer-height);
+  color: #71717a;
+  font-size: 10px;
+  line-height: var(--td-page-footer-height);
+  text-align: center;
+}
+.td-page-transition-band {
+  position: relative;
+  width: var(--td-page-width);
+  height: calc(var(--td-page-margin-bottom) + var(--td-page-gap) + var(--td-page-margin-top));
+  margin-left: calc(-1 * var(--td-page-margin-left));
+}
+.td-page-transition-band > span { display: block; }
+.td-page-transition-bottom-margin { height: var(--td-page-margin-bottom); background: #fff; }
+.td-page-transition-physical-gap {
+  position: relative;
+  height: var(--td-page-gap);
+  background: #f4f4f5;
+  box-shadow:
+    inset 0 1px 0 #d4d4d8,
+    inset 0 -1px 0 #d4d4d8,
+    inset 0 3px 6px rgb(24 24 27 / 4%);
+}
+.td-page-transition-top-margin { height: var(--td-page-margin-top); background: #fff; }
+.td-page-transition-label {
+  position: absolute;
+  right: max(12px, var(--td-page-margin-right));
+  top: 50%;
+  color: #71717a;
+  font-size: 9px;
+  line-height: 1;
+  transform: translateY(-50%);
+}
+.td-page-transition-header {
+  height: var(--td-page-header-height);
+  overflow: hidden;
+  color: #71717a;
+  font-size: 10px;
+  line-height: var(--td-page-header-height);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.td-page-transition-react { display: block; width: 100%; }
+.td-page-transition-react-band {
+  position: relative;
+  height: calc(var(--td-page-margin-bottom) + var(--td-page-gap) + var(--td-page-margin-top));
+}
+.td-page-transition-react-band > span {
+  display: block;
+}
+
+/* 手动换页符：保留清晰的内容节点语义，但不与页面边界争夺视觉层级。 */
+.td-page-break-marker {
+  margin: 10px 0;
+  border-radius: 6px;
+  cursor: default;
+}
+.td-page-break-marker-line {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 10px;
+  color: #71717a;
+}
+.td-page-break-marker-line > span:first-child,
+.td-page-break-marker-line > span:last-child {
+  height: 1px;
+  flex: 1;
+  background-image: linear-gradient(to right, #d4d4d8 50%, transparent 50%);
+  background-size: 8px 1px;
+}
+.td-page-break-marker-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #e4e4e7;
+  border-radius: 999px;
+  background: #fff;
+  padding: 4px 9px;
+  color: #52525b;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.td-page-break-marker:hover .td-page-break-marker-label,
+.td-page-break-marker.is-selected .td-page-break-marker-label {
+  border-color: #a1a1aa;
+  color: #18181b;
+}
+.td-page-break-marker.is-selected {
+  outline: 2px solid #18181b;
+  outline-offset: 3px;
+}
+.dark .td-page-transition-bottom-margin,
+.dark .td-page-transition-top-margin {
+  background: #09090b;
+}
+.dark .td-page-transition-physical-gap {
+  background: #18181b;
+  box-shadow:
+    inset 0 1px 0 #3f3f46,
+    inset 0 -1px 0 #3f3f46;
+}
+.dark .td-page-break-marker-line > span:first-child,
+.dark .td-page-break-marker-line > span:last-child {
+  background-image: linear-gradient(to right, #52525b 50%, transparent 50%);
+}
+.dark .td-page-break-marker-label {
+  border-color: #3f3f46;
+  background: #18181b;
+  color: #d4d4d8;
+}
+.dark .td-page-break-marker:hover .td-page-break-marker-label,
+.dark .td-page-break-marker.is-selected .td-page-break-marker-label {
+  border-color: #a1a1aa;
+  color: #fafafa;
+}
+.dark .td-page-break-marker.is-selected {
+  outline-color: #fafafa;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .td-page-break-marker,
+  .td-page-break-marker-label {
+    transition: none;
+  }
 }
 
 /* ─── 深色模式 ─────────────────────────────────────────────────────────── */
@@ -79,6 +385,14 @@
   --box-violet-header: #2e1065;
   --box-violet-body: #18181b;
   --box-violet-accent: #a78bfa;
+
+  /* 跨页 Token 深色覆盖 */
+  --box-continuation-label-color: #52525b;
+  --box-continuation-title-color: #a1a1aa;
+  --box-header-divider-color: color-mix(in srgb, var(--box-neutral-border) 60%, transparent);
+  --box-selected-outline: 2px solid #fafafa;
+  --box-strategy-badge-bg: #27272a;
+  --box-strategy-badge-color: #a1a1aa;
 }
 
 /* ─── 分页标记（屏幕预览用虚线，打印时生效） ──────────────────────────── */
@@ -94,6 +408,80 @@
     margin: 0;
     padding: 0;
   }
+}
+
+/* ─── 盒子跨页 continuation 样式 ─────────────────────────────────────── */
+
+.td-box[data-continuation="single"] {
+  margin: var(--box-margin-block) 0;
+  border-radius: var(--box-radius);
+  border-style: var(--box-border-style-solid);
+}
+
+.td-box[data-continuation="start"] {
+  margin: var(--box-margin-block) 0 0;
+  border-radius: var(--box-radius) var(--box-radius) 0 0;
+  border-style: var(--box-border-style-solid);
+  border-bottom-style: var(--box-border-style-dashed);
+}
+
+.td-box[data-continuation="middle"] {
+  margin: 0;
+  border-radius: 0;
+  border-style: var(--box-border-style-solid);
+  border-top-style: var(--box-border-style-dashed);
+  border-bottom-style: var(--box-border-style-dashed);
+}
+
+.td-box[data-continuation="end"] {
+  margin: 0 0 var(--box-margin-block);
+  border-radius: 0 0 var(--box-radius) var(--box-radius);
+  border-style: var(--box-border-style-solid);
+  border-top-style: var(--box-border-style-dashed);
+}
+
+/* ─── 续页标签（start/middle 底部） ──────────────────────────────────── */
+
+.td-box-continuation-label {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--box-continuation-label-gap);
+  font-size: var(--box-continuation-label-size);
+  color: var(--box-continuation-label-color);
+  user-select: none;
+}
+
+/* ─── 续页栏（middle/end 弱化标题） ──────────────────────────────────── */
+
+.td-box-continuation-header {
+  display: flex;
+  align-items: center;
+  min-height: var(--box-continuation-header-height);
+  padding: var(--box-continuation-padding-block) var(--box-continuation-padding-inline);
+  border-bottom: var(--box-header-divider-width) dashed var(--box-header-divider-color);
+  font-size: var(--box-continuation-title-size);
+  font-weight: var(--box-continuation-title-weight);
+  color: var(--box-continuation-title-color);
+}
+
+/* ─── 编辑辅助（打印排除） ───────────────────────────────────────────── */
+
+@media print {
+  [data-edit-only] { display: none !important; }
+}
+
+.td-box-overflow-warning {
+  border: var(--box-overflow-border) !important;
+}
+
+.td-box-strategy-badge {
+  font-size: var(--box-continuation-label-size);
+  font-weight: 500;
+  color: var(--box-strategy-badge-color);
+  background: var(--box-strategy-badge-bg);
+  border-radius: 3px;
+  padding: 1px 4px;
+  line-height: 1.3;
 }
 
 /* ─── 盒子避免分页 ────────────────────────────────────────────────────── */
@@ -120,11 +508,36 @@
   text-align: right;
 }
 
-/* ─── 基础排版 ────────────────────────────────────────────────────────── */
+/* ─── 基础排版（CSS 变量驱动，字体方案可切换） ──────────────────────────── */
 
 .td-document {
-  font-size: 15px;
-  line-height: 1.75;
+  font-family: var(--td-body-font, "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif);
+  font-size: var(--td-base-size, 15px);
+  line-height: var(--td-base-lh, 1.75);
+}
+
+.td-document h1,
+.td-document h2,
+.td-document h3,
+.td-document h4 {
+  font-family: var(--td-heading-font, inherit);
+  color: var(--td-heading-color, inherit);
+}
+
+/* ─── 编辑视图字体（与纸张预览/PDF 打印共用同一组 CSS 变量） ───────────── */
+/*
+ * 编辑视图只应用 font-family（保持屏幕优化的字号/行高/间距），
+ * 让正文/标题字体选择在编辑页即时可见，且与打印输出一致。
+ * --td-body-font / --td-heading-font 由页面容器内联注入（fontVars）。
+ */
+.td-editor-fonts {
+  font-family: var(--td-body-font, inherit);
+}
+.td-editor-fonts h1,
+.td-editor-fonts h2,
+.td-editor-fonts h3,
+.td-editor-fonts h4 {
+  font-family: var(--td-heading-font, inherit);
 }
 
 .td-block-math .katex-display {
@@ -134,18 +547,99 @@
 /* A4 experiment: physical page geometry lives on the page shell. */
 .td-paper-page .td-document {
   color: #18181b;
-  font-size: 15px;
-  line-height: 1.75;
+  font-size: var(--td-base-size, 15px);
+  line-height: var(--td-base-lh, 1.75);
 }
 
 .td-paper-page .td-figure img {
   max-height: var(--td-paper-content-height, 70vh);
 }
 
-.td-paper-page .td-block-selected {
-  border-radius: 4px;
-  outline: 2px solid #18181b;
+/* 纸张预览页眉页脚：居中布局，与打印样式保持一致 */
+.td-paper-page [data-teaching-page-header] {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  font-size: 9px;
+  line-height: 1.4;
+  color: #71717a;
+  border-bottom: 0.5px solid #e4e4e7;
+  padding-bottom: 2mm;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.td-paper-page [data-teaching-page-footer] {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  font-size: 9px;
+  line-height: 1.4;
+  color: #a1a1aa;
+  border-top: 0.5px solid #e4e4e7;
+  padding-top: 2mm;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.td-paper-page [data-teaching-page-header][data-header-spacer="true"] {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.td-paper-page [data-teaching-page-footer][data-footer-spacer="true"] {
+  border-top: none;
+  padding-top: 0;
+}
+
+.td-print-chrome-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  width: 100%;
+  min-width: 0;
+}
+
+.td-print-chrome-slot {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.td-print-chrome-align-left { text-align: left; }
+.td-print-chrome-align-center { text-align: center; }
+.td-print-chrome-align-right { text-align: right; }
+
+.td-print-chrome-slot button,
+button.td-print-chrome-slot {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: text;
+}
+
+.td-print-chrome-slot.is-editing,
+button.td-print-chrome-slot:hover {
+  border-radius: 3px;
+  background: rgba(24, 24, 27, 0.06);
+  outline: 1px dashed rgba(82, 82, 91, 0.55);
   outline-offset: 2px;
+}
+
+.td-print-chrome-empty {
+  color: #a1a1aa;
+  font-size: 10px;
+}
+
+/* 内容区可以收缩，页脚始终保留在纸张的底部区域；允许选择框/悬浮框微幅浮现于页边距，避免被硬裁切。 */
+.td-paper-page [data-teaching-page-content] {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: visible;
 }
 
 .dark .td-paper-page .td-document,
@@ -154,4 +648,119 @@
 .dark .td-paper-page .td-document h3,
 .dark .td-paper-page .td-document h4 {
   color: #18181b;
+}
+
+/* ─── 字体方案：印刷风（参照 qbank-theme.sty 品牌底座） ─────────────── */
+
+.td-theme-print {
+  --td-body-font: Georgia, "Times New Roman", "Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+  --td-heading-font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif;
+  --td-base-size: 13px;
+  --td-base-lh: 1.6;
+  --td-heading-color: #1B3A5B;
+  --td-brand-ink: #1B3A5B;
+  --td-brand-tint: #EEF3F8;
+  --td-brand-line: #C9D3DC;
+  --td-brand-warm: #A8762B;
+}
+
+/* 印刷风标题层级收紧 */
+.td-theme-print .td-document h1 { font-size: 19px; letter-spacing: 0.01em; }
+.td-theme-print .td-document h2 { font-size: 16px; letter-spacing: 0.01em; }
+.td-theme-print .td-document h3 { font-size: 14.5px; }
+.td-theme-print .td-document h4 { font-size: 13.5px; }
+
+/* 文档大标题 */
+.td-theme-print .td-document-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.td-theme-print .td-document-header p {
+  color: var(--td-brand-warm);
+  font-family: var(--td-heading-font);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+/* 段落两端对齐 + 紧凑间距 */
+.td-theme-print .td-paragraph {
+  line-height: 1.65;
+  margin-top: 0.55em;
+  margin-bottom: 0.55em;
+  text-align: justify;
+}
+
+/* 题目区域 */
+.td-document .td-question[data-question-continuation="single"] {
+  margin-top: var(--td-question-gap, 6px);
+  margin-bottom: var(--td-question-gap, 6px);
+}
+.td-document .td-question[data-question-continuation="start"] {
+  margin-top: var(--td-question-gap, 6px);
+  margin-bottom: 0;
+}
+.td-document .td-question[data-question-continuation="middle"] {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+.td-document .td-question[data-question-continuation="end"] {
+  margin-top: 0;
+  margin-bottom: var(--td-question-gap, 6px);
+}
+.td-theme-print .td-question-paragraph {
+  font-size: 13px;
+  line-height: 1.62;
+}
+
+/* 题号品牌色 */
+.td-theme-print .td-question span[class*="font-semibold"] {
+  color: var(--td-brand-ink);
+}
+
+/* 盒子标题黑体 */
+.td-theme-print .td-box-header span {
+  font-family: var(--td-heading-font);
+  font-size: 12.5px;
+}
+/* 续页栏印刷风 */
+.td-theme-print .td-box-continuation-header {
+  font-family: var(--td-heading-font);
+  font-size: 10.5px;
+}
+.td-theme-print .td-box-body .td-paragraph {
+  font-size: 12.5px;
+}
+
+/* 公式尺寸微调 */
+.td-theme-print .td-block-math .katex {
+  font-size: 1.02em;
+}
+
+/* 页眉页脚品牌化 */
+.td-theme-print [data-teaching-page-header] {
+  font-family: var(--td-heading-font);
+  border-bottom-color: var(--td-brand-line);
+}
+.td-theme-print [data-teaching-page-header] span:first-child {
+  color: var(--td-brand-ink);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.td-theme-print [data-teaching-page-footer] {
+  font-family: var(--td-heading-font);
+  border-top-color: var(--td-brand-line);
+  color: color-mix(in srgb, var(--td-brand-ink) 70%, transparent);
+}
+
+/* 答案区淡底色 */
+.td-theme-print .td-question [class*="bg-zinc-50"] {
+  background: var(--td-brand-tint) !important;
+  border-radius: 4px;
+}
+
+/* rawMarkdown 继承 */
+.td-theme-print .td-raw-markdown {
+  font-size: 13px;
+  line-height: 1.62;
 }

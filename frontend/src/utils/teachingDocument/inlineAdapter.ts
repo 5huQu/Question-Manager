@@ -57,6 +57,8 @@ function marksToTiptap(inline: Extract<TeachingInline, { type: 'text' }>): Array
     const tiptapType = MARK_TO_TIPTAP[mark]
     if (tiptapType) marks.push({ type: tiptapType })
   }
+  // 行内字体覆盖：以 fontFamily mark 携带字体 id（不属于字符串 marks）
+  if (inline.font) marks.push({ type: 'fontFamily', attrs: { family: inline.font } })
   for (const [index, raw] of (inline.unknownMarks || []).entries()) {
     marks.push({ type: 'unknownMark', attrs: { data: JSON.stringify(raw ?? null), index } })
   }
@@ -109,11 +111,15 @@ function collectInline(node: JSONContent, out: TeachingInline[]): void {
   if (node.type === 'text') {
     const text = node.text ?? ''
     const marks: InlineMark[] = []
+    let font: string | undefined
     const unknownEntries: Array<{ index: number; raw: unknown }> = []
     for (const mark of node.marks || []) {
       const known = TIPTAP_TO_MARK[mark.type || '']
       if (known) {
         marks.push(known)
+      } else if (mark.type === 'fontFamily') {
+        const family = mark.attrs?.family
+        if (typeof family === 'string' && family) font = family
       } else if (mark.type === 'unknownMark') {
         let raw: unknown = null
         try { raw = JSON.parse(String(mark.attrs?.data ?? 'null')) } catch { raw = null }
@@ -130,9 +136,10 @@ function collectInline(node: JSONContent, out: TeachingInline[]): void {
       type: 'text',
       text,
       ...(deduped.length ? { marks: deduped } : {}),
+      ...(font ? { font } : {}),
       ...(unknownMarks.length ? { unknownMarks } : {}),
     }
-    if (text || deduped.length || unknownMarks.length) out.push(inline)
+    if (text || deduped.length || font || unknownMarks.length) out.push(inline)
     return
   }
   if (node.type === 'inlineMath') {

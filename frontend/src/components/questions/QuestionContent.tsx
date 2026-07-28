@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { BookOpen, X } from 'lucide-react'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { RichContent, richBlocksPlainText } from '@/components/RichContent'
@@ -180,10 +180,88 @@ export function ChoiceOptions({
   optionIndexOffset?: number
   optionDomAttributes?: (optionIndex: number) => Record<string, string | number | undefined>
 }) {
-  const layout = layoutOverride || choiceLayoutForTexts(options.map((option) => option.content), figures.some((figure) => Boolean(figure.path)))
-  const layoutClass = layout === 'four' ? 'quad' : layout === 'two' ? 'double' : layout === 'one' ? 'single' : layout
+  const hasFigures = figures.some((figure) => Boolean(figure.path))
+
+  // ─── 自适应测量：无显式 layout 时，根据实际渲染宽度决定列数 ───
+  const containerRef = useRef<HTMLDivElement>(null)
+  const probeRef = useRef<HTMLDivElement>(null)
+  const [adaptiveColumns, setAdaptiveColumns] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (layoutOverride) return
+    if (hasFigures || options.length !== 4) {
+      // 含图选项或非 4 选项：直接单列，无需测量
+      setAdaptiveColumns(1)
+      return
+    }
+    const container = containerRef.current
+    const probe = probeRef.current
+    if (!container || !probe) return
+
+    const measure = () => {
+      const containerWidth = container.clientWidth
+      if (containerWidth <= 0) return
+      const naturalWidths = Array.from(probe.children).map(
+        (child) => (child as HTMLElement).getBoundingClientRect().width,
+      )
+      const maxWidth = Math.max(...naturalWidths, 0)
+      const columnGap = 16 // .choice-options gap: 0.75rem 1rem
+      const fits = (columns: number) => columns * maxWidth + (columns - 1) * columnGap <= containerWidth
+      setAdaptiveColumns(fits(4) ? 4 : fits(2) ? 2 : 1)
+    }
+
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(container)
+    observer.observe(probe)
+    // 字体加载完成后重新测量（字体切换 / 异步字体加载）
+    const fonts = document.fonts
+    if (fonts?.ready) {
+      fonts.ready.then(() => measure()).catch(() => undefined)
+    }
+    return () => observer.disconnect()
+  }, [layoutOverride, options, hasFigures])
+
+  // ─── 布局决策：显式指定 > 测量结果 > 启发式回退 ───
+  const resolvedLayout = layoutOverride
+    || (adaptiveColumns === 4 ? 'four' : adaptiveColumns === 2 ? 'two' : adaptiveColumns === 1 ? 'one' : null)
+    || (choiceLayoutForTexts(options.map((option) => option.content), hasFigures) === 'quad' ? 'four'
+      : choiceLayoutForTexts(options.map((option) => option.content), hasFigures) === 'double' ? 'two' : 'one')
+
+  const isAdaptive = !layoutOverride && adaptiveColumns !== null
+  const layoutClass = resolvedLayout === 'four' ? 'quad' : resolvedLayout === 'two' ? 'double' : 'single'
+
   return (
-    <div className={`choice-options choice-options-${layoutClass}`} data-layout={layout}>
+    <div
+      ref={containerRef}
+      className={`choice-options ${isAdaptive ? '' : `choice-options-${layoutClass}`}`.trim()}
+      data-layout={isAdaptive ? `adaptive-${adaptiveColumns}` : resolvedLayout}
+      style={isAdaptive ? {
+        gridTemplateColumns: adaptiveColumns === 4
+          ? 'repeat(4, minmax(0, 1fr))'
+          : adaptiveColumns === 2
+            ? 'repeat(2, minmax(0, 1fr))'
+            : 'minmax(0, 1fr)',
+      } : undefined}
+    >
+      {/* 隐藏测量探针：以自然宽度渲染各选项，供自适应算法读取实际渲染宽度 */}
+      {!layoutOverride && !hasFigures && options.length === 4 ? (
+        <div
+          ref={probeRef}
+          aria-hidden="true"
+          className="pointer-events-none invisible absolute left-0 top-0 flex w-max"
+          style={{ gap: '1rem' }}
+        >
+          {options.map((option) => (
+            <div className="choice-option" key={`probe-${option.label}`} style={{ width: 'max-content' }}>
+              <span className="choice-label">{option.label}</span>
+              <div className="choice-markdown" style={{ width: 'max-content' }}>
+                <MarkdownContent content={withoutInlineFigureMarkers(option.content)} />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {options.map((option, index) => (
         <div
           className="choice-option"

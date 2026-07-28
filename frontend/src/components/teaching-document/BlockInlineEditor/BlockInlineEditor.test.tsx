@@ -116,6 +116,28 @@ describe('BlockInlineEditor: 基础编辑', () => {
     expect(last).toEqual([{ type: 'text', text: '加粗我', marks: ['bold', 'italic'] }])
   })
 
+  it('工具栏字体下拉对选区应用/移除字体', async () => {
+    let editorRef: Editor | undefined
+    const changes: TeachingInline[][] = []
+    const host = await renderEditorCapture([{ type: 'text', text: '改字体' }], (inlines) => changes.push(inlines), (editor) => { editorRef = editor })
+    const fontSelect = host.querySelector<HTMLSelectElement>('select[aria-label="字体"]')!
+    expect(fontSelect).toBeTruthy()
+    expect(Array.from(fontSelect.options).map((option) => option.value)).toContain('kaiti')
+    // 选中全部文本后应用楷体
+    await act(async () => { editorRef!.commands.selectAll() })
+    await act(async () => {
+      fontSelect.value = 'kaiti'
+      fontSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(changes[changes.length - 1]).toEqual([{ type: 'text', text: '改字体', font: 'kaiti' }])
+    // 切回“默认”移除字体覆盖
+    await act(async () => {
+      fontSelect.value = ''
+      fontSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(changes[changes.length - 1]).toEqual([{ type: 'text', text: '改字体' }])
+  })
+
   it('插入行内公式后内容包含 inlineMath', async () => {
     let editorRef: Editor | undefined
     const changes: TeachingInline[][] = []

@@ -76,20 +76,20 @@ function makePage(index: number, items: PaginatedPage['items']): PaginatedPage {
   return { index, items, usedHeight: 200, overflow: false, showDocumentHeader: index === 0 }
 }
 
-function renderPage(page: PaginatedPage, resolveQuestion?: (id: string) => unknown) {
+function renderPage(page: PaginatedPage, resolveQuestion?: (id: string) => unknown, layout = printLayout) {
   return renderToStaticMarkup(
     <PaperPageView
       page={page}
       document={teachingDoc}
       paper={DEFAULT_A4_PAPER}
-      printLayout={printLayout}
+      printLayout={layout}
       totalPages={2}
       resolvers={{ resolveQuestion: resolveQuestion as never }}
     />,
   )
 }
 
-describe('PaperPageView（A4 预览与打印页共享 renderer）', () => {
+describe('PaperPageView（纸张预览与打印页共享 renderer）', () => {
   it('renders a header spacer on the first page when showOnFirstPage=false（保守统一扣除）', () => {
     const html = renderPage(makePage(0, [wholeQuestionItem()]), () => question)
     const root = document.createElement('div')
@@ -113,6 +113,58 @@ describe('PaperPageView（A4 预览与打印页共享 renderer）', () => {
     root.innerHTML = html
     expect(root.querySelector(`[${TEACHING_DOM.pageFooter}]`)?.textContent).toContain('1 / 2')
     expect(root.querySelector(`[${TEACHING_DOM.pageIndex}="0"]`)).not.toBeNull()
+  })
+
+  it('renders all three header and footer slots from one shared document configuration', () => {
+    const layout = createDefaultPrintLayout(DEFAULT_A4_PAPER)
+    layout.header.showOnFirstPage = true
+    layout.header.slots = {
+      left: { type: 'documentTitle', align: 'left' },
+      center: { type: 'customText', text: '数学', align: 'center' },
+      right: { type: 'date', align: 'right', font: 'kaiti', fontSize: 12, bold: true, italic: true },
+    }
+    layout.footer.slots = {
+      left: { type: 'customText', text: '内部资料', align: 'left' },
+      center: { type: 'pageNumber', align: 'center' },
+      right: { type: 'totalPages', align: 'right' },
+    }
+    const html = `${renderPage(makePage(0, [wholeQuestionItem()]), () => question, layout)}${renderPage(makePage(1, [wholeQuestionItem()]), () => question, layout)}`
+    const root = document.createElement('div')
+    root.innerHTML = html
+    expect(root.querySelectorAll('[data-teaching-page-header]')).toHaveLength(2)
+    expect(root.textContent).toContain('三角函数专题')
+    expect(root.textContent).toContain('数学')
+    expect(root.textContent).toContain('内部资料')
+    expect(root.textContent).toContain('1 / 2')
+    expect(root.textContent).toContain('2 / 2')
+    const dateSlot = root.querySelector<HTMLElement>('[data-teaching-page-header] [data-chrome-slot="right"]')
+    expect(dateSlot?.style.fontSize).toBe('12px')
+    expect(dateSlot?.style.fontWeight).toBe('700')
+    expect(dateSlot?.style.fontStyle).toBe('italic')
+    expect(dateSlot?.style.fontFamily).toContain('Kaiti')
+  })
+
+  it('moves print chrome toward the physical page edge without changing its reserved height', () => {
+    const html = renderPage(makePage(1, [wholeQuestionItem()]), () => question)
+    const root = document.createElement('div')
+    root.innerHTML = html
+    const header = root.querySelector<HTMLElement>(`[${TEACHING_DOM.pageHeader}]`)
+    const footer = root.querySelector<HTMLElement>(`[${TEACHING_DOM.pageFooter}]`)
+    expect(header?.style.height).toBe('10mm')
+    expect(footer?.style.height).toBe('10mm')
+    expect(header?.style.transform).toBe('translateY(-7mm)')
+    expect(footer?.style.transform).toBe('translateY(7mm)')
+  })
+
+  it('keeps the footer in a fixed, non-shrinking page region', () => {
+    const html = renderPage(makePage(0, [wholeQuestionItem()]), () => question)
+    const root = document.createElement('div')
+    root.innerHTML = html
+    const content = root.querySelector<HTMLElement>(`[${TEACHING_DOM.pageContent}]`)
+    const footer = root.querySelector<HTMLElement>(`[${TEACHING_DOM.pageFooter}]`)
+    expect(content?.style.flex).toBe('1 1 0px')
+    expect(content?.style.minHeight).toBe('0px')
+    expect(footer?.style.height).toBe('10mm')
   })
 
   it('renders a stable placeholder when the question resolver fails（whole-block path）', () => {

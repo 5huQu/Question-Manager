@@ -1,6 +1,6 @@
 /**
  * 共享纸张页面视图
- * A4 预览与打印页复用同一个页面 DOM 和 item renderer，
+ * 纸张预览与打印页复用同一个页面 DOM 和 item renderer，
  * 保证预览与导出排版一致（含页眉页脚 chrome 与有效高度语义）。
  *
  * 首页语义：showOnFirstPage=false 时首页不渲染页眉内容，但分页按
@@ -11,13 +11,14 @@ import type { CSSProperties } from 'react'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import {
   TEACHING_DOM,
-  pageHeaderContent,
-  pageFooterContent,
-  formatPageNumber,
+  pageHeaderSlots,
+  pageFooterSlots,
   type PaginatedPage,
   type PaperSpec,
   type PrintLayoutSpec,
 } from '@/utils/teachingDocument'
+import type { PrintChromeSlotPosition } from '@/types/teachingDocument'
+import { PrintChrome, type PrintChromeSection } from './PrintChrome'
 import { TeachingDocumentFrame } from './TeachingDocumentRenderer'
 import {
   BlockRenderer,
@@ -43,6 +44,13 @@ export interface PaperPageViewProps {
   /** 附加到 section 的样式（预览缩放、CSS 变量等） */
   style?: CSSProperties
   onBlockSelect?: (blockId: string, pageIndex: number) => void
+  /** 预览中编辑的是同一份文档级配置，绝不按页持久化。 */
+  editingChromeSlot?: { section: PrintChromeSection; slot: PrintChromeSlotPosition } | null
+  onChromeSlotEdit?: (section: PrintChromeSection, slot: PrintChromeSlotPosition) => void
+  /** 双栏纸面内部只保留页眉页脚高度，实际 chrome 由纸面外层统一渲染。 */
+  reserveChrome?: boolean
+  /** 保留文档标题的布局高度但隐藏内容，供跨双栏标题统一覆盖。 */
+  reserveDocumentHeader?: boolean
 }
 
 export function PaperPageView({
@@ -57,12 +65,20 @@ export function PaperPageView({
   className,
   style,
   onBlockSelect,
+  editingChromeSlot,
+  onChromeSlotEdit,
+  reserveChrome = false,
+  reserveDocumentHeader = false,
 }: PaperPageViewProps) {
-  const title = document.title || '讲义'
-  const headerContent = pageHeaderContent(printLayout, title, page.index)
-  const footerContent = pageFooterContent(printLayout, page.index, totalPages)
+  const title = document.title || '文档'
+  const headerSlots = pageHeaderSlots(printLayout, page.index)
+  const footerSlots = pageFooterSlots(printLayout)
   const headerReserved = printLayout.header.enabled
   const footerReserved = printLayout.footer.enabled
+  // 页眉页脚仍占用原有的稳定分页高度；仅向纸张边缘移动到更自然的印刷位置。
+  // 至少保留 8mm 物理留白，避免不同打印机的不可打印区裁切内容。
+  const headerVisualOffsetMm = -Math.min(7, Math.max(0, paper.marginTopMm - 8))
+  const footerVisualOffsetMm = Math.min(7, Math.max(0, paper.marginBottomMm - 8))
 
   return (
     <section
@@ -90,23 +106,52 @@ export function PaperPageView({
         if (blockId) onBlockSelect(blockId, page.index)
       } : undefined}
     >
-      {headerContent ? (
-        <header {...{ [TEACHING_DOM.pageHeader]: '' }} style={{ height: `${printLayout.header.heightMm}mm` }}>
-          <span>{headerContent.title}</span>
-          {headerContent.subtitle ? <span>{headerContent.subtitle}</span> : null}
-        </header>
+      {reserveChrome && headerReserved ? (
+        <PrintChrome
+          section="header"
+          slots={printLayout.header.slots}
+          documentTitle={title}
+          documentType={document.documentType}
+          pageNumber={page.index + 1}
+          totalPages={totalPages}
+          printLayout={printLayout}
+          spacer
+        />
+      ) : headerSlots ? (
+        <PrintChrome
+          section="header"
+          slots={headerSlots}
+          documentTitle={title}
+          documentType={document.documentType}
+          pageNumber={page.index + 1}
+          totalPages={totalPages}
+          printLayout={printLayout}
+          activeSlot={editingChromeSlot?.section === 'header' ? editingChromeSlot.slot : undefined}
+          onSlotEdit={onChromeSlotEdit}
+          visualOffsetMm={headerVisualOffsetMm}
+        />
       ) : headerReserved ? (
-        <header
-          {...{ [TEACHING_DOM.pageHeader]: '' }}
-          data-header-spacer="true"
-          style={{ height: `${printLayout.header.heightMm}mm` }}
+        <PrintChrome
+          section="header"
+          slots={printLayout.header.slots}
+          documentTitle={title}
+          documentType={document.documentType}
+          pageNumber={page.index + 1}
+          totalPages={totalPages}
+          printLayout={printLayout}
+          spacer
+          visualOffsetMm={headerVisualOffsetMm}
         />
       ) : null}
 
-      <main {...{ [TEACHING_DOM.pageContent]: '' }}>
+      <main
+        {...{ [TEACHING_DOM.pageContent]: '' }}
+        style={{ flex: '1 1 0px', minHeight: 0, overflow: 'visible' }}
+      >
         <TeachingDocumentFrame
           document={document}
-          showTitle={page.showDocumentHeader}
+          showTitle={page.showDocumentHeader || reserveDocumentHeader}
+          className={reserveDocumentHeader ? 'td-document-reserve-header' : ''}
           surface="paper"
         >
           {page.items.map((item) => {
@@ -189,18 +234,41 @@ export function PaperPageView({
         </TeachingDocumentFrame>
       </main>
 
-      {footerContent ? (
-        <footer {...{ [TEACHING_DOM.pageFooter]: '' }} style={{ height: `${printLayout.footer.heightMm}mm` }}>
-          {footerContent.customText ? <span>{footerContent.customText}</span> : null}
-          <span>
-            {printLayout.footer.showPageNumber ? formatPageNumber(footerContent.pageNumber, totalPages) : ''}
-          </span>
-        </footer>
+      {reserveChrome && footerReserved ? (
+        <PrintChrome
+          section="footer"
+          slots={printLayout.footer.slots}
+          documentTitle={title}
+          documentType={document.documentType}
+          pageNumber={page.index + 1}
+          totalPages={totalPages}
+          printLayout={printLayout}
+          spacer
+        />
+      ) : footerSlots ? (
+        <PrintChrome
+          section="footer"
+          slots={footerSlots}
+          documentTitle={title}
+          documentType={document.documentType}
+          pageNumber={page.index + 1}
+          totalPages={totalPages}
+          printLayout={printLayout}
+          activeSlot={editingChromeSlot?.section === 'footer' ? editingChromeSlot.slot : undefined}
+          onSlotEdit={onChromeSlotEdit}
+          visualOffsetMm={footerVisualOffsetMm}
+        />
       ) : footerReserved ? (
-        <footer
-          {...{ [TEACHING_DOM.pageFooter]: '' }}
-          data-footer-spacer="true"
-          style={{ height: `${printLayout.footer.heightMm}mm` }}
+        <PrintChrome
+          section="footer"
+          slots={printLayout.footer.slots}
+          documentTitle={title}
+          documentType={document.documentType}
+          pageNumber={page.index + 1}
+          totalPages={totalPages}
+          printLayout={printLayout}
+          spacer
+          visualOffsetMm={footerVisualOffsetMm}
         />
       ) : null}
     </section>

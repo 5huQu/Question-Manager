@@ -104,7 +104,6 @@ describe('measureTeachingDocumentQuestions', () => {
       end: 12,
     })
     expect(measurement.regions.map((region) => region.type)).toEqual([
-      'heading',
       'stem',
       'options',
       'answer',

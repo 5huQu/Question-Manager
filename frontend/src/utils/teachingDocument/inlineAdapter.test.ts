@@ -56,6 +56,14 @@ describe('inlineAdapter: TeachingInline[] ↔ Tiptap 序列化', () => {
     ])
   })
 
+  it('行内字体 font 字段往返且与 marks 共存', () => {
+    expectRoundTrip([
+      { type: 'text', text: '默认' },
+      { type: 'text', text: '楷体加粗', marks: ['bold'], font: 'kaiti' },
+      { type: 'text', text: '仅字体', font: 'times' },
+    ])
+  })
+
   it('inlineMath 前后文本往返', () => {
     expectRoundTrip([
       { type: 'text', text: '设 ' },

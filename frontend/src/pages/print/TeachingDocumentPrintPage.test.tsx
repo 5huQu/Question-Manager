@@ -110,6 +110,18 @@ describe('TeachingDocumentPrintPage', () => {
     expect(payload.error.length).toBeGreaterThan(0)
   })
 
+  it('injects the saved document fonts into the print document', async () => {
+    const record = recordWith(3)
+    record.content.style = { bodyFont: 'kaiti', headingFont: 'songti' }
+    mocks.getDocument.mockResolvedValue(record)
+    renderPrintRoute('?docId=doc-1&revision=3')
+    await flush()
+    await flush()
+    const printRoot = container.querySelector<HTMLElement>('[data-teaching-print-document]')
+    expect(printRoot?.style.getPropertyValue('--td-body-font')).toContain('Kaiti SC')
+    expect(printRoot?.style.getPropertyValue('--td-heading-font')).toContain('Songti SC')
+  })
+
   it('notifies the main process once layout settles instead of waiting for the 30s timeout', async () => {
     vi.useFakeTimers()
     try {

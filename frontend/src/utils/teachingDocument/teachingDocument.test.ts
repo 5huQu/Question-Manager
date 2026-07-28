@@ -29,6 +29,94 @@ import {
 // ─── 文档解析与验证 ──────────────────────────────────────────────────────────
 
 describe('parseTeachingDocument', () => {
+  it('keeps only controlled question-spacing preferences', () => {
+    const base = {
+      version: 1,
+      documentType: 'lecture',
+      title: '间距测试',
+      metadata: {},
+      content: [],
+    }
+    expect(parseTeachingDocument({
+      ...base,
+      style: { questionSpacing: 'relaxed' },
+    }).document?.style?.questionSpacing).toBe('relaxed')
+    expect(parseTeachingDocument({
+      ...base,
+      style: { questionSpacing: '99px' },
+    }).document?.style?.questionSpacing).toBeUndefined()
+  })
+
+  it('keeps supported persisted print preferences', () => {
+    const { document } = parseTeachingDocument({
+      version: 1,
+      documentType: 'exam',
+      title: '期中测试',
+      metadata: {},
+      content: [],
+      style: {
+        print: {
+          headerSubtitle: '高三数学',
+          footerCustomText: '内部资料',
+          footerShowTotalPages: false,
+          showDocumentType: false,
+          header: {
+            left: { type: 'documentTitle', align: 'left' },
+            center: { type: 'customText', text: '高三数学', align: 'center' },
+            right: { type: 'date', font: 'kaiti', fontSize: 12, bold: true, italic: true },
+          },
+          ignored: 'value',
+        },
+      },
+    })
+    expect(document?.style?.print).toMatchObject({
+      header: {
+        left: { type: 'documentTitle' },
+        center: { type: 'customText', text: '高三数学' },
+      },
+      footer: {
+        left: { type: 'customText', text: '内部资料' },
+        center: { type: 'pageNumber' },
+      },
+      pageNumber: { showTotalPages: false },
+      showDocumentType: false,
+    })
+    expect(document?.style?.print?.header?.right).toMatchObject({
+      type: 'date', font: 'kaiti', fontSize: 12, bold: true, italic: true,
+    })
+  })
+
+  it('only keeps controlled page chrome typography options', () => {
+    const { document } = parseTeachingDocument({
+      version: 1,
+      documentType: 'lecture',
+      title: '测试讲义',
+      metadata: {},
+      content: [],
+      style: {
+        print: {
+          footer: {
+            center: {
+              type: 'pageNumber',
+              font: 'not-a-font',
+              fontSize: 99,
+              bold: 'yes',
+              italic: true,
+            },
+          },
+        },
+      },
+    })
+    expect(document?.style?.print?.footer?.center).toEqual({
+      type: 'pageNumber',
+      text: undefined,
+      align: undefined,
+      font: undefined,
+      fontSize: undefined,
+      bold: undefined,
+      italic: true,
+    })
+  })
   it('parses a valid document', () => {
     const json = {
       version: 1,

@@ -1,5 +1,7 @@
 import type { ParagraphBlock } from '@/types/teachingDocument'
 import {
+  compareInlineCursors,
+  cursorAtWordBoundary,
   inlineRangeHasVisibleContent,
   textAroundInlineCursor,
   type InlineRange,
@@ -108,7 +110,7 @@ export function planParagraphFragments(input: {
   const firstFit = maxFittingEnd(measurement, 0, firstAvailable)
   if (totalHeight <= pageContentHeight
     && firstFit < lines.length
-    && (firstFit < options.minLinesAtPageBottom || lines.length - firstFit < options.minLinesAtPageTop)) {
+    && firstFit < options.minLinesAtPageBottom) {
     return { mode: 'whole-next', diagnostics }
   }
 
@@ -116,6 +118,7 @@ export function planParagraphFragments(input: {
   let lineStart = 0
   let pageOffset = 0
   let available = firstAvailable
+  let rangeStart = lines[0].start
   let guard = 0
 
   while (lineStart < lines.length && guard <= lines.length + 2) {
@@ -185,10 +188,14 @@ export function planParagraphFragments(input: {
       }
     }
 
-    const range: InlineRange = {
-      start: lines[lineStart].start,
-      end: lines[lineEnd - 1].end,
-    }
+    const measuredEnd = lines[lineEnd - 1].end
+    const wordSafeEnd = lineEnd < lines.length
+      ? cursorAtWordBoundary(block.content, measuredEnd)
+      : measuredEnd
+    const rangeEnd = compareInlineCursors(block.content, rangeStart, wordSafeEnd) < 0
+      ? wordSafeEnd
+      : measuredEnd
+    const range: InlineRange = { start: rangeStart, end: rangeEnd }
     if (!inlineRangeHasVisibleContent(block.content, range)) {
       diagnostics.push({
         code: 'paragraph-range-invalid',
@@ -208,6 +215,7 @@ export function planParagraphFragments(input: {
       height: fragmentHeight(measurement, lineStart, lineEnd),
       continuation: 'single',
     })
+    rangeStart = rangeEnd
     lineStart = lineEnd
     pageOffset += 1
     available = pageContentHeight

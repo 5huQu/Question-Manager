@@ -22,6 +22,7 @@ import {
   tiptapDocToTeachingInlines,
 } from '@/utils/teachingDocument/inlineAdapter'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
+import { TEXT_FONT_OPTIONS } from '@/utils/teachingDocument/lectureFonts'
 import { createBlockEditorExtensions } from './extensions'
 
 export interface BlockInlineEditorProps {
@@ -32,6 +33,9 @@ export interface BlockInlineEditorProps {
   /** 保护模式原因；非空时编辑器只读 */
   protectedReason?: string
   ariaLabel?: string
+  /** 嵌入文档块时使用无边框编辑器，工具条改为选中文本后浮动显示 */
+  variant?: 'panel' | 'embedded'
+  toolbar?: 'inline' | 'floating' | 'none'
   /** 编辑器实例就绪回调（用于外部协调焦点/选区，也供测试驱动） */
   onEditorReady?: (editor: Editor) => void
 }
@@ -77,7 +81,15 @@ function insertSafeInlines(editor: Editor, inlines: TeachingInline[]): void {
   view.dispatch(tr)
 }
 
-export function BlockInlineEditor({ inlines, onChange, protectedReason, ariaLabel = '块内容编辑', onEditorReady }: BlockInlineEditorProps) {
+export function BlockInlineEditor({
+  inlines,
+  onChange,
+  protectedReason,
+  ariaLabel = '块内容编辑',
+  variant = 'panel',
+  toolbar = 'inline',
+  onEditorReady,
+}: BlockInlineEditorProps) {
   const [formulaDialogOpen, setFormulaDialogOpen] = useState(false)
   const editable = !protectedReason
   /** 最近一次由编辑器产生的内容签名，用于区分自身回显与外部更新 */
@@ -85,6 +97,7 @@ export function BlockInlineEditor({ inlines, onChange, protectedReason, ariaLabe
   const syncing = useRef(false)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  const [, refreshToolbar] = useState(0)
 
   const initialDoc = useRef(teachingInlinesToTiptapDoc(inlines))
   const editor = useEditor({
@@ -98,7 +111,9 @@ export function BlockInlineEditor({ inlines, onChange, protectedReason, ariaLabe
         'aria-label': ariaLabel,
         'aria-multiline': 'true',
         'data-block-inline-editor': '',
-        class: 'min-h-20 px-2.5 py-2 text-sm leading-6 text-zinc-900 outline-none dark:text-zinc-50',
+        class: variant === 'embedded'
+          ? 'min-h-0 px-0 py-1 text-sm leading-6 text-zinc-900 outline-none dark:text-zinc-50'
+          : 'min-h-20 px-2.5 py-2 text-sm leading-6 text-zinc-900 outline-none dark:text-zinc-50',
       },
       handleKeyDown: (_view, event) => {
         // 单块编辑器不允许 Enter 创建新段落/标题；Shift+Enter 插入 hardBreak
@@ -137,6 +152,19 @@ export function BlockInlineEditor({ inlines, onChange, protectedReason, ariaLabe
     if (editor) onEditorReadyRef.current?.(editor)
   }, [editor])
 
+  useEffect(() => {
+    if (!editor || toolbar !== 'floating') return
+    const update = () => refreshToolbar((value) => value + 1)
+    editor.on('selectionUpdate', update)
+    editor.on('focus', update)
+    editor.on('blur', update)
+    return () => {
+      editor.off('selectionUpdate', update)
+      editor.off('focus', update)
+      editor.off('blur', update)
+    }
+  }, [editor, toolbar])
+
   // 外部文档更新同步（undo/redo、revision reload、切换块）
   useEffect(() => {
     if (!editor) return
@@ -158,24 +186,31 @@ export function BlockInlineEditor({ inlines, onChange, protectedReason, ariaLabe
   }
 
   return (
-    <div className="space-y-1.5">
+    <div className={`relative ${variant === 'panel' ? 'space-y-1.5' : ''}`}>
       {protectedReason ? (
         <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50/40 p-2 text-[11px] leading-4 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           <span>{protectedReason}</span>
         </div>
-      ) : (
+      ) : toolbar === 'inline' ? (
         <div role="toolbar" aria-label="文字格式工具" className="flex items-center gap-0.5 rounded-md border border-zinc-200 bg-zinc-50/60 px-1 py-0.5 dark:border-zinc-800 dark:bg-zinc-900/30">
-          <MarkButton label="粗体" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold className="size-3.5" /></MarkButton>
-          <MarkButton label="斜体" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic className="size-3.5" /></MarkButton>
-          <MarkButton label="下划线" active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()}><UnderlineIcon className="size-3.5" /></MarkButton>
-          <MarkButton label="删除线" active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough className="size-3.5" /></MarkButton>
-          <MarkButton label="行内代码" active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()}><Code className="size-3.5" /></MarkButton>
-          <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-          <MarkButton label="插入行内公式" onClick={() => setFormulaDialogOpen(true)}><Sigma className="size-3.5" /></MarkButton>
+          <InlineFormattingControls editor={editor} onFormula={() => setFormulaDialogOpen(true)} />
         </div>
-      )}
-      <div className={`overflow-hidden rounded-md border bg-white focus-within:border-zinc-400 focus-within:ring-1 focus-within:ring-zinc-200 dark:bg-zinc-950 dark:focus-within:border-zinc-600 ${protectedReason ? 'border-amber-200 dark:border-amber-900/40' : 'border-zinc-200 dark:border-zinc-800'}`}>
+      ) : null}
+      {toolbar === 'floating' && !protectedReason && editor.isFocused && editor.state.selection.from !== editor.state.selection.to ? (
+        <div
+          role="toolbar"
+          aria-label="文字格式工具"
+          className="absolute bottom-full left-1/2 z-50 mb-1 flex -translate-x-1/2 items-center gap-0.5 rounded-lg border border-zinc-200 bg-white/95 px-1 py-0.5 shadow-lg backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/95"
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <InlineFormattingControls editor={editor} onFormula={() => setFormulaDialogOpen(true)} />
+        </div>
+      ) : null}
+      <div className={`${variant === 'embedded'
+        ? 'overflow-visible bg-transparent'
+        : `overflow-hidden rounded-md border bg-white focus-within:border-zinc-400 focus-within:ring-1 focus-within:ring-zinc-200 dark:bg-zinc-950 dark:focus-within:border-zinc-600 ${protectedReason ? 'border-amber-200 dark:border-amber-900/40' : 'border-zinc-200 dark:border-zinc-800'}`
+      }`}>
         <EditorContent editor={editor} />
       </div>
       {formulaDialogOpen ? (
@@ -190,5 +225,35 @@ export function BlockInlineEditor({ inlines, onChange, protectedReason, ariaLabe
         />
       ) : null}
     </div>
+  )
+}
+
+function InlineFormattingControls({ editor, onFormula }: { editor: Editor; onFormula: () => void }) {
+  return (
+    <>
+      <select
+        aria-label="字体"
+        value={String(editor.getAttributes('fontFamily').family || '')}
+        onChange={(event) => {
+          const value = event.target.value
+          if (value) editor.chain().focus().setFontFamily(value).run()
+          else editor.chain().focus().unsetFontFamily().run()
+        }}
+        className="h-7 max-w-28 cursor-pointer rounded bg-transparent px-1 text-[11px] text-zinc-600 outline-none hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-300 dark:hover:bg-zinc-800"
+      >
+        <option value="">默认</option>
+        {TEXT_FONT_OPTIONS.map((option) => (
+          <option key={option.id} value={option.id}>{option.label}</option>
+        ))}
+      </select>
+      <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+      <MarkButton label="粗体" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold className="size-3.5" /></MarkButton>
+      <MarkButton label="斜体" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic className="size-3.5" /></MarkButton>
+      <MarkButton label="下划线" active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()}><UnderlineIcon className="size-3.5" /></MarkButton>
+      <MarkButton label="删除线" active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough className="size-3.5" /></MarkButton>
+      <MarkButton label="行内代码" active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()}><Code className="size-3.5" /></MarkButton>
+      <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+      <MarkButton label="插入行内公式" onClick={onFormula}><Sigma className="size-3.5" /></MarkButton>
+    </>
   )
 }

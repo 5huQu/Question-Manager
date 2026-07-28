@@ -7,6 +7,7 @@ const path = require('node:path')
 const { initUpdateHandlers } = require('./updater.cjs')
 const { isAllowedExternalUrl, isSameAppOrigin, popupSecurityOptions } = require('./security.cjs')
 const { PdfExportController } = require('./pdf-export-lifecycle.cjs')
+const { buildPrintToPDFOptions } = require('./pdf-export-helpers.cjs')
 
 let serverProcess = null
 // 主应用窗口与已启动服务的 canonical origin。
@@ -266,10 +267,17 @@ function waitForPageReady(context, timeoutMs = 30000) {
   })
 }
 
-function runPythonVerify(pythonPath, scriptPath, pdfPath, expectedPages) {
+function runPythonVerify(pythonPath, scriptPath, pdfPath, expectedPages, paper) {
   return new Promise((resolve) => {
     const args = [scriptPath, pdfPath]
     if (expectedPages > 0) args.push('--expected-pages', String(expectedPages))
+    // 传递文档纸张物理尺寸（已含方向），供校验脚本按实际纸张验证 MediaBox，
+    // 不再假定 A4。paper 缺失或宽高无效时跳过尺寸校验。
+    const widthMm = paper ? Number(paper.widthMm) : NaN
+    const heightMm = paper ? Number(paper.heightMm) : NaN
+    if (Number.isFinite(widthMm) && widthMm > 0 && Number.isFinite(heightMm) && heightMm > 0) {
+      args.push('--expected-width-mm', String(widthMm), '--expected-height-mm', String(heightMm))
+    }
     const child = spawn(pythonPath, args, { stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
@@ -315,11 +323,12 @@ ipcMain.handle('pdf-export:start', async (event, options) => {
     return { success: false, error: '非法的导出请求来源。' }
   }
   const parentWindow = BrowserWindow.fromWebContents(event.sender)
+  const exportOptions = options || {}
   // 导出生命周期所有权统一由控制器（pdf-export-lifecycle.cjs）持有：
   // 每次 start 拥有独立 context；cancel 只标记 cancelled 并销毁当前 context 的窗口；
   // 并发锁由该 start 自己的 finally 最终释放，旧 start unwind 期间新 start 被锁挡住，
   // 旧 start 的 finally 不可能清理到新 context 的窗口。
-  return pdfExportController.runExport(options || {}, {
+  return pdfExportController.runExport(exportOptions, {
     appOrigin,
     showSaveDialog: (opts) => {
       const defaultName = `${(opts.title || '讲义').replace(/[/\\:*?"<>|]/g, '_')}.pdf`
@@ -348,14 +357,9 @@ ipcMain.handle('pdf-export:start', async (event, options) => {
     },
     // page-ready 监听必须在 loadURL 之前注册，调用顺序由控制器保证。
     waitForPageReady: (context) => waitForPageReady(context),
-    printToPDFOptions: {
-      marginsType: 1, // no margins
-      pageSize: 'A4',
-      printBackground: true,
-      landscape: false,
-      preferCSSPageSize: true,
-      displayHeaderFooter: false,
-    },
+    // printToPDF 纸张参数由前端传入的 PaperSpec 动态生成，不再硬编码 A4；
+    // 与打印页 @page { size: var(--td-page-size) } 同源，保证 MediaBox 与文档纸张一致。
+    printToPDFOptions: buildPrintToPDFOptions(exportOptions.paper),
     writeFile: (filePath, buffer) => fs.writeFileSync(filePath, buffer),
     unlink: (filePath) => fs.unlinkSync(filePath),
     statSize: (filePath) => fs.statSync(filePath).size,
@@ -367,7 +371,7 @@ ipcMain.handle('pdf-export:start', async (event, options) => {
       if (!fs.existsSync(pythonPath) || !fs.existsSync(verifyScript)) {
         return null
       }
-      return runPythonVerify(pythonPath, verifyScript, pdfPath, expectedPages)
+      return runPythonVerify(pythonPath, verifyScript, pdfPath, expectedPages, exportOptions.paper)
     },
   })
 })

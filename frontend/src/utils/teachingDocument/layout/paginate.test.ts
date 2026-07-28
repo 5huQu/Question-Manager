@@ -93,7 +93,7 @@ function longQuestionMeasurement(
   const question: QuestionItem = {
     id: block.questionId,
     serialNo: null,
-    questionNo: '1',
+    questionNo: '',
     stage: '高中',
     questionType: '解答题',
     difficultyScore: 3,
@@ -121,7 +121,7 @@ function longQuestionMeasurement(
     questionId: block.questionId,
     sourceIndex,
     totalHeight: 1220,
-    headingHeight: 20,
+    headingHeight: 0,
     fragmentChrome: { single: 20, start: 10, middle: 0, end: 10 },
     model,
     regions: model.regions.map((region) => ({
@@ -129,9 +129,9 @@ function longQuestionMeasurement(
       type: region.type,
       index: region.index,
       splitPolicy: region.splitPolicy,
-      height: region.kind === 'heading' ? 20 : 1200,
+      height: 1200,
       top: 0,
-      bottom: region.kind === 'heading' ? 20 : 1200,
+      bottom: 1200,
       paragraphMeasurement: region.kind === 'paragraph'
         ? paragraphLines(region.paragraph.id, sourceIndex, 60)
         : undefined,
@@ -169,6 +169,24 @@ describe('paginateTeachingDocument', () => {
       paper: DEFAULT_A4_PAPER,
     })
     expect(result.pages.map((page) => page.items.map((item) => item.blockId))).toEqual([['a'], ['math']])
+  })
+
+  it('reserves a spanning document header in both columns of the first sheet', () => {
+    const blocks = [paragraph('left'), paragraph('right')]
+    const result = paginateTeachingDocument({
+      document: documentWith(blocks),
+      measurements: measurements([
+        measurement('left', 850, { splitPolicy: 'never' }),
+        measurement('right', 850, { splitPolicy: 'never' }),
+      ], 100),
+      paper: DEFAULT_A4_PAPER,
+      documentHeaderSpanColumns: 2,
+    })
+    expect(result.pages).toHaveLength(2)
+    expect(result.pages[0].usedHeight).toBe(950)
+    expect(result.pages[1].usedHeight).toBe(950)
+    expect(result.pages[0].showDocumentHeader).toBe(true)
+    expect(result.pages[1].showDocumentHeader).toBe(false)
   })
 
   it('defines consecutive and trailing page breaks as explicit empty pages', () => {
@@ -239,7 +257,7 @@ describe('paginateTeachingDocument', () => {
     expect(result.diagnostics.some((item) => item.code === 'box-overflow')).toBe(true)
   })
 
-  it('lets allow start on the current page while auto moves an oversized box to a fresh page', () => {
+  it('lets auto and allow use safe box fragments on the current page', () => {
     const makeBox = (id: string, breakBehavior: 'allow' | 'auto'): BoxBlock => ({
       type: 'box',
       id,
@@ -273,8 +291,8 @@ describe('paginateTeachingDocument', () => {
     })
 
     const autoResult = run(auto)
-    expect(autoResult.pages[0].items.map((item) => item.blockId)).toEqual(['before'])
-    expect(autoResult.pages[1].items[0]).toMatchObject({
+    expect(autoResult.pages[0].items.map((item) => item.blockId)).toEqual(['before', 'auto-box'])
+    expect(autoResult.pages[0].items[1]).toMatchObject({
       kind: 'fragment',
       fragmentType: 'box',
       continuation: 'start',
@@ -370,10 +388,83 @@ describe('paginateTeachingDocument', () => {
     )
     expect(fragments).toHaveLength(2)
     expect(fragments.map((fragment) => fragment.continuation)).toEqual(['start', 'end'])
-    expect(fragments[0].regionItems[0].regionType).toBe('heading')
+    expect(fragments[0].regionItems[0].regionType).toBe('stem')
     expect(fragments[1].regionItems.some((region) => region.regionType === 'heading')).toBe(false)
     expect(result.diagnostics.some((item) => item.code === 'unsupported-split')).toBe(false)
     expect(paginateTeachingDocument(input)).toEqual(result)
+  })
+
+  it('splits a question that fits a fresh page instead of leaving the current page mostly blank', () => {
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'fresh-page-question',
+      questionId: 'fresh-page-question',
+    }
+    const result = paginateTeachingDocument({
+      document: documentWith([paragraph('before'), block]),
+      measurements: measurements([
+        measurement('before', 300),
+        measurement(block.id, 1220, {
+          blockType: 'question',
+          splitPolicy: 'children',
+          sourceIndex: 1,
+        }),
+      ]),
+      questionMeasurements: [longQuestionMeasurement(block, 1)],
+      paper: DEFAULT_A4_PAPER,
+      metrics: {
+        pageWidthPx: 800,
+        pageHeightPx: 1400,
+        contentWidthPx: 700,
+        contentHeightPx: 1300,
+      },
+    })
+    expect(result.pages.flatMap((page) => page.items).some((item) => item.kind === 'fragment' && item.blockId === block.id)).toBe(true)
+  })
+
+  it('keeps an avoid question whole and moves it to a fresh page', () => {
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'keep-question',
+      questionId: 'keep-question',
+      breakBehavior: 'avoid',
+    }
+    const result = paginateTeachingDocument({
+      document: documentWith([paragraph('before'), block]),
+      measurements: measurements([
+        measurement('before', 700),
+        measurement(block.id, 500, { blockType: 'question', splitPolicy: 'children', sourceIndex: 1 }),
+      ]),
+      questionMeasurements: [longQuestionMeasurement(block, 1)],
+      paper: DEFAULT_A4_PAPER,
+      metrics: { pageWidthPx: 800, pageHeightPx: 1400, contentWidthPx: 700, contentHeightPx: 1000 },
+    })
+    expect(result.pages.map((page) => page.items.map((item) => [item.kind, item.blockId]))).toEqual([
+      [['whole', 'before']],
+      [['whole', block.id]],
+    ])
+  })
+
+  it('starts a force-before question on a fresh page even when it fits', () => {
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'forced-question',
+      questionId: 'forced-question',
+      breakBehavior: 'force-before',
+    }
+    const result = paginateTeachingDocument({
+      document: documentWith([paragraph('before'), block]),
+      measurements: measurements([
+        measurement('before', 100),
+        measurement(block.id, 200, { blockType: 'question', splitPolicy: 'children', sourceIndex: 1 }),
+      ]),
+      paper: DEFAULT_A4_PAPER,
+      metrics: { pageWidthPx: 800, pageHeightPx: 1400, contentWidthPx: 700, contentHeightPx: 1000 },
+    })
+    expect(result.pages.map((page) => page.items.map((item) => item.blockId))).toEqual([
+      ['before'],
+      [block.id],
+    ])
   })
 
   it('falls back to the whole question when an internal region measurement is missing', () => {
@@ -383,7 +474,7 @@ describe('paginateTeachingDocument', () => {
       questionId: 'unsafe-question',
     }
     const questionMeasurement = longQuestionMeasurement(block, 0)
-    questionMeasurement.regions = questionMeasurement.regions.slice(0, 1)
+    questionMeasurement.regions = questionMeasurement.regions.slice(0, 0)
     const result = paginateTeachingDocument({
       document: documentWith([block]),
       measurements: measurements([

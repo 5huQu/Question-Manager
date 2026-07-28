@@ -4,8 +4,11 @@ import type {
   QuestionItem,
 } from '@/types'
 import type {
+  FigureAlignment,
+  InlineText,
   ParagraphBlock,
   QuestionBlock,
+  QuestionDisplayOptions,
 } from '@/types/teachingDocument'
 import { normalizeMarkdownForRender } from '@/components/MarkdownContent'
 import { choiceLayoutForTexts, type ChoiceLayout } from '@/utils/choiceLayout'
@@ -65,7 +68,13 @@ export interface QuestionFigureRegion extends QuestionRegionDescriptor {
   kind: 'figure'
   owner: 'stem' | 'analysis'
   figures: QuestionFigure[]
+  /** 用于讲义级尺寸覆盖的稳定题图 id。 */
+  figureKey?: string
   missingFigureId?: string
+  /** 讲义级图片宽度覆盖（mm） */
+  widthOverrideMm?: number
+  /** 讲义级对齐覆盖 */
+  alignmentOverride?: FigureAlignment
 }
 
 export interface QuestionOptionsRowRegion extends QuestionRegionDescriptor {
@@ -92,6 +101,17 @@ export interface QuestionLabelRegion extends QuestionRegionDescriptor {
   label: string
 }
 
+export type AnswerSpacePattern = 'blank' | 'lines' | 'grid'
+
+export interface QuestionAnswerSpaceRegion extends QuestionRegionDescriptor {
+  type: 'answer'
+  kind: 'answer-space'
+  /** 留空高度（mm） */
+  heightMm: number
+  /** 背景样式 */
+  pattern: AnswerSpacePattern
+}
+
 export type QuestionRuntimeRegion =
   | QuestionHeadingRegion
   | QuestionParagraphRegion
@@ -100,6 +120,7 @@ export type QuestionRuntimeRegion =
   | QuestionFigureRegion
   | QuestionOptionsRowRegion
   | QuestionAnswerRegion
+  | QuestionAnswerSpaceRegion
   | QuestionLabelRegion
 
 export interface QuestionRuntimeModel {
@@ -140,6 +161,7 @@ function contentRegions(input: {
   markdown: string
   figures: QuestionFigure[]
   startIndex: number
+  figureOverrides?: QuestionDisplayOptions['figureOverrides']
 }) {
   const regions: QuestionRuntimeRegion[] = []
   const usedFigures = new Set<QuestionFigure>()
@@ -226,6 +248,8 @@ function contentRegions(input: {
     pushText(normalized.slice(cursor, marker.index))
     const figure = input.figures.find((item) => figureIds(item).includes(marker![1]))
     if (figure) usedFigures.add(figure)
+    const figureKey = figure ? (figure.id || figure.blockId || '') : marker[1]
+    const override = input.figureOverrides?.[figureKey]
     regions.push({
       key: stableRegionKey(input.blockId, 'figure', index),
       type: 'figure',
@@ -234,7 +258,10 @@ function contentRegions(input: {
       splitPolicy: 'never',
       owner: input.type,
       figures: figure ? [figure] : [],
+      figureKey: figure ? (figure.id || figure.blockId || marker[1]) : marker[1],
       missingFigureId: figure?.path ? undefined : marker[1],
+      widthOverrideMm: override?.widthMm,
+      alignmentOverride: override?.alignment,
     })
     index += 1
     cursor = marker.index + marker[0].length
@@ -244,6 +271,8 @@ function contentRegions(input: {
     (figure) => !usedFigures.has(figure),
   )
   trailingFigures.forEach((figure) => {
+    const figureKey = figure.id || figure.blockId || ''
+    const override = input.figureOverrides?.[figureKey]
     regions.push({
       key: stableRegionKey(input.blockId, 'figure', index),
       type: 'figure',
@@ -252,13 +281,70 @@ function contentRegions(input: {
       splitPolicy: 'never',
       owner: input.type,
       figures: [figure],
+      figureKey: figure.id || figure.blockId || undefined,
       missingFigureId: figure.path
         ? undefined
         : figureIds(figure)[0] || '未标识题图',
+      widthOverrideMm: override?.widthMm,
+      alignmentOverride: override?.alignment,
     })
     index += 1
   })
   return regions
+}
+
+/** 题号（及可选分数）对应的行内内容，加粗题号、分数不加粗。 */
+function questionNumberInlines(displayNumber: string, score: number, showScore: boolean): InlineText[] {
+  if (!displayNumber) return []
+  if (showScore && score > 0) {
+    return [
+      { type: 'text', text: `${displayNumber}.`, marks: ['bold'] },
+      { type: 'text', text: `（${score} 分） ` },
+    ]
+  }
+  return [{ type: 'text', text: `${displayNumber}. `, marks: ['bold'] }]
+}
+
+/**
+ * 将题号内联到首个题干区域，实现“题号.题干”同行显示：
+ * - 首区域为段落：题号作为加粗行内内容前置；
+ * - 首区域为复杂 markdown：前置转义加粗题号（`**8.**` 开头避免被解析为有序列表）；
+ * - 首区域为公式/题图等：题号单独成段（少见兜底）。
+ */
+function inlineQuestionNumber(
+  regions: QuestionRuntimeRegion[],
+  blockId: string,
+  displayNumber: string,
+  score: number,
+  showScore: boolean,
+) {
+  if (!displayNumber) return
+  const first = regions[0]
+  if (first && first.kind === 'paragraph' && first.type === 'stem') {
+    first.paragraph.content = [
+      ...questionNumberInlines(displayNumber, score, showScore),
+      ...first.paragraph.content,
+    ]
+    return
+  }
+  if (first && first.kind === 'markdown' && first.type === 'stem') {
+    const scoreText = showScore && score > 0 ? `（${score} 分）` : ''
+    first.markdown = `**${displayNumber}.**${scoreText} ${first.markdown}`
+    return
+  }
+  const key = stableRegionKey(blockId, 'stem', -1)
+  regions.unshift({
+    key,
+    type: 'stem',
+    index: -1,
+    kind: 'paragraph',
+    splitPolicy: 'paragraph',
+    paragraph: {
+      type: 'paragraph',
+      id: key,
+      content: questionNumberInlines(displayNumber, score, showScore),
+    },
+  })
 }
 
 export function createQuestionRuntimeModel(
@@ -267,19 +353,14 @@ export function createQuestionRuntimeModel(
 ): QuestionRuntimeModel {
   const displayNumber = block.display?.displayNumber || question.questionNo || ''
   const score = block.display?.scoreOverride ?? question.totalScore
+  const showScore = block.display?.showScore === true
+  const figureOverrides = block.display?.figureOverrides
   const parsedChoice = parseChoiceQuestion(question.stemMarkdown)
   const stemMarkdown = parsedChoice?.stem || question.stemMarkdown || '题干为空'
   const stemFigures = figuresByUsage(question.figures, 'stem')
   const optionFigures = figuresByUsage(question.figures, 'options')
   const analysisFigures = figuresByUsage(question.figures, 'analysis')
-  const regions: QuestionRuntimeRegion[] = [{
-    key: stableRegionKey(block.id, 'heading', 0),
-    type: 'heading',
-    index: 0,
-    kind: 'heading',
-    splitPolicy: 'never',
-    keepWithNext: true,
-  }]
+  const regions: QuestionRuntimeRegion[] = []
 
   regions.push(...contentRegions({
     blockId: block.id,
@@ -287,16 +368,23 @@ export function createQuestionRuntimeModel(
     markdown: stemMarkdown,
     figures: stemFigures,
     startIndex: 0,
+    figureOverrides,
   }))
 
+  inlineQuestionNumber(regions, block.id, displayNumber, score, showScore)
+
   if (parsedChoice?.options.length) {
+    // 选项按排版行建模，使分页器可以在“行”之间换页，同时保证单个选项
+    // 不被截断。四栏=1 行、双栏=2 行、单栏=4 行；题图强制单栏。
     const layout = choiceLayoutForTexts(
       parsedChoice.options.map((option) => option.content),
-      optionFigures.some((figure) => Boolean(figure.path)),
+      optionFigures.length > 0,
     )
-    const rowSize = layout === 'quad' ? 4 : layout === 'double' ? 2 : 1
-    for (let optionStart = 0, rowIndex = 0; optionStart < parsedChoice.options.length; optionStart += rowSize, rowIndex += 1) {
-      const options = parsedChoice.options.slice(optionStart, optionStart + rowSize)
+    const columns = layout === 'quad' ? 4 : layout === 'double' ? 2 : 1
+    for (let optionStart = 0, rowIndex = 0; optionStart < parsedChoice.options.length; optionStart += columns, rowIndex += 1) {
+      const optionEnd = Math.min(parsedChoice.options.length, optionStart + columns)
+      const rowOptions = parsedChoice.options.slice(optionStart, optionEnd)
+      const rowLabels = new Set(rowOptions.map((option) => option.label))
       regions.push({
         key: stableRegionKey(block.id, 'options', rowIndex),
         type: 'options',
@@ -305,11 +393,11 @@ export function createQuestionRuntimeModel(
         splitPolicy: 'options',
         rowIndex,
         optionStart,
-        optionEnd: optionStart + options.length,
-        options,
+        optionEnd,
+        options: rowOptions,
         layout,
-        figures: optionFigures.filter((figure) => options.some(
-          (option) => String(figure.optionLabel || '').toUpperCase() === option.label,
+        figures: optionFigures.filter((figure) => (
+          figure.optionLabel ? rowLabels.has(figure.optionLabel) : rowIndex === 0
         )),
       })
     }
@@ -320,6 +408,7 @@ export function createQuestionRuntimeModel(
         markdown: parsedChoice.remainder,
         figures: [],
         startIndex: regions.filter((region) => region.type === 'stem').length,
+        figureOverrides,
       }))
     }
   }
@@ -351,7 +440,22 @@ export function createQuestionRuntimeModel(
       markdown: question.analysisMarkdown,
       figures: analysisFigures,
       startIndex: 0,
+      figureOverrides,
     }))
+  }
+
+  // 题目回答留空区域（讲义级覆盖，不影响题库）
+  const answerSpace = block.display?.answerSpace
+  if (answerSpace && answerSpace.heightMm > 0) {
+    regions.push({
+      key: stableRegionKey(block.id, 'answer', 999),
+      type: 'answer',
+      index: 999,
+      kind: 'answer-space',
+      splitPolicy: 'never',
+      heightMm: answerSpace.heightMm,
+      pattern: answerSpace.style ?? 'blank',
+    })
   }
 
   return {

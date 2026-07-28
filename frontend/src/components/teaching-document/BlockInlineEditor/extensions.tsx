@@ -16,6 +16,7 @@ import StarterKit from '@tiptap/starter-kit'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
+import { fontStackById } from '@/utils/teachingDocument/lectureFonts'
 
 // ─── UnknownMark：保留无法识别的 mark 原始数据 ───────────────────────────────
 
@@ -34,6 +35,47 @@ export const UnknownMark = Mark.create({
   },
   renderHTML({ HTMLAttributes }) {
     return ['span', mergeAttributes(HTMLAttributes, { 'data-unknown-mark': '' }), 0]
+  },
+})
+
+// ─── FontFamilyMark：行内字体覆盖（Word 式局部改字体）──────────────────
+
+/** 为自定义命令补充 Tiptap 类型，使 editor.chain().setFontFamily(...) 可被类型检查 */
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    fontFamily: {
+      setFontFamily: (family: string) => ReturnType
+      unsetFontFamily: () => ReturnType
+    }
+  }
+}
+
+export const FontFamilyMark = Mark.create({
+  name: 'fontFamily',
+  addAttributes() {
+    return {
+      family: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('data-font-id') || null,
+        renderHTML: (attributes) => {
+          const stack = fontStackById(attributes.family ? String(attributes.family) : undefined)
+          if (!stack) return {}
+          return { 'data-font-id': String(attributes.family), style: `font-family: ${stack}` }
+        },
+      },
+    }
+  },
+  parseHTML() {
+    return [{ tag: 'span[data-font-id]' }]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', mergeAttributes(HTMLAttributes), 0]
+  },
+  addCommands() {
+    return {
+      setFontFamily: (family) => ({ commands }) => commands.setMark('fontFamily', { family }),
+      unsetFontFamily: () => ({ commands }) => commands.unsetMark('fontFamily'),
+    }
   },
 })
 
@@ -180,6 +222,7 @@ export function createBlockEditorExtensions() {
       trailingNode: false,
     }),
     UnknownMark,
+    FontFamilyMark,
     UnknownInlineNode,
     InlineMathNode,
   ]

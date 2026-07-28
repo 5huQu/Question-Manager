@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { AlertTriangle, LoaderCircle } from 'lucide-react'
 import type { FigureAssetRef, TeachingDocumentV1 } from '@/types/teachingDocument'
 import {
-  DEFAULT_A4_PAPER,
+  resolveDocumentPaper,
   measureTeachingDocumentBoxes,
   measureTeachingDocument,
   measureTeachingDocumentParagraphs,
@@ -11,6 +11,8 @@ import {
   paginateTeachingDocument,
   createDefaultPrintLayout,
   effectivePaperMetrics,
+  isA3LandscapeSpread,
+  paperMetrics,
   waitForRenderReadiness,
   type GeometryAdapter,
   type BoxChromeGeometryAdapter,
@@ -30,6 +32,7 @@ import {
   type QuestionResolution,
 } from './blocks/BlockRenderer'
 import { PaperPageView } from './PaperPageView'
+import { A3TwoColumnSheetView } from './A3TwoColumnSheetView'
 
 const PREPARING_READINESS: RenderReadinessResult = {
   ready: false,
@@ -53,12 +56,18 @@ export interface A4PaginationPreviewProps {
   resolveQuestion?: (questionId: string) => QuestionResolution
   resolveFigure?: (asset: FigureAssetRef) => FigureResolution
   paper?: PaperSpec
+  /** 物理纸张；A3 横向时 paper 为逻辑 A4 页，sheetPaper 为 A3 横向纸面。 */
+  sheetPaper?: PaperSpec
   /** 打印布局（页眉页脚）；默认使用 createDefaultPrintLayout(paper)。 */
   printLayout?: PrintLayoutSpec
+  /** 字体 CSS 变量（如 --td-body-font / --td-heading-font），注入后测量与渲染同步生效。 */
+  fontVars?: Record<string, string>
   zoom?: number
   selectedBlockId?: string
   renderVersion?: string
   onBlockSelect?: (blockId: string, pageIndex: number) => void
+  editingChromeSlot?: { section: 'header' | 'footer'; slot: import('@/types/teachingDocument').PrintChromeSlotPosition } | null
+  onChromeSlotEdit?: (section: 'header' | 'footer', slot: import('@/types/teachingDocument').PrintChromeSlotPosition) => void
   /** 分页状态变化回调，供外部获取 pagination/readiness/generation */
   onPaginationState?: (state: A4PaginationState) => void
   /** 测试注入点：JSDOM 不提供真实 geometry。 */
@@ -73,12 +82,16 @@ export function A4PaginationPreview({
   document,
   resolveQuestion,
   resolveFigure,
-  paper = DEFAULT_A4_PAPER,
+  paper: paperProp,
+  sheetPaper: sheetPaperProp,
   printLayout: printLayoutProp,
+  fontVars,
   zoom = 0.8,
   selectedBlockId,
   renderVersion = '',
   onBlockSelect,
+  editingChromeSlot,
+  onChromeSlotEdit,
   onPaginationState,
   geometryAdapter,
   paragraphGeometryAdapter,
@@ -86,6 +99,13 @@ export function A4PaginationPreview({
   questionGeometryAdapter,
   readinessWait = waitForRenderReadiness,
 }: A4PaginationPreviewProps) {
+  const paper = useMemo(
+    () => paperProp ?? resolveDocumentPaper(document.style),
+    [paperProp, document.style],
+  )
+  const sheetPaper = sheetPaperProp ?? paper
+  const spread = isA3LandscapeSpread(sheetPaper)
+  const sheetMetrics = useMemo(() => paperMetrics(sheetPaper), [sheetPaper])
   const measurementRootRef = useRef<HTMLDivElement>(null)
   const generationRef = useRef(0)
   const [readiness, setReadiness] = useState<RenderReadinessResult>(PREPARING_READINESS)
@@ -157,6 +177,7 @@ export function A4PaginationPreview({
           boxChildQuestionMeasurements,
           paper,
           metrics,
+          documentHeaderSpanColumns: spread ? 2 : 1,
         })
         setPagination(paginationResult)
         onPaginationState?.({ pagination: paginationResult, readiness: nextReadiness, measurementGeneration: generation })
@@ -180,7 +201,7 @@ export function A4PaginationPreview({
       })
 
     return () => controller.abort()
-  }, [boxGeometryAdapter, document, geometryAdapter, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion])
+  }, [boxGeometryAdapter, document, fontVars, geometryAdapter, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion, spread])
 
   const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure'> = {
     resolveQuestion,
@@ -215,7 +236,10 @@ export function A4PaginationPreview({
   ) || 0
 
   return (
-    <div className="td-pagination-experiment min-w-0">
+    <div
+      className="td-pagination-experiment td-theme-print min-w-0"
+      style={fontVars as CSSProperties | undefined}
+    >
       <div
         aria-hidden="true"
         data-teaching-measure-root=""
@@ -243,7 +267,9 @@ export function A4PaginationPreview({
           </span>
         ) : (
           <>
-            <span className="font-medium">{pagination.pages.length} 页</span>
+            <span className="font-medium">
+              {spread ? `${Math.ceil(pagination.pages.length / 2)} 页 · 双栏` : `${pagination.pages.length} 页`}
+            </span>
             <span className="text-zinc-300">·</span>
             <span>{readiness.ready ? '资源与布局已稳定' : readiness.timedOut ? '资源准备超时，已降级测量' : '资源状态未完全稳定'}</span>
             <span>段落行 {paragraphLineCount}</span>
@@ -276,7 +302,41 @@ export function A4PaginationPreview({
       ) : null}
 
       <div className="space-y-5">
-        {(pagination?.pages || []).map((page) => (
+        {spread ? Array.from({ length: Math.ceil((pagination?.pages.length || 0) / 2) }, (_, sheetIndex) => {
+          const leftPage = pagination!.pages[sheetIndex * 2]
+          const rightPage = pagination!.pages[sheetIndex * 2 + 1]
+          return (
+            <div
+              key={`sheet:${sheetIndex}`}
+              className="relative mx-auto"
+              style={{ width: sheetMetrics.pageWidthPx * safeZoom, height: sheetMetrics.pageHeightPx * safeZoom }}
+            >
+              <A3TwoColumnSheetView
+                pages={[leftPage, rightPage]}
+                sheetIndex={sheetIndex}
+                sheetCount={Math.ceil(pagination!.pages.length / 2)}
+                logicalPageCount={pagination!.pages.length}
+                document={document}
+                sheetPaper={sheetPaper}
+                columnPaper={paper}
+                printLayout={printLayout}
+                pageProps={{
+                  resolvers: rendererProps,
+                  selectedBlockId,
+                  overflowBlockIds: overflowIdsByPage.get(leftPage.index),
+                  editingChromeSlot,
+                  onChromeSlotEdit,
+                  onBlockSelect,
+                }}
+                className="absolute left-0 top-0 border border-zinc-300 shadow-sm"
+                style={{
+                  transform: `scale(${safeZoom})`,
+                  transformOrigin: 'top left',
+                }}
+              />
+            </div>
+          )
+        }) : (pagination?.pages || []).map((page) => (
           <div
             key={page.index}
             className="relative mx-auto"
@@ -289,9 +349,11 @@ export function A4PaginationPreview({
               printLayout={printLayout}
               totalPages={pagination?.pages.length ?? 0}
               resolvers={rendererProps}
-              selectedBlockId={selectedBlockId}
-              overflowBlockIds={overflowIdsByPage.get(page.index)}
-              onBlockSelect={onBlockSelect}
+            selectedBlockId={selectedBlockId}
+            overflowBlockIds={overflowIdsByPage.get(page.index)}
+            editingChromeSlot={editingChromeSlot}
+            onChromeSlotEdit={onChromeSlotEdit}
+            onBlockSelect={onBlockSelect}
               className="absolute left-0 top-0 overflow-hidden border border-zinc-300 bg-white shadow-sm"
               style={{
                 transform: `scale(${safeZoom})`,

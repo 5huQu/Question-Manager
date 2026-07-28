@@ -63,6 +63,34 @@ describe('planParagraphFragments', () => {
     expect(result.mode).toBe('whole-next')
   })
 
+  it('moves one extra line to the next page instead of moving a long paragraph wholesale', () => {
+    const result = planParagraphFragments({
+      block: paragraph(),
+      measurement: lineMeasurement(8),
+      firstPageAvailableHeight: 150,
+      pageContentHeight: 200,
+    })
+    expect(result.mode).toBe('fragments')
+    if (result.mode !== 'fragments') return
+    expect(result.fragments).toHaveLength(2)
+    expect(result.fragments[0].lineEnd - result.fragments[0].lineStart).toBe(6)
+    expect(result.fragments[1].lineEnd - result.fragments[1].lineStart).toBe(2)
+  })
+
+  it('keeps a Chinese word intact across adjacent page fragments', () => {
+    const result = planParagraphFragments({
+      block: paragraph('高度明显超过'),
+      measurement: lineMeasurement(6),
+      firstPageAvailableHeight: 70,
+      pageContentHeight: 100,
+    })
+    expect(result.mode).toBe('fragments')
+    if (result.mode !== 'fragments') return
+    expect(result.fragments[0].range.end).toEqual({ inlineIndex: 0, textOffset: 2 })
+    expect(result.fragments[1].range.start).toEqual(result.fragments[0].range.end)
+    expect(result.fragments.at(-1)?.range.end).toEqual({ inlineIndex: 1 })
+  })
+
   it('moves the first fragment instead of leaving an orphan line', () => {
     const result = planParagraphFragments({
       block: paragraph(),

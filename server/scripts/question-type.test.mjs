@@ -51,4 +51,28 @@ assert.equal(inferQuestionType(geometryLetters, '由A、B、C、D四点的位置
 // strong selection prompt in the stem.
 assert.equal(inferQuestionType('已知点A、B、C、D共圆，求证四边形ABCD为圆内接四边形。', 'A'), '解答题')
 
+// Curve labels such as "C: y²=2px" must not be mistaken for choice markers.
+// The ordered-subsequence strategy skips the phantom C and still finds A-D.
+const curveLabelInline = [
+  '已知 O为坐标原点，抛物线 C: $y^{2}=2px(p>0)$的焦点为 F，点 B(-2,0)在 C的准线上，过 B的直线与 C交于不同的两点 M,N，则',
+  '',
+  'A. p=4 B. $\\overrightarrow{OM}\\cdot\\overrightarrow{ON}=20$ C. $\\frac{|MB|}{|MF|}\\geqslant\\sqrt{2}$ D. $\\frac{1}{|MF|}+\\frac{1}{|NF|}=\\frac{1}{2}$',
+].join('\n')
+assert.equal(hasReliableFourChoiceOptions(curveLabelInline), true)
+assert.equal(inferQuestionType(curveLabelInline, 'ABD'), '多选题')
+assert.equal(inferQuestionType(curveLabelInline, 'A'), '单选题')
+
+// Colon-separated inline options (OCR style) remain supported.
+const colonInline = '下列结论正确的是 A: 甲 B: 乙 C: 丙 D: 丁'
+assert.equal(hasReliableFourChoiceOptions(colonInline), true)
+assert.equal(inferQuestionType(colonInline, '故选B'), '单选题')
+
+// Curve label with colon followed by line-separated options is also fine.
+const curveLabelLineSeparated = [
+  '已知椭圆 C: $\\frac{x^2}{4}+\\frac{y^2}{3}=1$ 的左右焦点分别为 F1、F2，点 P 在 C 上，则',
+  'A. 1 B. 2 C. 3 D. 4',
+].join('\n')
+assert.equal(hasReliableFourChoiceOptions(curveLabelLineSeparated), true)
+assert.equal(inferQuestionType(curveLabelLineSeparated, 'AC'), '多选题')
+
 console.log('question type inference tests passed')

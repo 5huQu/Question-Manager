@@ -7,7 +7,7 @@
 /* ─── @page 规则 ────────────────────────────────────────────────────────────── */
 
 @page {
-  size: A4;
+  size: var(--td-page-size, A4);
   margin: 0;
 }
 
@@ -17,11 +17,11 @@
   background: #ffffff;
 }
 
-/* ─── 每个 A4 页面严格分页 ──────────────────────────────────────────────────── */
+/* ─── 每个纸张页面严格分页（宽高由 --td-page-width/height 驱动，同源文档纸张） ──────────────────────────────────────────────────── */
 
 [data-teaching-paper-page] {
-  width: 210mm;
-  height: 297mm;
+  width: var(--td-page-width);
+  height: var(--td-page-height);
   overflow: hidden;
   box-sizing: border-box;
   position: relative;
@@ -30,6 +30,24 @@
 }
 
 [data-teaching-paper-page] + [data-teaching-paper-page] {
+  break-before: page;
+}
+
+/* A3 横向双页拼版：两个逻辑 A4 页同处一个物理纸面，不在中缝分页。 */
+[data-teaching-paper-spread] {
+  width: var(--td-page-width);
+  height: var(--td-page-height);
+  overflow: hidden;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+[data-teaching-paper-spread] > [data-teaching-paper-page] {
+  break-before: auto;
+  break-after: auto;
+}
+
+[data-teaching-paper-spread] + [data-teaching-paper-spread] {
   break-before: page;
 }
 
@@ -75,8 +93,22 @@
   }
 
   /* 选中框和诊断浮层不打印 */
-  .td-block-selected {
+  .td-block-selected,
+  .td-node-selectable {
     outline: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+
+  .td-block-selected::after,
+  .td-node-selectable::after {
+    display: none !important;
+  }
+
+  /* 拖拽手柄、选中框、尺寸浮层等交互 chrome 不打印 */
+  [data-print-hide] {
+    display: none !important;
   }
 
   /* 暗色主题不污染纸张 */
@@ -118,12 +150,15 @@
 [data-teaching-page-header] {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 6px;
   font-size: 9px;
   line-height: 1.4;
   color: #71717a;
   border-bottom: 0.5px solid #e4e4e7;
   padding-bottom: 2mm;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 [data-teaching-page-footer] {
@@ -136,6 +171,8 @@
   color: #a1a1aa;
   border-top: 0.5px solid #e4e4e7;
   padding-top: 2mm;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 /* 首页页眉/页脚占位：showOnFirstPage=false 时不渲染内容，
@@ -150,10 +187,29 @@
   padding-top: 0;
 }
 
+.td-print-chrome-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  width: 100%;
+  min-width: 0;
+}
+
+.td-print-chrome-slot {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.td-print-chrome-align-left { text-align: left; }
+.td-print-chrome-align-center { text-align: center; }
+.td-print-chrome-align-right { text-align: right; }
+
 /* ─── 打印模式下的内容区（不改变宽度、字体、字号或行高） ───────────────────── */
 
 [data-teaching-page-content] {
-  flex: 1;
+  flex: 1 1 0;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -166,12 +222,16 @@
   }
 }
 
-/* ─── 字体确保与屏幕一致 ───────────────────────────────────────────────────── */
+/* ─── 字体与排版：继承文档保存的 CSS 变量 ─────────────────────────────────── */
+/*
+ * 纸张预览和独立打印页的外层都会注入 --td-body-font / --td-heading-font。
+ * 这里不能使用固定 Inter、字号或行距，否则 @media print 会与预览及编辑器脱节。
+ */
 
 [data-teaching-print-document] .td-document {
-  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
-  font-size: 15px;
-  line-height: 1.75;
+  font-family: var(--td-body-font, "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif);
+  font-size: var(--td-base-size, 15px);
+  line-height: var(--td-base-lh, 1.75);
   color: #18181b;
 }
 

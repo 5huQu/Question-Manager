@@ -5,7 +5,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import katex from 'katex'
-import { AlertTriangle, BookOpen, Box, HelpCircle, ImageOff, Lightbulb, ListChecks, PenLine, Pencil } from 'lucide-react'
+import { AlertTriangle, BookOpen, Box, CornerDownRight, HelpCircle, ImageOff, Lightbulb, ListChecks, PenLine, Pencil } from 'lucide-react'
 import type {
   BlockMathBlock,
   BoxBlock,
@@ -40,7 +40,10 @@ import {
   createQuestionRuntimeModel,
   type QuestionRuntimeModel,
   type QuestionRuntimeRegion,
+  type QuestionFigureRegion,
+  type QuestionAnswerSpaceRegion,
 } from '@/utils/teachingDocument/layout/questionRegions'
+import { CSS_PIXELS_PER_MM } from '@/utils/teachingDocument/layout/paper'
 import { assetUrl } from '@/utils/questionDisplay'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import {
@@ -49,6 +52,7 @@ import {
   MarkdownWithInlineFigures,
 } from '@/components/questions/QuestionContent'
 import { InlineContent } from './InlineContent'
+import { ImageResizeOverlay } from '../editor/ResizeHandles'
 
 // ─── Resolver 类型 ───────────────────────────────────────────────────────────
 
@@ -72,6 +76,13 @@ export type QuestionResolution =
   | { status: 'error'; message: string }
   | { status: 'missing'; message?: string }
   | undefined
+
+export interface QuestionLayoutEditor {
+  selected: boolean
+  contentWidthMm: number
+  previewFigureWidth: (figureKey: string, widthMm: number) => void
+  commitFigureWidth: (figureKey: string, widthMm: number) => void
+}
 
 // ─── 图标映射 ────────────────────────────────────────────────────────────────
 
@@ -315,16 +326,20 @@ function FigureBlockView({
   )
 }
 
-function questionLayoutOverride(layout: 'quad' | 'double' | 'single') {
+function questionLayoutOverride(layout: 'quad' | 'double' | 'single' | 'adaptive') {
+  // adaptive：不传显式 layout，由 ChoiceOptions 根据实际 DOM 测量宽度自适应决定列数
+  if (layout === 'adaptive') return undefined
   return layout === 'quad' ? 'four' : layout === 'double' ? 'two' : 'one'
 }
 
 function QuestionRegionContent({
   region,
   item,
+  layoutEditor,
 }: {
   region: QuestionRuntimeRegion
   item?: PaginatedQuestionRegionItem
+  layoutEditor?: QuestionLayoutEditor
 }) {
   if (region.kind === 'heading') return null
   if (region.kind === 'paragraph') {
@@ -342,9 +357,27 @@ function QuestionRegionContent({
     return <MarkdownContent className="text-sm leading-7" content={`$$${region.latex}$$`} />
   }
   if (region.kind === 'figure') {
+    const figureRegion = region as QuestionFigureRegion
     const visibleFigures = region.figures.filter((figure) => Boolean(figure.path))
+    const figureKey = figureRegion.figureKey || figureRegion.key
+    const widthStyle = figureRegion.widthOverrideMm
+      ? { width: `${figureRegion.widthOverrideMm * CSS_PIXELS_PER_MM}px`, maxWidth: '100%' }
+      : undefined
+    const alignClass = figureRegion.alignmentOverride
+      ? { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[figureRegion.alignmentOverride]
+      : ''
     return visibleFigures.length ? (
-      <FigureGallery figures={visibleFigures} className="my-3" />
+      <div className={`relative my-3 ${alignClass}`} style={widthStyle}>
+        <FigureGallery figures={visibleFigures} />
+        {layoutEditor?.selected ? (
+          <ImageResizeOverlay
+            currentWidthMm={figureRegion.widthOverrideMm ?? Math.min(layoutEditor.contentWidthMm, 100)}
+            maxWidthMm={layoutEditor.contentWidthMm}
+            onPreview={(widthMm) => layoutEditor.previewFigureWidth(figureKey, widthMm)}
+            onCommit={(widthMm) => layoutEditor.commitFigureWidth(figureKey, widthMm)}
+          />
+        ) : null}
+      </div>
     ) : (
       <div
         className="my-3 rounded-lg border border-dashed border-amber-300 bg-amber-50/40 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300"
@@ -389,7 +422,7 @@ function QuestionRegionContent({
   }
   if (region.kind === 'answer') {
     return (
-      <div className="border-t border-zinc-100 pt-2 dark:border-zinc-800">
+      <div className="mt-3 rounded-md bg-zinc-50/80 px-3 py-2 dark:bg-zinc-900/40">
         <span className="text-xs font-semibold text-zinc-500">参考答案：</span>
         <MarkdownWithInlineFigures
           className="mt-1 text-sm text-zinc-800 dark:text-zinc-200"
@@ -397,6 +430,27 @@ function QuestionRegionContent({
           figures={region.figures}
         />
       </div>
+    )
+  }
+  if (region.kind === 'answer-space') {
+    const spaceRegion = region as QuestionAnswerSpaceRegion
+    const heightPx = spaceRegion.heightMm * CSS_PIXELS_PER_MM
+    const patternStyle = spaceRegion.pattern === 'lines'
+      ? { backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 27px, #d4d4d8 27px, #d4d4d8 28px)' }
+      : spaceRegion.pattern === 'grid'
+        ? { backgroundImage: 'linear-gradient(#e4e4e7 1px, transparent 1px), linear-gradient(90deg, #e4e4e7 1px, transparent 1px)', backgroundSize: '20px 20px' }
+        : undefined
+    return (
+      <div
+        className="td-answer-space my-3 rounded border border-dashed border-zinc-200 dark:border-zinc-700"
+        style={{ height: `${heightPx}px`, ...patternStyle }}
+        aria-hidden="true"
+        {...{
+          [TEACHING_DOM.resource]: 'answer-space',
+          [TEACHING_DOM.resourceId]: region.key,
+          [TEACHING_DOM.resourceStatus]: 'ready',
+        }}
+      />
     )
   }
   return <span className="text-xs font-semibold text-zinc-500">{region.label}</span>
@@ -407,11 +461,13 @@ export function QuestionRuntimeContent({
   model,
   continuation = 'single',
   regionItems,
+  layoutEditor,
 }: {
   block: QuestionBlock
   model: QuestionRuntimeModel
   continuation?: 'single' | 'start' | 'middle' | 'end'
   regionItems?: PaginatedQuestionRegionItem[]
+  layoutEditor?: QuestionLayoutEditor
 }) {
   const marginClass = {
     single: 'my-4',
@@ -429,6 +485,7 @@ export function QuestionRuntimeContent({
   return (
     <div
       className={`td-question ${marginClass}`}
+      data-question-continuation={continuation}
       {...{
         [TEACHING_DOM.questionRoot]: '',
         [TEACHING_DOM.questionSourceId]: model.questionId,
@@ -462,13 +519,7 @@ export function QuestionRuntimeContent({
                 : {}),
             }}
           >
-            {region.kind === 'heading' ? (
-              <div className="mb-1.5 flex items-baseline gap-2">
-                {model.displayNumber ? <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{model.displayNumber}.</span> : null}
-                {model.score ? <span className="text-xs text-zinc-400">（{model.score} 分）</span> : null}
-                {model.questionType ? <span className="text-xs text-zinc-400">{model.questionType}</span> : null}
-              </div>
-            ) : <QuestionRegionContent region={region} item={item} />}
+            <QuestionRegionContent region={region} item={item} layoutEditor={layoutEditor} />
           </div>
         )
       })}
@@ -497,7 +548,19 @@ function QuestionBlockView({ block, resolveQuestion }: { block: QuestionBlock; r
     return <QuestionPlaceholder block={block} message={`题目不可用（ID: ${block.questionId || '未设置'}）`} status="missing" />
   }
 
-  return <QuestionRuntimeContent block={block} model={createQuestionRuntimeModel(block, question)} />
+  // 文档本地覆盖优先于题库内容
+  const effectiveQuestion = block.localContent ? { ...question, ...block.localContent } : question
+
+  return (
+    <>
+      {block.localContent ? (
+        <div className="mt-4">
+          <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50/60 px-1.5 py-0.5 text-[11px] font-normal tracking-wide text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">文档本地版本</span>
+        </div>
+      ) : null}
+      <QuestionRuntimeContent block={block} model={createQuestionRuntimeModel(block, effectiveQuestion)} />
+    </>
+  )
 }
 
 export function QuestionFragmentRenderer({
@@ -526,7 +589,7 @@ export function QuestionFragmentRenderer({
     >
       <QuestionRuntimeContent
         block={block}
-        model={createQuestionRuntimeModel(block, question)}
+        model={createQuestionRuntimeModel(block, block.localContent ? { ...question, ...block.localContent } : question)}
         continuation={item.continuation}
         regionItems={item.regionItems}
       />
@@ -572,56 +635,131 @@ export function QuestionPlaceholder({
   )
 }
 
+function BoxTitleText({
+  block,
+  templateLabel,
+  continuation,
+  editable,
+  onEditTitle,
+}: {
+  block: BoxBlock
+  templateLabel: string
+  continuation: 'single' | 'start' | 'middle' | 'end'
+  editable?: boolean
+  onEditTitle?: (boxId: string, title: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const suffix = continuation === 'middle' || continuation === 'end' ? '（续）' : ''
+
+  function startEdit() {
+    setDraft(block.title || templateLabel)
+    setEditing(true)
+  }
+  function commit() {
+    setEditing(false)
+    onEditTitle?.(block.id, draft.trim())
+  }
+
+  if (editing && editable) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onClick={(event) => event.stopPropagation()}
+        onFocus={(event) => event.target.select()}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') { event.preventDefault(); commit() }
+          else if (event.key === 'Escape') { event.preventDefault(); setEditing(false) }
+        }}
+        onBlur={commit}
+        aria-label="卡片标题"
+        placeholder={templateLabel}
+        className="min-w-0 flex-1 truncate bg-transparent text-sm font-semibold text-zinc-700 outline-none placeholder:font-normal placeholder:text-zinc-400 dark:text-zinc-200"
+      />
+    )
+  }
+  return (
+    <span
+      onClick={editable ? (event) => { event.stopPropagation(); startEdit() } : undefined}
+      title={editable ? '点击编辑卡片标题' : undefined}
+      className={`truncate text-sm font-semibold text-zinc-700 dark:text-zinc-200 ${editable ? 'cursor-text rounded decoration-zinc-300 underline-offset-2 hover:underline dark:decoration-zinc-600' : ''}`}
+    >
+      {block.title || templateLabel}
+      {suffix}
+    </span>
+  )
+}
+
 function BoxFrame({
   block,
   continuation = 'single',
   children,
+  titleEditable,
+  onEditTitle,
 }: {
   block: BoxBlock
   continuation?: 'single' | 'start' | 'middle' | 'end'
   children: ReactNode
+  titleEditable?: boolean
+  onEditTitle?: (boxId: string, title: string) => void
 }) {
   const template = getBoxTemplateOrFallback(block.templateId)
   const iconName = block.icon || template.defaultIcon
-  const marginAndRadius = {
-    single: 'my-5 rounded-lg',
-    start: 'mt-5 mb-0 rounded-t-lg',
-    middle: 'my-0 rounded-none',
-    end: 'mt-0 mb-5 rounded-b-lg',
-  }[continuation]
+  const isContinuationHeader = continuation === 'middle' || continuation === 'end'
+  const showContinuationLabel = continuation === 'start' || continuation === 'middle'
 
   return (
     <div
-      className={`td-box ${marginAndRadius} overflow-hidden border`}
+      className="td-box overflow-hidden border"
       {...{
         [TEACHING_DOM.boxRoot]: '',
         [TEACHING_DOM.boxTemplate]: block.templateId,
       }}
       data-tone={template.tone}
       data-break-behavior={block.breakBehavior}
+      data-continuation={continuation}
       style={{
         borderColor: `var(--box-${template.tone}-border)`,
       }}
     >
-      {template.showHeader || block.title ? (
-        <div
-          className="td-box-header flex min-w-0 items-center gap-2 px-4 py-2.5"
-          {...{ [TEACHING_DOM.boxHeader]: '' }}
-          style={{ background: `var(--box-${template.tone}-header)` }}
-        >
-          <BoxIcon name={iconName} className="size-4 shrink-0" />
-          <span className="truncate text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-            {block.title || template.label}
-            {continuation === 'middle' || continuation === 'end' ? '（续）' : ''}
-          </span>
-        </div>
-      ) : null}
+      {isContinuationHeader ? (
+        /* 续页栏：弱化标题，无图标、无 accent 线、无底色 */
+        (template.showHeader || block.title) ? (
+          <div
+            className="td-box-continuation-header"
+            {...{ [TEACHING_DOM.boxHeader]: '' }}
+          >
+            <span className="truncate">
+              {block.title || template.label}（续）
+            </span>
+          </div>
+        ) : null
+      ) : (
+        /* 完整标题栏：single / start */
+        (template.showHeader || block.title) ? (
+          <div
+            className="td-box-header flex min-w-0 items-center gap-2 px-4 py-2.5"
+            {...{ [TEACHING_DOM.boxHeader]: '' }}
+            style={{ background: `var(--box-${template.tone}-header)` }}
+          >
+            <BoxIcon name={iconName} className="size-4 shrink-0" />
+            <BoxTitleText block={block} templateLabel={template.label} continuation={continuation} editable={titleEditable} onEditTitle={onEditTitle} />
+          </div>
+        ) : null
+      )}
       <div
         className="td-box-body px-4 py-3"
         {...{ [TEACHING_DOM.boxBody]: '' }}
         style={{ background: `var(--box-${template.tone}-body)` }}
       >
         {children}
+        {showContinuationLabel ? (
+          <div className="td-box-continuation-label" aria-hidden="true">
+            ▸ 续下页
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -632,14 +770,18 @@ function BoxBlockView({
   resolvers,
   selectedBlockId,
   sourceIndex,
+  boxTitleEditable,
+  onEditBoxTitle,
 }: {
   block: BoxBlock
   resolvers: TeachingDocumentResolvers
   selectedBlockId?: string
   sourceIndex?: number
+  boxTitleEditable?: boolean
+  onEditBoxTitle?: (boxId: string, title: string) => void
 }) {
   return (
-    <BoxFrame block={block}>
+    <BoxFrame block={block} titleEditable={boxTitleEditable} onEditTitle={onEditBoxTitle}>
       {block.children.map((child, index) => (
         <BlockRenderer
           key={`${child.id}:${index}`}
@@ -663,15 +805,27 @@ export function BoxFragmentRenderer({
   item,
   resolvers,
   selectedBlockId,
+  showStrategyBadge,
+  renderEditableParagraph,
+  renderInsertPoint,
+  onSelectChild,
 }: {
   block: BoxBlock
   item: BoxFragmentPaginationItem
   resolvers: TeachingDocumentResolvers
   selectedBlockId?: string
+  /** 编辑视图显示当前分页策略徽章 */
+  showStrategyBadge?: boolean
+  /** 编辑视图可将分页后的段落片段替换成局部行内编辑器 */
+  renderEditableParagraph?: (block: ParagraphBlock, item: ParagraphBoxChildFragmentPaginationItem) => ReactNode
+  /** 编辑视图在一个完整子块结束处显示盒内插入点 */
+  renderInsertPoint?: (afterChildId: string) => ReactNode
+  /** 编辑视图点击盒内题目/子块时通知外层选中源子块 */
+  onSelectChild?: (childId: string) => void
 }) {
   return (
     <div
-      className={`td-box-fragment td-block-shell ${selectedBlockId === block.id ? 'td-block-selected' : ''}`}
+      className={`td-box-fragment td-block-shell relative ${selectedBlockId === block.id ? 'td-block-selected' : ''}`}
       {...{
         [TEACHING_DOM.fragment]: '',
         [TEACHING_DOM.fragmentType]: 'box',
@@ -681,18 +835,31 @@ export function BoxFragmentRenderer({
         [TEACHING_DOM.sourceIndex]: item.sourceIndex,
       }}
     >
+      {showStrategyBadge && item.continuation === 'single' && block.breakBehavior && block.breakBehavior !== 'auto' ? (
+        <span className="td-box-strategy-badge absolute right-2 top-1" data-edit-only="">
+          {block.breakBehavior}
+        </span>
+      ) : null}
       <BoxFrame block={block} continuation={item.continuation}>
         {item.childItems.map((childItem) => {
           const child = block.children[childItem.childIndex]
           if (!child || child.id !== childItem.childBlockId) return null
           if (childItem.kind === 'paragraph-child-fragment' && child.type === 'paragraph') {
             return (
-              <ParagraphFragmentRenderer
-                key={`paragraph-child:${childItem.childIndex}:${childItem.fragmentIndex}`}
-                block={child}
-                item={childItem}
-                selected={selectedBlockId === child.id}
-              />
+              <div key={`paragraph-child:${childItem.childIndex}:${childItem.fragmentIndex}`}>
+                {renderEditableParagraph
+                  ? renderEditableParagraph(child, childItem)
+                  : (
+                    <ParagraphFragmentRenderer
+                      block={child}
+                      item={childItem}
+                      selected={selectedBlockId === child.id}
+                    />
+                  )}
+                {(childItem.continuation === 'single' || childItem.continuation === 'end')
+                  ? renderInsertPoint?.(child.id)
+                  : null}
+              </div>
             )
           }
           if (childItem.kind === 'question-child-fragment' && child.type === 'question') {
@@ -703,23 +870,36 @@ export function BoxFragmentRenderer({
               if (childItem.fragmentIndex > 0) return null
               const status = resolution && 'status' in resolution ? resolution.status : 'missing'
               return (
-                <QuestionPlaceholder
+                <div
                   key={`question-child-fallback:${childItem.childIndex}`}
-                  block={child}
-                  message={status === 'loading'
-                    ? '题目加载中…'
-                    : status === 'error'
-                      ? `题目加载失败：${resolution && 'message' in resolution ? resolution.message : '未知错误'}`
-                      : `题目不可用（ID: ${child.questionId || '未设置'}）`}
-                  status={status === 'loading' ? 'loading' : status === 'error' ? 'error' : 'missing'}
-                  tone={status === 'error' ? 'error' : 'neutral'}
-                />
+                  onClick={(event) => {
+                    if (!onSelectChild) return
+                    event.stopPropagation()
+                    onSelectChild(child.id)
+                  }}
+                >
+                  <QuestionPlaceholder
+                    block={child}
+                    message={status === 'loading'
+                      ? '题目加载中…'
+                      : status === 'error'
+                        ? `题目加载失败：${resolution && 'message' in resolution ? resolution.message : '未知错误'}`
+                        : `题目不可用（ID: ${child.questionId || '未设置'}）`}
+                    status={status === 'loading' ? 'loading' : status === 'error' ? 'error' : 'missing'}
+                    tone={status === 'error' ? 'error' : 'neutral'}
+                  />
+                </div>
               )
             }
             return (
               <div
                 key={`question-child:${childItem.childIndex}:${childItem.fragmentIndex}`}
                 className={`td-question-fragment td-block-shell ${selectedBlockId === child.id ? 'td-block-selected' : ''}`}
+                onClick={(event) => {
+                  if (!onSelectChild) return
+                  event.stopPropagation()
+                  onSelectChild(child.id)
+                }}
                 {...{
                   [TEACHING_DOM.fragment]: '',
                   [TEACHING_DOM.fragmentType]: 'question',
@@ -734,7 +914,7 @@ export function BoxFragmentRenderer({
               >
                 <QuestionRuntimeContent
                   block={child}
-                  model={createQuestionRuntimeModel(child, resolution)}
+                  model={createQuestionRuntimeModel(child, child.localContent ? { ...resolution, ...child.localContent } : resolution)}
                   continuation={childItem.continuation}
                   regionItems={childItem.regionItems}
                 />
@@ -742,15 +922,23 @@ export function BoxFragmentRenderer({
             )
           }
           return (
-            <BlockRenderer
+            <div
               key={`whole-child:${childItem.childIndex}`}
-              block={child as TeachingBlock}
-              resolvers={resolvers}
-              parentBlockId={block.id}
-              sourceIndex={item.sourceIndex}
-              childIndex={childItem.childIndex}
-              selectedBlockId={selectedBlockId}
-            />
+              onClick={(event) => {
+                if (!onSelectChild) return
+                event.stopPropagation()
+                onSelectChild(child.id)
+              }}
+            >
+              <BlockRenderer
+                block={child as TeachingBlock}
+                resolvers={resolvers}
+                parentBlockId={block.id}
+                sourceIndex={item.sourceIndex}
+                childIndex={childItem.childIndex}
+                selectedBlockId={selectedBlockId}
+              />
+            </div>
           )
         })}
       </BoxFrame>
@@ -783,15 +971,21 @@ function SpacerBlockView({ block }: { block: SpacerBlock }) {
 function PageBreakBlockView({ block }: { block: PageBreakBlock }) {
   return (
     <div
-      className="td-page-break my-6 flex items-center gap-3"
+      className="td-page-break td-page-break-marker"
       data-block-id={block.id}
       data-block-type="pageBreak"
       data-break="page"
-      aria-label="分页标记"
+      aria-label="手动换页符"
     >
-      <div className="h-px flex-1 border-t border-dashed border-zinc-300 dark:border-zinc-700" />
-      <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">分页</span>
-      <div className="h-px flex-1 border-t border-dashed border-zinc-300 dark:border-zinc-700" />
+      <div className="td-page-break-marker-line">
+        <span />
+        <span className="td-page-break-marker-label">
+          <CornerDownRight className="size-3" />
+          换页
+          <span className="font-normal text-zinc-400">下一项从新页开始</span>
+        </span>
+        <span />
+      </div>
     </div>
   )
 }
@@ -855,6 +1049,8 @@ export function BlockRenderer({
   childIndex,
   selectedBlockId,
   rawMarkdownOverflowWarning,
+  boxTitleEditable,
+  onEditBoxTitle,
 }: {
   block: TeachingBlock
   resolvers: TeachingDocumentResolvers
@@ -864,6 +1060,9 @@ export function BlockRenderer({
   selectedBlockId?: string
   /** 分页诊断产生的 rawMarkdown 超页警告文本（仅 paper surface 传入）。 */
   rawMarkdownOverflowWarning?: string
+  /** 仅画布选中盒子本身时为真，允许点击标题行内编辑 */
+  boxTitleEditable?: boolean
+  onEditBoxTitle?: (boxId: string, title: string) => void
 }) {
   let content: ReactNode
   switch (block.type) {
@@ -883,7 +1082,7 @@ export function BlockRenderer({
       content = <QuestionBlockView block={block} resolveQuestion={resolvers.resolveQuestion} />
       break
     case 'box':
-      content = <BoxBlockView block={block} resolvers={resolvers} selectedBlockId={selectedBlockId} sourceIndex={sourceIndex} />
+      content = <BoxBlockView block={block} resolvers={resolvers} selectedBlockId={selectedBlockId} sourceIndex={sourceIndex} boxTitleEditable={boxTitleEditable} onEditBoxTitle={onEditBoxTitle} />
       break
     case 'divider':
       content = <DividerBlockView block={block} />

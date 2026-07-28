@@ -49,6 +49,7 @@ frontend/*_design.html
 /docs/export-template-integration.md
 /docs/updates.md
 /docs/archive/
+/docs/task/
 /tmp/
 
 # Logs and caches

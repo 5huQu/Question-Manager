@@ -10,7 +10,7 @@ import type {
   PrintLayoutSpec,
   RenderReadinessResult,
 } from '@/utils/teachingDocument'
-import { createDefaultPrintLayout, DEFAULT_A4_PAPER } from '@/utils/teachingDocument'
+import { createDefaultPrintLayout, createPaperSpec, DEFAULT_A4_PAPER, logicalPagePaper } from '@/utils/teachingDocument'
 import { A4PaginationPreview, type A4PaginationState } from './A4PaginationPreview'
 
 const ready: RenderReadinessResult = {
@@ -100,6 +100,32 @@ describe('A4PaginationPreview', () => {
     })
     expect(container.querySelectorAll('[data-teaching-page-index]')).toHaveLength(1)
     expect(container.textContent).toContain('1 页')
+  })
+
+  it('flows two logical columns through one shared A3 landscape sheet chrome', async () => {
+    const container = document.createElement('div')
+    root = createRoot(container)
+    const sheetPaper = createPaperSpec('A3', 'landscape')
+    const pagePaper = logicalPagePaper(sheetPaper)
+    const printLayout = createDefaultPrintLayout(pagePaper)
+    printLayout.header.showOnFirstPage = true
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={documentWith(['a', 'b'])}
+          paper={pagePaper}
+          sheetPaper={sheetPaper}
+          printLayout={printLayout}
+          geometryAdapter={geometry}
+          readinessWait={readinessWait}
+        />,
+      )
+    })
+    expect(container.querySelectorAll('[data-teaching-paper-spread]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-teaching-page-index]')).toHaveLength(2)
+    expect(container.querySelectorAll('[data-header-spacer="true"]')).toHaveLength(2)
+    expect(container.querySelectorAll('[data-teaching-paper-spread] [data-teaching-page-header]:not([data-header-spacer="true"])')).toHaveLength(1)
+    expect(container.textContent).toContain('1 页 · 双栏')
   })
 
   it('exposes diagnostics and keeps the original block selectable', async () => {

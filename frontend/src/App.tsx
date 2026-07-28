@@ -177,11 +177,14 @@ export default function App() {
       />
 
       <SidebarInset className="h-screen min-w-0 overflow-hidden transition-colors duration-150">
-        <AppPageHeader actions={
-          location.pathname === '/questions'
-            ? <QuestionBankHeaderActions />
-            : undefined
-        } />
+        {/* 讲义编辑器拥有独立顶栏，隐藏全局面包屑 */}
+        {/^\/teaching-documents\/.+/.test(location.pathname) ? null : (
+          <AppPageHeader actions={
+            location.pathname === '/questions'
+              ? <QuestionBankHeaderActions />
+              : undefined
+          } />
+        )}
         <div className="flex-1 overflow-auto" data-slot="app-scroll-container">
           <div
             className={`flex w-full flex-col gap-6 p-4 md:p-6 ${fluidContent ? 'max-w-none' : 'mx-auto max-w-7xl'}`}

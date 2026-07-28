@@ -21,14 +21,27 @@ import type {
   FigureAssetRef,
   FigureBlock,
   QuestionBlock,
+  QuestionDisplayOptions,
   SpacerBlock,
   TeachingBlock,
   TeachingDocument,
+  TeachingDocumentStyle,
+  TeachingDocumentPrintOptions,
+  PrintChromeAlignment,
+  PrintChromeContentType,
+  PrintChromeFont,
+  PrintChromeFontSize,
+  PrintChromeSectionOptions,
+  PrintChromeSlot,
+  PrintPageNumberFormat,
   TeachingDocumentV1,
   TeachingInline,
   InlineMark,
+  TeachingMarginPreset,
+  TeachingQuestionSpacing,
 } from '@/types/teachingDocument'
 import { getBoxTemplate } from './boxTemplates'
+import { TEXT_FONT_OPTIONS } from './lectureFonts'
 
 // ─── 常量 ────────────────────────────────────────────────────────────────────
 
@@ -42,6 +55,14 @@ const BOX_CHILD_TYPES = new Set([
 ])
 
 const VALID_MARKS = new Set<string>(['bold', 'italic', 'underline', 'strikethrough', 'code'])
+
+const VALID_MARGIN_PRESETS = new Set<string>(['compact', 'normal', 'relaxed'])
+const VALID_QUESTION_SPACING = new Set<string>(['compact', 'normal', 'relaxed'])
+const VALID_PRINT_CHROME_TYPES = new Set<PrintChromeContentType>(['none', 'customText', 'documentTitle', 'documentType', 'pageNumber', 'totalPages', 'date'])
+const VALID_PRINT_CHROME_ALIGNMENTS = new Set<PrintChromeAlignment>(['left', 'center', 'right'])
+const VALID_PAGE_NUMBER_FORMATS = new Set<PrintPageNumberFormat>(['number', 'page', 'fraction', 'page-total', 'dash'])
+const VALID_PRINT_CHROME_FONTS = new Set<PrintChromeFont>(['inherit', ...TEXT_FONT_OPTIONS.map((option) => option.id as PrintChromeFont)])
+const VALID_PRINT_CHROME_FONT_SIZES = new Set<PrintChromeFontSize>([8, 9, 10, 11, 12, 14])
 
 // ─── 确定性 ID ───────────────────────────────────────────────────────────────
 
@@ -110,10 +131,13 @@ function parseInlineArray(
           message: `文本包含 ${unknownMarks.length} 个暂不支持的 mark，原值已保留。`,
         })
       }
+      // 行内字体覆盖：仅接受非空字符串 id；渲染端对未知 id 会回退默认字体
+      const font = typeof node.font === 'string' && node.font ? node.font : undefined
       return {
         type: 'text',
         text: node.text,
         marks: marks?.length ? marks : undefined,
+        font,
         unknownMarks: unknownMarks?.length ? unknownMarks : undefined,
       }
     }
@@ -158,6 +182,39 @@ function parseFigureAssetRef(node: Record<string, unknown>): FigureAssetRef {
   return { type: 'legacyPath', path: '' }
 }
 
+// ─── 题目显示选项解析 ────────────────────────────────────────────────────────
+
+const VALID_ANSWER_SPACE_STYLES = new Set(['blank', 'lines', 'grid'])
+
+function parseAnswerSpace(raw: unknown): QuestionDisplayOptions['answerSpace'] | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const node = raw as Record<string, unknown>
+  const heightMm = Number(node.heightMm)
+  const style = String(node.style || '')
+  if (!Number.isFinite(heightMm) || heightMm <= 0) return undefined
+  if (!VALID_ANSWER_SPACE_STYLES.has(style)) return undefined
+  return { heightMm, style: style as 'blank' | 'lines' | 'grid' }
+}
+
+function parseFigureOverrides(raw: unknown): QuestionDisplayOptions['figureOverrides'] | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const node = raw as Record<string, unknown>
+  const result: Record<string, { widthMm: number; alignment?: 'left' | 'center' | 'right' }> = {}
+  let hasValid = false
+  for (const [key, value] of Object.entries(node)) {
+    if (!key || !value || typeof value !== 'object') continue
+    const entry = value as Record<string, unknown>
+    const widthMm = Number(entry.widthMm)
+    if (!Number.isFinite(widthMm) || widthMm <= 0) continue
+    const alignment = typeof entry.alignment === 'string' && ['left', 'center', 'right'].includes(entry.alignment)
+      ? entry.alignment as 'left' | 'center' | 'right'
+      : undefined
+    result[key] = { widthMm, alignment }
+    hasValid = true
+  }
+  return hasValid ? result : undefined
+}
+
 // ─── 块解析 ──────────────────────────────────────────────────────────────────
 
 function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue[]): TeachingBlock | null {
@@ -196,7 +253,7 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
       return {
         type: 'heading',
         id,
-        level: ([1, 2, 3, 4].includes(level) ? level : 2) as 1 | 2 | 3 | 4,
+        level: ([1, 2, 3, 4].includes(level) ? level : 3) as 1 | 2 | 3 | 4,
         content: parseInlineArray(node.content, issues, id),
       }
     }
@@ -218,6 +275,7 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
     case 'figure': {
       const alignment = String(node.alignment || 'center')
       const widthRatio = Number(node.widthRatio)
+      const widthMm = Number(node.widthMm)
       return {
         type: 'figure',
         id: extractId(node, 'fig', index),
@@ -225,20 +283,29 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
         alt: typeof node.alt === 'string' ? node.alt : undefined,
         alignment: (['left', 'center', 'right'].includes(alignment) ? alignment : 'center') as FigureBlock['alignment'],
         widthRatio: Number.isFinite(widthRatio) && widthRatio >= 0.1 && widthRatio <= 1 ? widthRatio : undefined,
+        widthMm: Number.isFinite(widthMm) && widthMm > 0 ? widthMm : undefined,
+        lockAspectRatio: typeof node.lockAspectRatio === 'boolean' ? node.lockAspectRatio : undefined,
         caption: typeof node.caption === 'string' ? node.caption : undefined,
       }
     }
     case 'question': {
       const display = node.display && typeof node.display === 'object' ? node.display as Record<string, unknown> : undefined
+      const breakBehavior = ['auto', 'avoid', 'force-before'].includes(String(node.breakBehavior || 'auto'))
+        ? String(node.breakBehavior || 'auto') as QuestionBlock['breakBehavior']
+        : 'auto'
       return {
         type: 'question',
         id: extractId(node, 'q', index),
         questionId: typeof node.questionId === 'string' ? node.questionId : '',
+        breakBehavior,
         display: display ? {
           showAnswer: typeof display.showAnswer === 'boolean' ? display.showAnswer : undefined,
           showAnalysis: typeof display.showAnalysis === 'boolean' ? display.showAnalysis : undefined,
+          showScore: typeof display.showScore === 'boolean' ? display.showScore : undefined,
           scoreOverride: typeof display.scoreOverride === 'number' ? display.scoreOverride : undefined,
           displayNumber: typeof display.displayNumber === 'string' ? display.displayNumber : undefined,
+          answerSpace: parseAnswerSpace(display.answerSpace),
+          figureOverrides: parseFigureOverrides(display.figureOverrides),
         } : undefined,
       } satisfies QuestionBlock
     }
@@ -286,10 +353,12 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
       return { type: 'divider', id: extractId(node, 'hr', index) }
     case 'spacer': {
       const heightEm = Number(node.heightEm)
+      const heightMm = Number(node.heightMm)
       return {
         type: 'spacer',
         id: extractId(node, 'sp', index),
         heightEm: Number.isFinite(heightEm) ? Math.min(8, Math.max(0.5, heightEm)) : 2,
+        heightMm: Number.isFinite(heightMm) && heightMm > 0 ? heightMm : undefined,
       } satisfies SpacerBlock
     }
     case 'pageBreak':
@@ -365,9 +434,131 @@ export function parseTeachingDocument(json: unknown): { document: TeachingDocume
     title: typeof root.title === 'string' ? root.title : '未命名文档',
     metadata: root.metadata && typeof root.metadata === 'object' && !Array.isArray(root.metadata) ? root.metadata as Record<string, unknown> : {},
     content: blocks,
+    style: parseDocumentStyle(root.style),
   }
 
   return { document, issues }
+}
+
+/**
+ * 解析文档级打印样式（字体、边距）。只接受受约束的 id / 枚举，
+ * 非法或缺省值返回 undefined（由上层回退默认）。不产生 issue：
+ * 样式属于展示偏好，字段缺失/非法不应干扰内容校验。
+ */
+function parseDocumentStyle(raw: unknown): TeachingDocumentStyle | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const node = raw as Record<string, unknown>
+  const bodyFont = typeof node.bodyFont === 'string' && node.bodyFont ? node.bodyFont : undefined
+  const headingFont = typeof node.headingFont === 'string' && node.headingFont ? node.headingFont : undefined
+  const marginPreset = typeof node.marginPreset === 'string' && VALID_MARGIN_PRESETS.has(node.marginPreset)
+    ? node.marginPreset as TeachingMarginPreset
+    : undefined
+  const questionSpacing = typeof node.questionSpacing === 'string' && VALID_QUESTION_SPACING.has(node.questionSpacing)
+    ? node.questionSpacing as TeachingQuestionSpacing
+    : undefined
+  const print = parseDocumentPrintOptions(node.print)
+  if (!bodyFont && !headingFont && !marginPreset && !questionSpacing && !print) return undefined
+  return { bodyFont, headingFont, marginPreset, questionSpacing, print }
+}
+
+function parseDocumentPrintOptions(raw: unknown): TeachingDocumentPrintOptions | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const node = raw as Record<string, unknown>
+  const boolean = (key: keyof TeachingDocumentPrintOptions) =>
+    typeof node[key] === 'boolean' ? node[key] as boolean : undefined
+  const text = (key: 'headerSubtitle' | 'footerCustomText') =>
+    typeof node[key] === 'string' && node[key].trim() ? node[key].trim().slice(0, 160) : undefined
+  const legacyHeaderSubtitle = text('headerSubtitle')
+  const legacyFooterText = text('footerCustomText')
+  const legacyHeaderShowTitle = boolean('headerShowTitle')
+  const legacyFooterShowPageNumber = boolean('footerShowPageNumber')
+  const legacyFooterShowTotalPages = boolean('footerShowTotalPages')
+  let header = parseChromeSection(node.header)
+  let footer = parseChromeSection(node.footer)
+  let pageNumber = parsePageNumberOptions(node.pageNumber)
+
+  // 旧单条文本配置读取后即升级为三栏；内容仍完整保留。
+  if (!header && (legacyHeaderSubtitle !== undefined || legacyHeaderShowTitle !== undefined)) {
+    header = legacyHeaderSubtitle
+      ? {
+          left: legacyHeaderShowTitle === false ? { type: 'none', align: 'left' } : { type: 'documentTitle', align: 'left' },
+          center: { type: 'customText', text: legacyHeaderSubtitle, align: 'center' },
+          right: { type: 'none', align: 'right' },
+        }
+      : {
+          center: legacyHeaderShowTitle === false ? { type: 'none', align: 'center' } : { type: 'documentTitle', align: 'center' },
+        }
+  }
+  if (!footer && (legacyFooterText !== undefined || legacyFooterShowPageNumber !== undefined)) {
+    footer = {
+      left: legacyFooterText ? { type: 'customText', text: legacyFooterText, align: 'left' } : { type: 'none', align: 'left' },
+      center: legacyFooterShowPageNumber === false ? { type: 'none', align: 'center' } : { type: 'pageNumber', align: 'center' },
+      right: { type: 'none', align: 'right' },
+    }
+  }
+  if (!pageNumber && legacyFooterShowTotalPages !== undefined) pageNumber = { showTotalPages: legacyFooterShowTotalPages }
+  const print: TeachingDocumentPrintOptions = {
+    headerEnabled: boolean('headerEnabled'),
+    headerShowOnFirstPage: boolean('headerShowOnFirstPage'),
+    footerEnabled: boolean('footerEnabled'),
+    header,
+    footer,
+    pageNumber,
+    showDocumentType: boolean('showDocumentType'),
+  }
+  return Object.values(print).some((value) => value !== undefined) ? print : undefined
+}
+
+function parseChromeSection(raw: unknown): PrintChromeSectionOptions | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const node = raw as Record<string, unknown>
+  const section: PrintChromeSectionOptions = {}
+  for (const position of ['left', 'center', 'right'] as const) {
+    const slot = parseChromeSlot(node[position])
+    if (slot) section[position] = slot
+  }
+  return Object.keys(section).length ? section : undefined
+}
+
+function parseChromeSlot(raw: unknown): PrintChromeSlot | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const node = raw as Record<string, unknown>
+  if (typeof node.type !== 'string' || !VALID_PRINT_CHROME_TYPES.has(node.type as PrintChromeContentType)) return undefined
+  const align = typeof node.align === 'string' && VALID_PRINT_CHROME_ALIGNMENTS.has(node.align as PrintChromeAlignment)
+    ? node.align as PrintChromeAlignment
+    : undefined
+  const text = node.type === 'customText' && typeof node.text === 'string'
+    ? node.text.trim().slice(0, 160)
+    : undefined
+  const font = typeof node.font === 'string' && VALID_PRINT_CHROME_FONTS.has(node.font as PrintChromeFont)
+    ? node.font as PrintChromeFont
+    : undefined
+  const fontSize = typeof node.fontSize === 'number' && VALID_PRINT_CHROME_FONT_SIZES.has(node.fontSize as PrintChromeFontSize)
+    ? node.fontSize as PrintChromeFontSize
+    : undefined
+  return {
+    type: node.type as PrintChromeContentType,
+    text: text || undefined,
+    align,
+    font,
+    fontSize,
+    bold: typeof node.bold === 'boolean' ? node.bold : undefined,
+    italic: typeof node.italic === 'boolean' ? node.italic : undefined,
+  }
+}
+
+function parsePageNumberOptions(raw: unknown): TeachingDocumentPrintOptions['pageNumber'] | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const node = raw as Record<string, unknown>
+  const format = typeof node.format === 'string' && VALID_PAGE_NUMBER_FORMATS.has(node.format as PrintPageNumberFormat)
+    ? node.format as PrintPageNumberFormat
+    : undefined
+  const prefix = typeof node.prefix === 'string' ? node.prefix.slice(0, 32) : undefined
+  const suffix = typeof node.suffix === 'string' ? node.suffix.slice(0, 32) : undefined
+  const showTotalPages = typeof node.showTotalPages === 'boolean' ? node.showTotalPages : undefined
+  return format !== undefined || prefix !== undefined || suffix !== undefined || showTotalPages !== undefined
+    ? { format, prefix, suffix, showTotalPages }
+    : undefined
 }
 
 // ─── 验证（只读检查） ────────────────────────────────────────────────────────
@@ -408,6 +599,26 @@ export function validateTeachingDocument(document: TeachingDocument): DocumentVa
         if (!block.questionId.trim()) {
           issues.push({ level: 'error', blockId: block.id, code: 'empty-question-ref', message: '题目块缺少有效的 questionId 引用。' })
         }
+        // 校验 answerSpace
+        if (block.display?.answerSpace) {
+          const { heightMm } = block.display.answerSpace
+          if (!Number.isFinite(heightMm) || heightMm <= 0) {
+            issues.push({ level: 'warning', blockId: block.id, code: 'invalid-answer-space', message: `题目回答留空高度无效: ${heightMm}。` })
+          } else if (heightMm > 500) {
+            issues.push({ level: 'warning', blockId: block.id, code: 'invalid-answer-space', message: `题目回答留空高度 ${heightMm}mm 超出合理上限 500mm。` })
+          }
+        }
+        // 校验 figureOverrides
+        if (block.display?.figureOverrides) {
+          for (const [key, override] of Object.entries(block.display.figureOverrides)) {
+            if (!key.trim()) {
+              issues.push({ level: 'warning', blockId: block.id, code: 'invalid-figure-override', message: '图片覆盖 key 不得为空。' })
+            }
+            if (!Number.isFinite(override.widthMm) || override.widthMm <= 0) {
+              issues.push({ level: 'warning', blockId: block.id, code: 'invalid-figure-override', message: `图片覆盖 "${key}" 的宽度无效: ${override.widthMm}。` })
+            }
+          }
+        }
         break
       case 'figure': {
         const asset = block.asset
@@ -422,6 +633,14 @@ export function validateTeachingDocument(document: TeachingDocument): DocumentVa
         }
         if (asset.type === 'documentAsset' && !asset.assetId.trim()) {
           issues.push({ level: 'error', blockId: block.id, code: 'invalid-figure-ref', message: '图片引用 documentAsset 缺少 assetId。' })
+        }
+        // 校验 widthMm
+        if (block.widthMm != null) {
+          if (!Number.isFinite(block.widthMm) || block.widthMm <= 0) {
+            issues.push({ level: 'warning', blockId: block.id, code: 'invalid-figure-width', message: `图片宽度 ${block.widthMm}mm 无效（必须 > 0）。` })
+          } else if (block.widthMm > 500) {
+            issues.push({ level: 'warning', blockId: block.id, code: 'invalid-figure-width', message: `图片宽度 ${block.widthMm}mm 超出合理上限 500mm。` })
+          }
         }
         break
       }
@@ -446,6 +665,14 @@ export function validateTeachingDocument(document: TeachingDocument): DocumentVa
       case 'spacer':
         if (block.heightEm < 0.5 || block.heightEm > 8) {
           issues.push({ level: 'warning', blockId: block.id, code: 'spacer-range', message: `留白高度 ${block.heightEm}em 超出建议范围 0.5~8em。` })
+        }
+        // 校验 heightMm
+        if (block.heightMm != null) {
+          if (!Number.isFinite(block.heightMm) || block.heightMm <= 0) {
+            issues.push({ level: 'warning', blockId: block.id, code: 'invalid-spacer-height', message: `留白高度 ${block.heightMm}mm 无效（必须 > 0）。` })
+          } else if (block.heightMm > 500) {
+            issues.push({ level: 'warning', blockId: block.id, code: 'invalid-spacer-height', message: `留白高度 ${block.heightMm}mm 超出合理上限 500mm。` })
+          }
         }
         break
       case 'heading':

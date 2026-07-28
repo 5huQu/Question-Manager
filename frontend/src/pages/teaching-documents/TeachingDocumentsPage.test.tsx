@@ -66,18 +66,18 @@ describe('TeachingDocumentsPage', () => {
 
   it('lists persisted documents and opens an existing document', () => {
     expect(container.textContent).toContain('函数讲义')
-    const open = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('函数讲义'))
-    act(() => open?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const row = [...container.querySelectorAll('[role="button"]')].find((el) => el.textContent?.includes('函数讲义'))
+    act(() => row?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(container.querySelector('[data-location]')?.textContent).toBe('/teaching-documents/doc-1')
   })
 
-  it('creates a lecture and navigates to its editor', async () => {
-    const create = [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === '新建讲义')
+  it('creates a document without exposing the internal document type', async () => {
+    const createTrigger = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('新建文档'))
     await act(async () => {
-      create?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      createTrigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    expect(mocks.createDocument).toHaveBeenCalledWith({ title: '未命名讲义', documentType: 'lecture' })
+    expect(mocks.createDocument).toHaveBeenCalledWith({ title: '未命名文档', documentType: 'lecture' })
     expect(container.querySelector('[data-location]')?.textContent).toBe('/teaching-documents/doc-new')
   })
 })

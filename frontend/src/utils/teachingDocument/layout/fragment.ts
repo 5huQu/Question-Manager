@@ -272,6 +272,44 @@ export function textAroundInlineCursor(inlines: TeachingInline[], cursor: Inline
   return { before, after }
 }
 
+/**
+ * Avoid a visual page boundary in the middle of a word-like text segment.
+ *
+ * Line measurement remains the primary pagination boundary. This only moves
+ * the cursor a few UTF-16 units backwards inside the same text inline, so
+ * Chinese compounds such as “明显” do not render as “明｜显” across pages.
+ * Both adjacent fragments must reuse the returned cursor to remain lossless.
+ */
+export function cursorAtWordBoundary(
+  inlines: TeachingInline[],
+  cursor: InlineCursor,
+  maxBackwardOffset = 4,
+): InlineCursor {
+  const normalized = normalizeInlineCursor(inlines, cursor)
+  if (normalized.textOffset === undefined || normalized.inlineIndex >= inlines.length) {
+    return normalized
+  }
+  const inline = inlines[normalized.inlineIndex]
+  if (inline.type !== 'text' || typeof Intl.Segmenter !== 'function') return normalized
+
+  const offset = normalized.textOffset
+  const segmenter = new Intl.Segmenter('zh-CN', { granularity: 'word' })
+  for (const segment of segmenter.segment(inline.text)) {
+    const start = segment.index
+    const end = start + segment.segment.length
+    if (segment.isWordLike
+      && start < offset
+      && offset < end
+      && offset - start <= Math.max(0, maxBackwardOffset)) {
+      return normalizeInlineCursor(inlines, {
+        inlineIndex: normalized.inlineIndex,
+        textOffset: start,
+      })
+    }
+  }
+  return normalized
+}
+
 export function inlineCursorLabel(cursor: InlineCursor) {
   return cursor.textOffset === undefined ? `${cursor.inlineIndex}` : `${cursor.inlineIndex}:${cursor.textOffset}`
 }

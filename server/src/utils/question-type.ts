@@ -11,12 +11,31 @@ export function normalizeChoiceMarkers(value: string) {
   const source = String(value || '')
   const lineMatches = Array.from(source.matchAll(/(?:^|\n)[ \t]*([A-D])\s*[.．、:：]\s*/g))
   if (lineMatches.length >= 4) return source
-  let markerCount = 0
-  const marked = source.replace(/(?<![A-Za-z])([A-D])\s*[.．、:：]\s*/g, (match, label: string, offset: number) => {
-    markerCount += 1
-    return `${offset === 0 ? '' : '\n'}${label}. `
-  })
-  return markerCount >= 4 ? marked : source
+  // Collect all inline marker candidates. Curve labels such as "C: y²=2px"
+  // also match, so instead of replacing every candidate we greedily extract
+  // an ordered A→B→C→D subsequence and only normalize those four markers.
+  const candidates = Array.from(source.matchAll(/(?<![A-Za-z])([A-D])\s*[.．、:：]\s*/g))
+  if (candidates.length < 4) return source
+  const sequence: (typeof candidates)[number][] = []
+  let expected = 0
+  for (const match of candidates) {
+    if (match[1] === 'ABCD'[expected]) {
+      sequence.push(match)
+      expected += 1
+    }
+    if (expected === 4) break
+  }
+  if (expected < 4) return source
+  let result = ''
+  let last = 0
+  for (const match of sequence) {
+    const index = match.index || 0
+    result += source.slice(last, index)
+    result += `${index === 0 ? '' : '\n'}${match[1]}. `
+    last = index + match[0].length
+  }
+  result += source.slice(last)
+  return result
 }
 
 export function hasFourChoiceOptions(value: string) {

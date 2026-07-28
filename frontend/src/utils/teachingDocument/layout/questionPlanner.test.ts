@@ -10,7 +10,7 @@ function question(stemMarkdown: string, patch: Partial<QuestionItem> = {}): Ques
   return {
     id: 'q1',
     serialNo: null,
-    questionNo: '1',
+    questionNo: '',
     stage: '高中',
     questionType: '解答题',
     difficultyScore: 3,
@@ -100,14 +100,14 @@ function measurement(
 }
 
 describe('planQuestionFragments', () => {
-  it('moves heading with the first two stem lines and covers the paragraph continuously', () => {
+  it('splits the stem paragraph continuously across pages', () => {
     const block: QuestionBlock = {
       type: 'question',
       id: 'question-block',
       questionId: 'q1',
     }
     const item = question('甲乙丙丁戊己')
-    const measured = measurement(block, item, { heading: 10, paragraph: 120 }, 6)
+    const measured = measurement(block, item, { paragraph: 120 }, 6)
     const plan = planQuestionFragments({
       block,
       measurement: measured,
@@ -118,17 +118,15 @@ describe('planQuestionFragments', () => {
     expect(plan.fragments).toHaveLength(2)
     expect(plan.fragments[0].pageOffset).toBe(1)
     expect(plan.fragments.map((fragment) => fragment.continuation)).toEqual(['start', 'end'])
-    expect(plan.fragments[0].regionItems[0].regionType).toBe('heading')
-    expect(plan.fragments[1].regionItems.some((region) => region.regionType === 'heading')).toBe(false)
+    expect(plan.fragments[0].regionItems[0].regionType).toBe('stem')
     const paragraphItems = plan.fragments
       .flatMap((fragment) => fragment.regionItems)
       .filter((region) => region.kind === 'question-paragraph-fragment')
     expect(paragraphItems).toHaveLength(2)
     expect(paragraphItems[0].range.end).toEqual(paragraphItems[1].range.start)
-    expect(plan.diagnostics.some((diagnostic) => diagnostic.code === 'question-heading-orphan')).toBe(false)
   })
 
-  it('preserves option order while splitting by the precomputed visual rows', () => {
+  it('splits choices into indivisible visual rows', () => {
     const block: QuestionBlock = {
       type: 'question',
       id: 'question-block',
@@ -168,7 +166,7 @@ describe('planQuestionFragments', () => {
     })).toEqual(plan)
   })
 
-  it('does not leave a single-option visual row at the page bottom', () => {
+  it('moves the whole options region to the next page when it does not fit', () => {
     const block: QuestionBlock = {
       type: 'question',
       id: 'question-block',

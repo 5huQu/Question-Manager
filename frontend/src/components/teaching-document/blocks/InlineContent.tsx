@@ -9,6 +9,7 @@
 import { useMemo, type ReactNode } from 'react'
 import katex from 'katex'
 import type { TeachingInline, InlineMark } from '@/types/teachingDocument'
+import { fontStackById } from '@/utils/teachingDocument/lectureFonts'
 import {
   sliceTeachingInlines,
   TEACHING_DOM,
@@ -75,13 +76,17 @@ function wrapWithMarks(text: string, marks?: InlineMark[]): ReactNode {
   return result
 }
 
-function TextSpan({ text, marks, unknownMarks }: { text: string; marks?: InlineMark[]; unknownMarks?: unknown[] }) {
+function TextSpan({ text, marks, font, unknownMarks }: { text: string; marks?: InlineMark[]; font?: string; unknownMarks?: unknown[] }) {
   const content = wrapWithMarks(text, marks)
-  if (!unknownMarks?.length) return <span {...{ [TEACHING_DOM.inlineContent]: '' }}>{content}</span>
+  // 行内字体覆盖：fontStackById 对未知 id 返回 undefined → 不加样式、继承默认字体
+  const stack = fontStackById(font)
+  const fontStyle = stack ? { fontFamily: stack } : undefined
+  if (!unknownMarks?.length) return <span style={fontStyle} {...{ [TEACHING_DOM.inlineContent]: '' }}>{content}</span>
   return (
     <span
       className="td-inline-degraded rounded-sm border-b border-dotted border-amber-500"
       data-unknown-mark-count={unknownMarks.length}
+      style={fontStyle}
       title={`${unknownMarks.length} 个文本格式暂不支持，原始 mark 已保留`}
     >
       <span {...{ [TEACHING_DOM.inlineContent]: '' }}>{content}</span>
@@ -111,7 +116,7 @@ export function InlineContent({ inlines, range }: { inlines: TeachingInline[]; r
           case 'text':
             return (
               <span key={key} {...contract}>
-                <TextSpan text={inline.text} marks={inline.marks} unknownMarks={inline.unknownMarks} />
+                <TextSpan text={inline.text} marks={inline.marks} font={inline.font} unknownMarks={inline.unknownMarks} />
               </span>
             )
           case 'inlineMath':

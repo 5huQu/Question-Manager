@@ -1,5 +1,6 @@
 import type { RenderDiagnostic, RenderReadinessResult } from './types'
-import type { PaginationResult } from './types'
+import type { PaginationResult, PaperSpec } from './types'
+import { paperSpecsEqual } from './paper'
 
 // ─── Export Readiness ─────────────────────────────────────────────────────────
 
@@ -30,6 +31,13 @@ export interface ExportReadinessInput {
   autosaveFailed: boolean
   /** 当前 measurement generation 是否属于最新 */
   measurementGenerationCurrent: boolean
+  /** 用于渲染/分页的文档纸张（由 resolveDocumentPaper 派生）。 */
+  paper?: PaperSpec
+  /**
+   * 导出期望纸张（由导出面板经 IPC / URL 传入，用于 printToPDF MediaBox）。
+   * 与 paper 不一致时产生降级 warning（不阻塞），提示输出可能与预览不一致。
+   */
+  expectedPaper?: PaperSpec | null
 }
 
 /** 阻止导出的诊断 code */
@@ -96,6 +104,8 @@ export function evaluateExportReadiness(input: ExportReadinessInput): ExportRead
     hasRevisionConflict,
     autosaveFailed,
     measurementGenerationCurrent,
+    paper,
+    expectedPaper,
   } = input
 
   const blockingDiagnostics: RenderDiagnostic[] = []
@@ -183,6 +193,16 @@ export function evaluateExportReadiness(input: ExportReadinessInput): ExportRead
       code: 'question-resource-unresolved',
       severity: 'warning',
       message: `${renderReadiness.failedImages.length} 张图片加载失败，已使用稳定占位。`,
+    })
+  }
+
+  // 文档纸张与导出期望纸张不匹配：PDF MediaBox 将与预览/分页所用纸张不一致，
+  // 产生降级 warning（不阻塞导出，由调用方决定如何提示）。
+  if (paper && expectedPaper && !paperSpecsEqual(paper, expectedPaper)) {
+    warnings.push({
+      code: 'paper-mismatch',
+      severity: 'warning',
+      message: `文档纸张（${paper.widthMm}×${paper.heightMm}mm ${paper.orientation}）与导出期望纸张（${expectedPaper.widthMm}×${expectedPaper.heightMm}mm ${expectedPaper.orientation}）不一致，输出可能与预览不符。`,
     })
   }
 

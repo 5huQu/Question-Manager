@@ -2,17 +2,20 @@ import type {
   BoxBlock,
   BoxChildBlock,
   TeachingBlock,
+  TeachingDocumentStyle,
   TeachingDocumentV1,
 } from '@/types/teachingDocument'
 
 export type TeachingDocumentCommand =
   | { type: 'replaceDocument'; document: TeachingDocumentV1 }
   | { type: 'setTitle'; title: string; mergeKey?: string }
+  | { type: 'setStyle'; patch: Partial<TeachingDocumentStyle>; mergeKey?: string }
   | { type: 'insertBlock'; block: TeachingBlock; afterBlockId?: string }
   | { type: 'updateBlock'; blockId: string; patch: Partial<TeachingBlock>; mergeKey?: string }
   | { type: 'deleteBlock'; blockId: string }
   | { type: 'duplicateBlock'; blockId: string }
   | { type: 'moveBlock'; blockId: string; direction: -1 | 1 }
+  | { type: 'reorderBlocks'; order: string[]; mergeKey?: string }
   | { type: 'insertBoxChild'; boxId: string; child: BoxChildBlock; afterChildId?: string }
   | { type: 'updateBoxChild'; boxId: string; childId: string; patch: Partial<BoxChildBlock>; mergeKey?: string }
   | { type: 'deleteBoxChild'; boxId: string; childId: string }
@@ -34,14 +37,14 @@ function createEditorId(prefix = 'block') {
 export function newTeachingBlock(type: TeachingBlock['type']): TeachingBlock {
   const id = createEditorId(type)
   switch (type) {
-    case 'heading': return { type, id, level: 2, content: [{ type: 'text', text: '新标题' }] }
+    case 'heading': return { type, id, level: 3, content: [{ type: 'text', text: '新标题' }] }
     case 'paragraph': return { type, id, content: [{ type: 'text', text: '' }] }
     case 'blockMath': return { type, id, latex: '' }
-    case 'figure': return { type, id, asset: { type: 'documentAsset', assetId: '' }, alignment: 'center', widthRatio: 0.8 }
-    case 'question': return { type, id, questionId: '', display: { showAnswer: false, showAnalysis: false } }
+    case 'figure': return { type, id, asset: { type: 'documentAsset', assetId: '' }, alignment: 'center', widthRatio: 0.8, widthMm: 80, lockAspectRatio: true }
+    case 'question': return { type, id, questionId: '', breakBehavior: 'auto', display: { showAnswer: false, showAnalysis: false } }
     case 'box': return { type, id, templateId: 'concept', title: '知识点', breakBehavior: 'auto', children: [] }
     case 'divider': return { type, id }
-    case 'spacer': return { type, id, heightEm: 2 }
+    case 'spacer': return { type, id, heightEm: 2, heightMm: 10 }
     case 'pageBreak': return { type, id }
     case 'rawMarkdown': return { type, id, markdown: '', reason: 'user-inserted' }
     case 'unknown': return { type, id, originalType: 'unknown', rawData: null }
@@ -71,11 +74,19 @@ function moveAt<T>(items: T[], index: number, direction: -1 | 1) {
 export function applyTeachingDocumentCommand(document: TeachingDocumentV1, command: TeachingDocumentCommand): TeachingDocumentV1 {
   if (command.type === 'replaceDocument') return command.document
   if (command.type === 'setTitle') return { ...document, title: command.title }
+  if (command.type === 'setStyle') return { ...document, style: { ...document.style, ...command.patch } }
   const content = document.content
   if (command.type === 'insertBlock') {
     const index = command.afterBlockId ? content.findIndex((block) => block.id === command.afterBlockId) + 1 : content.length
     const safeIndex = Math.max(0, Math.min(content.length, index))
     return { ...document, content: [...content.slice(0, safeIndex), command.block, ...content.slice(safeIndex)] }
+  }
+  if (command.type === 'reorderBlocks') {
+    if (command.order.length !== content.length) return document
+    const blockMap = new Map(content.map((block) => [block.id, block]))
+    const next = command.order.map((id) => blockMap.get(id))
+    if (next.some((block) => !block)) return document
+    return { ...document, content: next as TeachingBlock[] }
   }
   const targetId = 'blockId' in command ? command.blockId : command.boxId
   const blockIndex = content.findIndex((block) => block.id === targetId)

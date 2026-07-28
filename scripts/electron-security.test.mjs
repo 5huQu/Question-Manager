@@ -5,7 +5,7 @@ import path from 'node:path'
 
 const require = createRequire(import.meta.url)
 const { isAllowedExternalUrl, isSameAppOrigin, popupSecurityOptions } = require('../electron/security.cjs')
-const { validatePdfExportOptions, buildPrintUrl } = require('../electron/pdf-export-helpers.cjs')
+const { validatePdfExportOptions, buildPrintToPDFOptions, buildPrintUrl } = require('../electron/pdf-export-helpers.cjs')
 const { PdfExportController } = require('../electron/pdf-export-lifecycle.cjs')
 
 const appUrl = 'http://127.0.0.1:8797'
@@ -78,6 +78,72 @@ assert.equal(
   'http://127.0.0.1:60000/print/teaching-document?docId=x&revision=0',
 )
 
+// ─── 纸张参数校验（可执行测试） ─────────────
+// paper 可省略；提供时 size/orientation/宽高必须合法。
+assert.equal(validatePdfExportOptions({ documentId: 'd', paper: null }), null)
+assert.equal(validatePdfExportOptions({
+  documentId: 'd',
+  paper: { size: 'A3', orientation: 'landscape', widthMm: 420, heightMm: 297, marginTopMm: 22, marginRightMm: 20, marginBottomMm: 22, marginLeftMm: 20 },
+}), null)
+assert.equal(validatePdfExportOptions({ documentId: 'd', paper: 'A4' }), 'paper 参数无效。')
+assert.equal(validatePdfExportOptions({ documentId: 'd', paper: { size: 'B5' } }), '纸张尺寸无效。')
+assert.equal(validatePdfExportOptions({ documentId: 'd', paper: { orientation: 'diagonal' } }), '纸张方向无效。')
+assert.equal(validatePdfExportOptions({ documentId: 'd', paper: { widthMm: -1 } }), '纸张宽度无效。')
+assert.equal(validatePdfExportOptions({ documentId: 'd', paper: { widthMm: 210, heightMm: 0 } }), '纸张高度无效。')
+
+// ─── 打印 URL 附带纸张参数（可执行测试） ─────────────
+// 提供 paper 时 JSON 序列化附加到查询串，供打印页交叉校验。
+{
+  const paper = { size: 'A4', orientation: 'portrait', widthMm: 210, heightMm: 297, marginTopMm: 18, marginRightMm: 16, marginBottomMm: 18, marginLeftMm: 16 }
+  const url = buildPrintUrl('http://127.0.0.1:51234', 'doc-1', 3, paper)
+  const parsed = new URL(url)
+  assert.equal(parsed.searchParams.get('docId'), 'doc-1')
+  assert.equal(parsed.searchParams.get('revision'), '3')
+  assert.deepEqual(JSON.parse(parsed.searchParams.get('paper')), paper)
+}
+
+// ─── printToPDF 参数生成（可执行测试）：绝不硬编码 A4 ─────────────
+// A4 portrait：物理尺寸 210×297mm → 英寸 pageSize。
+{
+  const opts = buildPrintToPDFOptions({ size: 'A4', orientation: 'portrait', widthMm: 210, heightMm: 297 })
+  assert.equal(opts.preferCSSPageSize, true)
+  assert.equal(opts.marginsType, 1)
+  assert.equal(opts.landscape, false)
+  assert.ok(Math.abs(opts.pageSize.width - 210 / 25.4) < 1e-9)
+  assert.ok(Math.abs(opts.pageSize.height - 297 / 25.4) < 1e-9)
+}
+// A4 landscape：PaperSpec 宽高已含方向（297×210），pageSize 直接用物理尺寸，不二次旋转。
+{
+  const opts = buildPrintToPDFOptions({ size: 'A4', orientation: 'landscape', widthMm: 297, heightMm: 210 })
+  assert.ok(Math.abs(opts.pageSize.width - 297 / 25.4) < 1e-9)
+  assert.ok(Math.abs(opts.pageSize.height - 210 / 25.4) < 1e-9)
+  assert.equal(opts.landscape, false)
+}
+// A3 landscape：420×297mm。
+{
+  const opts = buildPrintToPDFOptions({ size: 'A3', orientation: 'landscape', widthMm: 420, heightMm: 297 })
+  assert.ok(Math.abs(opts.pageSize.width - 420 / 25.4) < 1e-9)
+  assert.ok(Math.abs(opts.pageSize.height - 297 / 25.4) < 1e-9)
+}
+// paper 缺失或宽高无效：不硬编码 A4，仅依赖打印页 CSS @page 尺寸。
+{
+  const fallback = buildPrintToPDFOptions(undefined)
+  assert.equal(fallback.pageSize, undefined)
+  assert.equal(fallback.preferCSSPageSize, true)
+  const invalid = buildPrintToPDFOptions({ size: 'A4', widthMm: 0, heightMm: 297 })
+  assert.equal(invalid.pageSize, undefined)
+}
+// 任何输出都不得出现 A4 字符串硬编码。
+assert.ok(!JSON.stringify(buildPrintToPDFOptions({ size: 'A4', orientation: 'portrait', widthMm: 210, heightMm: 297 })).includes('"A4"'))
+
+// ─── print.css 无 A4 硬编码（grep 测试） ─────────────
+// 除 CSS 变量回退 var(--td-page-size, A4) 外，打印样式不得出现 size: A4 / 210mm / 297mm。
+{
+  const printCss = fs.readFileSync(path.join(projectRoot, 'frontend/src/components/teaching-document/print.css'), 'utf8')
+  const hardcoded = printCss.match(/size:\s*A4|210mm|297mm/g) || []
+  assert.deepEqual(hardcoded, [], `print.css 存在 A4 硬编码残留: ${hardcoded.join(', ')}`)
+}
+
 // ─── canonical origin / sender / 安全策略 / 生命周期所有权（源级结构断言） ─────────────
 // 不能从主进程 argv 的 --api-base-url 或 process.env.PORT 推断打印地址。
 assert.ok(
@@ -92,7 +158,7 @@ assert.ok(
 assert.match(mainSource, /appOrigin = appUrl/)
 assert.match(mainSource, /mainWindow = win/)
 assert.match(mainSource, /pdfExportController\.runExport\(/)
-assert.match(lifecycleSource, /buildPrintUrl\(deps\.appOrigin, options\.documentId, options\.revision\)/)
+assert.match(lifecycleSource, /buildPrintUrl\(deps\.appOrigin, options\.documentId, options\.revision, options\.paper\)/)
 // start/cancel 的 sender 必须来自主应用窗口。
 assert.match(mainSource, /event\.sender\.id !== mainWindow\.webContents\.id/)
 // 隐藏打印窗口应用现有 secureWebContents 安全策略。

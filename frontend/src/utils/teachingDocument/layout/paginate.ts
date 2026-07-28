@@ -75,6 +75,7 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
     ? `${topLevelQuestionVersion}|box:${boxChildQuestionVersion}`
     : topLevelQuestionVersion
   const metrics = input.metrics ?? paperMetrics(paper)
+  const documentHeaderSpanColumns = Math.max(1, Math.trunc(input.documentHeaderSpanColumns ?? 1))
   const diagnostics: RenderDiagnostic[] = [
     ...measurements.diagnostics,
     ...paragraphMeasurements.flatMap((measurement) => measurement.diagnostics),
@@ -121,11 +122,13 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
 
   const commitPage = () => {
     pages.push(current)
+    const nextPageIndex = pages.length
+    const reserveDocumentHeader = nextPageIndex < documentHeaderSpanColumns
     current = {
-      index: pages.length,
+      index: nextPageIndex,
       items: [],
-      usedHeight: 0,
-      overflow: false,
+      usedHeight: reserveDocumentHeader ? measurements.headerHeight : 0,
+      overflow: reserveDocumentHeader && measurements.headerHeight > metrics.contentHeightPx,
       showDocumentHeader: false,
     }
   }
@@ -220,15 +223,24 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
       const height = measurement && Number.isFinite(measurement.height) && measurement.height >= 0
         ? measurement.height
         : 0
+      const behavior = block.breakBehavior || 'auto'
+      if (behavior === 'force-before' && (current.items.length > 0 || current.usedHeight > 0)) {
+        commitPage()
+      }
       const available = Math.max(0, metrics.contentHeightPx - current.usedHeight)
       if (height <= available) {
         addWhole(block, sourceIndex, measurement)
         return
       }
-      if (height <= metrics.contentHeightPx) {
-        addWhole(block, sourceIndex, measurement, true)
+      if (behavior === 'avoid') {
+        // “整题不拆”优先保持题目完整；若题目本身超过一页，则明确产生
+        // overflow 诊断，不静默违背用户选择。
+        addWhole(block, sourceIndex, measurement, height <= metrics.contentHeightPx)
         return
       }
+      // 题目放不进当前页时，优先使用题目内部规划器。这样题干/选项可以
+      // 在页底安全地开始，并在必要时跨页，而不是为了保持整题而制造大片留白。
+      // 用户插入的 pageBreak 仍然在上面的分支直接提交新页。
       const questionMeasurement = questions.get(sourceIndex)
       if (!questionMeasurement
         || questionMeasurement.blockId !== block.id
@@ -241,7 +253,7 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
           pageIndex: current.index,
           message: `题目 ${block.questionId} 缺少内部区域测量，回退为整体分页。`,
         })
-        addWhole(block, sourceIndex, measurement)
+        addWhole(block, sourceIndex, measurement, height <= metrics.contentHeightPx)
         return
       }
       const plan = planQuestionFragments({
@@ -302,11 +314,6 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
         addWhole(block, sourceIndex, measurement)
         return
       }
-      if ((behavior === 'auto' || behavior === 'force-before') && height <= metrics.contentHeightPx) {
-        addWhole(block, sourceIndex, measurement, true)
-        return
-      }
-
       const boxMeasurement = boxes.get(sourceIndex)
       if (!boxMeasurement) {
         diagnostics.push({
@@ -318,11 +325,6 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
         })
         addWhole(block, sourceIndex, measurement)
         return
-      }
-      if ((behavior === 'auto' || behavior === 'force-before')
-        && (current.items.length > 0 || current.usedHeight > 0)) {
-        commitPage()
-        available = metrics.contentHeightPx
       }
       const plan = planBoxFragments({
         block,
@@ -337,6 +339,15 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
       diagnostics.push(...plan.diagnostics)
       if (!plan.fragments.length) {
         addWhole(block, sourceIndex, measurement)
+        return
+      }
+      // 自动规划确认整个盒子仍应从下一页完整开始时，保留 whole 语义；
+      // 其余情况使用 start/middle/end fragments，真正触发跨页样式。
+      if (plan.fragments.length === 1
+        && plan.fragments[0].continuation === 'single'
+        && plan.fragments[0].pageOffset > 0
+        && height <= metrics.contentHeightPx) {
+        addWhole(block, sourceIndex, measurement, true)
         return
       }
       const basePageIndex = current.index

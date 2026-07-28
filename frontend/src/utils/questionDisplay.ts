@@ -59,12 +59,53 @@ export function normalizeChoiceMarkers(value: string) {
   const source = normalizeInlineMathDotChoiceMarkers(String(value || ''))
   const lineMatches = Array.from(source.matchAll(/(?:^|\n)[ \t]*([A-D])\s*[.．、:：]\s*/g))
   if (lineMatches.length >= 4) return source
-  let markerCount = 0
-  const marked = source.replace(/(?<![A-Za-z0-9])([A-D])\s*[.．、:：·•]\s*/g, (match, label: string, offset: number) => {
-    markerCount += 1
-    return `${offset === 0 ? '' : '\n'}${label}. `
-  })
-  return markerCount >= 4 ? marked : source
+  // Collect all inline marker candidates. Curve labels such as "C: y²=2px"
+  // also match, so instead of replacing every candidate we greedily extract
+  // an ordered A→B→C→D subsequence and only normalize those four markers.
+  const candidates = Array.from(source.matchAll(/(?<![A-Za-z0-9])([A-D])\s*([.．、:：·•])\s*/g))
+  if (candidates.length < 4) return source
+
+  // A stem may contain semantic labels such as “事件 A：” before the real
+  // choices. Evaluate every possible A→B→C→D sequence and prefer markers
+  // that begin a line and use conventional option punctuation. This keeps
+  // compatibility parsing from consuming the stem at the first semantic A.
+  let sequence: (typeof candidates)[number][] = []
+  let bestScore = Number.NEGATIVE_INFINITY
+  let bestSpan = Number.POSITIVE_INFINITY
+  for (const candidate of candidates.filter((match) => match[1] === 'A')) {
+    const nextSequence = [candidate]
+    let cursor = candidates.indexOf(candidate) + 1
+    for (const expected of ['B', 'C', 'D']) {
+      const nextIndex = candidates.findIndex((match, index) => index >= cursor && match[1] === expected)
+      if (nextIndex < 0) break
+      nextSequence.push(candidates[nextIndex])
+      cursor = nextIndex + 1
+    }
+    if (nextSequence.length !== 4) continue
+    const score = nextSequence.reduce((total, match) => {
+      const index = match.index || 0
+      const atLineStart = /^[ \t]*$/.test(source.slice(source.lastIndexOf('\n', index - 1) + 1, index))
+      const conventionalPunctuation = /[.．、]/.test(match[2] || '')
+      return total + (atLineStart ? 20 : 0) + (conventionalPunctuation ? 5 : 0)
+    }, 0)
+    const span = (nextSequence[3].index || 0) - (nextSequence[0].index || 0)
+    if (score > bestScore || (score === bestScore && span < bestSpan)) {
+      sequence = nextSequence
+      bestScore = score
+      bestSpan = span
+    }
+  }
+  if (sequence.length < 4) return source
+  let result = ''
+  let last = 0
+  for (const match of sequence) {
+    const index = match.index || 0
+    result += source.slice(last, index)
+    result += `${index === 0 ? '' : '\n'}${match[1]}. `
+    last = index + match[0].length
+  }
+  result += source.slice(last)
+  return result
 }
 
 export function label(status: string) {

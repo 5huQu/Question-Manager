@@ -127,6 +127,12 @@ export function planBoxFragments(input: {
     }
 
     let draft = ensureDraft(currentOffset)
+    if (child.type === 'question'
+      && child.breakBehavior === 'force-before'
+      && (draft.childItems.length > 0 || draft.childHeight > 0)) {
+      currentOffset += 1
+      draft = ensureDraft(currentOffset)
+    }
     if (child.type !== 'paragraph' && child.type !== 'question') {
       placeWholeChild(child, childIndex, childMeasurement.height)
       return
@@ -138,6 +144,10 @@ export function planBoxFragments(input: {
 
     // ── Question child fragmentation ──────────────────────────────────
     if (child.type === 'question') {
+      if (child.breakBehavior === 'avoid') {
+        placeWholeChild(child, childIndex, childMeasurement.height)
+        return
+      }
       const questionMeasurement = input.questionMeasurements?.get(
         blockSourcePathKey(childMeasurement.sourcePath),
       )

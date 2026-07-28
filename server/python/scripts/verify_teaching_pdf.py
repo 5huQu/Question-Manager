@@ -9,7 +9,7 @@ Checks:
 - File exists and size > minimum
 - PDF can be opened
 - Page count matches expected (if provided)
-- Each page is A4 (within tolerance)
+- Each page matches the expected paper size (within tolerance, if provided)
 - No trailing blank pages (heuristic: very low text + no images)
 - Each page is readable
 
@@ -23,12 +23,12 @@ import os
 import sys
 
 MIN_FILE_SIZE = 1024  # bytes
-A4_WIDTH_PT = 595.276  # 210mm in points
-A4_HEIGHT_PT = 841.890  # 297mm in points
+MM_TO_PT = 72.0 / 25.4  # millimetres to PDF points
 SIZE_TOLERANCE_PT = 2.0
 
 
-def verify(pdf_path: str, expected_pages: int = 0) -> dict:
+def verify(pdf_path: str, expected_pages: int = 0,
+           expected_width_mm: float = 0.0, expected_height_mm: float = 0.0) -> dict:
     result = {
         "success": False,
         "pdfPath": pdf_path,
@@ -75,20 +75,29 @@ def verify(pdf_path: str, expected_pages: int = 0) -> dict:
     elif expected_pages > 0:
         result["checks"].append("page_count_matches")
 
-    # Page sizes
-    size_ok = True
-    for i in range(actual_pages):
-        page = doc[i]
-        rect = page.rect
-        w, h = rect.width, rect.height
-        if abs(w - A4_WIDTH_PT) > SIZE_TOLERANCE_PT or abs(h - A4_HEIGHT_PT) > SIZE_TOLERANCE_PT:
-            size_ok = False
-            result["errors"].append(
-                f"Page {i+1} size {w:.1f}x{h:.1f}pt is not A4 "
-                f"(expected ~{A4_WIDTH_PT:.1f}x{A4_HEIGHT_PT:.1f}pt)"
+    # Page sizes：仅在提供期望纸张尺寸时校验，绝不假定 A4。
+    if expected_width_mm > 0 and expected_height_mm > 0:
+        exp_w = expected_width_mm * MM_TO_PT
+        exp_h = expected_height_mm * MM_TO_PT
+        result["expectedSizeMm"] = [expected_width_mm, expected_height_mm]
+        size_ok = True
+        for i in range(actual_pages):
+            page = doc[i]
+            rect = page.rect
+            w, h = rect.width, rect.height
+            # 允许同一物理纸张的纵/横两种 MediaBox 表示（容忍 PDF 旋转标记）。
+            matches = (
+                (abs(w - exp_w) <= SIZE_TOLERANCE_PT and abs(h - exp_h) <= SIZE_TOLERANCE_PT)
+                or (abs(w - exp_h) <= SIZE_TOLERANCE_PT and abs(h - exp_w) <= SIZE_TOLERANCE_PT)
             )
-    if size_ok and actual_pages > 0:
-        result["checks"].append("all_pages_a4")
+            if not matches:
+                size_ok = False
+                result["errors"].append(
+                    f"Page {i+1} size {w:.1f}x{h:.1f}pt does not match paper "
+                    f"(expected ~{exp_w:.1f}x{exp_h:.1f}pt)"
+                )
+        if size_ok and actual_pages > 0:
+            result["checks"].append("page_size_matches")
 
     # Trailing blank page detection (heuristic)
     if expected_pages > 0 and actual_pages > expected_pages:
@@ -119,13 +128,15 @@ def main():
     parser = argparse.ArgumentParser(description="Verify teaching document PDF export")
     parser.add_argument("pdf_path", help="Path to the PDF file")
     parser.add_argument("--expected-pages", type=int, default=0, help="Expected page count (0 = skip check)")
+    parser.add_argument("--expected-width-mm", type=float, default=0.0, help="Expected paper width in mm (0 = skip size check)")
+    parser.add_argument("--expected-height-mm", type=float, default=0.0, help="Expected paper height in mm (0 = skip size check)")
     args = parser.parse_args()
 
     if not args.pdf_path:
-        print(json.dumps({"error": "Usage: verify_teaching_pdf.py <pdf_path> [--expected-pages N]"}))
+        print(json.dumps({"error": "Usage: verify_teaching_pdf.py <pdf_path> [--expected-pages N] [--expected-width-mm W] [--expected-height-mm H]"}))
         sys.exit(2)
 
-    result = verify(args.pdf_path, args.expected_pages)
+    result = verify(args.pdf_path, args.expected_pages, args.expected_width_mm, args.expected_height_mm)
     # Also output a top-level warnings array for Electron integration
     result["warnings"] = result["errors"]
     print(json.dumps(result, ensure_ascii=False))

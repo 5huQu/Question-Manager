@@ -16,20 +16,25 @@ import type { FigureAssetRef, TeachingDocumentV1 } from '@/types/teachingDocumen
 import { questionBankApi } from '@/api/questionBank'
 import { teachingDocumentsApi, type TeachingDocumentRecord } from '@/api/teachingDocuments'
 import { ApiError } from '@/api/client'
+import { lectureFontCssVars, resolveDocumentFonts } from '@/utils/teachingDocument/lectureFonts'
 import {
-  DEFAULT_A4_PAPER,
+  resolveDocumentPaper,
+  isA3LandscapeSpread,
+  logicalPagePaper,
+  parsePaperSpec,
   measureTeachingDocumentBoxes,
   measureTeachingDocument,
   measureTeachingDocumentParagraphs,
   measureTeachingDocumentQuestions,
   measureBoxChildQuestions,
   paginateTeachingDocument,
-  createDefaultPrintLayout,
+  createDocumentPrintLayout,
   effectivePaperMetrics,
   evaluateExportReadiness,
   TEACHING_DOM,
   waitForRenderReadiness,
   type PaginationResult,
+  type PaperSpec,
   type RenderReadinessResult,
 } from '@/utils/teachingDocument'
 import {
@@ -40,6 +45,7 @@ import {
   type QuestionResolution,
 } from '@/components/teaching-document/blocks/BlockRenderer'
 import { PaperPageView } from '@/components/teaching-document/PaperPageView'
+import { A3TwoColumnSheetView } from '@/components/teaching-document/A3TwoColumnSheetView'
 import { assetUrl } from '@/utils/questionDisplay'
 import '@/components/teaching-document/teaching-document.css'
 import '@/components/teaching-document/print.css'
@@ -50,6 +56,7 @@ export default function TeachingDocumentPrintPage() {
   const [searchParams] = useSearchParams()
   const docId = searchParams.get('docId') || ''
   const revisionParam = Number(searchParams.get('revision') || '0')
+  const autoPrint = searchParams.get('autoPrint') === '1'
 
   const [state, setState] = useState<PageState>('loading')
   const [error, setError] = useState('')
@@ -62,8 +69,44 @@ export default function TeachingDocumentPrintPage() {
   const generationRef = useRef(0)
   const notifiedRef = useRef(false)
 
-  const paper = DEFAULT_A4_PAPER
-  const printLayout = useMemo(() => createDefaultPrintLayout(paper), [paper])
+  const paper = useMemo<PaperSpec>(
+    () => resolveDocumentPaper(record?.content?.style),
+    [record?.content?.style],
+  )
+  const pagePaper = useMemo<PaperSpec>(() => logicalPagePaper(paper), [paper])
+  const spread = isA3LandscapeSpread(paper)
+  // 导出期望纸张：由导出面板经主进程 buildPrintUrl 附加到 URL query，
+  // 用于交叉校验“文档纸张”与“printToPDF MediaBox 所用纸张”是否一致。
+  const expectedPaper = useMemo<PaperSpec | null>(() => {
+    const raw = searchParams.get('paper')
+    if (!raw) return null
+    try {
+      return parsePaperSpec(JSON.parse(raw))
+    } catch {
+      return null
+    }
+  }, [searchParams])
+
+  // 纸张尺寸 CSS 变量必须注入到 :root（document.documentElement）：
+  // Chromium 只会从根元素解析 @page { size: var(--td-page-size) } 中的自定义属性，
+  // 设在普通 div 上会导致 A3/landscape 回退为默认 A4。打印页独占窗口，离开时清理。
+  // 注意：本组件下方存在局部变量 document（教学文档内容）会遮蔽全局 document，
+  // 因此这里必须显式通过 window.document 访问根元素。
+  useEffect(() => {
+    const rootStyle = window.document.documentElement.style
+    rootStyle.setProperty('--td-page-size', `${paper.widthMm}mm ${paper.heightMm}mm`)
+    rootStyle.setProperty('--td-page-width', `${paper.widthMm}mm`)
+    rootStyle.setProperty('--td-page-height', `${paper.heightMm}mm`)
+    return () => {
+      rootStyle.removeProperty('--td-page-size')
+      rootStyle.removeProperty('--td-page-width')
+      rootStyle.removeProperty('--td-page-height')
+    }
+  }, [paper])
+  const printLayout = useMemo(
+    () => createDocumentPrintLayout(pagePaper, record?.content?.style?.print),
+    [pagePaper, record?.content?.style?.print],
+  )
   // 页眉页脚参与分页有效高度（保守统一扣除，首页 showOnFirstPage=false 同样扣除）。
   const metrics = useMemo(() => effectivePaperMetrics(printLayout), [printLayout])
 
@@ -207,8 +250,9 @@ export default function TeachingDocumentPrintPage() {
           boxMeasurements,
           questionMeasurements,
           boxChildQuestionMeasurements,
-          paper,
+          paper: pagePaper,
           metrics,
+          documentHeaderSpanColumns: spread ? 2 : 1,
         })
         setPagination(paginationResult)
         setState('ready')
@@ -222,7 +266,7 @@ export default function TeachingDocumentPrintPage() {
       })
 
     return () => controller.abort()
-  }, [state, document, paper, metrics, resolveQuestion])
+  }, [state, document, pagePaper, metrics, resolveQuestion, spread])
 
   // ─── 仅在同一 readiness 通过后 notifyReady ──────────────────────────────────
   useEffect(() => {
@@ -244,11 +288,13 @@ export default function TeachingDocumentPrintPage() {
         hasRevisionConflict: revisionMismatch,
         autosaveFailed: false,
         measurementGenerationCurrent: true,
+        paper,
+        expectedPaper,
       })
       notifiedRef.current = true
       if (evaluation.ready) {
         window.questionWorkbench?.pdfExport?.notifyReady({
-          pageCount: evaluation.pageCount,
+          pageCount: spread ? Math.ceil(evaluation.pageCount / 2) : evaluation.pageCount,
           warnings: evaluation.warnings.map((d) => d.message),
         })
       } else {
@@ -257,18 +303,35 @@ export default function TeachingDocumentPrintPage() {
         window.questionWorkbench?.pdfExport?.notifyReady({ error: blockingMessage })
       }
     }
-  }, [state, pagination, readiness, error, record, revisionParam, revisionMismatch])
+  }, [state, pagination, readiness, error, record, revisionParam, revisionMismatch, paper, expectedPaper, spread])
+
+  useEffect(() => {
+    if (!autoPrint || state !== 'ready' || !pagination || !readiness?.ready) return
+    const timer = window.setTimeout(() => window.print(), 150)
+    return () => window.clearTimeout(timer)
+  }, [autoPrint, state, pagination, readiness])
 
   const totalPages = pagination?.pages.length || 0
+  const sheetCount = spread ? Math.ceil(totalPages / 2) : totalPages
+
+  const documentFonts = useMemo(() => resolveDocumentFonts(document?.style), [document?.style])
+  const fontVars = useMemo(
+    () => lectureFontCssVars(documentFonts.body, documentFonts.heading),
+    [documentFonts],
+  )
 
   return (
     <div
+      className="td-theme-print"
+      style={{
+        ...fontVars,
+      } as CSSProperties}
       {...{
         [TEACHING_DOM.printDocument]: '',
         [TEACHING_DOM.readinessComplete]: state === 'ready' && Boolean(readiness?.ready) ? 'true' : 'false',
         [TEACHING_DOM.paginationGeneration]: generationRef.current,
         [TEACHING_DOM.exportRevision]: revisionParam,
-        [TEACHING_DOM.pageCount]: totalPages,
+        [TEACHING_DOM.pageCount]: sheetCount,
       }}
     >
       {/* 隐藏测量根：document 存在即挂载，保证 measuring 阶段可测量。 */}
@@ -300,12 +363,29 @@ export default function TeachingDocumentPrintPage() {
           {error || '文档不可用'}
         </div>
       ) : (
-        (pagination?.pages || []).map((page) => (
+        spread ? Array.from({ length: sheetCount }, (_, sheetIndex) => {
+          const leftPage = pagination!.pages[sheetIndex * 2]
+          const rightPage = pagination!.pages[sheetIndex * 2 + 1]
+          return (
+            <A3TwoColumnSheetView
+              key={`sheet:${sheetIndex}`}
+              pages={[leftPage, rightPage]}
+              sheetIndex={sheetIndex}
+              sheetCount={sheetCount}
+              logicalPageCount={totalPages}
+              document={document}
+              sheetPaper={paper}
+              columnPaper={pagePaper}
+              printLayout={printLayout}
+              pageProps={{ resolvers: { resolveQuestion, resolveFigure } }}
+            />
+          )
+        }) : (pagination?.pages || []).map((page) => (
           <PaperPageView
             key={page.index}
             page={page}
             document={document}
-            paper={paper}
+            paper={pagePaper}
             printLayout={printLayout}
             totalPages={totalPages}
             resolvers={{ resolveQuestion, resolveFigure }}

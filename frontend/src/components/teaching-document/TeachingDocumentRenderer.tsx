@@ -61,11 +61,6 @@ export function TeachingDocumentFrame({
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
             {document.title}
           </h1>
-          {document.documentType ? (
-            <p className="mt-1 text-xs text-zinc-400">
-              {{ worksheet: '练习单', exam: '试卷', lecture: '讲义' }[document.documentType] || document.documentType}
-            </p>
-          ) : null}
         </header>
       ) : null}
       <div className="td-document-content">{children}</div>

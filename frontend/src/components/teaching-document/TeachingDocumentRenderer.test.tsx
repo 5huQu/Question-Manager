@@ -47,6 +47,21 @@ describe('InlineContent security and degradation', () => {
     expect(html).not.toContain('<svg')
     expect(html).toContain('data-original-type="futureInline"')
   })
+
+  it('renders inline font override as font-family and falls back for unknown id', () => {
+    const html = renderToStaticMarkup(
+      <InlineContent inlines={[
+        { type: 'text', text: '楷体文字', font: 'kaiti' },
+        { type: 'text', text: '未知字体', font: 'not-a-real-font' },
+        { type: 'text', text: '默认字体' },
+      ]} />,
+    )
+    // 已知字体 id → 生成 font-family 内联样式
+    expect(html).toContain('font-family:')
+    expect(html).toContain('Kaiti SC')
+    // 仅已知字体产生一条 font-family 声明；未知 id 与缺省均回退（不加样式）
+    expect(html.match(/font-family:/g) || []).toHaveLength(1)
+  })
 })
 
 describe('ParagraphFragmentRenderer', () => {
@@ -94,6 +109,20 @@ describe('ParagraphFragmentRenderer', () => {
 })
 
 describe('TeachingDocumentRenderer fallbacks', () => {
+  it('never renders the internal document type as a visible marker', () => {
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer
+        document={{
+          ...documentWith([]),
+          documentType: 'exam',
+          title: '期中测试',
+          style: { print: { showDocumentType: true } },
+        }}
+      />,
+    )
+    expect(html).not.toContain('试卷')
+  })
+
   it('renders a loading image with an intrinsic-size-safe height cap', () => {
     const html = renderToStaticMarkup(
       <TeachingDocumentRenderer

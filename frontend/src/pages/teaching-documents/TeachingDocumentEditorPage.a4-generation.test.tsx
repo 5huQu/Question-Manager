@@ -140,6 +140,44 @@ describe('TeachingDocumentEditorPage A4 分页 generation 稳定性', () => {
     }
   }
 
+  it('shows document-level header and footer in the editing view and opens their shared settings', async () => {
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <MemoryRouter initialEntries={['/teaching-documents/doc-1']}>
+          <Routes><Route path="/teaching-documents/:documentId" element={<TeachingDocumentEditorPage />} /></Routes>
+        </MemoryRouter>,
+      )
+    })
+    expect(container.querySelector('[data-teaching-page-header]')).not.toBeNull()
+    expect(container.querySelector('[data-teaching-page-footer]')).not.toBeNull()
+    const centerSlot = container.querySelector<HTMLElement>('[data-teaching-page-header] [data-chrome-slot="center"]')
+    await act(async () => centerSlot?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(container.textContent).toContain('整份文档同步更新，不按页保存')
+    const titleSlotSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select')).find((select) => select.value === 'documentTitle')
+    expect(titleSlotSelect).toBeTruthy()
+    await act(async () => {
+      if (!titleSlotSelect) return
+      titleSlotSelect.value = 'customText'
+      titleSlotSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect((mocks.editor.current as ReturnType<typeof makeEditor>).dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'setStyle',
+      patch: expect.objectContaining({ print: expect.objectContaining({ header: expect.objectContaining({ center: expect.objectContaining({ type: 'customText' }) }) }) }),
+    }))
+    const fontSelect = container.querySelector<HTMLSelectElement>('[aria-label="页眉中栏字体"]')
+    expect(fontSelect).toBeTruthy()
+    await act(async () => {
+      if (!fontSelect) return
+      fontSelect.value = 'kaiti'
+      fontSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect((mocks.editor.current as ReturnType<typeof makeEditor>).dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'setStyle',
+      patch: expect.objectContaining({ print: expect.objectContaining({ header: expect.objectContaining({ center: expect.objectContaining({ font: 'kaiti' }) }) }) }),
+    }))
+  })
+
   it('父层 paginationState 回写不导致重复 generation/readiness 循环', async () => {
     root = createRoot(container)
     await act(async () => {
@@ -152,9 +190,9 @@ describe('TeachingDocumentEditorPage A4 分页 generation 稳定性', () => {
       )
     })
 
-    // 切到 A4 分页实验
+    // 切到打印预览（A4 分页）
     const a4Button = Array.from(container.querySelectorAll('button'))
-      .find((button) => button.textContent?.includes('A4 分页实验'))
+      .find((button) => button.textContent?.includes('打印预览'))
     expect(a4Button).toBeTruthy()
     await act(async () => {
       a4Button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -172,6 +210,9 @@ describe('TeachingDocumentEditorPage A4 分页 generation 稳定性', () => {
     expect(container.textContent).toContain('资源与布局已稳定')
     expect(container.textContent).not.toContain('正在准备排版资源')
     expect(container.textContent).not.toContain('resource-timeout')
+    expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent === '打印')).toBe(true)
+    expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent === '另存为 PDF')).toBe(true)
+    expect(container.textContent).not.toContain('实验导出')
     // 题目经 questionBank API wrapper 真实装载（resolver 数据依赖未被掩盖）
     expect(mocks.getItem).toHaveBeenCalledWith('q1')
 
@@ -212,9 +253,9 @@ describe('TeachingDocumentEditorPage A4 分页 generation 稳定性', () => {
       )
     })
 
-    // 切到 A4（此时题目仍为 loading 占位）
+    // 切到打印预览（此时题目仍为 loading 占位）
     const a4Button = Array.from(container.querySelectorAll('button'))
-      .find((button) => button.textContent?.includes('A4 分页实验'))
+      .find((button) => button.textContent?.includes('打印预览'))
     expect(a4Button).toBeTruthy()
     await act(async () => {
       a4Button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))

@@ -1,3 +1,5 @@
+import type { PaperSpec } from '@/utils/teachingDocument/layout/types'
+
 export const jsonHeaders = { 'Content-Type': 'application/json' }
 
 export class ApiError extends Error {
@@ -28,6 +30,8 @@ declare global {
           revision?: number
           pageCount?: number
           title?: string
+          /** 文档纸张规格：供主进程生成 printToPDF 参数与打印页交叉校验。 */
+          paper?: PaperSpec
         }) => Promise<PdfExportResult>
         cancel: () => Promise<{ success: boolean }>
         notifyReady: (payload: {

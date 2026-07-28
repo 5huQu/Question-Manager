@@ -9,6 +9,12 @@ export function appSettingsPath() {
   return path.join(configDir, 'app_settings.json')
 }
 
+export type LectureFontScheme = 'screen' | 'print'
+
+export function normalizeLectureFontScheme(value: unknown): LectureFontScheme {
+  return value === 'screen' ? 'screen' : 'print'
+}
+
 export const defaultAppSettings = {
   setupCompleted: false,
   systemName: 'Question Manager',
@@ -18,6 +24,7 @@ export const defaultAppSettings = {
   worksheetWatermark: '教师姓名 · 工作室',
   examWatermark: 'Qrane',
   lectureWatermark: '教师姓名 · 工作室',
+  lectureFontScheme: 'print' as LectureFontScheme,
   teachingStages: ['高中'],
   sofficePath: '',
 }
@@ -54,6 +61,7 @@ export function readAppSettings() {
     worksheetWatermark: String(payload.worksheetWatermark ?? defaultAppSettings.worksheetWatermark),
     examWatermark: String(payload.examWatermark ?? defaultAppSettings.examWatermark),
     lectureWatermark: String(payload.lectureWatermark ?? defaultAppSettings.lectureWatermark),
+    lectureFontScheme: normalizeLectureFontScheme(payload.lectureFontScheme ?? defaultAppSettings.lectureFontScheme),
     teachingStages: normalizeTeachingStages(payload.teachingStages),
     sofficePath: String(payload.sofficePath ?? defaultAppSettings.sofficePath).trim(),
   }
@@ -70,6 +78,7 @@ export function writeAppSettings(input: Record<string, unknown>) {
     worksheetWatermark: String(input.worksheetWatermark ?? existing.worksheetWatermark).trim() || defaultAppSettings.worksheetWatermark,
     examWatermark: String(input.examWatermark ?? existing.examWatermark).trim() || defaultAppSettings.examWatermark,
     lectureWatermark: String(input.lectureWatermark ?? existing.lectureWatermark).trim() || defaultAppSettings.lectureWatermark,
+    lectureFontScheme: normalizeLectureFontScheme(input.lectureFontScheme ?? existing.lectureFontScheme),
     teachingStages: normalizeTeachingStages(input.teachingStages ?? existing.teachingStages),
     sofficePath: String(input.sofficePath ?? existing.sofficePath ?? '').trim(),
   }

@@ -12,6 +12,7 @@ export type RenderDiagnosticCode =
   | 'resource-timeout'
   | 'unsupported-split'
   | 'invalid-paper-spec'
+  | 'paper-mismatch'
   | 'invalid-measurement'
   | 'paragraph-measurement-missing'
   | 'paragraph-range-invalid'
@@ -87,10 +88,14 @@ export interface TeachingDocumentMeasurement {
   measurementVersion: string
 }
 
+export type PaperSize = 'A3' | 'A4' | 'custom'
+export type PaperOrientation = 'portrait' | 'landscape'
+
 export interface PaperSpec {
-  size: 'A4'
-  widthMm: 210
-  heightMm: 297
+  size: PaperSize
+  orientation: PaperOrientation
+  widthMm: number
+  heightMm: number
   marginTopMm: number
   marginRightMm: number
   marginBottomMm: number
@@ -129,6 +134,8 @@ export interface PaginationInput {
    * 未提供时按 paper 计算 paperMetrics(paper)。
    */
   metrics?: PaperMetrics
+  /** 文档标题跨越的逻辑栏数；A3 横向双栏首面为 2，其余版式为 1。 */
+  documentHeaderSpanColumns?: number
 }
 
 export interface PaginationResult {

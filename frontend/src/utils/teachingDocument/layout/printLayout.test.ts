@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   createDefaultPrintLayout,
+  createDocumentPrintLayout,
   printLayoutMetrics,
   effectivePaperMetrics,
-  pageHeaderContent,
-  pageFooterContent,
+  pageHeaderSlots,
+  pageFooterSlots,
   formatPageNumber,
   totalPagesPlaceholder,
   DEFAULT_A4_PAPER,
@@ -28,6 +29,22 @@ describe('printLayout', () => {
 
     it('does not show header on first page by default', () => {
       expect(spec.header.showOnFirstPage).toBe(false)
+    })
+  })
+
+  describe('createDocumentPrintLayout', () => {
+    it('applies persisted header and footer preferences over defaults', () => {
+      const configured = createDocumentPrintLayout(paper, {
+        headerEnabled: false,
+        headerSubtitle: '高三数学',
+        footerShowTotalPages: false,
+        footerCustomText: '内部资料',
+      })
+      expect(configured.header.enabled).toBe(false)
+      expect(configured.header.slots.center).toMatchObject({ type: 'customText', text: '高三数学' })
+      expect(configured.footer.slots.left).toMatchObject({ type: 'customText', text: '内部资料' })
+      expect(configured.pageNumber.showTotalPages).toBe(false)
+      expect(configured.footer.slots.center.type).toBe('pageNumber')
     })
   })
 
@@ -68,56 +85,65 @@ describe('printLayout', () => {
     })
   })
 
-  describe('pageHeaderContent', () => {
+  describe('page chrome slots', () => {
     it('returns null when header disabled', () => {
       const disabled = createDefaultPrintLayout(paper)
       disabled.header.enabled = false
-      expect(pageHeaderContent(disabled, '标题', 1)).toBeNull()
+      expect(pageHeaderSlots(disabled, 1)).toBeNull()
     })
 
     it('returns null on first page when showOnFirstPage is false', () => {
-      expect(pageHeaderContent(spec, '标题', 0)).toBeNull()
+      expect(pageHeaderSlots(spec, 0)).toBeNull()
     })
 
-    it('returns title on subsequent pages', () => {
-      const content = pageHeaderContent(spec, '讲义标题', 1)
-      expect(content).not.toBeNull()
-      expect(content!.title).toBe('讲义标题')
+    it('provides all three header columns on subsequent pages', () => {
+      const slots = pageHeaderSlots(spec, 1)
+      expect(slots).not.toBeNull()
+      expect(slots!.center.type).toBe('documentTitle')
+      expect(slots!.left.type).toBe('none')
+      expect(slots!.right.type).toBe('none')
     })
 
     it('shows header on first page when configured', () => {
       const withFirst = createDefaultPrintLayout(paper)
       withFirst.header.showOnFirstPage = true
-      const content = pageHeaderContent(withFirst, '标题', 0)
-      expect(content).not.toBeNull()
+      expect(pageHeaderSlots(withFirst, 0)).not.toBeNull()
     })
-  })
 
-  describe('pageFooterContent', () => {
     it('returns null when footer disabled', () => {
       const disabled = createDefaultPrintLayout(paper)
       disabled.footer.enabled = false
-      expect(pageFooterContent(disabled, 0, 5)).toBeNull()
+      expect(pageFooterSlots(disabled)).toBeNull()
     })
 
-    it('returns 1-based page number', () => {
-      const content = pageFooterContent(spec, 0, 5)
-      expect(content!.pageNumber).toBe(1)
-      expect(content!.totalPages).toBe(5)
-    })
-
-    it('includes custom text when set', () => {
+    it('keeps independent footer columns', () => {
       const withText = createDefaultPrintLayout(paper)
-      withText.footer.customText = '内部资料'
-      const content = pageFooterContent(withText, 2, 10)
-      expect(content!.customText).toBe('内部资料')
-      expect(content!.pageNumber).toBe(3)
+      withText.footer.slots.left = { type: 'customText', text: '内部资料', align: 'left' }
+      withText.footer.slots.right = { type: 'totalPages', align: 'right' }
+      expect(pageFooterSlots(withText)).toMatchObject({
+        left: { type: 'customText', text: '内部资料' },
+        center: { type: 'pageNumber' },
+        right: { type: 'totalPages' },
+      })
     })
   })
 
   describe('formatPageNumber', () => {
     it('formats as "current / total"', () => {
       expect(formatPageNumber(3, 10)).toBe('3 / 10')
+    })
+
+    it('can hide total pages while keeping the current page number', () => {
+      expect(formatPageNumber(3, 10, { showTotalPages: false })).toBe('3')
+    })
+
+    it('supports all controlled templates with prefix and suffix', () => {
+      expect(formatPageNumber(3, 4, { format: 'number' })).toBe('3')
+      expect(formatPageNumber(3, 4, { format: 'page' })).toBe('第 3 页')
+      expect(formatPageNumber(3, 4, { format: 'fraction' })).toBe('3 / 4')
+      expect(formatPageNumber(3, 4, { format: 'page-total' })).toBe('第 3 页，共 4 页')
+      expect(formatPageNumber(3, 4, { format: 'dash', prefix: 'P', suffix: '!' })).toBe('P- 3 -!')
+      expect(formatPageNumber(3, 4, { format: 'page-total', showTotalPages: false })).toBe('第 3 页')
     })
   })
 

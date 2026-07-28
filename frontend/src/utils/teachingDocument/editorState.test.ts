@@ -90,6 +90,29 @@ describe('TeachingDocument editor state', () => {
     expect(undoTeachingDocument(history).document.title).toBe('测试讲义')
   })
 
+  it('reorders blocks by id sequence and rejects invalid orders', () => {
+    const reordered = applyTeachingDocumentCommand(baseDocument, { type: 'reorderBlocks', order: ['p2', 'p1'] })
+    expect(reordered.content.map((block) => block.id)).toEqual(['p2', 'p1'])
+    // 保持块对象引用不变，避免拖拽过程中视觉跳变
+    expect(reordered.content[0]).toBe(baseDocument.content[1])
+    // 长度不符或含未知 id 的 order 返回原文档
+    expect(applyTeachingDocumentCommand(baseDocument, { type: 'reorderBlocks', order: ['p1'] })).toBe(baseDocument)
+    expect(applyTeachingDocumentCommand(baseDocument, { type: 'reorderBlocks', order: ['p1', 'missing'] })).toBe(baseDocument)
+  })
+
+  it('merges reorder commands within one drag session into a single undo step', () => {
+    let history = createTeachingDocumentHistory(baseDocument)
+    // 同一次拖拽手势内的多次交换共享 mergeKey，合并为一个撤销步骤
+    history = executeTeachingDocumentCommand(history, { type: 'reorderBlocks', order: ['p2', 'p1'], mergeKey: 'drag-1' })
+    history = executeTeachingDocumentCommand(history, { type: 'reorderBlocks', order: ['p1', 'p2'], mergeKey: 'drag-1' })
+    expect(history.past).toHaveLength(1)
+    // 不同手势使用不同 mergeKey，不互相合并
+    history = executeTeachingDocumentCommand(history, { type: 'reorderBlocks', order: ['p2', 'p1'], mergeKey: 'drag-2' })
+    expect(history.past).toHaveLength(2)
+    // 撤销一次回到拖拽前的顺序
+    expect(undoTeachingDocument(history).document.content.map((block) => block.id)).toEqual(['p1', 'p2'])
+  })
+
   it('clears undo and redo history when a server document is reloaded', () => {
     let history = createTeachingDocumentHistory(baseDocument)
     history = executeTeachingDocumentCommand(history, { type: 'setTitle', title: '本地修改' })

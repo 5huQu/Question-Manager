@@ -5,6 +5,7 @@ import {
   type ExportReadinessInput,
 } from './exportReadiness'
 import type { PaginationResult, RenderDiagnostic, RenderReadinessResult } from './types'
+import { createPaperSpec } from './paper'
 
 const stableReadiness: RenderReadinessResult = {
   ready: true,
@@ -179,5 +180,28 @@ describe('evaluateExportReadiness', () => {
       },
     }))
     expect(result.pendingResources).toEqual(['a.png', 'q1', 'f1'])
+  })
+
+  it('纸张与导出期望纸张一致时不产生 paper-mismatch 警告', () => {
+    const paper = createPaperSpec('A4', 'portrait')
+    const result = evaluateExportReadiness(makeInput({ paper, expectedPaper: paper }))
+    expect(result.ready).toBe(true)
+    expect(result.warnings.some((d) => d.code === 'paper-mismatch')).toBe(false)
+  })
+
+  it('纸张与导出期望纸张不一致时产生降级 warning（不阻塞）', () => {
+    const paper = createPaperSpec('A4', 'portrait')
+    const expectedPaper = createPaperSpec('A3', 'landscape')
+    const result = evaluateExportReadiness(makeInput({ paper, expectedPaper }))
+    expect(result.ready).toBe(true)
+    const mismatch = result.warnings.find((d) => d.code === 'paper-mismatch')
+    expect(mismatch).toBeDefined()
+    expect(mismatch?.severity).toBe('warning')
+    expect(mismatch?.message).toContain('420×297mm')
+  })
+
+  it('未提供期望纸张时不做匹配校验', () => {
+    const result = evaluateExportReadiness(makeInput({ paper: createPaperSpec('A4', 'portrait') }))
+    expect(result.warnings.some((d) => d.code === 'paper-mismatch')).toBe(false)
   })
 })
