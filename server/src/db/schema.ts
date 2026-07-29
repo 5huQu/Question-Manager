@@ -12,6 +12,7 @@ import { sourceDocumentOcrTasksMigration } from './migrations/source-document-oc
 import { v1ImportMappingMigration } from './migrations/v1-import-mapping.js'
 import { importProvenanceArchiveMigration } from './migrations/import-provenance-archive.js'
 import { teachingDocumentsMigration } from './migrations/teaching-documents.js'
+import { printTemplatesMigration } from './migrations/print-templates.js'
 import path from 'node:path'
 import { dataDir } from '../config.js'
 
@@ -582,6 +583,7 @@ export const applicationMigrations: DatabaseMigration[] = [
   v1ImportMappingMigration,
   importProvenanceArchiveMigration,
   teachingDocumentsMigration,
+  printTemplatesMigration,
 ]
 
 /** Run the ordered, checksummed database migrations. */

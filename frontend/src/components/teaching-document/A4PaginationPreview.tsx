@@ -259,7 +259,7 @@ export function A4PaginationPreview({
         </div>
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
+      <div className="hidden" aria-hidden="true">
         {!pagination ? (
           <span className="inline-flex items-center gap-1.5">
             <LoaderCircle className="size-3.5 animate-spin" />

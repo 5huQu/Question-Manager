@@ -4,6 +4,10 @@ import { sendRouteError } from './errors.js'
 import * as service from '../services/teaching-documents.service.js'
 
 export function mountTeachingDocumentRoutes(app: Express) {
+  app.get('/api/teaching-document-templates', (_req, res) => { try { res.json(service.listPrintTemplates()) } catch (error) { sendRouteError(res, error) } })
+  app.post('/api/teaching-document-templates', (req, res) => { try { res.status(201).json(service.createPrintTemplate(req.body || {})) } catch (error) { sendRouteError(res, error) } })
+  app.patch('/api/teaching-document-templates/:id', (req, res) => { try { res.json(service.updatePrintTemplate(decodeURIComponent(String(req.params.id || '')), req.body || {})) } catch (error) { sendRouteError(res, error) } })
+  app.delete('/api/teaching-document-templates/:id', (req, res) => { try { res.json(service.deletePrintTemplate(decodeURIComponent(String(req.params.id || '')))) } catch (error) { sendRouteError(res, error) } })
   app.get('/api/teaching-documents', (_req, res) => {
     try { res.json(service.listTeachingDocuments()) } catch (error) { sendRouteError(res, error) }
   })

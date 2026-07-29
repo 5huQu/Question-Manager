@@ -212,6 +212,7 @@ export function PaperPageView({
                   question={resolution}
                   item={item}
                   selected={selectedBlockId === block.id}
+                  resolveFigure={resolvers.resolveFigure}
                 />
               )
             }

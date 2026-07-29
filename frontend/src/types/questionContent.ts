@@ -67,6 +67,7 @@ export interface EditorCodecWarning {
   code: 'unsupported-markdown' | 'unsafe-html-removed'
   message: string
   blockIndex: number
+  excerpt?: string
 }
 
 export interface EditorDocumentV1 {

@@ -254,7 +254,7 @@ export function QuestionContentEditor({
         {warnings.length ? (
           <div role="status" className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50/30 p-3 text-amber-800 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-400">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            <div><p className="text-xs font-medium">发现 {warnings.length} 项转换提示</p><ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs">{warnings.map((warning, index) => <li key={`${warning.field}-${warning.code}-${index}`}>{tabs.find((tab) => tab.key === warning.field)?.label}：{warning.message}</li>)}</ul></div>
+            <div><p className="text-xs font-medium">发现 {warnings.length} 项转换提示</p><ul className="mt-1 list-disc space-y-1.5 pl-4 text-xs">{warnings.map((warning, index) => <li key={`${warning.field}-${warning.code}-${index}`}><span>{tabs.find((tab) => tab.key === warning.field)?.label}：{warning.message}</span>{warning.excerpt ? <code className="mt-0.5 block break-words rounded bg-amber-100/70 px-1.5 py-1 font-mono text-[11px] text-amber-900/80 dark:bg-amber-950/40 dark:text-amber-200/80">示例：{warning.excerpt}{warning.excerpt.length >= 160 ? '…' : ''}</code> : null}</li>)}</ul></div>
           </div>
         ) : null}
 

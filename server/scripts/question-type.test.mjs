@@ -67,6 +67,20 @@ const colonInline = '下列结论正确的是 A: 甲 B: 乙 C: 丙 D: 丁'
 assert.equal(hasReliableFourChoiceOptions(colonInline), true)
 assert.equal(inferQuestionType(colonInline, '故选B'), '单选题')
 
+// OCR may place mathematical labels such as sin A:/sin B:/sin C: before an
+// inline option block. The trailing A-D sequence is the real option structure.
+const mathLabelsBeforeInlineChoices = '在 ABC中，若 sin A:sin B:sin C=3:5:7，则最小边长等于（ ） A. 3 B. 6 C. 9 D. 12'
+assert.equal(hasReliableFourChoiceOptions(mathLabelsBeforeInlineChoices), true)
+assert.equal(inferQuestionType(mathLabelsBeforeInlineChoices, 'B\n\n【来源】模拟试题'), '单选题')
+
+// “计算” in the context of a construction or a cultural-history stem is not
+// an open-ended signal when the question has a structured option block.
+const calculationChoice = '用于计算远处目标高度的方法，则第二次影长是表高的（ ） A. 1倍 B. 3/2倍 C. 5/2倍 D. 7/2倍'
+assert.equal(inferQuestionType(calculationChoice, 'A'), '单选题')
+
+const geometryCalculationChoice = '矩形 CMNK 为计算所做，则（ ） A. sin β = cos γ cos δ B. cos β = cos γ cos δ C. sin α = 1 D. cos α = 1'
+assert.equal(inferQuestionType(geometryCalculationChoice, 'D'), '单选题')
+
 // Curve label with colon followed by line-separated options is also fine.
 const curveLabelLineSeparated = [
   '已知椭圆 C: $\\frac{x^2}{4}+\\frac{y^2}{3}=1$ 的左右焦点分别为 F1、F2，点 P 在 C 上，则',

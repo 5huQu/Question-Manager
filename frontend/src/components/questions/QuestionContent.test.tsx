@@ -66,6 +66,19 @@ describe('question figure rendering', () => {
     expect(container.textContent).not.toContain('题干图')
   })
 
+  it('renders the image preview in the document body so global floating controls stay behind it', async () => {
+    await act(async () => {
+      root.render(<FigureGallery figures={[figure]} />)
+    })
+
+    const previewButton = container.querySelector<HTMLButtonElement>('figure button')
+    await act(async () => previewButton?.click())
+
+    const dialog = document.body.querySelector('[data-large-image-dialog]')
+    expect(dialog).not.toBeNull()
+    expect(container.contains(dialog)).toBe(false)
+  })
+
   it('keeps stem figures out of the answer and analysis sections', async () => {
     const item = {
       id: 'question-1',
@@ -89,6 +102,7 @@ describe('question figure rendering', () => {
       )
     })
     expect(container.querySelectorAll('img')).toHaveLength(1)
+    expect(container.textContent).toContain('导入审核')
 
     const toggle = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('查看解析'))
     await act(async () => toggle?.click())

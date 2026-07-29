@@ -83,6 +83,11 @@ function isQuestionItem(value: QuestionResolutionLike): value is QuestionItem {
   return Boolean(value && !('status' in value))
 }
 
+// Measurement must use the same document-local content that the renderer uses.
+function effectiveQuestionContent(block: QuestionBlock, question: QuestionItem): QuestionItem {
+  return block.localContent ? { ...question, ...block.localContent } : question
+}
+
 function versionForQuestion(input: Omit<QuestionMeasurement, 'measurementVersion'>) {
   const source = [
     input.blockId,
@@ -401,7 +406,7 @@ export function measureTeachingDocumentQuestions(
       paragraphGeometry,
       chromeGeometry,
       block,
-      question,
+      question: effectiveQuestionContent(block, question),
       sourceIndex,
       sourcePath: { sourceIndex, topLevelBlockId: block.id, childPath: [] },
       questionRoot,
@@ -515,7 +520,7 @@ export function measureBoxChildQuestions(
         paragraphGeometry,
         chromeGeometry,
         block: questionChild,
-        question,
+        question: effectiveQuestionContent(questionChild, question),
         sourceIndex,
         sourcePath,
         questionRoot,

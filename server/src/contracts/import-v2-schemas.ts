@@ -8,6 +8,7 @@ const stringList = schema.array(string)
 const bbox = schema.tuple(schema.number(), schema.number(), schema.number(), schema.number())
 
 const solutionBindingStrategies = ['heading_then_question', 'question_then_heading', 'auto'] as const
+const documentLayouts = ['auto', 'inline', 'appendix', 'questions_only', 'solution_only'] as const
 const metadataBlockPolicies = ['ignore', 'append_to_analysis', 'store_as_note'] as const
 const answerTablePolicies = ['disabled', 'fill_empty_only', 'override_metadata_like_answer', 'prefer_table_for_choice_questions'] as const
 const candidateStatuses = ['ready', 'needs_review', 'needs_manual_fix', 'blocked', 'committed'] as const
@@ -32,6 +33,9 @@ export const parserConfigSchema = schema.object({
   allowParenthesizedNumberAsPrimary: schema.boolean(),
   figureKeywords: stringList,
   solutionBindingStrategy: schema.string({ enum: solutionBindingStrategies }),
+  // Older candidate snapshots predate explicit document layout. The server
+  // normalizes missing values to `auto` for new parsing requests.
+  documentLayout: schema.optional(schema.string({ enum: documentLayouts })),
   metadataBlockKeywords: stringList,
   metadataBlockPolicy: schema.string({ enum: metadataBlockPolicies }),
   answerTablePolicy: schema.string({ enum: answerTablePolicies }),

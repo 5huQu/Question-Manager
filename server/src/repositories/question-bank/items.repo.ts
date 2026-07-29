@@ -142,6 +142,46 @@ export function deleteQuestionBankItem(id: string) {
   }
 }
 
+/**
+ * Remove committed questions that came from an import source or job.
+ * The import metadata predates foreign-key enforcement, so both fields are
+ * matched to cover current and legacy committed rows.
+ */
+export function deleteQuestionBankItemsForImportSources(sourceDocumentIds: string[] = [], importJobId?: string) {
+  const sourceIds = sourceDocumentIds.map(String).map((id) => id.trim()).filter(Boolean)
+  const jobId = String(importJobId || '').trim()
+  if (!sourceIds.length && !jobId) return []
+
+  const clauses: string[] = []
+  const params: string[] = []
+  if (jobId) {
+    clauses.push('import_job_id = ?')
+    params.push(jobId)
+  }
+  if (sourceIds.length) {
+    clauses.push(`import_source_id IN (${sourceIds.map(() => '?').join(', ')})`)
+    params.push(...sourceIds)
+  }
+
+  const rows = db.prepare(`SELECT id FROM question_bank_items WHERE ${clauses.join(' OR ')}`).all(...params) as Array<{ id: string }>
+  if (!rows.length) return []
+  const ownsTransaction = !db.isTransaction
+  try {
+    if (ownsTransaction) db.exec('BEGIN IMMEDIATE')
+    const deleteCollections = db.prepare('DELETE FROM question_bank_collection_items WHERE question_id = ?')
+    const deleteItems = db.prepare('DELETE FROM question_bank_items WHERE id = ?')
+    for (const row of rows) {
+      deleteCollections.run(row.id)
+      deleteItems.run(row.id)
+    }
+    if (ownsTransaction) db.exec('COMMIT')
+    return rows.map((row) => row.id)
+  } catch (error) {
+    if (ownsTransaction && db.isTransaction) db.exec('ROLLBACK')
+    throw error
+  }
+}
+
 export function updateQuestionFigures(id: string, figures: Array<Record<string, unknown>>) {
   db.prepare('UPDATE question_bank_items SET figures_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(figures), nowIso(), id)
 }

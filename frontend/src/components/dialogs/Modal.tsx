@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui'
 
@@ -61,8 +62,8 @@ export function LargeImageDialog({ title, caption, imageUrl, secondaryImageUrl, 
         maxHeight: 'none',
       }
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 backdrop-blur-sm p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 backdrop-blur-sm p-4" data-large-image-dialog>
       <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950 text-zinc-950 dark:text-zinc-50">
         <div className="flex flex-none items-center justify-between gap-4 border-b border-zinc-100 dark:border-zinc-900 px-4 py-3">
           <div className="min-w-0">
@@ -156,6 +157,7 @@ export function LargeImageDialog({ title, caption, imageUrl, secondaryImageUrl, 
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

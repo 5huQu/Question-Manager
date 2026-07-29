@@ -12,6 +12,7 @@ import { normalizeLatexMathDelimiters } from '@/utils/mathMarkdown'
 const CHOICE_MARKER = /^\s*([A-D])\s*[.．、:：]\s*(.*)$/
 const TABLE_SEPARATOR_CELL = /^:?-{3,}:?$/
 const UNSUPPORTED_BLOCK = /^(?:\s{0,3}(?:#{1,6}\s|>|[-+*]\s|\d+[.)]\s|```|~~~)|\s*<!--|\s*<\/?[A-Za-z]|\s*!\[[^\]]*\]\()/
+const DOC2X_FIGURE_MARKER = /^\s*<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->\s*$/
 
 export function sanitizePastedHtml(html: string): string {
   if (!html) return ''
@@ -145,13 +146,16 @@ function parseChoices(lines: string[], start: number): { node: EditorBlockNode; 
   return { node: { type: 'choices', options }, consumed: cursor - start }
 }
 
-function rawNode(markdown: string, reason: 'unsupported-markdown' | 'unsafe-html-removed', content: EditorBlockNode[], warnings: EditorCodecWarning[]) {
+function rawNode(markdown: string, reason: 'unsupported-markdown' | 'unsafe-html-removed', content: EditorBlockNode[], warnings: EditorCodecWarning[], warn = true) {
   content.push({ type: 'rawMarkdown', markdown, reason })
-  warnings.push({
-    code: reason,
-    message: reason === 'unsafe-html-removed' ? '已移除不安全的 HTML；其余源码已保留。' : '此 Markdown 结构暂不支持可视化编辑，已原样保留。',
-    blockIndex: content.length - 1,
-  })
+  if (warn) {
+    warnings.push({
+      code: reason,
+      message: reason === 'unsafe-html-removed' ? '已移除不安全的 HTML；其余源码已保留。' : '此 Markdown 结构暂不支持可视化编辑，已原样保留。',
+      blockIndex: content.length - 1,
+      excerpt: markdown.replace(/\s+/g, ' ').trim().slice(0, 160),
+    })
+  }
 }
 
 export function markdownToEditorDocument(source: string): EditorDocumentV1 {
@@ -208,7 +212,8 @@ export function markdownToEditorDocument(source: string): EditorDocumentV1 {
     }
     const block = blockLines.join('\n')
     const reason = sanitized.changed && /<\/?[A-Za-z]|<!--/.test(block) ? 'unsafe-html-removed' : 'unsupported-markdown'
-    if (UNSUPPORTED_BLOCK.test(block) || /(?:\*\*|__|~~|`)[^\n]+(?:\*\*|__|~~|`)/.test(block)) rawNode(block, reason, content, warnings)
+    if (DOC2X_FIGURE_MARKER.test(block)) rawNode(block, 'unsupported-markdown', content, warnings, false)
+    else if (UNSUPPORTED_BLOCK.test(block) || /(?:\*\*|__|~~|`)[^\n]+(?:\*\*|__|~~|`)/.test(block)) rawNode(block, reason, content, warnings)
     else content.push({ type: 'paragraph', content: parseInline(block) })
   }
 

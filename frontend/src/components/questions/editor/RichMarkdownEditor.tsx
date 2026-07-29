@@ -23,7 +23,8 @@ interface RichMarkdownEditorProps {
   onSaveRequest?: () => void
 }
 
-const rawPattern = /```|<\/?[a-z][^>]*>/i
+const rawPattern = /```|<\/?[a-z][^>]*>|<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->/i
+const figureMarkerPattern = /<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->/i
 
 function IconButton({ label, active, disabled, onClick, children }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -94,6 +95,7 @@ export function RichMarkdownEditor({ id, label, value, onChange, placeholder = '
   })
 
   const containsRaw = useMemo(() => rawPattern.test(value), [value])
+  const containsFigureMarkers = useMemo(() => figureMarkerPattern.test(value), [value])
 
   useEffect(() => {
     if (!editor || sourceMode) return
@@ -114,7 +116,7 @@ export function RichMarkdownEditor({ id, label, value, onChange, placeholder = '
       {containsRaw && !sourceMode ? (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/40 p-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-400">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-          <span>该字段包含原始 HTML 或代码围栏。为防止内容丢失，请在 Markdown 源码模式中编辑。</span>
+          <span>{containsFigureMarkers ? '该字段包含图片绑定标记。为防止图片位置或绑定关系丢失，请在 Markdown 源码模式中编辑。' : '该字段包含原始 HTML 或代码围栏。为防止内容丢失，请在 Markdown 源码模式中编辑。'}</span>
         </div>
       ) : null}
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white focus-within:border-zinc-500 focus-within:ring-1 focus-within:ring-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:focus-within:border-zinc-500">

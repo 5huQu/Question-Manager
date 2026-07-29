@@ -8,7 +8,7 @@ import {
 import { Button } from '@/components/ui'
 import { UpdateCard } from '@/components/UpdateCard'
 import { Modal } from '@/components/dialogs/Modal'
-import type { AnswerTablePolicy, MetadataBlockPolicy, SolutionBindingStrategy } from '@/api/importV2'
+import type { AnswerTablePolicy, DocumentLayout, MetadataBlockPolicy, SolutionBindingStrategy } from '@/api/importV2'
 import { teachingStageOptions } from '@/utils/stages'
 import { libreOfficeDownloadUrl } from '@/utils/wordFiles'
 import {
@@ -270,7 +270,20 @@ export function SettingsPage() {
                   </Button>
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                <Field label="文档结构">
+                  <select
+                    value={parserConfig.documentLayout}
+                    onChange={(event) => setParserConfig({ ...parserConfig, documentLayout: event.target.value as DocumentLayout })}
+                    className="w-full cursor-pointer rounded border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+                  >
+                    <option value="auto">自动判断</option>
+                    <option value="inline">题干答案混排</option>
+                    <option value="appendix">同文档后置答案/解析</option>
+                    <option value="questions_only">仅题干</option>
+                    <option value="solution_only">仅答案/解析</option>
+                  </select>
+                </Field>
                 <Field label="答案绑定策略">
                   <select
                     value={parserConfig.solutionBindingStrategy}

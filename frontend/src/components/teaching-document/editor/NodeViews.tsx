@@ -9,7 +9,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
-import { CornerDownRight, ImageOff } from 'lucide-react'
+import { CornerDownRight, ImageOff, ArrowDown, ArrowUp, Copy, Trash2 } from 'lucide-react'
 import type { FigureAssetRef, FigureBlock, SpacerBlock, TeachingBlock, BoxBlock, BoxChildBlock, QuestionBlock, QuestionDisplayOptions, TeachingDocumentV1, TeachingInline, ParagraphBlock } from '@/types/teachingDocument'
 import type { QuestionResolution, FigureResolution, QuestionLayoutEditor } from '../blocks/BlockRenderer'
 import { getBoxTemplateOrFallback } from '@/utils/teachingDocument/boxTemplates'
@@ -22,8 +22,9 @@ import { DEFAULT_A4_PAPER, newTeachingBlock, sliceTeachingInlines, type PaperSpe
 import { BlockInsertPoint } from '@/pages/teaching-documents/components/BlockInsertMenu'
 import { emitBoxChildSelect } from './selection'
 import { PrintChrome } from '../PrintChrome'
-import { effectiveFigureWidthMm, effectiveSpacerHeightMm } from '@/utils/teachingDocument/layoutCompat'
+import { effectiveSpacerHeightMm } from '@/utils/teachingDocument/layoutCompat'
 import { clampFigureWidthMm } from './resizeLogic'
+import { resolveFigureLayout, type FigureLayoutPreset } from '@/utils/teachingDocument/figureLayoutPresets'
 import {
   ImageResizeOverlay,
   SpacerResizeHandle,
@@ -185,6 +186,7 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
   }, [node.attrs.asset])
 
   const alignment = String(node.attrs.alignment || 'center') as 'left' | 'center' | 'right'
+  const layoutPreset = node.attrs.layoutPreset as FigureLayoutPreset | undefined
   const widthMm = node.attrs.widthMm != null ? Number(node.attrs.widthMm) : undefined
   const widthRatio = node.attrs.widthRatio != null ? Number(node.attrs.widthRatio) : undefined
   const caption = String(node.attrs.caption || '')
@@ -196,11 +198,12 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
     id: blockId,
     asset,
     alignment,
+    ...(layoutPreset ? { layoutPreset } : {}),
     ...(widthMm != null && Number.isFinite(widthMm) ? { widthMm } : {}),
     ...(widthRatio != null && Number.isFinite(widthRatio) ? { widthRatio } : {}),
-  }), [blockId, asset, alignment, widthMm, widthRatio])
+  }), [blockId, asset, alignment, layoutPreset, widthMm, widthRatio])
 
-  const effectiveWidthMm = effectiveFigureWidthMm(figureBlock, contentWidthMm)
+  const effectiveWidthMm = resolveFigureLayout({ preset: layoutPreset, explicitWidthMm: widthMm, legacyAlignment: alignment, legacyWidthRatio: widthRatio, containerWidthMm: contentWidthMm }).widthMm
   const displayWidthMm = dragWidthMm ?? effectiveWidthMm
   const mergeKey = `resize-figure-${blockId}`
 
@@ -238,7 +241,8 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
     setImageState(image?.complete ? (image.naturalWidth > 0 ? 'loaded' : 'error') : 'loading')
   }, [url])
 
-  const alignClass = { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[alignment]
+  const resolvedLayout = resolveFigureLayout({ preset: layoutPreset, explicitWidthMm: widthMm, legacyAlignment: alignment, legacyWidthRatio: widthRatio, containerWidthMm: contentWidthMm })
+  const alignClass = { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[resolvedLayout.alignment]
 
   /** pointerup 提交：钳制到内容区宽度后写入编辑器（一个 undo 步骤） */
   const handleCommitWidth = useCallback((mm: number) => {
@@ -249,6 +253,25 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
 
   return (
     <NodeViewWrapper className={`td-figure my-4 ${selectionRing(selected)}`}>
+      {selected ? (
+        <div className="mb-2 flex items-center justify-center gap-1" data-print-hide="">
+          {([
+            ['block-center', '居中插图'],
+            ['block-left', '左对齐'],
+            ['block-right', '右对齐'],
+            ['full-width', '通栏'],
+          ] as const).map(([preset, label]) => (
+            <button
+              key={preset}
+              type="button"
+              className={`rounded border px-2 py-1 text-[11px] ${layoutPreset === preset ? 'border-zinc-900 bg-zinc-100 text-zinc-900' : 'border-zinc-200 text-zinc-500 hover:bg-zinc-50'}`}
+              onClick={() => editor.commands.updateAttributes('docFigure', { layoutPreset: preset })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {!url || imageState === 'error' ? (
         <div className="flex items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 py-8 text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/30">
           <ImageOff className="mr-2 size-5" />
@@ -297,7 +320,7 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
 // ─── Question NodeView ───────────────────────────────────────────────────────
 
 export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewProps) {
-  const { resolveQuestion } = useResolvers()
+  const { resolveQuestion, resolveFigure } = useResolvers()
   const paper = usePaper()
   const questionId = String(node.attrs.questionId || '')
   const breakBehavior = ['auto', 'avoid', 'force-before'].includes(String(node.attrs.breakBehavior))
@@ -312,6 +335,7 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
   }, [node.attrs.display])
   const [dragAnswerHeightMm, setDragAnswerHeightMm] = useState<number | null>(null)
   const [dragFigureWidths, setDragFigureWidths] = useState<Record<string, number>>({})
+  const [selectedInsertedFigureKey, setSelectedInsertedFigureKey] = useState('')
   const answerSpace = display.answerSpace
   const effectiveDisplay = dragAnswerHeightMm == null || !answerSpace
     ? display
@@ -417,15 +441,102 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
 
   const effectiveQuestion = localContent ? { ...question, ...localContent } : question
 
+  const updateFigurePlacement = (figureKey: string, patch: Record<string, unknown>) => {
+    const current = display.figureOverrides?.[figureKey] || {}
+    const placement = Object.fromEntries(Object.entries({ ...current, ...patch }).filter(([, value]) => value !== undefined))
+    const figureOverrides = { ...display.figureOverrides }
+    if (Object.keys(placement).length) figureOverrides[figureKey] = placement
+    else delete figureOverrides[figureKey]
+    const next = { ...display, ...(Object.keys(figureOverrides).length ? { figureOverrides } : {}) }
+    if (!Object.keys(figureOverrides).length) delete next.figureOverrides
+    updateAttributes({ display: JSON.stringify(next) })
+  }
+
   const layoutEditor: QuestionLayoutEditor = {
     selected,
     contentWidthMm: paperContentWidthMm(paper),
     previewFigureWidth,
     commitFigureWidth,
+    selectedFigureKey: selectedInsertedFigureKey,
+    onFigureSelect: setSelectedInsertedFigureKey,
+  }
+
+  const insertedFigures = display.insertedFigures || []
+  const selectedInsertedFigure = insertedFigures.find((figure) => figure.id === selectedInsertedFigureKey)
+  const selectedQuestionFigure = question.figures.find((figure) => String(figure.id || figure.blockId || '') === selectedInsertedFigureKey)
+  const selectedFigure = selectedInsertedFigure || selectedQuestionFigure
+  const selectedFigureAlignment = selectedInsertedFigure?.alignment || display.figureOverrides?.[selectedInsertedFigureKey]?.alignment || 'center'
+  const updateInsertedFigure = (patch: Record<string, unknown>) => {
+    if (!selectedFigure) return
+    if (!selectedInsertedFigure) {
+      updateFigurePlacement(selectedInsertedFigureKey, patch)
+      return
+    }
+    updateAttributes({ display: JSON.stringify({
+      ...display,
+      insertedFigures: insertedFigures.map((figure) => figure.id === selectedInsertedFigure.id ? { ...figure, ...patch } : figure),
+    }) })
+  }
+  const deleteInsertedFigure = () => {
+    if (!selectedInsertedFigure) return
+    updateAttributes({ display: JSON.stringify({ ...display, insertedFigures: insertedFigures.filter((figure) => figure.id !== selectedInsertedFigure.id).map((figure, index) => ({ ...figure, order: index })) }) })
+    setSelectedInsertedFigureKey('')
+  }
+  const moveInsertedFigure = (direction: -1 | 1) => {
+    if (!selectedInsertedFigure) return
+    const index = insertedFigures.findIndex((figure) => figure.id === selectedInsertedFigure.id)
+    const target = index + direction
+    if (index < 0 || target < 0 || target >= insertedFigures.length) return
+    const next = [...insertedFigures]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    updateAttributes({ display: JSON.stringify({ ...display, insertedFigures: next.map((figure, itemIndex) => ({ ...figure, order: itemIndex })) }) })
   }
 
   return (
     <NodeViewWrapper className={selectionRing(selected)}>
+      {selectedFigure ? (
+        <div className="mb-2 flex items-center justify-center gap-1.5 rounded-md border border-zinc-200 bg-white/95 p-1.5 text-[11px] shadow-sm dark:border-zinc-700 dark:bg-zinc-900" data-print-hide="">
+          <span className="px-1 text-zinc-500">图片</span>
+          <button type="button" title="左对齐" onClick={() => updateInsertedFigure({ alignment: 'left' })} className={`rounded px-2 py-1 ${selectedFigureAlignment === 'left' ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-500 hover:bg-zinc-100'}`}>左</button>
+          <button type="button" title="居中" onClick={() => updateInsertedFigure({ alignment: 'center' })} className={`rounded px-2 py-1 ${selectedFigureAlignment === 'center' ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-500 hover:bg-zinc-100'}`}>中</button>
+          <button type="button" title="右对齐" onClick={() => updateInsertedFigure({ alignment: 'right' })} className={`rounded px-2 py-1 ${selectedFigureAlignment === 'right' ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-500 hover:bg-zinc-100'}`}>右</button>
+          <span className="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+          <button type="button" title="上移" disabled={!selectedInsertedFigure || insertedFigures.findIndex((figure) => figure.id === selectedInsertedFigure.id) === 0} onClick={() => moveInsertedFigure(-1)} className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"><ArrowUp className="size-3.5" /></button>
+          <button type="button" title="下移" disabled={!selectedInsertedFigure || insertedFigures.findIndex((figure) => figure.id === selectedInsertedFigure.id) === insertedFigures.length - 1} onClick={() => moveInsertedFigure(1)} className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"><ArrowDown className="size-3.5" /></button>
+          <button type="button" title={selectedInsertedFigure ? '删除图片' : '清除图片覆盖'} onClick={selectedInsertedFigure ? deleteInsertedFigure : () => updateFigurePlacement(selectedInsertedFigureKey, {})} className="rounded p-1 text-red-500 hover:bg-red-50"><Trash2 className="size-3.5" /></button>
+        </div>
+      ) : null}
+      {selected && question.figures.length ? (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded border border-zinc-200 bg-zinc-50/70 p-2" data-print-hide="">
+          {question.figures.map((figure) => {
+            const key = figure.id || figure.blockId || ''
+            const override = display.figureOverrides?.[key]
+            return (
+              <div key={key} className="flex items-center gap-1">
+                <span className="text-[10px] text-zinc-500">题图 {key}</span>
+                <select aria-label={`题图 ${key} 位置`} value={override?.slot || ''} onChange={(event) => updateFigurePlacement(key, { slot: event.target.value || undefined })} className="h-7 rounded border border-zinc-200 bg-white px-1 text-[10px]">
+                  <option value="">原位置</option>
+                  <option value="stem-start">题干开头</option>
+                  <option value="stem-end">题干末尾</option>
+                  <option value="before-options">选项之前</option>
+                  <option value="after-options">选项之后</option>
+                  <option value="before-answer">答案之前</option>
+                  <option value="after-answer">答案之后</option>
+                  <option value="analysis-start">解析开头</option>
+                  <option value="analysis-end">解析末尾</option>
+                </select>
+                <select aria-label={`题图 ${key} 样式`} value={override?.layoutPreset || ''} onChange={(event) => updateFigurePlacement(key, { layoutPreset: event.target.value || undefined })} className="h-7 rounded border border-zinc-200 bg-white px-1 text-[10px]">
+                  <option value="">默认样式</option>
+                  <option value="block-center">居中插图</option>
+                  <option value="block-left">左对齐</option>
+                  <option value="block-right">右对齐</option>
+                  <option value="full-width">通栏</option>
+                </select>
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
       {localContent ? (
         <div className="mt-2">
           <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50/60 px-1.5 py-0.5 text-[11px] font-normal tracking-wide text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">文档本地版本</span>
@@ -440,11 +551,12 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
               continuation={item.continuation}
               regionItems={item.regionItems}
               layoutEditor={layoutEditor}
+              resolveFigure={resolveFigure}
             />
             {index < questionFragments.length - 1 ? <PageTransition afterPageIndex={pageIndex} context={paginationContext!} /> : null}
           </div>
         )) : (
-          <QuestionRuntimeContent block={block} model={createQuestionRuntimeModel(block, effectiveQuestion)} layoutEditor={layoutEditor} />
+          <QuestionRuntimeContent block={block} model={createQuestionRuntimeModel(block, effectiveQuestion)} layoutEditor={layoutEditor} resolveFigure={resolveFigure} />
         )}
         {selected && answerSpace ? (
           <div className="absolute inset-x-0 bottom-0 z-10" data-print-hide="">
@@ -484,6 +596,7 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
       return []
     }
   }, [node.attrs.children])
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null)
 
   const template = getBoxTemplateOrFallback(templateId)
   const boxBlock: BoxBlock = {
@@ -504,6 +617,16 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
     updateAttributes({ children: JSON.stringify(nextChildren) })
   }, [updateAttributes])
 
+  const moveChild = useCallback((childId: string, delta: -1 | 1) => {
+    const index = children.findIndex((child) => child.id === childId)
+    const nextIndex = index + delta
+    if (index < 0 || nextIndex < 0 || nextIndex >= children.length) return
+    const next = [...children]
+    const [item] = next.splice(index, 1)
+    next.splice(nextIndex, 0, item)
+    updateChildren(next)
+  }, [children, updateChildren])
+
   const insertChildAfter = useCallback((afterId: string | undefined, type: TeachingBlock['type']) => {
     if (!BOX_INSERTABLE_TYPES.includes(type)) return
     const child = newTeachingBlock(type) as BoxChildBlock
@@ -518,12 +641,31 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
       return (
         <div
           key={`${child.id}:${index}`}
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
+          onMouseDownCapture={(event) => event.stopPropagation()}
+          onPointerDownCapture={(event) => {
             event.stopPropagation()
+            setSelectedChildId(child.id)
+            emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
+          }}
+          onClickCapture={(event) => {
+            event.stopPropagation()
+            setSelectedChildId(child.id)
             emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
           }}
         >
+          {selectedChildId === child.id && child.type === 'figure' ? (
+            <div className="mb-1 flex items-center gap-1" data-print-hide="">
+              {([
+                ['block-center', '居中插图'], ['block-left', '左对齐'], ['block-right', '右对齐'], ['full-width', '通栏'],
+              ] as const).map(([preset, label]) => (
+                <button key={preset} type="button" className="rounded border border-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-50" title={label} onClick={() => updateChildren(children.map((item) => item.id === child.id ? { ...item, layoutPreset: preset } : item))}>{label}</button>
+              ))}
+              <button type="button" className="rounded border border-zinc-200 p-1 text-zinc-500 hover:bg-zinc-50" title="上移" onClick={() => moveChild(child.id, -1)}><ArrowUp className="size-3" /></button>
+              <button type="button" className="rounded border border-zinc-200 p-1 text-zinc-500 hover:bg-zinc-50" title="下移" onClick={() => moveChild(child.id, 1)}><ArrowDown className="size-3" /></button>
+              <button type="button" className="rounded border border-zinc-200 p-1 text-zinc-500 hover:bg-zinc-50" title="复制" onClick={() => updateChildren([...children.slice(0, index + 1), { ...child, id: `${child.id}-copy-${Date.now().toString(36)}` }, ...children.slice(index + 1)])}><Copy className="size-3" /></button>
+              <button type="button" className="rounded border border-red-200 p-1 text-red-600 hover:bg-red-50" title="删除" onClick={() => updateChildren(children.filter((item) => item.id !== child.id))}><Trash2 className="size-3" /></button>
+            </div>
+          ) : null}
           <BlockRenderer
             block={child as TeachingBlock}
             resolvers={{ resolveQuestion, resolveFigure }}
@@ -535,8 +677,12 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
       <div
         key={`${child.id}:${index}`}
         className="td-box-child-editor relative"
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
+        onMouseDownCapture={(event) => event.stopPropagation()}
+        onPointerDownCapture={(event) => {
+          event.stopPropagation()
+          emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
+        }}
+        onClickCapture={(event) => {
           event.stopPropagation()
           emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
         }}

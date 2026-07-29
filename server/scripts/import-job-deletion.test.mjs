@@ -56,14 +56,14 @@ try {
   assert.equal(db.prepare('SELECT import_job_id FROM question_bank_items WHERE id = ?').get(question.id).import_job_id, first.id)
   assert.equal(db.prepare('SELECT status FROM import_job_deletion_manifests WHERE job_id = ?').get(first.id).status, 'failed')
 
-  console.log('4. Retrying succeeds, trashes files, and detaches rather than deletes questions...')
+  console.log('4. Retrying succeeds, trashes files, and deletes imported questions...')
   db.exec('DROP TRIGGER fail_import_job_delete_for_test')
   const result = deleteImportJob(first.id)
   assert.equal(result.success, true)
   assert.equal(fs.existsSync(path.join(result.recoveryPath, 'source-documents', source.id, 'original.pdf')), true)
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM import_jobs WHERE id = ?').get(first.id).count, 0)
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM source_documents WHERE id = ?').get(source.id).count, 0)
-  assert.equal(db.prepare('SELECT import_job_id FROM question_bank_items WHERE id = ?').get(question.id).import_job_id, null)
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM question_bank_items WHERE id = ?').get(question.id).count, 0)
   assert.equal(db.prepare('SELECT status FROM import_job_deletion_manifests WHERE job_id = ?').get(first.id).status, 'trashed')
 
   console.log('5. Trash retention removes only expired completed manifests...')

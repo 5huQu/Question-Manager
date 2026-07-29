@@ -1,13 +1,20 @@
-import { BookOpen, Calendar, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, EyeOff, FileCode2, FileDown, FileText, GripVertical, HelpCircle, NotebookPen, PencilLine, Save, Settings2, ShoppingBag, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, EyeOff, FileCode2, FileDown, FileText, GripVertical, HelpCircle, NotebookPen, PencilLine, Save, Settings2, ShoppingBag, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
 import type { CollectionSummary } from '../../types'
 import { Button } from '../ui'
-import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '../questions/QuestionContent'
 import { EditDialog } from '../questions/EditDialog'
 import { Modal } from '../dialogs/Modal'
-import { richBlocksPlainText } from '../RichContent'
-import { difficultyLabel10, displaySource } from '../../utils/questionDisplay'
 import { basketCardOutlineButtonClass, basketCardDangerButtonClass, getDefaultScore, stripLeadingQuestionNo } from './constants'
 import type { BasketState } from './useBasketState'
+import {
+  QuestionCardContextLabel,
+  QuestionCardFooter,
+  QuestionCardFrame,
+  QuestionCardHeader,
+  QuestionCardKnowledge,
+  QuestionCardSolution,
+  QuestionCardStem,
+  resolveQuestionCardContent,
+} from '../questions/workbench/QuestionCard'
 
 export function BasketPageView({ state }: { state: BasketState }) {
   const {
@@ -107,17 +114,16 @@ export function BasketPageView({ state }: { state: BasketState }) {
               {active.data.questions.map((entry, index) => {
                 const itemKey = entry.relationId || entry.item.id
                 const showAnalysis = expandedQuestionIds.has(itemKey)
-                const stem = entry.item.stemMarkdown || richBlocksPlainText(entry.item.problemBlocks)
-                const answer = entry.item.answerText || richBlocksPlainText(entry.item.answerBlocks)
-                const analysis = entry.item.analysisMarkdown || richBlocksPlainText(entry.item.analysisBlocks)
-                const chapter = entry.item.chapter || entry.item.knowledgePoints?.[0] || '未分类'
-                const date = entry.item.updatedAt ? new Date(entry.item.updatedAt).toLocaleDateString() : ''
+                const { stem } = resolveQuestionCardContent(entry.item)
 
                 return (
-                  <article
+                  <QuestionCardFrame
                     key={itemKey}
                     draggable
-                    onDragStart={(event) => {
+                    animateLayout
+                    dragging={draggedIndex === index}
+                    className="cursor-grab active:cursor-grabbing"
+                    onDragStartCapture={(event) => {
                       if ((event.target as HTMLElement).closest('button, input')) {
                         event.preventDefault()
                         return
@@ -132,74 +138,24 @@ export function BasketPageView({ state }: { state: BasketState }) {
                       if (draggedIndex === null) return
                       await handleDragDrop(draggedIndex, index)
                     }}
-                    className={`group relative flex cursor-grab flex-col gap-3 rounded-lg border bg-white p-5 text-left transition-all duration-200 active:cursor-grabbing dark:bg-zinc-950 ${
-                      draggedIndex === index
-                        ? 'border-dashed border-zinc-400 bg-zinc-50 opacity-40 dark:border-zinc-600 dark:bg-zinc-900/10'
-                        : 'border-zinc-200 hover:-translate-y-0.5 hover:border-zinc-400 hover:shadow-md dark:border-zinc-800 dark:hover:border-zinc-600 dark:hover:shadow-none'
-                    }`}
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex min-w-0 flex-1 items-center gap-3">
-                        <GripVertical className="size-4 shrink-0 text-zinc-300 transition-colors group-hover:text-zinc-500 dark:text-zinc-700 dark:group-hover:text-zinc-500" />
-                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                          <span className="inline-flex items-center rounded bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold text-white dark:bg-zinc-100 dark:text-zinc-900">第 {index + 1} 题</span>
-                          {[entry.item.questionType || '未设题型', entry.item.stage || '未设学段', chapter].map((tag) => (
-                            <span key={tag} className="inline-flex items-center rounded bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                              {tag}
-                            </span>
-                          ))}
-                          <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold ${String(difficultyLabel10(entry.item)).includes('难') ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'}`}>
-                            难度: {difficultyLabel10(entry.item)}
-                          </span>
-                        </div>
-                      </div>
-                      <span className="ml-1 shrink-0 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">
-                        #{entry.item.serialNo ?? entry.item.questionNo ?? entry.item.id.slice(0, 6)}
-                      </span>
-                    </div>
-
-                    <div className="select-text font-sans text-xs leading-relaxed text-zinc-900 dark:text-zinc-100">
-                      <QuestionMarkdownContent
-                        content={stripLeadingQuestionNo(stem || '题干为空', entry.item.questionNo)}
-                        figures={entry.item.figures}
-                      />
-                    </div>
-
-                    {entry.item.knowledgePoints?.length ? (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {entry.item.knowledgePoints.map((knowledgePoint) => (
-                          <span key={knowledgePoint} className="inline-flex items-center rounded border border-zinc-200/60 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:border-zinc-800/80 dark:bg-zinc-900/30 dark:text-zinc-400">
-                            {knowledgePoint}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    <div className={`grid transition-all duration-300 ease-in-out ${showAnalysis ? 'mt-2 grid-rows-[1fr] opacity-100' : 'pointer-events-none grid-rows-[0fr] opacity-0'}`}>
-                      <div className="overflow-hidden">
-                        <div className="space-y-3 rounded border-t border-zinc-200 bg-zinc-50/50 p-3 pt-3 dark:border-zinc-800 dark:bg-zinc-900/30">
-                          <div>
-                            <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【答案】</span>
-                            <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                              <MarkdownWithInlineFigures content={answer || '暂无答案'} figures={entry.item.figures} />
-                            </div>
-                          </div>
-                          <div>
-                            <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【解析】</span>
-                            <div className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                              <MarkdownWithInlineFigures content={analysis || '暂无解析'} figures={entry.item.figures} />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className={`mt-1 flex flex-wrap items-center justify-between gap-3 pt-3 ${showAnalysis ? '' : 'border-t border-zinc-200 dark:border-zinc-800'}`}>
-                      <div className="flex items-center gap-3 text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
-                        {date ? <span className="flex items-center gap-1"><Calendar className="size-3" />{date}</span> : null}
-                        <span className="flex items-center gap-1"><BookOpen className="size-3" />{displaySource(entry.item.sourceTitle || '') || '高中数学专项试卷'}</span>
-                      </div>
-                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    <QuestionCardHeader
+                      item={entry.item}
+                      leading={
+                        <>
+                          <GripVertical className="size-4 shrink-0 text-zinc-300 transition-colors group-hover:text-zinc-500 dark:text-zinc-700 dark:group-hover:text-zinc-500" />
+                          <QuestionCardContextLabel>第 {index + 1} 题</QuestionCardContextLabel>
+                        </>
+                      }
+                    />
+                    <QuestionCardStem item={entry.item} content={stripLeadingQuestionNo(stem || '题干为空', entry.item.questionNo)} />
+                    <QuestionCardKnowledge item={entry.item} />
+                    <QuestionCardSolution item={entry.item} open={showAnalysis} />
+                    <QuestionCardFooter
+                      item={entry.item}
+                      open={showAnalysis}
+                      actions={
+                        <>
                         <label className="flex h-7 items-center gap-1 rounded-md border border-zinc-200 bg-white px-2 text-[10px] font-medium text-zinc-500 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
                           分值
                           <input
@@ -237,9 +193,10 @@ export function BasketPageView({ state }: { state: BasketState }) {
                         <button type="button" onClick={() => entry.relationId && removeItem(entry.relationId)} className={basketCardDangerButtonClass}>
                           <Trash2 className="size-3.5" />移出试题篮
                         </button>
-                      </div>
-                    </div>
-                  </article>
+                        </>
+                      }
+                    />
+                  </QuestionCardFrame>
                 )
               })}
             </div>

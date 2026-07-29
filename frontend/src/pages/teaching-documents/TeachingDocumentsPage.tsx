@@ -1,62 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Copy, FilePenLine, Inbox, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Copy, FilePenLine, Inbox, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { teachingDocumentsApi, type TeachingDocumentSummary } from '@/api/teachingDocuments'
+import type { TeachingDocumentType } from '@/types/teachingDocument'
 import { formatRelativeTime } from '@/utils/formatTime'
 
-/** 简单下拉菜单（点击外部自动关闭） */
-function Dropdown({ trigger, children, align = 'right' }: {
-  trigger: React.ReactNode
-  children: React.ReactNode
-  align?: 'left' | 'right'
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    function handleClick(event: MouseEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [open])
-
-  return (
-    <div ref={ref} className="relative">
-      <div onClick={() => setOpen((value) => !value)}>{trigger}</div>
-      {open ? (
-        <div
-          className={`absolute z-50 mt-1 min-w-36 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-950 ${align === 'right' ? 'right-0' : 'left-0'}`}
-          onClick={() => setOpen(false)}
-        >
-          {children}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function MenuItem({ icon: Icon, label, danger, onClick }: {
-  icon: typeof Pencil
-  label: string
-  danger?: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors ${
-        danger
-          ? 'text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30'
-          : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900'
-      }`}
-    >
-      <Icon className="size-3.5" />
-      {label}
-    </button>
-  )
+const documentTypeLabels: Record<TeachingDocumentType, string> = {
+  exam: '试卷',
+  lecture: '讲义',
+  worksheet: '练习单',
 }
 
 export default function TeachingDocumentsPage() {
@@ -65,6 +17,10 @@ export default function TeachingDocumentsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [newDocumentType, setNewDocumentType] = useState<TeachingDocumentType>('lecture')
+  const [query, setQuery] = useState('')
+  const [documentType, setDocumentType] = useState<TeachingDocumentType | ''>('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -81,13 +37,22 @@ export default function TeachingDocumentsPage() {
 
   useEffect(() => { void load() }, [load])
 
-  async function create() {
+  const filteredItems = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase()
+    return items.filter((item) => {
+      if (documentType && item.documentType !== documentType) return false
+      return !normalizedQuery || item.title.toLocaleLowerCase().includes(normalizedQuery)
+    })
+  }, [documentType, items, query])
+
+  async function create(documentType: TeachingDocumentType) {
     setCreating(true)
     try {
       const record = await teachingDocumentsApi.createDocument({
         title: '未命名文档',
-        documentType: 'lecture',
+        documentType,
       })
+      setCreateDialogOpen(false)
       navigate(`/teaching-documents/${encodeURIComponent(record.id)}`)
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : String(createError))
@@ -140,7 +105,7 @@ export default function TeachingDocumentsPage() {
         <button
           type="button"
           disabled={creating}
-          onClick={() => void create()}
+          onClick={() => setCreateDialogOpen(true)}
           className="inline-flex h-9 items-center gap-1.5 rounded-md bg-zinc-900 px-4 text-sm font-medium text-zinc-50 transition-colors hover:bg-zinc-900/90 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-50/90"
         >
           <Plus className="size-4" />
@@ -148,22 +113,86 @@ export default function TeachingDocumentsPage() {
         </button>
       </div>
 
+      {createDialogOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation" onMouseDown={() => { if (!creating) setCreateDialogOpen(false) }}>
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-document-title"
+            className="w-full max-w-md rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-950"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="border-b border-zinc-100 px-5 py-4 dark:border-zinc-900">
+              <h2 id="create-document-title" className="text-base font-semibold text-zinc-900 dark:text-zinc-50">新建文档</h2>
+              <p className="mt-1 text-[13px] text-zinc-500">选择文档类型后即可进入编辑器。</p>
+            </div>
+            <div className="space-y-2 p-5">
+              {(Object.entries(documentTypeLabels) as Array<[TeachingDocumentType, string]>).map(([type, label]) => (
+                <button
+                  key={type}
+                  type="button"
+                  aria-pressed={newDocumentType === type}
+                  onClick={() => setNewDocumentType(type)}
+                  className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition-colors ${
+                    newDocumentType === type
+                      ? 'border-zinc-900 bg-zinc-50/50 dark:border-zinc-100 dark:bg-zinc-900/40'
+                      : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900/30'
+                  }`}
+                >
+                  <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{label}</span>
+                  <span className="text-xs text-zinc-500">{type === 'exam' ? '用于组卷与测验' : type === 'lecture' ? '用于教学讲解' : '用于课堂练习'}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-zinc-100 px-5 py-3 dark:border-zinc-900">
+              <button type="button" disabled={creating} onClick={() => setCreateDialogOpen(false)} className="inline-flex h-9 items-center rounded-md border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900">取消</button>
+              <button type="button" disabled={creating} onClick={() => void create(newDocumentType)} className="inline-flex h-9 items-center rounded-md bg-zinc-900 px-4 text-sm font-medium text-zinc-50 transition-colors hover:bg-zinc-900/90 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-50/90">
+                {creating ? '创建中...' : `创建${documentTypeLabels[newDocumentType]}`}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {error ? (
         <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50/30 p-3 text-xs text-red-800 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400">{error}</div>
       ) : null}
 
+      <div className="grid gap-3 rounded-lg border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 md:grid-cols-[minmax(240px,1fr)_160px]">
+        <label className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+          <input
+            aria-label="搜索文档"
+            className="h-9 w-full rounded-md border border-zinc-200 bg-white pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
+            placeholder="搜索文档名称"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <select
+          aria-label="文档类型筛选"
+          className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-700 outline-none transition-colors focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300"
+          value={documentType}
+          onChange={(event) => setDocumentType(event.target.value as TeachingDocumentType | '')}
+        >
+          <option value="">全部文档类型</option>
+          {Object.entries(documentTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </div>
+
       <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="grid grid-cols-[minmax(260px,1.5fr)_140px_140px_56px] border-b border-zinc-200 bg-zinc-50/70 px-4 text-[12px] font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40">
+        <div className="grid min-w-[760px] grid-cols-[minmax(260px,1.5fr)_90px_140px_140px_112px] border-b border-zinc-200 bg-zinc-50/70 px-4 text-[12px] font-semibold text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40">
           <span className="py-3">文档</span>
+          <span className="py-3">类型</span>
           <span className="py-3">内容</span>
           <span className="py-3">更新时间</span>
-          <span className="py-3" />
+          <span className="py-3 text-right">操作</span>
         </div>
 
         {loading ? (
           <div className="space-y-0">
             {[0, 1, 2].map((index) => (
-              <div key={index} className="grid grid-cols-[minmax(260px,1.5fr)_140px_140px_56px] items-center border-b border-zinc-100 px-4 py-3.5 last:border-0 dark:border-zinc-900">
+              <div key={index} className="grid min-w-[760px] grid-cols-[minmax(260px,1.5fr)_90px_140px_140px_112px] items-center border-b border-zinc-100 px-4 py-3.5 last:border-0 dark:border-zinc-900">
                 <div className="flex items-center gap-3">
                   <span className="size-8 shrink-0 animate-pulse rounded-md bg-zinc-100 dark:bg-zinc-900" />
                   <div className="space-y-1.5">
@@ -171,20 +200,21 @@ export default function TeachingDocumentsPage() {
                     <span className="block h-2.5 w-20 animate-pulse rounded bg-zinc-100 dark:bg-zinc-900" />
                   </div>
                 </div>
+                <span className="h-5 w-12 animate-pulse rounded bg-zinc-100 dark:bg-zinc-900" />
                 <span className="h-3 w-16 animate-pulse rounded bg-zinc-100 dark:bg-zinc-900" />
                 <span className="h-3 w-16 animate-pulse rounded bg-zinc-100 dark:bg-zinc-900" />
                 <span />
               </div>
             ))}
           </div>
-        ) : items.length ? items.map((item) => (
+        ) : filteredItems.length ? filteredItems.map((item) => (
           <div
             key={item.id}
             role="button"
             tabIndex={0}
             onClick={() => open(item)}
             onKeyDown={(event) => { if (event.key === 'Enter') open(item) }}
-            className="grid cursor-pointer grid-cols-[minmax(260px,1.5fr)_140px_140px_56px] items-center border-b border-zinc-100 px-4 transition-colors last:border-0 hover:bg-zinc-50/50 dark:border-zinc-900 dark:hover:bg-zinc-900/30"
+            className="grid min-w-[760px] cursor-pointer grid-cols-[minmax(260px,1.5fr)_90px_140px_140px_112px] items-center border-b border-zinc-100 px-4 transition-colors last:border-0 hover:bg-zinc-50/50 dark:border-zinc-900 dark:hover:bg-zinc-900/30"
           >
             <div className="flex min-w-0 items-center gap-3 py-3">
               <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
@@ -194,32 +224,33 @@ export default function TeachingDocumentsPage() {
                 <span className="block truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{item.title}</span>
               </span>
             </div>
+            <span>
+              <span className="inline-flex items-center rounded-md border border-zinc-200 bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                {documentTypeLabels[item.documentType]}
+              </span>
+            </span>
             <span className="text-xs text-zinc-500">{item.blockCount} 段内容 · {item.assetCount} 图</span>
             <span className="text-xs tabular-nums text-zinc-400" title={new Date(item.updatedAt).toLocaleString()}>
               {formatRelativeTime(item.updatedAt)}
             </span>
-            <div className="flex justify-end" onClick={(event) => event.stopPropagation()}>
-              <Dropdown
-                align="right"
-                trigger={
-                  <button type="button" className="rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="更多操作">
-                    <MoreHorizontal className="size-4" />
-                  </button>
-                }
-              >
-                <MenuItem icon={Pencil} label="重命名" onClick={() => void rename(item)} />
-                <MenuItem icon={Copy} label="创建副本" onClick={() => void duplicate(item)} />
-                <div className="my-1 border-t border-zinc-100 dark:border-zinc-900" />
-                <MenuItem icon={Trash2} label="删除" danger onClick={() => void remove(item)} />
-              </Dropdown>
+            <div className="flex justify-end gap-0.5" onClick={(event) => event.stopPropagation()}>
+              <button type="button" aria-label={`重命名 ${item.title}`} className="rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="重命名" onClick={() => void rename(item)}>
+                <Pencil className="size-4" />
+              </button>
+              <button type="button" aria-label={`创建 ${item.title} 的副本`} className="rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="创建副本" onClick={() => void duplicate(item)}>
+                <Copy className="size-4" />
+              </button>
+              <button type="button" aria-label={`删除 ${item.title}`} className="rounded-md p-2 text-zinc-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30 dark:hover:text-red-400" title="删除" onClick={() => void remove(item)}>
+                <Trash2 className="size-4" />
+              </button>
             </div>
           </div>
         )) : (
           <div className="flex flex-col items-center justify-center p-12">
             <div className="flex flex-col items-center rounded-xl border border-dashed border-zinc-200 bg-zinc-50/10 px-16 py-10 dark:border-zinc-800">
               <Inbox className="size-8 text-zinc-300 dark:text-zinc-700" />
-              <p className="mt-3 text-sm font-medium text-zinc-600 dark:text-zinc-300">暂无文档</p>
-              <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">点击右上角“新建文档”开始创建。</p>
+              <p className="mt-3 text-sm font-medium text-zinc-600 dark:text-zinc-300">{items.length ? '未找到匹配文档' : '暂无文档'}</p>
+              <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">{items.length ? '请调整搜索词或文档类型筛选。' : '点击右上角“新建文档”开始创建。'}</p>
             </div>
           </div>
         )}

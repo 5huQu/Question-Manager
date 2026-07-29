@@ -15,7 +15,7 @@ import {
   uploadFigure,
 } from '../../services/question-bank/items.service.js'
 import { previewQuestionAiClean as previewQuestionAiCleanService } from '../../services/question-bank/ai-cleaner.service.js'
-import { runQuestionBatchClassification } from '../../services/question-bank/batch-classification.js'
+import { getQuestionBatchClassificationTask, startQuestionBatchClassification } from '../../services/question-bank/batch-classification.js'
 
 export function mountQuestionBankItemsRoutes(app: Express) {
   app.get('/api/question-bank/items', (req, res) => {
@@ -42,12 +42,18 @@ export function mountQuestionBankItemsRoutes(app: Express) {
     }
   })
 
-  app.post('/api/question-bank/items/classify', async (_req, res) => {
+  app.post('/api/question-bank/items/classify', (_req, res) => {
     try {
-      res.json({ report: await runQuestionBatchClassification({ type: 'all' }) })
+      res.status(202).json({ task: startQuestionBatchClassification({ type: 'all' }) })
     } catch (error) {
       sendRouteError(res, error)
     }
+  })
+
+  app.get('/api/question-bank/classification-tasks/:id', (req, res) => {
+    const task = getQuestionBatchClassificationTask(decodeURIComponent(req.params.id))
+    if (!task) { res.status(404).json({ error: '分类任务不存在或已过期。' }); return }
+    res.json({ task })
   })
 
   app.post('/api/question-bank/items', (req, res) => {

@@ -310,11 +310,13 @@ export function FigureGallery({
   className = '',
   compact = false,
   showCaption = true,
+  onSelect,
 }: {
   figures: QuestionFigure[]
   className?: string
   compact?: boolean
   showCaption?: boolean
+  onSelect?: (figure: QuestionFigure) => void
 }) {
   const [preview, setPreview] = useState<QuestionFigure | null>(null)
   const [failed, setFailed] = useState<Set<string>>(() => new Set())
@@ -335,7 +337,11 @@ export function FigureGallery({
             data-teaching-resource-id={resourceId}
             data-teaching-resource-status={hasFailed ? 'error' : 'ready'}
           >
-            <button className={`flex w-full justify-center bg-white p-2 text-left ${compact ? 'h-32' : 'h-44'} ${hasFailed ? 'cursor-default' : 'cursor-zoom-in'}`} onClick={() => !hasFailed && setPreview(figure)} type="button">
+            <button className={`flex w-full justify-center bg-white p-2 text-left ${compact ? 'h-32' : 'h-44'} ${hasFailed ? 'cursor-default' : onSelect ? 'cursor-pointer' : 'cursor-zoom-in'}`} onClick={() => {
+              if (hasFailed) return
+              if (onSelect) onSelect(figure)
+              else setPreview(figure)
+            }} type="button">
               {hasFailed ? (
                 <span className="flex h-full w-full items-center justify-center bg-zinc-50 text-xs text-zinc-400">
                   图片加载失败

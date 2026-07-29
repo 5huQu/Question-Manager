@@ -22,6 +22,12 @@ function Location() {
   return <div data-location>{useLocation().pathname}</div>
 }
 
+function setNativeValue(element: HTMLInputElement | HTMLSelectElement, value: string) {
+  const prototype = element instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLSelectElement.prototype
+  Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(element, value)
+  element.dispatchEvent(new Event(element instanceof HTMLInputElement ? 'input' : 'change', { bubbles: true }))
+}
+
 describe('TeachingDocumentsPage', () => {
   let container: HTMLDivElement
   let root: Root
@@ -71,13 +77,47 @@ describe('TeachingDocumentsPage', () => {
     expect(container.querySelector('[data-location]')?.textContent).toBe('/teaching-documents/doc-1')
   })
 
-  it('creates a document without exposing the internal document type', async () => {
+  it('lets the user choose a document type before creating a document', async () => {
     const createTrigger = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('新建文档'))
     await act(async () => {
       createTrigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('新建文档')
+
+    const examChoice = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('试卷'))
+    await act(async () => {
+      examChoice?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const confirmCreate = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('创建试卷'))
+    await act(async () => {
+      confirmCreate?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    expect(mocks.createDocument).toHaveBeenCalledWith({ title: '未命名文档', documentType: 'lecture' })
+    expect(mocks.createDocument).toHaveBeenCalledWith({ title: '未命名文档', documentType: 'exam' })
     expect(container.querySelector('[data-location]')?.textContent).toBe('/teaching-documents/doc-new')
+  })
+
+  it('filters documents by title and document type', async () => {
+    const search = container.querySelector<HTMLInputElement>('[aria-label="搜索文档"]')
+    await act(async () => {
+      if (search) {
+        setNativeValue(search, '试卷')
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(container.textContent).toContain('未找到匹配文档')
+
+    const typeFilter = container.querySelector<HTMLSelectElement>('[aria-label="文档类型筛选"]')
+    await act(async () => {
+      if (search) {
+        setNativeValue(search, '')
+      }
+      if (typeFilter) {
+        setNativeValue(typeFilter, 'exam')
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(container.textContent).toContain('未找到匹配文档')
   })
 })

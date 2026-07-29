@@ -29,6 +29,20 @@ export type QuestionBankClassificationReport = {
   failures?: Array<{ id: string; error: string }>
 }
 
+export type QuestionBankClassificationTask = {
+  id: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  scope: { type: 'all' | 'pdf_slicer_run' | 'import_job'; id?: string }
+  total: number
+  completed: number
+  updated: number
+  failed: number
+  failures: Array<{ id: string; error: string }>
+  startedAt: string
+  finishedAt?: string
+  error?: string
+}
+
 export type AiCleanMode = 'full' | 'format_only'
 
 export type AiCleanPreview = {
@@ -120,11 +134,14 @@ export const questionBankApi = {
     })
   },
   classifyAllItems() {
-    return api<{ report: QuestionBankClassificationReport }>('/api/question-bank/items/classify', {
+    return api<{ task: QuestionBankClassificationTask }>('/api/question-bank/items/classify', {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify({}),
     })
+  },
+  getClassificationTask(id: string) {
+    return api<{ task: QuestionBankClassificationTask }>(`/api/question-bank/classification-tasks/${encodeURIComponent(id)}`)
   },
   importJsonItems(payload: Record<string, unknown>) {
     return api<{ items: QuestionItem[]; count: number; pendingBankUrl?: string }>('/api/question-bank/import-json', {

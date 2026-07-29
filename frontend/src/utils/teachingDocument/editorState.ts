@@ -28,6 +28,33 @@ export type TeachingDocumentHistory = {
   lastMergeKey?: string
 }
 
+/** 按文档中的题目出现顺序更新自动编号；用户自定义编号保持不变。 */
+export function renumberAutomaticQuestionNumbers(document: TeachingDocumentV1): TeachingDocumentV1 {
+  let nextNumber = 0
+  let changed = false
+  const visit = (block: TeachingBlock): TeachingBlock => {
+    if (block.type === 'question') {
+      if (!block.questionId.trim()) return block
+      nextNumber += 1
+      const display = block.display || {}
+      if (display.displayNumberAuto || !display.displayNumber?.trim()) {
+        if (display.displayNumber !== String(nextNumber) || display.displayNumberAuto !== true) changed = true
+        return { ...block, display: { ...display, displayNumber: String(nextNumber), displayNumberAuto: true } }
+      }
+      return block
+    }
+    if (block.type === 'box') {
+      const children = block.children.map((child) => visit(child as TeachingBlock) as BoxChildBlock)
+      if (children.some((child, index) => child !== block.children[index])) changed = true
+      return changed ? { ...block, children } : block
+    }
+    return block
+  }
+  const content = document.content.map(visit)
+  if (!changed) return document
+  return { ...document, content }
+}
+
 function createEditorId(prefix = 'block') {
   const uuid = globalThis.crypto?.randomUUID?.()
   if (uuid) return `${prefix}_${uuid}`
@@ -40,7 +67,7 @@ export function newTeachingBlock(type: TeachingBlock['type']): TeachingBlock {
     case 'heading': return { type, id, level: 3, content: [{ type: 'text', text: '新标题' }] }
     case 'paragraph': return { type, id, content: [{ type: 'text', text: '' }] }
     case 'blockMath': return { type, id, latex: '' }
-    case 'figure': return { type, id, asset: { type: 'documentAsset', assetId: '' }, alignment: 'center', widthRatio: 0.8, widthMm: 80, lockAspectRatio: true }
+    case 'figure': return { type, id, asset: { type: 'documentAsset', assetId: '' }, alignment: 'center', layoutPreset: 'block-center', widthRatio: 0.8, widthMm: 80, lockAspectRatio: true }
     case 'question': return { type, id, questionId: '', breakBehavior: 'auto', display: { showAnswer: false, showAnalysis: false } }
     case 'box': return { type, id, templateId: 'concept', title: '知识点', breakBehavior: 'auto', children: [] }
     case 'divider': return { type, id }
@@ -71,7 +98,7 @@ function moveAt<T>(items: T[], index: number, direction: -1 | 1) {
   return next
 }
 
-export function applyTeachingDocumentCommand(document: TeachingDocumentV1, command: TeachingDocumentCommand): TeachingDocumentV1 {
+function applyTeachingDocumentCommandRaw(document: TeachingDocumentV1, command: TeachingDocumentCommand): TeachingDocumentV1 {
   if (command.type === 'replaceDocument') return command.document
   if (command.type === 'setTitle') return { ...document, title: command.title }
   if (command.type === 'setStyle') return { ...document, style: { ...document.style, ...command.patch } }
@@ -125,8 +152,12 @@ export function applyTeachingDocumentCommand(document: TeachingDocumentV1, comma
   return { ...document, content: replaceAt(content, blockIndex, { ...box, children: moveAt(box.children, childIndex, command.direction) }) }
 }
 
+export function applyTeachingDocumentCommand(document: TeachingDocumentV1, command: TeachingDocumentCommand): TeachingDocumentV1 {
+  return renumberAutomaticQuestionNumbers(applyTeachingDocumentCommandRaw(document, command))
+}
+
 export function createTeachingDocumentHistory(document: TeachingDocumentV1): TeachingDocumentHistory {
-  return { document, past: [], future: [] }
+  return { document: renumberAutomaticQuestionNumbers(document), past: [], future: [] }
 }
 
 export function executeTeachingDocumentCommand(state: TeachingDocumentHistory, command: TeachingDocumentCommand): TeachingDocumentHistory {

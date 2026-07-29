@@ -43,6 +43,7 @@ import {
   type QuestionFigureRegion,
   type QuestionAnswerSpaceRegion,
 } from '@/utils/teachingDocument/layout/questionRegions'
+import { resolveFigureLayout } from '@/utils/teachingDocument/figureLayoutPresets'
 import { CSS_PIXELS_PER_MM } from '@/utils/teachingDocument/layout/paper'
 import { assetUrl } from '@/utils/questionDisplay'
 import { MarkdownContent } from '@/components/MarkdownContent'
@@ -82,6 +83,8 @@ export interface QuestionLayoutEditor {
   contentWidthMm: number
   previewFigureWidth: (figureKey: string, widthMm: number) => void
   commitFigureWidth: (figureKey: string, widthMm: number) => void
+  selectedFigureKey?: string
+  onFigureSelect?: (figureKey: string) => void
 }
 
 // ─── 图标映射 ────────────────────────────────────────────────────────────────
@@ -214,10 +217,12 @@ function FigureBlockView({
   block,
   resolveFigure,
   eagerImages,
+  onSelect,
 }: {
   block: FigureBlock
   resolveFigure?: (asset: FigureAssetRef) => FigureResolution
   eagerImages?: boolean
+  onSelect?: () => void
 }) {
   const asset = block.asset
   const hasRef = asset.type === 'legacyPath'
@@ -253,8 +258,15 @@ function FigureBlockView({
       : 'loading')
   }, [url])
 
-  const alignClass = { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[block.alignment]
-  const widthStyle = block.widthRatio ? { width: `${block.widthRatio * 100}%` } : undefined
+  const layout = resolveFigureLayout({
+    preset: block.layoutPreset,
+    explicitWidthMm: block.widthMm,
+    legacyAlignment: block.alignment,
+    legacyWidthRatio: block.widthRatio,
+    containerWidthMm: 160,
+  })
+  const alignClass = { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[layout.alignment]
+  const widthStyle = { width: `${layout.widthMm * CSS_PIXELS_PER_MM}px`, maxWidth: '100%' }
 
   if (resolverStatus === 'loading') {
     return (
@@ -291,12 +303,13 @@ function FigureBlockView({
 
   return (
     <figure
-      className={`td-figure my-4 ${alignClass}`}
+      className={`td-figure my-4 ${alignClass} ${onSelect ? 'cursor-pointer' : ''}`}
       style={widthStyle}
       data-block-id={block.id}
       data-block-type="figure"
       data-alignment={block.alignment}
       data-image-state={imageState}
+      onClick={onSelect}
       {...{
         [TEACHING_DOM.resource]: 'image',
         [TEACHING_DOM.resourceId]: block.id,
@@ -336,10 +349,12 @@ function QuestionRegionContent({
   region,
   item,
   layoutEditor,
+  resolveFigure,
 }: {
   region: QuestionRuntimeRegion
   item?: PaginatedQuestionRegionItem
   layoutEditor?: QuestionLayoutEditor
+  resolveFigure?: (asset: FigureAssetRef) => FigureResolution
 }) {
   if (region.kind === 'heading') return null
   if (region.kind === 'paragraph') {
@@ -360,18 +375,32 @@ function QuestionRegionContent({
     const figureRegion = region as QuestionFigureRegion
     const visibleFigures = region.figures.filter((figure) => Boolean(figure.path))
     const figureKey = figureRegion.figureKey || figureRegion.key
-    const widthStyle = figureRegion.widthOverrideMm
-      ? { width: `${figureRegion.widthOverrideMm * CSS_PIXELS_PER_MM}px`, maxWidth: '100%' }
-      : undefined
-    const alignClass = figureRegion.alignmentOverride
-      ? { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[figureRegion.alignmentOverride]
-      : ''
+    const resolvedLayout = resolveFigureLayout({
+      preset: figureRegion.layoutPreset,
+      explicitWidthMm: figureRegion.widthOverrideMm,
+      legacyAlignment: figureRegion.alignmentOverride,
+      containerWidthMm: layoutEditor?.contentWidthMm || 160,
+    })
+    const hasExplicitLayout = Boolean(figureRegion.layoutPreset || figureRegion.widthOverrideMm || figureRegion.alignmentOverride)
+    const widthStyle = hasExplicitLayout ? { width: `${resolvedLayout.widthMm * CSS_PIXELS_PER_MM}px`, maxWidth: '100%' } : undefined
+    const alignClass = hasExplicitLayout ? { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[resolvedLayout.alignment] : ''
+    if (figureRegion.asset) {
+      return (
+        <div className={`relative my-3 ${alignClass}`} style={widthStyle}>
+          <FigureBlockView
+            block={{ type: 'figure', id: figureRegion.figureKey || figureRegion.key, asset: figureRegion.asset, alignment: resolvedLayout.alignment, widthMm: resolvedLayout.widthMm }}
+            resolveFigure={resolveFigure}
+            onSelect={() => layoutEditor?.onFigureSelect?.(figureKey)}
+          />
+        </div>
+      )
+    }
     return visibleFigures.length ? (
       <div className={`relative my-3 ${alignClass}`} style={widthStyle}>
-        <FigureGallery figures={visibleFigures} showCaption={false} />
+        <FigureGallery figures={visibleFigures} showCaption={false} onSelect={() => layoutEditor?.onFigureSelect?.(figureKey)} />
         {layoutEditor?.selected ? (
           <ImageResizeOverlay
-            currentWidthMm={figureRegion.widthOverrideMm ?? Math.min(layoutEditor.contentWidthMm, 100)}
+            currentWidthMm={resolvedLayout.widthMm}
             maxWidthMm={layoutEditor.contentWidthMm}
             onPreview={(widthMm) => layoutEditor.previewFigureWidth(figureKey, widthMm)}
             onCommit={(widthMm) => layoutEditor.commitFigureWidth(figureKey, widthMm)}
@@ -436,7 +465,8 @@ function QuestionRegionContent({
   }
   if (region.kind === 'answer-space') {
     const spaceRegion = region as QuestionAnswerSpaceRegion
-    const heightPx = spaceRegion.heightMm * CSS_PIXELS_PER_MM
+    const splitSegment = item?.kind === 'whole-question-region' ? item.answerSpaceSegment : undefined
+    const heightPx = splitSegment ? (item?.height || 0) : spaceRegion.heightMm * CSS_PIXELS_PER_MM
     const patternStyle = spaceRegion.pattern === 'lines'
       ? { backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 27px, #d4d4d8 27px, #d4d4d8 28px)' }
       : spaceRegion.pattern === 'grid'
@@ -444,7 +474,7 @@ function QuestionRegionContent({
         : undefined
     return (
       <div
-        className="td-answer-space my-3 rounded border border-dashed border-zinc-200 dark:border-zinc-700"
+        className={`td-answer-space rounded border border-dashed border-zinc-200 dark:border-zinc-700 ${splitSegment ? '' : 'my-3'}`}
         style={{ height: `${heightPx}px`, ...patternStyle }}
         aria-hidden="true"
         {...{
@@ -464,12 +494,14 @@ export function QuestionRuntimeContent({
   continuation = 'single',
   regionItems,
   layoutEditor,
+  resolveFigure,
 }: {
   block: QuestionBlock
   model: QuestionRuntimeModel
   continuation?: 'single' | 'start' | 'middle' | 'end'
   regionItems?: PaginatedQuestionRegionItem[]
   layoutEditor?: QuestionLayoutEditor
+  resolveFigure?: (asset: FigureAssetRef) => FigureResolution
 }) {
   const marginClass = {
     single: 'my-4',
@@ -521,7 +553,7 @@ export function QuestionRuntimeContent({
                 : {}),
             }}
           >
-            <QuestionRegionContent region={region} item={item} layoutEditor={layoutEditor} />
+            <QuestionRegionContent region={region} item={item} layoutEditor={layoutEditor} resolveFigure={resolveFigure} />
           </div>
         )
       })}
@@ -529,7 +561,7 @@ export function QuestionRuntimeContent({
   )
 }
 
-function QuestionBlockView({ block, resolveQuestion }: { block: QuestionBlock; resolveQuestion?: (id: string) => QuestionResolution }) {
+function QuestionBlockView({ block, resolveQuestion, resolveFigure }: { block: QuestionBlock; resolveQuestion?: (id: string) => QuestionResolution; resolveFigure?: (asset: FigureAssetRef) => FigureResolution }) {
   const resolution = resolveQuestion?.(block.questionId)
 
   if (resolution && 'status' in resolution && resolution.status === 'loading') {
@@ -560,7 +592,7 @@ function QuestionBlockView({ block, resolveQuestion }: { block: QuestionBlock; r
           <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50/60 px-1.5 py-0.5 text-[11px] font-normal tracking-wide text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">文档本地版本</span>
         </div>
       ) : null}
-      <QuestionRuntimeContent block={block} model={createQuestionRuntimeModel(block, effectiveQuestion)} />
+      <QuestionRuntimeContent block={block} model={createQuestionRuntimeModel(block, effectiveQuestion)} resolveFigure={resolveFigure} />
     </>
   )
 }
@@ -570,11 +602,13 @@ export function QuestionFragmentRenderer({
   question,
   item,
   selected = false,
+  resolveFigure,
 }: {
   block: QuestionBlock
   question: QuestionItem
   item: QuestionFragmentPaginationItem
   selected?: boolean
+  resolveFigure?: (asset: FigureAssetRef) => FigureResolution
 }) {
   return (
     <div
@@ -594,6 +628,7 @@ export function QuestionFragmentRenderer({
         model={createQuestionRuntimeModel(block, block.localContent ? { ...question, ...block.localContent } : question)}
         continuation={item.continuation}
         regionItems={item.regionItems}
+        resolveFigure={resolveFigure}
       />
     </div>
   )
@@ -919,6 +954,7 @@ export function BoxFragmentRenderer({
                   model={createQuestionRuntimeModel(child, child.localContent ? { ...resolution, ...child.localContent } : resolution)}
                   continuation={childItem.continuation}
                   regionItems={childItem.regionItems}
+                  resolveFigure={resolvers.resolveFigure}
                 />
               </div>
             )
@@ -1081,7 +1117,7 @@ export function BlockRenderer({
       content = <FigureBlockView block={block} resolveFigure={resolvers.resolveFigure} eagerImages={resolvers.eagerImages} />
       break
     case 'question':
-      content = <QuestionBlockView block={block} resolveQuestion={resolvers.resolveQuestion} />
+      content = <QuestionBlockView block={block} resolveQuestion={resolvers.resolveQuestion} resolveFigure={resolvers.resolveFigure} />
       break
     case 'box':
       content = <BoxBlockView block={block} resolvers={resolvers} selectedBlockId={selectedBlockId} sourceIndex={sourceIndex} boxTitleEditable={boxTitleEditable} onEditBoxTitle={onEditBoxTitle} />

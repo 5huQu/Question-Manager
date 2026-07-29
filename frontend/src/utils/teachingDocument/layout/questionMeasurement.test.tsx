@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { QuestionItem } from '@/types'
-import type { TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { QuestionBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
 import { TeachingDocumentRenderer } from '@/components/teaching-document/TeachingDocumentRenderer'
 import {
   measureTeachingDocument,
@@ -51,10 +51,10 @@ const fixture: TeachingDocumentV1 = {
   }],
 }
 
-function renderedRoot() {
+function renderedRoot(teachingDocument: TeachingDocumentV1 = fixture) {
   const root = document.createElement('div')
   root.innerHTML = renderToStaticMarkup(
-    <TeachingDocumentRenderer document={fixture} resolveQuestion={() => question} />,
+    <TeachingDocumentRenderer document={teachingDocument} resolveQuestion={() => question} />,
   )
   return root
 }
@@ -143,6 +143,34 @@ describe('measureTeachingDocumentQuestions', () => {
     )
     expect(measurement.diagnostics.some((item) => item.code === 'question-region-missing'))
       .toBe(true)
+  })
+
+  it('measures document-local question content with the same model used for rendering', () => {
+    const questionBlock = fixture.content[0] as QuestionBlock
+    const localFixture: TeachingDocumentV1 = {
+      ...fixture,
+      content: [{
+        ...questionBlock,
+        localContent: {
+          stemMarkdown: '本地题干仅一段。',
+          answerText: '本地答案',
+          analysisMarkdown: '本地解析。',
+        },
+      }],
+    }
+    const root = renderedRoot(localFixture)
+    const documentMeasurement = measureTeachingDocument(root, localFixture, geometry)
+    const [measurement] = measureTeachingDocumentQuestions(
+      root,
+      localFixture,
+      documentMeasurement,
+      () => question,
+      geometry,
+      paragraphGeometry,
+      chromeGeometry,
+    )
+
+    expect(measurement.diagnostics).toEqual([])
   })
 
   it('reports invalid geometry without embedding it in the document', () => {

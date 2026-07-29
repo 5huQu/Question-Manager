@@ -22,6 +22,9 @@ import type {
   FigureBlock,
   QuestionBlock,
   QuestionDisplayOptions,
+  QuestionFigurePlacement,
+  QuestionInsertedFigure,
+  QuestionFigureSlot,
   SpacerBlock,
   TeachingBlock,
   TeachingDocument,
@@ -42,6 +45,7 @@ import type {
 } from '@/types/teachingDocument'
 import { getBoxTemplate } from './boxTemplates'
 import { TEXT_FONT_OPTIONS } from './lectureFonts'
+import { isFigureLayoutPreset } from './figureLayoutPresets'
 
 // ─── 常量 ────────────────────────────────────────────────────────────────────
 
@@ -185,6 +189,10 @@ function parseFigureAssetRef(node: Record<string, unknown>): FigureAssetRef {
 // ─── 题目显示选项解析 ────────────────────────────────────────────────────────
 
 const VALID_ANSWER_SPACE_STYLES = new Set(['blank', 'lines', 'grid'])
+const VALID_FIGURE_SLOTS = new Set<QuestionFigureSlot>([
+  'stem-start', 'stem-end', 'before-options', 'after-options',
+  'before-answer', 'after-answer', 'analysis-start', 'analysis-end',
+])
 
 function parseAnswerSpace(raw: unknown): QuestionDisplayOptions['answerSpace'] | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
@@ -193,26 +201,68 @@ function parseAnswerSpace(raw: unknown): QuestionDisplayOptions['answerSpace'] |
   const style = String(node.style || '')
   if (!Number.isFinite(heightMm) || heightMm <= 0) return undefined
   if (!VALID_ANSWER_SPACE_STYLES.has(style)) return undefined
-  return { heightMm, style: style as 'blank' | 'lines' | 'grid' }
+  return { heightMm, style: style as 'blank' | 'lines' | 'grid', splitAcrossPages: node.splitAcrossPages === true ? true : undefined }
 }
 
 function parseFigureOverrides(raw: unknown): QuestionDisplayOptions['figureOverrides'] | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
   const node = raw as Record<string, unknown>
-  const result: Record<string, { widthMm: number; alignment?: 'left' | 'center' | 'right' }> = {}
+  const result: Record<string, QuestionFigurePlacement> = {}
   let hasValid = false
   for (const [key, value] of Object.entries(node)) {
     if (!key || !value || typeof value !== 'object') continue
     const entry = value as Record<string, unknown>
     const widthMm = Number(entry.widthMm)
-    if (!Number.isFinite(widthMm) || widthMm <= 0) continue
     const alignment = typeof entry.alignment === 'string' && ['left', 'center', 'right'].includes(entry.alignment)
       ? entry.alignment as 'left' | 'center' | 'right'
       : undefined
-    result[key] = { widthMm, alignment }
+    const layoutPreset = isFigureLayoutPreset(entry.layoutPreset) ? entry.layoutPreset : undefined
+    const slot = VALID_FIGURE_SLOTS.has(entry.slot as QuestionFigureSlot) ? entry.slot as QuestionFigureSlot : undefined
+    const order = Number(entry.order)
+    const placement: QuestionFigurePlacement = {
+      ...(Number.isFinite(widthMm) && widthMm > 0 ? { widthMm } : {}),
+      ...(alignment ? { alignment } : {}),
+      ...(layoutPreset ? { layoutPreset } : {}),
+      ...(slot ? { slot } : {}),
+      ...(Number.isFinite(order) ? { order } : {}),
+    }
+    if (!Object.keys(placement).length) continue
+    result[key] = placement
     hasValid = true
   }
   return hasValid ? result : undefined
+}
+
+function parseInsertedFigures(raw: unknown): QuestionInsertedFigure[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const result: QuestionInsertedFigure[] = []
+  for (const value of raw) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const node = value as Record<string, unknown>
+    const id = typeof node.id === 'string' ? node.id.trim() : ''
+    const slot = VALID_FIGURE_SLOTS.has(node.slot as QuestionFigureSlot) ? node.slot as QuestionFigureSlot : undefined
+    const order = Number(node.order)
+    if (!id || !slot || !Number.isFinite(order)) continue
+    const widthMm = Number(node.widthMm)
+    const alignment = typeof node.alignment === 'string' && ['left', 'center', 'right'].includes(node.alignment)
+      ? node.alignment as 'left' | 'center' | 'right' : undefined
+    const layoutPreset = isFigureLayoutPreset(node.layoutPreset) ? node.layoutPreset : undefined
+    const placement: QuestionFigurePlacement = {
+      ...(Number.isFinite(widthMm) && widthMm > 0 ? { widthMm } : {}),
+      ...(alignment ? { alignment } : {}),
+      ...(layoutPreset ? { layoutPreset } : {}),
+    }
+    result.push({
+      id,
+      asset: parseFigureAssetRef({ asset: node.asset }),
+      slot,
+      order,
+      ...placement,
+      ...(typeof node.caption === 'string' ? { caption: node.caption } : {}),
+      ...(typeof node.alt === 'string' ? { alt: node.alt } : {}),
+    })
+  }
+  return result.length ? result : undefined
 }
 
 // ─── 块解析 ──────────────────────────────────────────────────────────────────
@@ -276,12 +326,16 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
       const alignment = String(node.alignment || 'center')
       const widthRatio = Number(node.widthRatio)
       const widthMm = Number(node.widthMm)
+      if (node.layoutPreset != null && !isFigureLayoutPreset(node.layoutPreset)) {
+        issues.push({ level: 'warning', blockId: extractId(node, 'fig', index), code: 'invalid-figure-preset', message: `图片排版预设 "${String(node.layoutPreset)}" 无效，已回退旧字段。` })
+      }
       return {
         type: 'figure',
         id: extractId(node, 'fig', index),
         asset: parseFigureAssetRef(node),
         alt: typeof node.alt === 'string' ? node.alt : undefined,
         alignment: (['left', 'center', 'right'].includes(alignment) ? alignment : 'center') as FigureBlock['alignment'],
+        layoutPreset: isFigureLayoutPreset(node.layoutPreset) ? node.layoutPreset : undefined,
         widthRatio: Number.isFinite(widthRatio) && widthRatio >= 0.1 && widthRatio <= 1 ? widthRatio : undefined,
         widthMm: Number.isFinite(widthMm) && widthMm > 0 ? widthMm : undefined,
         lockAspectRatio: typeof node.lockAspectRatio === 'boolean' ? node.lockAspectRatio : undefined,
@@ -290,6 +344,15 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
     }
     case 'question': {
       const display = node.display && typeof node.display === 'object' ? node.display as Record<string, unknown> : undefined
+      if (display?.figureOverrides && typeof display.figureOverrides === 'object') {
+        for (const [key, value] of Object.entries(display.figureOverrides as Record<string, unknown>)) {
+          if (value && typeof value === 'object') {
+            const entry = value as Record<string, unknown>
+            if (entry.layoutPreset != null && !isFigureLayoutPreset(entry.layoutPreset)) issues.push({ level: 'warning', blockId: extractId(node, 'q', index), code: 'invalid-figure-preset', message: `图片覆盖 "${key}" 的排版预设无效。` })
+            if (entry.slot != null && !VALID_FIGURE_SLOTS.has(entry.slot as QuestionFigureSlot)) issues.push({ level: 'warning', blockId: extractId(node, 'q', index), code: 'invalid-figure-slot', message: `图片覆盖 "${key}" 的位置无效。` })
+          }
+        }
+      }
       const breakBehavior = ['auto', 'avoid', 'force-before'].includes(String(node.breakBehavior || 'auto'))
         ? String(node.breakBehavior || 'auto') as QuestionBlock['breakBehavior']
         : 'auto'
@@ -304,8 +367,10 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
           showScore: typeof display.showScore === 'boolean' ? display.showScore : undefined,
           scoreOverride: typeof display.scoreOverride === 'number' ? display.scoreOverride : undefined,
           displayNumber: typeof display.displayNumber === 'string' ? display.displayNumber : undefined,
+          displayNumberAuto: display.displayNumberAuto === true ? true : undefined,
           answerSpace: parseAnswerSpace(display.answerSpace),
           figureOverrides: parseFigureOverrides(display.figureOverrides),
+          insertedFigures: parseInsertedFigures(display.insertedFigures),
         } : undefined,
       } satisfies QuestionBlock
     }
@@ -614,9 +679,25 @@ export function validateTeachingDocument(document: TeachingDocument): DocumentVa
             if (!key.trim()) {
               issues.push({ level: 'warning', blockId: block.id, code: 'invalid-figure-override', message: '图片覆盖 key 不得为空。' })
             }
-            if (!Number.isFinite(override.widthMm) || override.widthMm <= 0) {
+            if (override.widthMm != null && (!Number.isFinite(override.widthMm) || override.widthMm <= 0)) {
               issues.push({ level: 'warning', blockId: block.id, code: 'invalid-figure-override', message: `图片覆盖 "${key}" 的宽度无效: ${override.widthMm}。` })
             }
+            if (override.layoutPreset && !isFigureLayoutPreset(override.layoutPreset)) {
+              issues.push({ level: 'warning', blockId: block.id, code: 'invalid-figure-preset', message: `图片覆盖 "${key}" 的排版预设无效。` })
+            }
+            if (override.slot && !VALID_FIGURE_SLOTS.has(override.slot)) {
+              issues.push({ level: 'warning', blockId: block.id, code: 'invalid-figure-slot', message: `图片覆盖 "${key}" 的位置无效。` })
+            }
+          }
+        }
+        if (block.display?.insertedFigures) {
+          const insertedIds = new Set<string>()
+          for (const figure of block.display.insertedFigures) {
+            if (insertedIds.has(figure.id)) issues.push({ level: 'warning', blockId: block.id, code: 'duplicate-inserted-figure-id', message: `文档插图 id "${figure.id}" 重复。` })
+            insertedIds.add(figure.id)
+            const asset = figure.asset
+            const missing = asset.type === 'documentAsset' ? !asset.assetId.trim() : asset.type === 'questionFigure' ? !asset.questionId.trim() || !asset.figureId.trim() : !asset.path.trim()
+            if (missing) issues.push({ level: 'warning', blockId: block.id, code: 'missing-inserted-figure-asset', message: `文档插图 "${figure.id}" 缺少有效资源引用。` })
           }
         }
         break
@@ -641,6 +722,9 @@ export function validateTeachingDocument(document: TeachingDocument): DocumentVa
           } else if (block.widthMm > 500) {
             issues.push({ level: 'warning', blockId: block.id, code: 'invalid-figure-width', message: `图片宽度 ${block.widthMm}mm 超出合理上限 500mm。` })
           }
+        }
+        if (block.layoutPreset && !isFigureLayoutPreset(block.layoutPreset)) {
+          issues.push({ level: 'warning', blockId: block.id, code: 'invalid-figure-preset', message: `图片排版预设 "${block.layoutPreset}" 无效。` })
         }
         break
       }

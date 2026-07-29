@@ -41,6 +41,15 @@ export interface BoxTemplateDefinition {
 
 export const BUILTIN_BOX_TEMPLATES: readonly BoxTemplateDefinition[] = [
   {
+    id: 'plain',
+    version: 1,
+    label: '文本框',
+    description: '无标题栏的普通内容容器',
+    defaultIcon: 'Box',
+    tone: 'neutral',
+    showHeader: false,
+  },
+  {
     id: 'concept',
     version: 1,
     label: '定义 / 知识点',

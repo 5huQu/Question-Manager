@@ -71,7 +71,17 @@ describe('QuestionContentEditor', () => {
       root.render(<QuestionContentEditor entityKey="question:2" value={value} onChange={() => undefined} />)
     })
     expect(container.textContent).toContain('转换提示')
+    expect(container.textContent).toContain('示例：```text legacy ```')
     expect(container.querySelector<HTMLTextAreaElement>('[aria-label="题干与选项 Markdown 源码"]')?.value).toContain('legacy')
+  })
+
+  it('opens fields with Doc2X figure markers in source mode without a conversion warning', async () => {
+    const value = { ...initial, analysisMarkdown: '解析前\n\n<!-- DOC2X_FIGURE:asset-1 -->\n\n解析后' }
+    await act(async () => {
+      root.render(<QuestionContentEditor entityKey="question:figure-marker" value={value} onChange={() => undefined} />)
+    })
+    expect(container.textContent).not.toContain('转换提示')
+    expect(container.textContent).toContain('Markdown 源码')
   })
 
   it('previews and applies inline legacy choices without mutating before confirmation', async () => {

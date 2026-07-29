@@ -47,9 +47,9 @@ describe('buildExamDocumentFromQuestions', () => {
     expect((section2 as HeadingBlock).content[0]).toEqual({ type: 'text', text: '二、解答题（共 1 题，共 15 分）' })
 
     expect((q1 as QuestionBlock).questionId).toBe('q1')
-    expect((q1 as QuestionBlock).display).toEqual({ showAnswer: false, showAnalysis: false, scoreOverride: 5, displayNumber: '1' })
-    expect((q2 as QuestionBlock).display?.displayNumber).toBe('2')
-    expect((q3 as QuestionBlock).display?.displayNumber).toBe('3')
+  expect((q1 as QuestionBlock).display).toEqual({ showAnswer: false, showAnalysis: false, scoreOverride: 5 })
+  expect((q2 as QuestionBlock).display?.displayNumber).toBeUndefined()
+  expect((q3 as QuestionBlock).display?.displayNumber).toBeUndefined()
     expect((q3 as QuestionBlock).display?.scoreOverride).toBe(15)
   })
 

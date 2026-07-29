@@ -416,6 +416,7 @@ def main() -> int:
     results: list[dict[str, object]] = []
     failures: list[dict[str, str]] = []
     with ThreadPoolExecutor(max_workers=workers) as executor:
+        completed = 0
         futures = {executor.submit(classify, row, libraries, cfg, batch_context): row["id"] for row in rows}
         for future in as_completed(futures):
             qid = futures[future]
@@ -448,6 +449,8 @@ def main() -> int:
                 conn.commit()
             except Exception as exc:
                 failures.append({"id": qid, "error": str(exc)})
+            completed += 1
+            print(json.dumps({"total": len(rows), "completed": completed, "updated": len(results), "failed": len(failures), "id": qid, "error": failures[-1]["error"] if failures and failures[-1]["id"] == qid else ""}, ensure_ascii=False), file=sys.stderr, flush=True)
     report = {
         "scopeType": scope_type,
         "scopeId": scope_id,

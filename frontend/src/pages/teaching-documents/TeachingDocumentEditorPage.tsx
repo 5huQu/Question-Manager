@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { AlertTriangle, Bold, Italic, LoaderCircle, PanelLeft, RefreshCcw } from 'lucide-react'
+import { AlertTriangle, Bold, Check, Download, FileUp, Italic, LoaderCircle, PanelLeft, RefreshCcw } from 'lucide-react'
 import type { QuestionItem } from '@/types'
 import type {
   BoxBlock,
@@ -22,6 +22,7 @@ import type {
   PrintChromeSlotPosition,
 } from '@/types/teachingDocument'
 import { questionBankApi } from '@/api/questionBank'
+import { teachingDocumentsApi } from '@/api/teachingDocuments'
 import { ApiError } from '@/api/client'
 import { A4PaginationPreview, type A4PaginationState } from '@/components/teaching-document/A4PaginationPreview'
 import { PaginatedCanvas } from '@/components/teaching-document/editor'
@@ -46,6 +47,7 @@ import {
   resolveDocumentFonts,
 } from '@/utils/teachingDocument/lectureFonts'
 import { assetUrl } from '@/utils/questionDisplay'
+import type { PrintChromeTemplate } from '@/api/teachingDocuments'
 import { useTeachingDocumentEditor } from './useTeachingDocumentEditor'
 import { EditorTopBar, type TeachingCanvasMode } from './components/EditorTopBar'
 import { EditorCanvas } from './components/EditorCanvas'
@@ -94,14 +96,65 @@ function findSelected(document: TeachingDocumentV1, id: string): SelectedLocatio
 
 function ChromeSettingsPanel(props: {
   printLayout: PrintLayoutSpec
+  open: boolean
   activeSlot: { section: PrintChromeSection; slot: PrintChromeSlotPosition } | null
   onClose: () => void
   onPrintOptionChange: (patch: Partial<TeachingDocumentPrintOptions>) => void
   onSlotChange: (section: PrintChromeSection, slot: PrintChromeSlotPosition, patch: Partial<PrintChromeSlot>) => void
+  onApplyTemplate: (template: PrintChromeTemplate) => void
 }) {
   const sectionTitle: Record<PrintChromeSection, string> = { header: '页眉', footer: '页脚' }
+  const [templates, setTemplates] = useState<PrintChromeTemplate[]>([])
+  const [templateName, setTemplateName] = useState('')
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [templateBusy, setTemplateBusy] = useState(false)
+  useEffect(() => { void teachingDocumentsApi.listPrintTemplates().then((response) => setTemplates(response.items)).catch(() => setTemplates([])) }, [])
+  async function saveTemplate() {
+    const options = {
+      headerEnabled: props.printLayout.header.enabled,
+      headerShowOnFirstPage: props.printLayout.header.showOnFirstPage,
+      footerEnabled: props.printLayout.footer.enabled,
+      header: props.printLayout.header.slots,
+      footer: props.printLayout.footer.slots,
+      pageNumber: props.printLayout.pageNumber,
+    }
+    const template = selectedTemplateId
+      ? await teachingDocumentsApi.updatePrintTemplate(selectedTemplateId, { name: templateName, options })
+      : await teachingDocumentsApi.createPrintTemplate({ name: templateName, options })
+    setTemplates((current) => selectedTemplateId ? current.map((item) => item.id === template.id ? template : item) : [template, ...current])
+    setSelectedTemplateId(template.id)
+    setTemplateName(template.name)
+  }
+  async function removeTemplate() {
+    if (!selectedTemplateId) return
+    await teachingDocumentsApi.deletePrintTemplate(selectedTemplateId)
+    setTemplates((current) => current.filter((item) => item.id !== selectedTemplateId))
+    setSelectedTemplateId('')
+    setTemplateName('')
+  }
+  function exportTemplates() {
+    const payload = JSON.stringify({ version: 1, templates: templates.map(({ name, options }) => ({ name, options })) }, null, 2)
+    const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }))
+    const anchor = window.document.createElement('a'); anchor.href = url; anchor.download = '页眉页脚模板.json'; anchor.click(); URL.revokeObjectURL(url)
+  }
+  async function importTemplates(file: File | undefined) {
+    if (!file) return
+    setTemplateBusy(true)
+    try {
+      const parsed = JSON.parse(await file.text()) as { templates?: Array<{ name?: unknown; options?: unknown }> }
+      const incoming = Array.isArray(parsed.templates) ? parsed.templates : []
+      const created: PrintChromeTemplate[] = []
+      for (const item of incoming) {
+        if (typeof item.name !== 'string' || !item.name.trim() || !item.options || typeof item.options !== 'object' || Array.isArray(item.options)) continue
+        created.push(await teachingDocumentsApi.createPrintTemplate({ name: item.name, options: item.options as PrintChromeTemplate['options'] }))
+      }
+      setTemplates((current) => [...created, ...current])
+    } catch {
+      window.alert('模板文件无效，未能导入。')
+    } finally { setTemplateBusy(false) }
+  }
   return (
-    <div className="absolute right-5 top-4 z-30 w-[30rem] max-h-[calc(100%-2rem)] overflow-auto rounded-lg border border-zinc-200 bg-white p-4 shadow-xl shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/30">
+    <div className={`td-chrome-settings-panel absolute right-5 top-4 z-30 w-[30rem] max-h-[calc(100%-2rem)] overflow-auto rounded-lg border border-zinc-200 bg-white p-4 shadow-xl shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/30 ${props.open ? 'is-open' : 'is-closing'}`}>
       <div className="mb-3 flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">页眉页脚</p>
@@ -114,6 +167,30 @@ function ChromeSettingsPanel(props: {
         <label className="flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><input type="checkbox" className="size-3.5" checked={props.printLayout.header.enabled} onChange={(event) => props.onPrintOptionChange({ headerEnabled: event.target.checked })} />显示页眉</label>
         <label className="flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><input type="checkbox" className="size-3.5" checked={props.printLayout.header.showOnFirstPage} onChange={(event) => props.onPrintOptionChange({ headerShowOnFirstPage: event.target.checked })} />首页显示页眉</label>
         <label className="flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><input type="checkbox" className="size-3.5" checked={props.printLayout.footer.enabled} onChange={(event) => props.onPrintOptionChange({ footerEnabled: event.target.checked })} />显示页脚</label>
+      </div>
+
+      <div className="mt-3 rounded-md border border-dashed border-zinc-200 p-2.5 dark:border-zinc-700">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">页眉页脚模板</p>
+          <span className="text-[10px] text-zinc-400">本机复用</span>
+        </div>
+        <div className="flex gap-1.5">
+          <select aria-label="选择页眉页脚模板" value={selectedTemplateId} onChange={(event) => { const id = event.target.value; setSelectedTemplateId(id); const item = templates.find((template) => template.id === id); setTemplateName(item?.name || '') }} className="h-7 min-w-0 flex-1 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] dark:border-zinc-700 dark:bg-zinc-950">
+            <option value="">选择模板…</option>
+            {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+          </select>
+          <button type="button" className="h-7 rounded-md border border-zinc-200 px-2 text-[11px] text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800" disabled={!selectedTemplateId} onClick={() => { const item = templates.find((template) => template.id === selectedTemplateId); if (item) props.onApplyTemplate(item) }}>应用</button>
+          <button type="button" title="删除模板" className="h-7 rounded-md border border-red-200 px-2 text-[11px] text-red-600 hover:bg-red-50 disabled:opacity-40" disabled={!selectedTemplateId} onClick={() => void removeTemplate()}>删除</button>
+        </div>
+        <div className="mt-2 flex gap-1.5">
+          <input value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="模板名称" className="h-7 min-w-0 flex-1 rounded-md border border-zinc-200 px-2 text-[11px] dark:border-zinc-700 dark:bg-zinc-950" />
+          <button type="button" className="h-7 rounded-md bg-zinc-900 px-2.5 text-[11px] text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900" onClick={() => void saveTemplate()}>{selectedTemplateId ? '更新模板' : '保存模板'}</button>
+        </div>
+        <div className="mt-2 flex items-center gap-1.5 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+          <button type="button" title="导出模板包" className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={exportTemplates}><Download className="size-3.5" />导出</button>
+          <label title="导入模板包" className={`inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${templateBusy ? 'pointer-events-none opacity-40' : ''}`}><FileUp className="size-3.5" />导入<input type="file" accept="application/json,.json" className="sr-only" disabled={templateBusy} onChange={(event) => { void importTemplates(event.target.files?.[0]); event.currentTarget.value = '' }} /></label>
+          <span className="ml-auto text-[10px] text-zinc-400">可在其他设备导入</span>
+        </div>
       </div>
 
       {(['header', 'footer'] as PrintChromeSection[]).map((section) => (
@@ -281,15 +358,27 @@ export default function TeachingDocumentEditorPage() {
   const [viewZoom, setViewZoom] = useState(1)
   const [paginationState, setPaginationState] = useState<A4PaginationState | null>(null)
   const [chromePanelOpen, setChromePanelOpen] = useState(false)
+  const [chromePanelMounted, setChromePanelMounted] = useState(false)
   const [editingChromeSlot, setEditingChromeSlot] = useState<{ section: PrintChromeSection; slot: PrintChromeSlotPosition } | null>(null)
+  useEffect(() => {
+    if (chromePanelOpen) {
+      setChromePanelMounted(true)
+      return
+    }
+    const timer = window.setTimeout(() => setChromePanelMounted(false), 180)
+    return () => window.clearTimeout(timer)
+  }, [chromePanelOpen])
   const printLayout = useMemo<PrintLayoutSpec>(() => {
     return createDocumentPrintLayout(paper, editor.document?.style?.print)
   }, [paper, editor.document?.style?.print])
   const [outlineOpen, setOutlineOpen] = useState(false)
   const [propertiesOpen, setPropertiesOpen] = useState(false)
   const [editingQuestionBlockId, setEditingQuestionBlockId] = useState('')
-  const [pickerTarget, setPickerTarget] = useState<{ blockId: string } | null>(null)
+  const [pickerTarget, setPickerTarget] = useState<{ blockId: string; boxId?: string } | null>(null)
   const [formulaBlockId, setFormulaBlockId] = useState('')
+  const [batchBlankEnabled, setBatchBlankEnabled] = useState(false)
+  const [batchBlankHeightMm, setBatchBlankHeightMm] = useState(30)
+  const [batchBlankSplitAcrossPages, setBatchBlankSplitAcrossPages] = useState(false)
   const documentFonts = useMemo(() => resolveDocumentFonts(editor.document?.style), [editor.document?.style])
   const questionSpacing = editor.document?.style?.questionSpacing || 'compact'
   const fontVars = useMemo(() => ({
@@ -417,6 +506,10 @@ export default function TeachingDocumentEditorPage() {
     })
   }
 
+  function applyChromeTemplate(template: PrintChromeTemplate) {
+    updatePrintOptions(template.options)
+  }
+
   function updateChromeSlot(section: PrintChromeSection, slot: PrintChromeSlotPosition, patch: Partial<PrintChromeSlot>) {
     const current = printLayout[section].slots[slot]
     updatePrintOptions({
@@ -467,7 +560,22 @@ export default function TeachingDocumentEditorPage() {
   function handlePickerPick(question: QuestionItem) {
     if (!pickerTarget) return
     const target = pickerTarget
-    editor.dispatch({ type: 'updateBlock', blockId: target.blockId, patch: { questionId: question.id } })
+    if (target.boxId) {
+      editor.dispatch({
+        type: 'updateBoxChild',
+        boxId: target.boxId,
+        childId: target.blockId,
+        patch: { questionId: question.id },
+        mergeKey: `question-picker:${target.blockId}`,
+      })
+    } else {
+      editor.dispatch({
+        type: 'updateBlock',
+        blockId: target.blockId,
+        patch: { questionId: question.id },
+        mergeKey: `question-picker:${target.blockId}`,
+      })
+    }
     setQuestionMap((current) => ({ ...current, [question.id]: question }))
     setPickerTarget(null)
   }
@@ -475,6 +583,23 @@ export default function TeachingDocumentEditorPage() {
   function patchQuestionBlock(location: SelectedLocation, patch: Partial<QuestionBlock>) {
     if (location.boxId) editor.dispatch({ type: 'updateBoxChild', boxId: location.boxId, childId: location.block.id, patch: patch as Partial<BoxChildBlock> })
     else editor.dispatch({ type: 'updateBlock', blockId: location.block.id, patch })
+  }
+
+  function applyBatchAnswerSpace(enabled: boolean, heightMm = batchBlankHeightMm, splitAcrossPages = batchBlankSplitAcrossPages) {
+    const update = (block: QuestionBlock, boxId?: string) => {
+      const question = questionMap[block.questionId]
+      if (!question || 'status' in question || question.questionType !== '解答题') return
+      const display = { ...block.display }
+      if (enabled) display.answerSpace = { heightMm, style: display.answerSpace?.style || 'blank', splitAcrossPages }
+      else delete display.answerSpace
+      if (boxId) editor.dispatch({ type: 'updateBoxChild', boxId, childId: block.id, patch: { display }, mergeKey: 'batch-answer-space' })
+      else editor.dispatch({ type: 'updateBlock', blockId: block.id, patch: { display }, mergeKey: 'batch-answer-space' })
+    }
+    for (const topLevel of document.content) {
+      if (topLevel.type === 'question') update(topLevel)
+      if (topLevel.type === 'box') for (const child of topLevel.children) if (child.type === 'question') update(child, topLevel.id)
+    }
+    setBatchBlankEnabled(enabled)
   }
 
   function openQuestionEditor(blockId: string) {
@@ -538,6 +663,37 @@ export default function TeachingDocumentEditorPage() {
         </select>
         <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
         <button type="button" onClick={() => setChromePanelOpen((value) => !value)} className="h-7 rounded-full px-2 text-[11px] text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">页眉页脚</button>
+        <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+        <button
+          type="button"
+          onClick={() => applyBatchAnswerSpace(!batchBlankEnabled)}
+          className={`inline-flex h-7 items-center gap-1 rounded-full px-2 text-[11px] transition-colors ${batchBlankEnabled ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'}`}
+          title="对全部解答题批量设置或取消留空"
+        >
+          {batchBlankEnabled ? <Check className="size-3.5" /> : null}解答题批量留空
+        </button>
+        {batchBlankEnabled ? (
+          <>
+          <label className="inline-flex items-center gap-1 text-[11px] text-zinc-500" title="统一留空高度">
+            <input
+              type="range"
+              min={5}
+              max={200}
+              step={1}
+              value={batchBlankHeightMm}
+              onChange={(event) => setBatchBlankHeightMm(Number(event.target.value))}
+              onPointerUp={(event) => applyBatchAnswerSpace(true, Number(event.currentTarget.value))}
+              onKeyUp={(event) => applyBatchAnswerSpace(true, Number(event.currentTarget.value))}
+              className="w-20"
+            />
+            {batchBlankHeightMm}mm
+          </label>
+          <label className="inline-flex items-center gap-1 text-[11px] text-zinc-500" title="留空超出当前页时不延续到下一页">
+            <input type="checkbox" checked={batchBlankSplitAcrossPages} onChange={(event) => { const split = event.target.checked; setBatchBlankSplitAcrossPages(split); applyBatchAnswerSpace(true, batchBlankHeightMm, split) }} />
+            跨页不延续
+          </label>
+          </>
+        ) : null}
       </div>
     </div>
   )
@@ -740,13 +896,15 @@ export default function TeachingDocumentEditorPage() {
           )}
         </section>
 
-        {chromePanelOpen ? (
+        {chromePanelMounted ? (
           <ChromeSettingsPanel
+            open={chromePanelOpen}
             printLayout={printLayout}
             activeSlot={editingChromeSlot}
             onClose={() => { setChromePanelOpen(false); setEditingChromeSlot(null) }}
             onPrintOptionChange={updatePrintOptions}
             onSlotChange={updateChromeSlot}
+            onApplyTemplate={applyChromeTemplate}
           />
         ) : null}
 
@@ -780,7 +938,7 @@ export default function TeachingDocumentEditorPage() {
           onQuestionLoaded={(question: QuestionItem) => setQuestionMap((current) => ({ ...current, [question.id]: question }))}
           onEditQuestion={openQuestionEditor}
           onOpenFormula={(blockId) => setFormulaBlockId(blockId)}
-          onOpenQuestionPicker={(blockId) => setPickerTarget({ blockId })}
+          onOpenQuestionPicker={(blockId, boxId) => setPickerTarget({ blockId, boxId })}
         />
 
         {editingBlock && editingLocation && editingQuestion ? (

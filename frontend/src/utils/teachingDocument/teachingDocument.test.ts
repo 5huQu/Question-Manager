@@ -470,9 +470,9 @@ describe('boxTemplates', () => {
     resetBoxTemplateRegistry()
   })
 
-  it('has 6 builtin templates', () => {
-    expect(BUILTIN_BOX_TEMPLATES).toHaveLength(6)
-    expect(getAllBoxTemplates()).toHaveLength(6)
+  it('has 7 builtin templates including the plain text box', () => {
+    expect(BUILTIN_BOX_TEMPLATES).toHaveLength(7)
+    expect(getAllBoxTemplates()).toHaveLength(7)
   })
 
   it('retrieves builtin template by id', () => {
@@ -497,7 +497,7 @@ describe('boxTemplates', () => {
     const custom = { id: 'theorem', version: 1, label: '定理', description: '', defaultIcon: 'Box' as const, tone: 'red' as const, showHeader: true }
     expect(registerBoxTemplate(custom)).toBe(true)
     expect(getBoxTemplate('theorem')).toEqual(custom)
-    expect(getAllBoxTemplates()).toHaveLength(7)
+    expect(getAllBoxTemplates()).toHaveLength(8)
   })
 
   it('does not downgrade existing template version', () => {
@@ -521,7 +521,7 @@ describe('boxTemplates', () => {
     expect(getBoxTemplate('concept')!.version).toBe(2)
     resetBoxTemplateRegistry()
     expect(getBoxTemplate('concept')!.version).toBe(1)
-    expect(getAllBoxTemplates()).toHaveLength(6)
+    expect(getAllBoxTemplates()).toHaveLength(7)
   })
 
   it('rejects invalid icon names even when runtime data bypasses TypeScript', () => {

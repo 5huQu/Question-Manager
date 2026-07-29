@@ -5,11 +5,16 @@ import type {
 } from '@/types'
 import type {
   FigureAlignment,
+  FigureAssetRef,
   InlineText,
   ParagraphBlock,
   QuestionBlock,
   QuestionDisplayOptions,
+  QuestionFigurePlacement,
+  QuestionFigureSlot,
+  QuestionInsertedFigure,
 } from '@/types/teachingDocument'
+import type { FigureLayoutPreset } from '../figureLayoutPresets'
 import { normalizeMarkdownForRender } from '@/components/MarkdownContent'
 import { choiceLayoutForTexts, type ChoiceLayout } from '@/utils/choiceLayout'
 import {
@@ -68,6 +73,8 @@ export interface QuestionFigureRegion extends QuestionRegionDescriptor {
   kind: 'figure'
   owner: 'stem' | 'analysis'
   figures: QuestionFigure[]
+  /** 文档本地插图使用稳定资源引用，题库图则继续使用 figures。 */
+  asset?: FigureAssetRef
   /** 用于讲义级尺寸覆盖的稳定题图 id。 */
   figureKey?: string
   missingFigureId?: string
@@ -75,6 +82,7 @@ export interface QuestionFigureRegion extends QuestionRegionDescriptor {
   widthOverrideMm?: number
   /** 讲义级对齐覆盖 */
   alignmentOverride?: FigureAlignment
+  layoutPreset?: FigureLayoutPreset
 }
 
 export interface QuestionOptionsRowRegion extends QuestionRegionDescriptor {
@@ -110,6 +118,7 @@ export interface QuestionAnswerSpaceRegion extends QuestionRegionDescriptor {
   heightMm: number
   /** 背景样式 */
   pattern: AnswerSpacePattern
+  splitAcrossPages: boolean
 }
 
 export type QuestionRuntimeRegion =
@@ -250,8 +259,8 @@ function contentRegions(input: {
     if (figure) usedFigures.add(figure)
     const figureKey = figure ? (figure.id || figure.blockId || '') : marker[1]
     const override = input.figureOverrides?.[figureKey]
-    regions.push({
-      key: stableRegionKey(input.blockId, 'figure', index),
+    if (!override?.slot) regions.push({
+      key: `${input.blockId}:question:figure:${figureKey || marker[1]}`,
       type: 'figure',
       index,
       kind: 'figure',
@@ -262,19 +271,20 @@ function contentRegions(input: {
       missingFigureId: figure?.path ? undefined : marker[1],
       widthOverrideMm: override?.widthMm,
       alignmentOverride: override?.alignment,
+      layoutPreset: override?.layoutPreset,
     })
-    index += 1
+    if (!override?.slot) index += 1
     cursor = marker.index + marker[0].length
   }
   pushText(normalized.slice(cursor))
   const trailingFigures = input.figures.filter(
-    (figure) => !usedFigures.has(figure),
+    (figure) => !usedFigures.has(figure) && !input.figureOverrides?.[figure.id || figure.blockId || '']?.slot,
   )
   trailingFigures.forEach((figure) => {
     const figureKey = figure.id || figure.blockId || ''
     const override = input.figureOverrides?.[figureKey]
     regions.push({
-      key: stableRegionKey(input.blockId, 'figure', index),
+      key: `${input.blockId}:question:figure:${figureKey}`,
       type: 'figure',
       index,
       kind: 'figure',
@@ -287,10 +297,79 @@ function contentRegions(input: {
         : figureIds(figure)[0] || '未标识题图',
       widthOverrideMm: override?.widthMm,
       alignmentOverride: override?.alignment,
+      layoutPreset: override?.layoutPreset,
     })
     index += 1
   })
   return regions
+}
+
+interface PlacedFigure {
+  placement: QuestionFigurePlacement
+  stableIndex: number
+  region: QuestionFigureRegion
+}
+
+function slotVisible(slot: QuestionFigureSlot, display: QuestionDisplayOptions | undefined) {
+  if (slot === 'before-answer' || slot === 'after-answer') return display?.showAnswer === true
+  if (slot === 'analysis-start' || slot === 'analysis-end') return display?.showAnalysis === true
+  return true
+}
+
+function insertionIndex(regions: QuestionRuntimeRegion[], slot: QuestionFigureSlot) {
+  const first = (type: QuestionRegionType) => regions.findIndex((region) => region.type === type)
+  const last = (type: QuestionRegionType) => {
+    for (let index = regions.length - 1; index >= 0; index -= 1) if (regions[index].type === type) return index
+    return -1
+  }
+  const stemFirst = first('stem')
+  const stemLast = last('stem')
+  const optionsFirst = first('options')
+  const optionsLast = last('options')
+  const answerFirst = first('answer')
+  const answerLast = last('answer')
+  const analysisFirst = first('analysis')
+  const analysisLast = last('analysis')
+  switch (slot) {
+    case 'stem-start': return stemFirst >= 0 ? stemFirst : 0
+    case 'stem-end': return stemLast >= 0 ? stemLast + 1 : 0
+    case 'before-options': return optionsFirst >= 0 ? optionsFirst : stemLast + 1
+    case 'after-options': return optionsLast >= 0 ? optionsLast + 1 : stemLast + 1
+    case 'before-answer': return answerFirst >= 0 ? answerFirst : (optionsLast >= 0 ? optionsLast + 1 : stemLast + 1)
+    case 'after-answer': return answerLast >= 0 ? answerLast + 1 : (optionsLast >= 0 ? optionsLast + 1 : stemLast + 1)
+    case 'analysis-start': return analysisFirst >= 0 ? analysisFirst : regions.length
+    case 'analysis-end': return analysisLast >= 0 ? analysisLast + 1 : regions.length
+  }
+}
+
+export function applyQuestionFigurePlacements(
+  regions: QuestionRuntimeRegion[],
+  placed: PlacedFigure[],
+  display?: QuestionDisplayOptions,
+) {
+  const next = [...regions]
+  const bySlot = new Map<QuestionFigureSlot, PlacedFigure[]>()
+  for (const item of placed) {
+    const slot = item.placement.slot
+    if (!slot || !slotVisible(slot, display)) continue
+    const values = bySlot.get(slot) || []
+    values.push(item)
+    bySlot.set(slot, values)
+  }
+  const slots: QuestionFigureSlot[] = ['analysis-end', 'analysis-start', 'after-answer', 'before-answer', 'after-options', 'before-options', 'stem-end', 'stem-start']
+  for (const slot of slots) {
+    const values = bySlot.get(slot)
+    if (!values?.length) continue
+    values.sort((a, b) => {
+      const aExplicit = Number.isFinite(a.placement.order)
+      const bExplicit = Number.isFinite(b.placement.order)
+      if (aExplicit !== bExplicit) return aExplicit ? -1 : 1
+      if (aExplicit && bExplicit && a.placement.order !== b.placement.order) return Number(a.placement.order) - Number(b.placement.order)
+      return a.stableIndex - b.stableIndex
+    })
+    next.splice(insertionIndex(next, slot), 0, ...values.map((value) => value.region))
+  }
+  return next
 }
 
 /** 题号（及可选分数）对应的行内内容，加粗题号、分数不加粗。 */
@@ -361,6 +440,26 @@ export function createQuestionRuntimeModel(
   const optionFigures = figuresByUsage(question.figures, 'options')
   const analysisFigures = figuresByUsage(question.figures, 'analysis')
   const regions: QuestionRuntimeRegion[] = []
+  const placed: PlacedFigure[] = []
+  const figureByKey = new Map(question.figures.flatMap((figure) => figureIds(figure).map((key) => [key, figure] as const)))
+  for (const [figureKey, placement] of Object.entries(figureOverrides || {})) {
+    if (!placement.slot) continue
+    const figure = figureByKey.get(figureKey)
+    if (!figure) continue
+    placed.push({
+      placement,
+      stableIndex: question.figures.indexOf(figure),
+      region: {
+        key: `${block.id}:question:figure:${figureKey}`,
+        type: 'figure', index: 0, kind: 'figure', splitPolicy: 'never',
+        owner: placement.slot.startsWith('analysis') ? 'analysis' : 'stem',
+        figures: [figure], figureKey,
+        widthOverrideMm: placement.widthMm,
+        alignmentOverride: placement.alignment,
+        layoutPreset: placement.layoutPreset,
+      },
+    })
+  }
 
   regions.push(...contentRegions({
     blockId: block.id,
@@ -396,7 +495,7 @@ export function createQuestionRuntimeModel(
         optionEnd,
         options: rowOptions,
         layout,
-        figures: optionFigures.filter((figure) => (
+          figures: optionFigures.filter((figure) => !figureOverrides?.[figure.id || figure.blockId || '']?.slot && (
           figure.optionLabel ? rowLabels.has(figure.optionLabel) : rowIndex === 0
         )),
       })
@@ -444,6 +543,22 @@ export function createQuestionRuntimeModel(
     }))
   }
 
+  for (const figure of block.display?.insertedFigures || []) {
+    placed.push({
+      placement: figure,
+      stableIndex: question.figures.length + (block.display?.insertedFigures || []).indexOf(figure),
+      region: {
+        key: `${block.id}:question:inserted-figure:${figure.id}`,
+        type: 'figure', index: 0, kind: 'figure', splitPolicy: 'never',
+        owner: figure.slot.startsWith('analysis') ? 'analysis' : 'stem',
+        figures: [], asset: figure.asset, figureKey: figure.id,
+        widthOverrideMm: figure.widthMm,
+        alignmentOverride: figure.alignment,
+        layoutPreset: figure.layoutPreset,
+      },
+    })
+  }
+
   // 题目回答留空区域（讲义级覆盖，不影响题库）
   const answerSpace = block.display?.answerSpace
   if (answerSpace && answerSpace.heightMm > 0) {
@@ -455,6 +570,7 @@ export function createQuestionRuntimeModel(
       splitPolicy: 'never',
       heightMm: answerSpace.heightMm,
       pattern: answerSpace.style ?? 'blank',
+      splitAcrossPages: answerSpace.splitAcrossPages === true,
     })
   }
 
@@ -464,6 +580,6 @@ export function createQuestionRuntimeModel(
     displayNumber,
     score,
     questionType: question.questionType,
-    regions,
+    regions: applyQuestionFigurePlacements(regions, placed, block.display),
   }
 }

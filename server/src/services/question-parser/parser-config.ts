@@ -6,6 +6,7 @@ import { createId, nowIso } from '../../utils/ids.js'
 import {
   defaultParserConfig,
   type AnswerTablePolicy,
+  type DocumentLayout,
   type ImportFlowV2ParserConfig,
   type MetadataBlockPolicy,
   type SolutionBindingStrategy,
@@ -15,6 +16,7 @@ const configPath = path.join(dataDir, 'config', 'import-flow-v2-parser.json')
 const presetsPath = path.join(dataDir, 'config', 'import-flow-v2-parser-presets.json')
 const listKeys = ['sectionHeadings', 'documentNoteKeywords', 'lectureNonQuestionSectionKeywords', 'solutionSectionKeywords', 'primaryQuestionPatterns', 'subQuestionPatterns', 'figureKeywords', 'metadataBlockKeywords'] as const
 const solutionBindingStrategies: SolutionBindingStrategy[] = ['heading_then_question', 'question_then_heading', 'auto']
+const documentLayouts: DocumentLayout[] = ['auto', 'inline', 'appendix', 'questions_only', 'solution_only']
 const metadataBlockPolicies: MetadataBlockPolicy[] = ['ignore', 'append_to_analysis', 'store_as_note']
 const answerTablePolicies: AnswerTablePolicy[] = ['disabled', 'fill_empty_only', 'override_metadata_like_answer', 'prefer_table_for_choice_questions']
 
@@ -70,7 +72,7 @@ function builtinParserPresets(): ImportParserPreset[] {
     {
       id: 'heading_then_question',
       name: '题号在参考答案后',
-      description: '参考答案或解析标题后继续出现题号。',
+      description: '自动判断文档布局，参考答案或解析标题后继续出现题号时按标题后绑定。',
       config: normalizeParserConfig({ ...defaultParserConfig, solutionBindingStrategy: 'heading_then_question' }),
       createdAt: now,
       updatedAt: now,
@@ -80,7 +82,7 @@ function builtinParserPresets(): ImportParserPreset[] {
       id: 'same_document_appendix',
       name: '同文档前题干后答案',
       description: '同一文档前半部分为题干，后半部分题号从 1 重新开始并给出答案或解析。',
-      config: normalizeParserConfig({ ...defaultParserConfig, solutionBindingStrategy: 'heading_then_question' }),
+      config: normalizeParserConfig({ ...defaultParserConfig, documentLayout: 'appendix', solutionBindingStrategy: 'heading_then_question' }),
       createdAt: now,
       updatedAt: now,
       builtIn: true,
@@ -89,7 +91,7 @@ function builtinParserPresets(): ImportParserPreset[] {
       id: 'mixed_inline_solution',
       name: '题干答案混排 · 有答案表',
       description: '题干中直接带答案、解析标记，同时允许答案汇总表补充空缺。',
-      config: normalizeParserConfig({ ...defaultParserConfig, solutionBindingStrategy: 'auto' }),
+      config: normalizeParserConfig({ ...defaultParserConfig, documentLayout: 'inline', solutionBindingStrategy: 'auto' }),
       createdAt: now,
       updatedAt: now,
       builtIn: true,
@@ -98,7 +100,7 @@ function builtinParserPresets(): ImportParserPreset[] {
       id: 'mixed_inline_solution_no_answer_table',
       name: '题干答案混排 · 无答案表',
       description: '题干中直接带答案、解析标记，完全关闭答案表检测、遮罩和合并。',
-      config: normalizeParserConfig({ ...defaultParserConfig, solutionBindingStrategy: 'auto', answerTablePolicy: 'disabled' }),
+      config: normalizeParserConfig({ ...defaultParserConfig, documentLayout: 'inline', solutionBindingStrategy: 'auto', answerTablePolicy: 'disabled' }),
       createdAt: now,
       updatedAt: now,
       builtIn: true,
@@ -133,6 +135,7 @@ export function normalizeParserConfig(value: unknown): ImportFlowV2ParserConfig 
   }
   config.allowParenthesizedNumberAsPrimary = raw.allowParenthesizedNumberAsPrimary ?? config.allowParenthesizedNumberAsPrimary
   config.solutionBindingStrategy = normalizeEnum(raw.solutionBindingStrategy, 'solutionBindingStrategy', config.solutionBindingStrategy, solutionBindingStrategies)
+  config.documentLayout = normalizeEnum(raw.documentLayout, 'documentLayout', config.documentLayout, documentLayouts)
   config.metadataBlockPolicy = normalizeEnum(raw.metadataBlockPolicy, 'metadataBlockPolicy', config.metadataBlockPolicy, metadataBlockPolicies)
   config.answerTablePolicy = normalizeEnum(raw.answerTablePolicy, 'answerTablePolicy', config.answerTablePolicy, answerTablePolicies)
   for (const pattern of [...config.primaryQuestionPatterns, ...config.subQuestionPatterns]) {

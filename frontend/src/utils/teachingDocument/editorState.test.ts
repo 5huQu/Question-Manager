@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { TeachingBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
 import {
   applyTeachingDocumentCommand,
   createTeachingDocumentHistory,
@@ -21,6 +21,15 @@ const baseDocument: TeachingDocumentV1 = {
 }
 
 describe('TeachingDocument editor state', () => {
+  it('assigns document-order numbers to uncustomized questions', () => {
+    const first = { ...newTeachingBlock('question'), questionId: 'bank-19' } as TeachingBlock
+    const second = { ...newTeachingBlock('question'), questionId: 'bank-3' } as TeachingBlock
+    const custom = { ...newTeachingBlock('question'), questionId: 'bank-8', display: { displayNumber: '例 2' } } as TeachingBlock
+    const history = createTeachingDocumentHistory({ ...baseDocument, content: [first, custom, second] })
+    expect(history.document.content.filter((block) => block.type === 'question').map((block) => block.display?.displayNumber)).toEqual(['1', '例 2', '3'])
+    expect(history.document.content[0].type === 'question' && history.document.content[0].display?.displayNumberAuto).toBe(true)
+  })
+
   it('inserts, moves, duplicates, and deletes blocks by stable id', () => {
     const heading = newTeachingBlock('heading')
     let document = applyTeachingDocumentCommand(baseDocument, { type: 'insertBlock', block: heading, afterBlockId: 'p1' })
@@ -49,6 +58,31 @@ describe('TeachingDocument editor state', () => {
     expect(moved.content[0]).toMatchObject({ type: 'box', children: [{ id: divider.id }, { id: paragraph.id }] })
     const removed = applyTeachingDocumentCommand(moved, { type: 'deleteBoxChild', boxId: 'box1', childId: paragraph.id })
     expect(removed.content[0]).toMatchObject({ type: 'box', children: [{ id: divider.id }] })
+  })
+
+  it('writes a picked question id into a box child instead of the top-level box', () => {
+    const document: TeachingDocumentV1 = {
+      ...baseDocument,
+      content: [{
+        type: 'box',
+        id: 'box1',
+        templateId: 'concept',
+        breakBehavior: 'auto',
+        children: [{ type: 'question', id: 'child-question', questionId: '', breakBehavior: 'auto' }],
+      }],
+    }
+
+    const updated = applyTeachingDocumentCommand(document, {
+      type: 'updateBoxChild',
+      boxId: 'box1',
+      childId: 'child-question',
+      patch: { questionId: 'bank-question-1' },
+    })
+
+    expect(updated.content[0]).toMatchObject({
+      type: 'box',
+      children: [{ id: 'child-question', questionId: 'bank-question-1' }],
+    })
   })
 
   it('keeps UnknownBlock and complex inline data unchanged', () => {

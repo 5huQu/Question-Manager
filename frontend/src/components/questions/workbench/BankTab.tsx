@@ -5,6 +5,7 @@ import { learningTagsApi } from '@/api/learningTags'
 import { Button, Empty } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { QuestionBankResponse, QuestionItem, TagLibraries } from '@/types'
+import type { QuestionBankClassificationTask } from '@/api/questionBank'
 import { addQuestionToBasket } from '@/utils/questionBasket'
 import { BankFilterSidebar } from './BankFilterSidebar'
 import { BankPagination } from './BankPagination'
@@ -53,14 +54,13 @@ export function BankTab({
 }) {
   const tagLibraries = useAsync<TagLibraries>(() => learningTagsApi.getQuestionBankTagLibraries(), [])
   const libraries = useAsync(() => learningTagsApi.listLibraries(), [])
-  const [previewId, setPreviewId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [classifying, setClassifying] = useState(false)
   const [classificationStatus, setClassificationStatus] = useState('')
+  const [classificationTask, setClassificationTask] = useState<QuestionBankClassificationTask | null>(null)
 
   const rawItems = questionBank?.items ?? []
   const items = rawItems
-  const activeItem = useMemo(() => items.find((item) => item.id === previewId) ?? items[0] ?? null, [items, previewId])
   const basketQuestionIds = useMemo(() => new Set((questionBank?.basket?.questions ?? []).map((entry) => entry.item.id)), [questionBank?.basket?.questions])
   const basketCount = questionBank?.basket?.questionCount ?? questionBank?.basket?.questions?.length ?? 0
   const totalItems = questionBank?.totalItems ?? 0
@@ -95,14 +95,6 @@ export function BankTab({
     setter(value)
     setPage(1)
   }
-
-  useEffect(() => {
-    if (!activeItem) {
-      setPreviewId(null)
-      return
-    }
-    if (!previewId || !items.some((item) => item.id === previewId)) setPreviewId(activeItem.id)
-  }, [activeItem, items, previewId])
 
   useEffect(() => {
     function handleReset() {
@@ -144,15 +136,30 @@ export function BankTab({
     setClassificationStatus('')
     try {
       const result = await questionBankApi.classifyAllItems()
-      const report = result.report
-      setClassificationStatus(`分类完成：已更新 ${report.updated}/${report.total} 题${report.failed ? `，失败 ${report.failed} 题` : ''}。`)
-      reload()
+      setClassificationTask(result.task)
+      setClassificationStatus('分类任务已启动，正在等待题目处理...')
     } catch (error) {
       setClassificationStatus(error instanceof Error ? error.message : '分类任务启动失败')
-    } finally {
       setClassifying(false)
     }
   }
+
+  useEffect(() => {
+    if (!classificationTask || ['succeeded', 'failed'].includes(classificationTask.status)) return
+    const timer = window.setInterval(() => {
+      void questionBankApi.getClassificationTask(classificationTask.id).then(({ task }) => {
+        setClassificationTask(task)
+        setClassificationStatus(task.status === 'running' ? `分类进度：${task.completed}/${task.total || '...'}（成功 ${task.updated}，失败 ${task.failed}）` : '分类任务排队中...')
+        if (['succeeded', 'failed'].includes(task.status)) {
+          window.clearInterval(timer)
+          setClassifying(false)
+          setClassificationStatus(`分类完成：已更新 ${task.updated}/${task.total} 题${task.failed ? `，失败 ${task.failed} 题` : ''}。`)
+          reload()
+        }
+      }).catch(() => undefined)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [classificationTask, reload])
 
   useEffect(() => {
     const handleStartClassification = () => { void classifyAllQuestions() }
@@ -232,6 +239,13 @@ export function BankTab({
               {classificationStatus}
             </div>
           ) : null}
+          {classificationTask?.failures.length ? (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+              <div className="font-semibold">失败题目（{classificationTask.failures.length}）</div>
+              <div className="mt-1 space-y-0.5">{classificationTask.failures.slice(0, 8).map((failure) => <div key={failure.id} className="truncate">{failure.id}：{failure.error}</div>)}</div>
+              {classificationTask.failures.length > 8 ? <div className="mt-1 text-[10px]">其余失败题目可按 ID 搜索查看。</div> : null}
+            </div>
+          ) : null}
           <div className="flex items-center justify-between px-1">
             <span className="font-mono text-[10px] text-zinc-400 dark:text-zinc-500">找到 {totalItems} 道试题</span>
             <button type="button" onClick={selectAllCurrentPage} className="text-[10px] font-bold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200">
@@ -242,7 +256,6 @@ export function BankTab({
           <div className="space-y-3.5 pb-6">
             {items.map((item) => {
               const selected = selectedIds.includes(item.id)
-              const active = activeItem?.id === item.id
               const inBasket = basketQuestionIds.has(item.id)
               return (
                 <QuestionBankDraftCard
@@ -250,11 +263,9 @@ export function BankTab({
                   item={item}
                   isInBasket={inBasket}
                   isSelected={selected}
-                  isActive={active}
                   onToggleBasket={addToBasket}
                   onSelect={toggleSelected}
                   onClick={() => {
-                    setPreviewId(item.id)
                     toggleSelected(item.id)
                   }}
                   onQuestionSaved={onQuestionSaved}

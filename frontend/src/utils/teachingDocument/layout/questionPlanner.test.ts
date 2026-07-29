@@ -225,4 +225,30 @@ describe('planQuestionFragments', () => {
       .some((region) => region.regionType === 'answer')).toBe(true)
     expect(plan.diagnostics.some((diagnostic) => diagnostic.code === 'question-answer-overflow')).toBe(true)
   })
+
+  it('clips answer space at the current page boundary without continuing it', () => {
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'question-block',
+      questionId: 'q1',
+      display: { answerSpace: { heightMm: 100, style: 'blank', splitAcrossPages: true } },
+    }
+    const item = question('短题干')
+    const measured = measurement(block, item, {
+      heading: 10,
+      paragraph: 20,
+      'answer-space': 120,
+    }, 1)
+    const plan = planQuestionFragments({
+      block,
+      measurement: measured,
+      firstPageAvailableHeight: 80,
+      pageContentHeight: 80,
+    })
+    const spaces = plan.fragments.flatMap((fragment) => fragment.regionItems)
+      .filter((region) => region.kind === 'whole-question-region' && region.answerSpaceSegment)
+    expect(spaces).toHaveLength(1)
+    expect(spaces[0].height).toBe(60)
+    expect(plan.fragments).toHaveLength(1)
+  })
 })

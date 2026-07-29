@@ -12,6 +12,8 @@
 
 import type { QuestionContentDraft } from './questionContent'
 import type { PaperOrientation, PaperSize } from '@/utils/teachingDocument/layout/types'
+import type { FigureLayoutPreset } from '@/utils/teachingDocument/figureLayoutPresets'
+export type { FigureLayoutPreset } from '@/utils/teachingDocument/figureLayoutPresets'
 
 // ─── 文档类型 ────────────────────────────────────────────────────────────────
 
@@ -93,6 +95,8 @@ export interface FigureBlock {
   asset: FigureAssetRef
   alt?: string
   alignment: FigureAlignment
+  /** 受控图片排版预设；缺省时使用旧 alignment/width 字段。 */
+  layoutPreset?: FigureLayoutPreset
   /** 宽度比例 0.1 ~ 1.0，相对于内容区域（旧数据兼容） */
   widthRatio?: number
   /** 物理宽度 mm；优先级高于 widthRatio */
@@ -100,6 +104,33 @@ export interface FigureBlock {
   /** 是否锁定宽高比（默认 true） */
   lockAspectRatio?: boolean
   caption?: string
+}
+
+export type QuestionFigureSlot =
+  | 'stem-start'
+  | 'stem-end'
+  | 'before-options'
+  | 'after-options'
+  | 'before-answer'
+  | 'after-answer'
+  | 'analysis-start'
+  | 'analysis-end'
+
+export interface QuestionFigurePlacement {
+  widthMm?: number
+  alignment?: FigureAlignment
+  layoutPreset?: FigureLayoutPreset
+  slot?: QuestionFigureSlot
+  order?: number
+}
+
+export interface QuestionInsertedFigure extends QuestionFigurePlacement {
+  id: string
+  asset: FigureAssetRef
+  slot: QuestionFigureSlot
+  order: number
+  caption?: string
+  alt?: string
 }
 
 export interface QuestionDisplayOptions {
@@ -111,16 +142,19 @@ export interface QuestionDisplayOptions {
   scoreOverride?: number
   /** 覆盖题号显示 */
   displayNumber?: string
+  /** 内部标记：编号由当前文档顺序自动生成，属性面板不显示为用户自定义值。 */
+  displayNumberAuto?: boolean
   /** 题目回答留空 */
   answerSpace?: {
     heightMm: number
     style: 'blank' | 'lines' | 'grid'
+    /** 超出当前页可用空间的部分不延续到下一页。 */
+    splitAcrossPages?: boolean
   }
   /** 题目级图片尺寸覆盖，key 为 figure id */
-  figureOverrides?: Record<string, {
-    widthMm: number
-    alignment?: 'left' | 'center' | 'right'
-  }>
+  figureOverrides?: Record<string, QuestionFigurePlacement>
+  /** 仅属于当前文档的题目插图，不写回题库。 */
+  insertedFigures?: QuestionInsertedFigure[]
 }
 
 /** 题目分页策略：默认自动流动；avoid 保持整题；force-before 从新页开始。 */

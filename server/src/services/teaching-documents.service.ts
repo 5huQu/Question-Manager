@@ -60,8 +60,16 @@ export type TeachingDocumentAsset = {
   createdAt: string
 }
 
+export type PrintTemplate = { id: string; name: string; options: JsonObject; createdAt: string; updatedAt: string }
+
 function isObject(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function printTemplateFromRow(row: repo.PrintTemplateRow): PrintTemplate {
+  let options: unknown
+  try { options = JSON.parse(row.options_json) } catch { options = {} }
+  return { id: row.id, name: row.name, options: isObject(options) ? options : {}, createdAt: row.created_at, updatedAt: row.updated_at }
 }
 
 function stableJson(value: unknown): string {
@@ -418,4 +426,26 @@ export function getTeachingDocumentAsset(assetId: string) {
   const row = repo.getTeachingDocumentAsset(assetId)
   if (!row) throw new RouteError(404, '文档图片资源不存在。')
   return assetFromRow(row)
+}
+
+export function listPrintTemplates() { return { items: repo.listPrintTemplates().map(printTemplateFromRow) } }
+export function createPrintTemplate(body: Record<string, unknown>) {
+  const name = String(body.name || '').trim()
+  if (!name) throw new RouteError(400, '模板名称不能为空。')
+  if (name.length > 80) throw new RouteError(400, '模板名称不能超过 80 个字符。')
+  if (!isObject(body.options)) throw new RouteError(400, '模板配置无效。')
+  const now = nowIso(); const row = { id: createId('ptpl'), name, options_json: stableJson(body.options), created_at: now, updated_at: now }
+  repo.insertPrintTemplate(row); return printTemplateFromRow(row)
+}
+export function updatePrintTemplate(id: string, body: Record<string, unknown>) {
+  if (!repo.getPrintTemplate(id)) throw new RouteError(404, '模板不存在。')
+  const name = String(body.name || '').trim()
+  if (!name || name.length > 80) throw new RouteError(400, '模板名称无效。')
+  if (!isObject(body.options)) throw new RouteError(400, '模板配置无效。')
+  repo.updatePrintTemplate({ id, name, options_json: stableJson(body.options), updated_at: nowIso() })
+  return printTemplateFromRow(repo.getPrintTemplate(id)!)
+}
+export function deletePrintTemplate(id: string) {
+  if (!repo.getPrintTemplate(id)) throw new RouteError(404, '模板不存在。')
+  repo.deletePrintTemplate(id); return { deleted: true }
 }

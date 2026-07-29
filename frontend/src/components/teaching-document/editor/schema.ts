@@ -116,7 +116,7 @@ export const DocBlockMath = Node.create({
   },
 })
 
-/** 图片块：atom，attrs: blockId, asset(JSON), alignment, widthMm, widthRatio, lockAspectRatio, caption, alt */
+/** 图片块：atom，attrs: blockId, asset(JSON), layoutPreset, alignment, widthMm, widthRatio, lockAspectRatio, caption, alt */
 export const DocFigure = Node.create({
   name: 'docFigure',
   group: 'block',
@@ -128,6 +128,7 @@ export const DocFigure = Node.create({
       blockId: { default: '' },
       asset: { default: '{}' },
       alignment: { default: 'center' },
+      layoutPreset: { default: null },
       widthMm: { default: null },
       widthRatio: { default: null },
       lockAspectRatio: { default: true },

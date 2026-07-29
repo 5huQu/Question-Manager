@@ -10,6 +10,7 @@ export interface QuestionContentEditorWarning {
   code: 'raw-markdown' | 'invalid-formula' | 'recovered-draft'
   field: keyof QuestionContentValue
   message: string
+  excerpt?: string
 }
 
 export interface StructuredChoice {
@@ -65,10 +66,15 @@ export function suggestChoiceConversion(markdown: string): ChoiceConversionSugge
 
 export function detectCompatibilityWarnings(value: QuestionContentValue): QuestionContentEditorWarning[] {
   return (Object.entries(value) as Array<[keyof QuestionContentValue, string]>).flatMap(([field, markdown]) => {
-    const warnings: QuestionContentEditorWarning[] = markdownToEditorDocument(markdown).warnings.map((warning) => ({ code: 'raw-markdown' as const, field, message: warning.message }))
+    const warnings: QuestionContentEditorWarning[] = markdownToEditorDocument(markdown).warnings.map((warning) => ({
+      code: 'raw-markdown' as const,
+      field,
+      message: warning.message,
+      excerpt: warning.excerpt,
+    }))
     const dollars = (markdown.match(/(?<!\\)\$/g) || []).length
     if (dollars % 2 !== 0) {
-      warnings.push({ code: 'invalid-formula', field, message: '检测到未闭合的公式分隔符，请检查 LaTeX 源码。' })
+      warnings.push({ code: 'invalid-formula', field, message: '检测到未闭合的公式分隔符，请检查 LaTeX 源码。', excerpt: markdown.replace(/\s+/g, ' ').trim().slice(0, 160) })
     }
     return warnings
   })

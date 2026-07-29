@@ -13,6 +13,7 @@ import {
   createTeachingDocumentHistory,
   executeTeachingDocumentCommand,
   hasFatalTeachingDocumentIssues,
+  renumberAutomaticQuestionNumbers,
   redoTeachingDocument,
   undoTeachingDocument,
   validateTeachingDocument,
@@ -170,10 +171,11 @@ export function useTeachingDocumentEditor(documentId: string) {
 
   /** 编辑器内容变化回调（由 DocumentEditor onChange 调用） */
   const handleEditorChange = useCallback((doc: TeachingDocumentV1) => {
-    documentRef.current = doc
+    const normalized = renumberAutomaticQuestionNumbers(doc)
+    documentRef.current = normalized
     setHistory((current) => {
       if (!current) return current
-      return { ...current, document: doc }
+      return { ...current, document: normalized }
     })
     autosaveRef.current?.changed()
   }, [])

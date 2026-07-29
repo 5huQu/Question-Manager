@@ -123,6 +123,7 @@ export interface WholeQuestionRegionPaginationItem {
   optionStart?: number
   optionEnd?: number
   rowIndex?: number
+  answerSpaceSegment?: 'single' | 'start' | 'middle' | 'end'
 }
 
 export interface QuestionParagraphFragmentPaginationItem {

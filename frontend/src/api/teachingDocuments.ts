@@ -1,5 +1,8 @@
 import { api, jsonHeaders } from './client'
 import type { DocumentValidationIssue, TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { TeachingDocumentPrintOptions } from '@/types/teachingDocument'
+
+export type PrintChromeTemplate = { id: string; name: string; options: TeachingDocumentPrintOptions; createdAt: string; updatedAt: string }
 
 export type TeachingDocumentAsset = {
   id: string
@@ -48,6 +51,10 @@ export type TeachingDocumentRevisionConflict = {
 }
 
 export const teachingDocumentsApi = {
+  listPrintTemplates: () => api<{ items: PrintChromeTemplate[] }>('/api/teaching-document-templates'),
+  createPrintTemplate: (input: { name: string; options: TeachingDocumentPrintOptions }) => api<PrintChromeTemplate>('/api/teaching-document-templates', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(input) }),
+  updatePrintTemplate: (id: string, input: { name: string; options: TeachingDocumentPrintOptions }) => api<PrintChromeTemplate>(`/api/teaching-document-templates/${encodeURIComponent(id)}`, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify(input) }),
+  deletePrintTemplate: (id: string) => api<{ deleted: true }>(`/api/teaching-document-templates/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   listDocuments: () => api<{ items: TeachingDocumentSummary[] }>('/api/teaching-documents'),
   getDocument: (id: string) =>
     api<TeachingDocumentRecord>(`/api/teaching-documents/${encodeURIComponent(id)}`),
