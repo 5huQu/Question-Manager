@@ -243,6 +243,32 @@ function pickerColor(value: unknown) {
   return /^#[0-9a-f]{6}$/i.test(color) ? color : '#18181b'
 }
 
+/**
+ * 无选区时，格式操作应作用于当前文字对象，而不是只写入后续输入的 stored mark。
+ *
+ * 文档级编辑器的对象是章节或段落；知识卡片里的独立编辑器则是其内部段落。
+ * 二者都以最近的 ProseMirror textblock 为边界，因此不会跨块改变其它内容。
+ */
+export function selectTextBlockContentWhenSelectionIsEmpty(editor: Editor) {
+  const { state, view } = editor
+  if (!state.selection.empty) return false
+  const { $from } = state.selection
+  for (let depth = $from.depth; depth >= 1; depth -= 1) {
+    const node = $from.node(depth)
+    if (!node.isTextblock) continue
+    const from = $from.start(depth)
+    const to = from + node.content.size
+    view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, from, to)))
+    return true
+  }
+  return false
+}
+
+function applyTextFormat(editor: Editor, apply: () => void) {
+  selectTextBlockContentWhenSelectionIsEmpty(editor)
+  apply()
+}
+
 /** 可嵌入单块编辑器或画布对象工具栏的共享文字格式控件。 */
 export function InlineFormattingControls({ editor, onFormula }: { editor: Editor; onFormula?: () => void }) {
   const currentTextColor = String(editor.getAttributes('textColor').color || '')
@@ -250,11 +276,14 @@ export function InlineFormattingControls({ editor, onFormula }: { editor: Editor
     <>
       <select
         aria-label="字体"
+        title="未选中文字时，应用到当前章节或段落的全部文字"
         value={String(editor.getAttributes('fontFamily').family || '')}
         onChange={(event) => {
           const value = event.target.value
-          if (value) editor.chain().focus().setFontFamily(value).run()
-          else editor.chain().focus().unsetFontFamily().run()
+          applyTextFormat(editor, () => {
+            if (value) editor.chain().focus().setFontFamily(value).run()
+            else editor.chain().focus().unsetFontFamily().run()
+          })
         }}
         className="h-7 max-w-28 cursor-pointer rounded bg-transparent px-1 text-[11px] text-zinc-600 outline-none hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-300 dark:hover:bg-zinc-800"
       >
@@ -265,11 +294,14 @@ export function InlineFormattingControls({ editor, onFormula }: { editor: Editor
       </select>
       <select
         aria-label="文字颜色"
+        title="未选中文字时，应用到当前章节或段落的全部文字"
         value={TEXT_COLOR_OPTIONS.some((option) => option.value === currentTextColor) ? currentTextColor : ''}
         onChange={(event) => {
           const value = event.target.value
-          if (value) editor.chain().focus().setTextColor(value).run()
-          else editor.chain().focus().unsetTextColor().run()
+          applyTextFormat(editor, () => {
+            if (value) editor.chain().focus().setTextColor(value).run()
+            else editor.chain().focus().unsetTextColor().run()
+          })
         }}
         className="h-7 max-w-20 cursor-pointer rounded bg-transparent px-1 text-[11px] text-zinc-600 outline-none hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-300 dark:hover:bg-zinc-800"
       >
@@ -282,15 +314,15 @@ export function InlineFormattingControls({ editor, onFormula }: { editor: Editor
         aria-label="自定义文字颜色"
         title="自定义文字颜色"
         value={pickerColor(currentTextColor)}
-        onChange={(event) => editor.chain().focus().setTextColor(event.target.value).run()}
+        onChange={(event) => applyTextFormat(editor, () => editor.chain().focus().setTextColor(event.target.value).run())}
         className="size-6 cursor-pointer rounded border border-zinc-200 bg-transparent p-0.5 dark:border-zinc-700"
       />
       <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-      <MarkButton label="粗体" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold className="size-3.5" /></MarkButton>
-      <MarkButton label="斜体" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic className="size-3.5" /></MarkButton>
-      <MarkButton label="下划线" active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()}><UnderlineIcon className="size-3.5" /></MarkButton>
-      <MarkButton label="删除线" active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough className="size-3.5" /></MarkButton>
-      <MarkButton label="行内代码" active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()}><Code className="size-3.5" /></MarkButton>
+      <MarkButton label="粗体" active={editor.isActive('bold')} onClick={() => applyTextFormat(editor, () => editor.chain().focus().toggleBold().run())}><Bold className="size-3.5" /></MarkButton>
+      <MarkButton label="斜体" active={editor.isActive('italic')} onClick={() => applyTextFormat(editor, () => editor.chain().focus().toggleItalic().run())}><Italic className="size-3.5" /></MarkButton>
+      <MarkButton label="下划线" active={editor.isActive('underline')} onClick={() => applyTextFormat(editor, () => editor.chain().focus().toggleUnderline().run())}><UnderlineIcon className="size-3.5" /></MarkButton>
+      <MarkButton label="删除线" active={editor.isActive('strike')} onClick={() => applyTextFormat(editor, () => editor.chain().focus().toggleStrike().run())}><Strikethrough className="size-3.5" /></MarkButton>
+      <MarkButton label="行内代码" active={editor.isActive('code')} onClick={() => applyTextFormat(editor, () => editor.chain().focus().toggleCode().run())}><Code className="size-3.5" /></MarkButton>
       {onFormula ? (
         <>
           <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />

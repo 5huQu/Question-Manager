@@ -138,6 +138,31 @@ describe('BlockInlineEditor: 基础编辑', () => {
     expect(changes[changes.length - 1]).toEqual([{ type: 'text', text: '改字体' }])
   })
 
+  it('没有文字选区时将字体、颜色和样式应用到当前文字块', async () => {
+    let editorRef: Editor | undefined
+    const changes: TeachingInline[][] = []
+    const host = await renderEditorCapture([{ type: 'text', text: '整块格式' }], (inlines) => changes.push(inlines), (editor) => { editorRef = editor })
+    const fontSelect = host.querySelector<HTMLSelectElement>('select[aria-label="字体"]')!
+    const colorSelect = host.querySelector<HTMLSelectElement>('select[aria-label="文字颜色"]')!
+    expect(editorRef!.state.selection.empty).toBe(true)
+
+    await act(async () => {
+      fontSelect.value = 'kaiti'
+      fontSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(changes.at(-1)).toEqual([{ type: 'text', text: '整块格式', font: 'kaiti' }])
+
+    await act(async () => {
+      colorSelect.value = '#2563eb'
+      colorSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(changes.at(-1)).toEqual([{ type: 'text', text: '整块格式', font: 'kaiti', color: '#2563eb' }])
+
+    const boldButton = host.querySelector<HTMLButtonElement>('button[aria-label="粗体"]')!
+    await act(async () => boldButton.click())
+    expect(changes.at(-1)).toEqual([{ type: 'text', text: '整块格式', font: 'kaiti', color: '#2563eb', marks: ['bold'] }])
+  })
+
   it('插入行内公式后内容包含 inlineMath', async () => {
     let editorRef: Editor | undefined
     const changes: TeachingInline[][] = []
