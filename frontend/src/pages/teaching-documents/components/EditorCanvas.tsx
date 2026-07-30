@@ -101,12 +101,14 @@ export function EditorCanvas(props: {
       </h1>
 
       <div className="relative" {...dragHandlers}>
-        <DocumentEditor
-          document={document}
-          onChange={props.onEditorChange || (() => {})}
-          resolvers={resolvers}
-          onEditorReady={handleEditorReady}
-        />
+        {document.content.length ? (
+          <DocumentEditor
+            document={document}
+            onChange={props.onEditorChange || (() => {})}
+            resolvers={resolvers}
+            onEditorReady={handleEditorReady}
+          />
+        ) : <BlockInsertPoint empty onInsert={(type) => props.onInsertAfter(type, '')} />}
 
         {/* 浮动工具栏：选中块时显示 */}
         {props.selectedId ? (
@@ -131,11 +133,6 @@ export function EditorCanvas(props: {
         <BlockInsertPoint onInsert={(type) => props.onInsertAfter(type, props.selectedTopLevelId)} />
       ) : null}
 
-      {!document.content.length ? (
-        <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/10 p-12 text-center dark:border-zinc-800">
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">文档为空，使用顶部"插入"按钮或悬停内容之间添加内容。</p>
-        </div>
-      ) : null}
     </div>
   )
 }

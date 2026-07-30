@@ -301,24 +301,18 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
                 </h1>
               </header>
 
-              <DocumentEditor
-                document={document}
-                onChange={onEditorChange || (() => {})}
-                resolvers={{ resolveQuestion, resolveFigure }}
-                onEditorReady={handleEditorReady}
-                paginationLayout={paginationLayout}
-                pagination={pagination}
-                printLayout={printLayout}
-                pageGapPx={pageGapPx}
-              />
-
-              {!document.content.length ? (
-                <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/10 p-12 text-center dark:border-zinc-800">
-                  <p className="text-sm text-zinc-400 dark:text-zinc-500">
-                    文档为空，使用顶部“插入”按钮添加内容。
-                  </p>
-                </div>
-              ) : null}
+              {document.content.length ? (
+                <DocumentEditor
+                  document={document}
+                  onChange={onEditorChange || (() => {})}
+                  resolvers={{ resolveQuestion, resolveFigure }}
+                  onEditorReady={handleEditorReady}
+                  paginationLayout={paginationLayout}
+                  pagination={pagination}
+                  printLayout={printLayout}
+                  pageGapPx={pageGapPx}
+                />
+              ) : <BlockInsertPoint empty onInsert={(type) => onInsertAfter(type, '')} />}
             </div>
 
             {selectedId ? (

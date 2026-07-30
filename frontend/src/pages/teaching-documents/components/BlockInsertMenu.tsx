@@ -60,6 +60,8 @@ export function InsertMenuPanel(props: {
 export function BlockInsertPoint(props: {
   onInsert: (type: TeachingBlock['type']) => void
   types?: TeachingBlock['type'][]
+  /** 空文档使用大面积可点击的虚线插入区，复用同一选择菜单。 */
+  empty?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
@@ -99,6 +101,46 @@ export function BlockInsertPoint(props: {
     }
   }, [open, reposition])
 
+  const menu = createPortal(
+    <AnimatePresence>
+      {open ? (
+        <motion.div
+          ref={menuRef}
+          initial={reduced ? { opacity: 0, x: '-50%' } : { opacity: 0, x: '-50%', scale: 0.95, y: -4 }}
+          animate={reduced ? { opacity: 1, x: '-50%' } : { opacity: 1, x: '-50%', scale: 1, y: 0 }}
+          exit={reduced ? { opacity: 0, x: '-50%' } : { opacity: 0, x: '-50%', scale: 0.97, y: -2 }}
+          transition={springQuick}
+          style={{ top: menuPos.top, left: menuPos.left }}
+          className="fixed z-[70]"
+        >
+          <InsertMenuPanel types={props.types} onPick={(type) => { props.onInsert(type); setOpen(false) }} />
+        </motion.div>
+      ) : null}
+    </AnimatePresence>,
+    document.body,
+  )
+
+  if (props.empty) {
+    return (
+      <div ref={anchorRef} className="relative">
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={toggleOpen}
+          className="group/empty-insert flex min-h-72 w-full flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50/40 px-6 py-12 text-center text-zinc-500 transition-colors hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/10 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/30 dark:hover:text-zinc-200"
+          title="点击插入内容"
+        >
+          <span className="mb-3 flex size-9 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-400 transition-colors group-hover/empty-insert:border-zinc-400 group-hover/empty-insert:text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:group-hover/empty-insert:border-zinc-600 dark:group-hover/empty-insert:text-zinc-200">
+            <Plus className="size-4" />
+          </span>
+          <span className="text-sm font-medium">点击插入第一块内容</span>
+          <span className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">可插入标题、正文、题目、公式、图片等内容</span>
+        </button>
+        {menu}
+      </div>
+    )
+  }
+
   return (
     <div ref={anchorRef} className="group/insert relative flex h-2 items-center justify-center">
       {/* 悬停时显示的插入线 */}
@@ -113,26 +155,7 @@ export function BlockInsertPoint(props: {
         <Plus className="size-3" />
       </button>
 
-      {/* Portal 到 body：脱离画布层叠上下文，避免被试题篮 fixed z-40 按钮遮挡；
-          水平居中交给 motion 的 x:'-50%'（与 scale/y 合成同一 transform） */}
-      {createPortal(
-        <AnimatePresence>
-          {open ? (
-            <motion.div
-              ref={menuRef}
-              initial={reduced ? { opacity: 0, x: '-50%' } : { opacity: 0, x: '-50%', scale: 0.95, y: -4 }}
-              animate={reduced ? { opacity: 1, x: '-50%' } : { opacity: 1, x: '-50%', scale: 1, y: 0 }}
-              exit={reduced ? { opacity: 0, x: '-50%' } : { opacity: 0, x: '-50%', scale: 0.97, y: -2 }}
-              transition={springQuick}
-              style={{ top: menuPos.top, left: menuPos.left }}
-              className="fixed z-[70]"
-            >
-              <InsertMenuPanel types={props.types} onPick={(type) => { props.onInsert(type); setOpen(false) }} />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>,
-        document.body,
-      )}
+      {menu}
     </div>
   )
 }
