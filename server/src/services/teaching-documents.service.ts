@@ -109,7 +109,7 @@ function validateOutline(value: unknown, issues: TeachingDocumentIssue[]) {
   if (value === undefined) return
   if (!isObject(value)) { issues.push({ level: 'error', code: 'invalid-outline', message: '章节设置必须是对象。' }); return }
   if (value.numberingEnabled !== undefined && typeof value.numberingEnabled !== 'boolean') issues.push({ level: 'error', code: 'invalid-outline', message: '章节编号开关必须是布尔值。' })
-  if (value.preset !== undefined && !['textbook', 'decimal', 'chinese', 'exam', 'none'].includes(String(value.preset))) issues.push({ level: 'error', code: 'invalid-outline', message: '章节编号方案无效。' })
+  if (value.preset !== undefined && !['textbook', 'decimal', 'chinese', 'exam', 'chapter-chinese', 'chapter-decimal', 'chapter-section', 'roman', 'paren', 'none'].includes(String(value.preset))) issues.push({ level: 'error', code: 'invalid-outline', message: '章节编号方案无效。' })
   if (value.levels !== undefined && !isObject(value.levels)) issues.push({ level: 'error', code: 'invalid-outline', message: '章节分级设置必须是对象。' })
 }
 

@@ -609,6 +609,11 @@
 .td-heading[data-number-label]::before {
   content: attr(data-number-label) " ";
   white-space: pre;
+  font-family: var(--td-heading-number-font, var(--td-heading-font, inherit));
+}
+
+.td-heading-number {
+  font-family: var(--td-heading-number-font, var(--td-heading-font, inherit));
 }
 
 /* ─── 编辑视图字体（与纸张预览/PDF 打印共用同一组 CSS 变量） ───────────── */

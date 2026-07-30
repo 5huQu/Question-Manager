@@ -137,7 +137,16 @@ function OutlinePanelBody(props: {
       <div className="space-y-2 border-b border-zinc-100 px-3 py-2.5 dark:border-zinc-900">
         <label className="flex items-center justify-between gap-2 text-[11px] text-zinc-600 dark:text-zinc-300"><span>自动章节编号</span><input type="checkbox" checked={props.document.outline?.numberingEnabled === true} onChange={(event) => props.onOutlineChange?.({ numberingEnabled: event.target.checked })} /></label>
         <select aria-label="章节编号方案" value={props.document.outline?.preset || 'decimal'} disabled={props.document.outline?.numberingEnabled !== true} onChange={(event) => props.onOutlineChange?.({ preset: event.target.value as TeachingDocumentOutlineOptions['preset'] })} className="h-7 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] dark:border-zinc-700 dark:bg-zinc-950">
-          <option value="decimal">1 / 1.1 / 1.1.1</option><option value="textbook">第 X 章 / 第 X 节</option><option value="chinese">一、/（一）/ 1.</option><option value="exam">试卷式</option><option value="none">不编号</option>
+          <option value="decimal">1 / 1.1 / 1.1.1</option>
+          <option value="chinese">一、/（一）/ 1.</option>
+          <option value="paren">（一）/ 1. /（1）</option>
+          <option value="textbook">第 X 章 / 第 X 节 / 一、</option>
+          <option value="chapter-chinese">第 X 章 / 一、/ 1.</option>
+          <option value="chapter-decimal">第 X 章 / 1.1 / 1.1.1</option>
+          <option value="chapter-section">第 X 章 / 第 X 节 / 第 X 条</option>
+          <option value="roman">I. / A. / 1.</option>
+          <option value="exam">试卷式</option>
+          <option value="none">不编号</option>
         </select>
       </div>
 

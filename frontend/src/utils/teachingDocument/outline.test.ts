@@ -35,6 +35,18 @@ describe('teaching document outline', () => {
     expect(buildDocumentOutline(document).entries.map((entry) => entry.displayLabel)).toEqual(['第一章', '附录 A'])
   })
 
+  it('supports chapter, decimal, bracket, and western multi-level numbering presets', () => {
+    const labels = (preset: TeachingDocumentV1['outline']['preset']) => buildDocumentOutline({
+      ...documentWithSections,
+      outline: { numberingEnabled: true, preset },
+      content: documentWithSections.content.slice(0, 3),
+    }).entries.map((entry) => entry.displayLabel)
+    expect(labels('chapter-chinese')).toEqual(['第一章', '一、'])
+    expect(labels('chapter-decimal')).toEqual(['第一章', '1.1'])
+    expect(labels('paren')).toEqual(['（一）', '1.'])
+    expect(labels('roman')).toEqual(['I.', 'A.'])
+  })
+
   it('moves an entire section and leaves its child content attached', () => {
     const moved = applyTeachingDocumentCommand(documentWithSections, { type: 'moveSectionByStep', headingId: 'h3', direction: -1 })
     expect(moved.content.map((block) => block.id)).toEqual(['h3', 'h1', 'p1', 'h2', 'p2'])
@@ -45,9 +57,11 @@ describe('teaching document outline', () => {
   it('round-trips document and heading numbering configuration through parser and editor serialization', () => {
     const parsed = parseTeachingDocument({
       ...documentWithSections,
+      style: { bodyFont: 'songti', bodyLatinFont: 'times', headingFont: 'heiti', headingLatinFont: 'georgia' },
       content: [{ ...documentWithSections.content[0], numbering: { mode: 'manual', manualLabel: '附录 A', restartAt: 2 } }],
     }).document as TeachingDocumentV1
     expect(parsed.outline).toMatchObject({ numberingEnabled: true, preset: 'decimal' })
+    expect(parsed.style).toMatchObject({ bodyLatinFont: 'times', headingLatinFont: 'georgia' })
     const editorJson = teachingDocumentToEditorDoc(parsed)
     const restored = editorDocToTeachingDocument(editorJson, {
       documentType: parsed.documentType, title: parsed.title, metadata: parsed.metadata, outline: parsed.outline,

@@ -67,7 +67,17 @@ export interface HeadingBlock {
 
 export type HeadingNumberingMode = 'inherit' | 'none' | 'manual'
 export type HeadingNumberingStyle = 'arabic' | 'chinese' | 'roman-upper' | 'alpha-upper'
-export type TeachingDocumentOutlinePreset = 'textbook' | 'decimal' | 'chinese' | 'exam' | 'none'
+export type TeachingDocumentOutlinePreset =
+  | 'textbook'
+  | 'decimal'
+  | 'chinese'
+  | 'exam'
+  | 'chapter-chinese'
+  | 'chapter-decimal'
+  | 'chapter-section'
+  | 'roman'
+  | 'paren'
+  | 'none'
 
 export interface HeadingNumberingOverride {
   mode?: HeadingNumberingMode
@@ -368,8 +378,16 @@ export interface TeachingDocumentPaperOptions {
 export interface TeachingDocumentStyle {
   /** 正文字体 id（见 lectureFonts BODY_FONT_OPTIONS）；缺省 = 默认正文字体 */
   bodyFont?: string
+  /** 正文英文与数字字体 id；缺省时跟随 bodyFont，兼容旧文档。 */
+  bodyLatinFont?: string
+  /** 正文数字字体 id；缺省时跟随 bodyLatinFont。 */
+  bodyNumberFont?: string
   /** 标题字体 id（见 lectureFonts HEADING_FONT_OPTIONS）；缺省 = 默认标题字体 */
   headingFont?: string
+  /** 章节英文与数字字体 id；编号也使用此字体；缺省时跟随 headingFont。 */
+  headingLatinFont?: string
+  /** 章节数字字体 id；章节编号优先使用此字体；缺省时跟随 headingLatinFont。 */
+  headingNumberFont?: string
   /** 页边距预设（见 MARGIN_PRESETS）；缺省 = normal */
   marginPreset?: TeachingMarginPreset
   /** 题目间距；缺省 compact，适合试卷高密度排版。 */

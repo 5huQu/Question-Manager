@@ -49,6 +49,36 @@ const DEFAULT_LEVELS: Record<TeachingDocumentOutlinePreset, Record<1 | 2 | 3 | 4
     3: { style: 'arabic', template: '{n}.', includeParents: false },
     4: { style: 'arabic', template: '（{n}）', includeParents: false },
   },
+  'chapter-chinese': {
+    1: { style: 'chinese', template: '第{cn}章', includeParents: false },
+    2: { style: 'chinese', template: '{cn}、', includeParents: false },
+    3: { style: 'arabic', template: '{n}.', includeParents: false },
+    4: { style: 'arabic', template: '（{n}）', includeParents: false },
+  },
+  'chapter-decimal': {
+    1: { style: 'chinese', template: '第{cn}章', includeParents: false },
+    2: { style: 'arabic', template: '{path}', includeParents: true },
+    3: { style: 'arabic', template: '{path}', includeParents: true },
+    4: { style: 'arabic', template: '{path}', includeParents: true },
+  },
+  'chapter-section': {
+    1: { style: 'chinese', template: '第{cn}章', includeParents: false },
+    2: { style: 'chinese', template: '第{cn}节', includeParents: false },
+    3: { style: 'chinese', template: '第{cn}条', includeParents: false },
+    4: { style: 'arabic', template: '（{n}）', includeParents: false },
+  },
+  roman: {
+    1: { style: 'roman-upper', template: '{cn}.', includeParents: false },
+    2: { style: 'alpha-upper', template: '{cn}.', includeParents: false },
+    3: { style: 'arabic', template: '{n}.', includeParents: false },
+    4: { style: 'arabic', template: '（{n}）', includeParents: false },
+  },
+  paren: {
+    1: { style: 'chinese', template: '（{cn}）', includeParents: false },
+    2: { style: 'arabic', template: '{n}.', includeParents: false },
+    3: { style: 'arabic', template: '（{n}）', includeParents: false },
+    4: { style: 'arabic', template: '{n}.', includeParents: false },
+  },
   exam: {
     1: { style: 'chinese', template: '{cn}、', includeParents: false },
     2: { style: 'chinese', template: '（{cn}）', includeParents: false },

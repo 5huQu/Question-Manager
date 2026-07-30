@@ -71,6 +71,8 @@ export interface PaginatedCanvasProps {
   onEditQuestion?: () => void
   onEditorChange?: (doc: TeachingDocumentV1) => void
   onEditorReady?: (editor: Editor | null) => void
+  /** 将分页编辑画布的页数回传给页面级快速翻页控件。 */
+  onPageCountChange?: (count: number) => void
 
   // ─── 页眉页脚 chrome ────────────────────────────────────────────────────
   editingChromeSlot?: { section: PrintChromeSection; slot: PrintChromeSlotPosition } | null
@@ -110,6 +112,7 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
     onEditQuestion,
     onEditorChange,
     onEditorReady,
+    onPageCountChange,
     editingChromeSlot,
     onChromeSlotEdit,
     geometryAdapter,
@@ -177,6 +180,9 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
   }, [onSelect])
 
   const pages = pagination?.pages ?? []
+  useEffect(() => {
+    onPageCountChange?.(pages.length || 1)
+  }, [onPageCountChange, pages.length])
   const pageGapPx = 24
   const paginationLayout = useMemo<EditorPaginationLayout | null>(() => pagination ? ({
     anchors: paginationGapAnchors(document, pagination, metrics.contentHeightPx),

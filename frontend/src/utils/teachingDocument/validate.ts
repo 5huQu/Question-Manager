@@ -516,7 +516,9 @@ export function parseTeachingDocument(json: unknown): { document: TeachingDocume
 function parseDocumentOutline(raw: unknown) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
   const node = raw as Record<string, unknown>
-  const preset = ['textbook', 'decimal', 'chinese', 'exam', 'none'].includes(String(node.preset)) ? node.preset as 'textbook' | 'decimal' | 'chinese' | 'exam' | 'none' : undefined
+  const preset = ['textbook', 'decimal', 'chinese', 'exam', 'chapter-chinese', 'chapter-decimal', 'chapter-section', 'roman', 'paren', 'none'].includes(String(node.preset))
+    ? node.preset as TeachingDocumentOutlineOptions['preset']
+    : undefined
   const levels: Record<number, { style?: 'arabic' | 'chinese' | 'roman-upper' | 'alpha-upper'; template?: string; includeParents?: boolean }> = {}
   if (node.levels && typeof node.levels === 'object' && !Array.isArray(node.levels)) {
     for (const level of [1, 2, 3, 4]) {
@@ -542,7 +544,11 @@ function parseDocumentStyle(raw: unknown): TeachingDocumentStyle | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
   const node = raw as Record<string, unknown>
   const bodyFont = typeof node.bodyFont === 'string' && node.bodyFont ? node.bodyFont : undefined
+  const bodyLatinFont = typeof node.bodyLatinFont === 'string' && node.bodyLatinFont ? node.bodyLatinFont : undefined
+  const bodyNumberFont = typeof node.bodyNumberFont === 'string' && node.bodyNumberFont ? node.bodyNumberFont : undefined
   const headingFont = typeof node.headingFont === 'string' && node.headingFont ? node.headingFont : undefined
+  const headingLatinFont = typeof node.headingLatinFont === 'string' && node.headingLatinFont ? node.headingLatinFont : undefined
+  const headingNumberFont = typeof node.headingNumberFont === 'string' && node.headingNumberFont ? node.headingNumberFont : undefined
   const marginPreset = typeof node.marginPreset === 'string' && VALID_MARGIN_PRESETS.has(node.marginPreset)
     ? node.marginPreset as TeachingMarginPreset
     : undefined
@@ -550,8 +556,8 @@ function parseDocumentStyle(raw: unknown): TeachingDocumentStyle | undefined {
     ? node.questionSpacing as TeachingQuestionSpacing
     : undefined
   const print = parseDocumentPrintOptions(node.print)
-  if (!bodyFont && !headingFont && !marginPreset && !questionSpacing && !print) return undefined
-  return { bodyFont, headingFont, marginPreset, questionSpacing, print }
+  if (!bodyFont && !bodyLatinFont && !bodyNumberFont && !headingFont && !headingLatinFont && !headingNumberFont && !marginPreset && !questionSpacing && !print) return undefined
+  return { bodyFont, bodyLatinFont, bodyNumberFont, headingFont, headingLatinFont, headingNumberFont, marginPreset, questionSpacing, print }
 }
 
 function parseDocumentPrintOptions(raw: unknown): TeachingDocumentPrintOptions | undefined {

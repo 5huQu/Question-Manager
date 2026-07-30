@@ -16,7 +16,7 @@ import type { FigureAssetRef, TeachingDocumentV1 } from '@/types/teachingDocumen
 import { questionBankApi } from '@/api/questionBank'
 import { teachingDocumentsApi, type TeachingDocumentRecord } from '@/api/teachingDocuments'
 import { ApiError } from '@/api/client'
-import { lectureFontCssVars, resolveDocumentFonts } from '@/utils/teachingDocument/lectureFonts'
+import { lectureFontCssVars, lectureFontFaceCss, resolveDocumentFonts } from '@/utils/teachingDocument/lectureFonts'
 import {
   resolveDocumentPaper,
   isA3LandscapeSpread,
@@ -327,7 +327,11 @@ export default function TeachingDocumentPrintPage() {
 
   const documentFonts = useMemo(() => resolveDocumentFonts(document?.style), [document?.style])
   const fontVars = useMemo(
-    () => lectureFontCssVars(documentFonts.body, documentFonts.heading),
+    () => lectureFontCssVars(documentFonts.body, documentFonts.heading, documentFonts.bodyLatin, documentFonts.headingLatin, documentFonts.bodyNumber, documentFonts.headingNumber),
+    [documentFonts],
+  )
+  const fontFaceCss = useMemo(
+    () => lectureFontFaceCss(documentFonts.bodyLatin, documentFonts.bodyNumber, documentFonts.headingLatin, documentFonts.headingNumber),
     [documentFonts],
   )
 
@@ -346,6 +350,7 @@ export default function TeachingDocumentPrintPage() {
         [TEACHING_DOM.pageCount]: sheetCount,
       }}
     >
+      {fontFaceCss ? <style>{fontFaceCss}</style> : null}
       {/* 隐藏测量根：document 存在即挂载，保证 measuring 阶段可测量。 */}
       {document ? (
         <div
