@@ -43,6 +43,13 @@ describe('TeachingDocument editor state', () => {
     expect(document.content.some((block) => block.id === 'p2')).toBe(false)
   })
 
+  it('creates a section at the level explicitly chosen by the insert menu', () => {
+    const firstLevel = newTeachingBlock('heading', { headingLevel: 1 })
+    const childLevel = newTeachingBlock('heading', { headingLevel: 2 })
+    expect(firstLevel).toMatchObject({ type: 'heading', level: 1, content: [{ type: 'text', text: '新章节' }] })
+    expect(childLevel).toMatchObject({ type: 'heading', level: 2, content: [{ type: 'text', text: '新章节' }] })
+  })
+
   it('replaces one top-level block with imported Markdown conversion blocks as one history action', () => {
     const replacement: TeachingBlock[] = [
       { type: 'paragraph', id: 'math-source', content: [{ type: 'text', text: '斜率为' }] },

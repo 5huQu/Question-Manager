@@ -27,17 +27,49 @@ export const TYPE_ICONS: Partial<Record<TeachingBlock['type'], typeof Plus>> = {
   rawMarkdown: FileCode2,
 }
 
+export type HeadingLevel = 1 | 2 | 3 | 4
+
+const HEADING_LEVELS: Array<{ level: HeadingLevel; label: string }> = [
+  { level: 1, label: '一级' },
+  { level: 2, label: '二级' },
+  { level: 3, label: '三级' },
+  { level: 4, label: '四级' },
+]
+
 /** 共享的插入类型选择面板（双列图标网格）：块间 "+" 与顶栏"插入"下拉复用 */
 export function InsertMenuPanel(props: {
-  onPick: (type: TeachingBlock['type']) => void
+  onPick: (type: TeachingBlock['type'], headingLevel?: HeadingLevel) => void
   types?: TeachingBlock['type'][]
 }) {
   const insertableTypes = props.types || INSERTABLE_TYPES
+  const supportsHeading = insertableTypes.includes('heading')
   return (
-    <div className="w-52 rounded-xl border border-zinc-200 bg-white p-1.5 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="w-56 rounded-xl border border-zinc-200 bg-white p-1.5 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
       <p className="px-2 py-1 text-[11px] font-normal tracking-wide text-zinc-400">插入内容</p>
       <div className="grid grid-cols-2 gap-0.5">
-        {insertableTypes.map((type) => {
+        {supportsHeading ? (
+          <div className="col-span-2 rounded-lg bg-zinc-50 px-2.5 py-2 dark:bg-zinc-900/60">
+            <div className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
+              <Heading className="size-3.5 shrink-0 text-zinc-400" />
+              <span className="font-medium">插入章节</span>
+              <span className="text-[10px] text-zinc-400">选择层级</span>
+            </div>
+            <div className="mt-1.5 grid grid-cols-4 gap-1" role="group" aria-label="章节层级">
+              {HEADING_LEVELS.map(({ level, label }) => (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => props.onPick('heading', level)}
+                  title={`插入${label}章节`}
+                  className="rounded-md border border-zinc-200 bg-white px-1 py-1 text-[11px] text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {insertableTypes.filter((type) => type !== 'heading').map((type) => {
           const Icon = TYPE_ICONS[type] || Plus
           return (
             <button
@@ -58,7 +90,7 @@ export function InsertMenuPanel(props: {
 }
 
 export function BlockInsertPoint(props: {
-  onInsert: (type: TeachingBlock['type']) => void
+  onInsert: (type: TeachingBlock['type'], headingLevel?: HeadingLevel) => void
   types?: TeachingBlock['type'][]
   /** 空文档使用大面积可点击的虚线插入区，复用同一选择菜单。 */
   empty?: boolean
@@ -113,7 +145,7 @@ export function BlockInsertPoint(props: {
           style={{ top: menuPos.top, left: menuPos.left }}
           className="fixed z-[70]"
         >
-          <InsertMenuPanel types={props.types} onPick={(type) => { props.onInsert(type); setOpen(false) }} />
+          <InsertMenuPanel types={props.types} onPick={(type, headingLevel) => { props.onInsert(type, headingLevel); setOpen(false) }} />
         </motion.div>
       ) : null}
     </AnimatePresence>,
@@ -134,7 +166,7 @@ export function BlockInsertPoint(props: {
             <Plus className="size-4" />
           </span>
           <span className="text-sm font-medium">点击插入第一块内容</span>
-          <span className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">可插入标题、正文、题目、公式、图片等内容</span>
+          <span className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">可插入章节、正文、题目、公式、图片等内容</span>
         </button>
         {menu}
       </div>

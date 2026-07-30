@@ -38,6 +38,7 @@ import {
 } from '../blocks/BlockRenderer'
 import { FloatingBlockToolbar } from '@/pages/teaching-documents/components/FloatingBlockToolbar'
 import { BlockInsertPoint } from '@/pages/teaching-documents/components/BlockInsertMenu'
+import type { HeadingLevel } from '@/pages/teaching-documents/components/BlockInsertMenu'
 import { useBlockDragReorder } from '@/pages/teaching-documents/components/useBlockDragReorder'
 import { paginationGapAnchors, type EditorPaginationLayout } from './paginationDecorations'
 import { BOX_CHILD_SELECT_EVENT, blockIdFromEditorSelection, isExternalDocumentSync, type BoxChildSelectDetail } from './selection'
@@ -60,7 +61,7 @@ export interface PaginatedCanvasProps {
   selectedTopLevelId: string
   selectedIsBoxChild: boolean
   onSelect: (blockId: string) => void
-  onInsertAfter: (type: TeachingBlock['type'], afterBlockId: string) => void
+  onInsertAfter: (type: TeachingBlock['type'], afterBlockId: string, headingLevel?: HeadingLevel) => void
   onMove: (direction: -1 | 1) => void
   onDuplicate: () => void
   onDelete: () => void
@@ -312,7 +313,7 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
                   printLayout={printLayout}
                   pageGapPx={pageGapPx}
                 />
-              ) : <BlockInsertPoint empty onInsert={(type) => onInsertAfter(type, '')} />}
+              ) : <BlockInsertPoint empty onInsert={(type, headingLevel) => onInsertAfter(type, '', headingLevel)} />}
             </div>
 
             {selectedId ? (
@@ -354,7 +355,7 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
         {/* 块间插入点（选中块后显示） */}
         {selectedBlockIndex >= 0 ? (
           <div className="mx-auto" style={{ width: `${contentWidthPx}px` }}>
-            <BlockInsertPoint onInsert={(type) => onInsertAfter(type, selectedTopLevelId)} />
+            <BlockInsertPoint onInsert={(type, headingLevel) => onInsertAfter(type, selectedTopLevelId, headingLevel)} />
           </div>
         ) : null}
       </div>

@@ -223,12 +223,12 @@ function SheetBody(props: {
         )}
         {block.type === 'heading' ? (
           <>
-            <Field label="标题级别">
+            <Field label="章节层级">
               <select className={fieldClass} value={block.level} onChange={(event) => props.onUpdate({ level: Number(event.target.value) as 1 | 2 | 3 | 4 })}>
-                {[1, 2, 3, 4].map((level) => <option key={level} value={level}>H{level}</option>)}
+                {[1, 2, 3, 4].map((level) => <option key={level} value={level}>{['一级章节', '二级章节', '三级章节', '四级章节'][level - 1]}</option>)}
               </select>
             </Field>
-            <Field label="本标题编号">
+            <Field label="本章节编号">
               <select className={fieldClass} value={block.numbering?.mode || 'inherit'} onChange={(event) => props.onUpdate({ numbering: { ...block.numbering, mode: event.target.value as 'inherit' | 'none' | 'manual' } })}>
                 <option value="inherit">跟随文档设置</option><option value="none">不显示编号</option><option value="manual">手动标签</option>
               </select>

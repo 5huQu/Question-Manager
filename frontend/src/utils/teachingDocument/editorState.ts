@@ -72,10 +72,16 @@ function createEditorId(prefix = 'block') {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
 }
 
-export function newTeachingBlock(type: TeachingBlock['type']): TeachingBlock {
+/**
+ * 创建新的顶层内容块。
+ *
+ * `headingLevel` 只由“插入章节”入口传入；保留旧的三级默认值，避免未迁移的
+ * 程序化调用意外改变已有工作流。
+ */
+export function newTeachingBlock(type: TeachingBlock['type'], options?: { headingLevel?: 1 | 2 | 3 | 4 }): TeachingBlock {
   const id = createEditorId(type)
   switch (type) {
-    case 'heading': return { type, id, level: 3, content: [{ type: 'text', text: '新标题' }] }
+    case 'heading': return { type, id, level: options?.headingLevel ?? 3, content: [{ type: 'text', text: '新章节' }] }
     case 'paragraph': return { type, id, content: [{ type: 'text', text: '' }] }
     case 'blockMath': return { type, id, latex: '' }
     case 'figure': return { type, id, asset: { type: 'documentAsset', assetId: '' }, alignment: 'center', layoutPreset: 'block-center', widthRatio: 0.8, widthMm: 80, lockAspectRatio: true }

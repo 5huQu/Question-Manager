@@ -16,7 +16,7 @@ import type { FigureAssetRef, TeachingBlock, TeachingDocumentV1, TeachingInline 
 import { type QuestionResolution, type FigureResolution } from '@/components/teaching-document/blocks/BlockRenderer'
 import { DocumentEditor } from '@/components/teaching-document/editor'
 import { FloatingBlockToolbar } from './FloatingBlockToolbar'
-import { BlockInsertPoint } from './BlockInsertMenu'
+import { BlockInsertPoint, type HeadingLevel } from './BlockInsertMenu'
 import { useBlockDragReorder } from './useBlockDragReorder'
 import { BOX_CHILD_SELECT_EVENT, blockIdFromEditorSelection, isExternalDocumentSync, type BoxChildSelectDetail } from '@/components/teaching-document/editor/selection'
 
@@ -30,7 +30,7 @@ export function EditorCanvas(props: {
   onSelect: (blockId: string) => void
   onEditContent: (blockId: string, content: TeachingInline[]) => void
   onEditBoxTitle: (boxId: string, title: string) => void
-  onInsertAfter: (type: TeachingBlock['type'], afterBlockId: string) => void
+  onInsertAfter: (type: TeachingBlock['type'], afterBlockId: string, headingLevel?: HeadingLevel) => void
   onMove: (direction: -1 | 1) => void
   onDuplicate: () => void
   onDelete: () => void
@@ -108,7 +108,7 @@ export function EditorCanvas(props: {
             resolvers={resolvers}
             onEditorReady={handleEditorReady}
           />
-        ) : <BlockInsertPoint empty onInsert={(type) => props.onInsertAfter(type, '')} />}
+        ) : <BlockInsertPoint empty onInsert={(type, headingLevel) => props.onInsertAfter(type, '', headingLevel)} />}
 
         {/* 浮动工具栏：选中块时显示 */}
         {props.selectedId ? (
@@ -130,7 +130,7 @@ export function EditorCanvas(props: {
 
       {/* 块间插入点：选中块后在其下方显示 */}
       {selectedBlockIndex >= 0 ? (
-        <BlockInsertPoint onInsert={(type) => props.onInsertAfter(type, props.selectedTopLevelId)} />
+        <BlockInsertPoint onInsert={(type, headingLevel) => props.onInsertAfter(type, props.selectedTopLevelId, headingLevel)} />
       ) : null}
 
     </div>

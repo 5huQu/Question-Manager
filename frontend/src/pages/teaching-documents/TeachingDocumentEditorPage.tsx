@@ -52,6 +52,7 @@ import type { PrintChromeTemplate } from '@/api/teachingDocuments'
 import { useTeachingDocumentEditor } from './useTeachingDocumentEditor'
 import { EditorTopBar, type TeachingCanvasMode } from './components/EditorTopBar'
 import { EditorCanvas } from './components/EditorCanvas'
+import type { HeadingLevel } from './components/BlockInsertMenu'
 import { OutlinePanel } from './components/OutlinePanel'
 import { PropertiesSheet, type SelectedLocation } from './components/PropertiesSheet'
 import { QuestionEditDialog } from './components/QuestionEditDialog'
@@ -546,11 +547,15 @@ export default function TeachingDocumentEditorPage() {
     else editor.dispatch({ type: 'moveBlock', blockId: selected.block.id, direction })
   }
 
-  function insertBlock(type: TeachingBlock['type'], afterBlockId?: string) {
-    const block = newTeachingBlock(type)
+  function insertBlock(type: TeachingBlock['type'], afterBlockId?: string, headingLevel?: HeadingLevel) {
     const insertionAnchor = afterBlockId
       ?? editor.activeTopLevelBlockId()
       ?? selected?.topLevel.id
+    const anchorIndex = insertionAnchor ? document.content.findIndex((item) => item.id === insertionAnchor) : document.content.length - 1
+    const contextualHeading = document.content.slice(0, anchorIndex + 1).reverse().find((item) => item.type === 'heading')
+    const resolvedHeadingLevel = headingLevel
+      ?? (contextualHeading?.type === 'heading' ? contextualHeading.level : 1)
+    const block = newTeachingBlock(type, type === 'heading' ? { headingLevel: resolvedHeadingLevel } : undefined)
     editor.dispatch({ type: 'insertBlock', block, afterBlockId: insertionAnchor })
     selectAndShow(block.id)
     // 插入公式块自动弹出可视化公式编辑器（顶栏与块间菜单共用此入口）
@@ -738,7 +743,7 @@ export default function TeachingDocumentEditorPage() {
             onRedo={editor.redo}
             onCanvasModeChange={setCanvasMode}
             onZoomChange={setViewZoom}
-            onInsert={(type) => insertBlock(type)}
+            onInsert={(type, headingLevel) => insertBlock(type, undefined, headingLevel)}
             paperActions={paperActions}
             printActions={canvasMode === 'a4' ? (
               <ExportPdfPanel
@@ -848,7 +853,7 @@ export default function TeachingDocumentEditorPage() {
                 selectedTopLevelId={selected?.topLevel.id || ''}
                 selectedIsBoxChild={Boolean(selected?.boxId)}
                 onSelect={selectAndShow}
-                onInsertAfter={(type, afterBlockId) => insertBlock(type, afterBlockId)}
+                onInsertAfter={(type, afterBlockId, headingLevel) => insertBlock(type, afterBlockId, headingLevel)}
                 onMove={moveSelected}
                 onDuplicate={() => { if (selected && !selected.boxId) editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id }) }}
                 onDelete={deleteSelected}
@@ -881,7 +886,7 @@ export default function TeachingDocumentEditorPage() {
                   onSelect={selectAndShow}
                   onEditContent={(blockId, content) => editor.dispatch({ type: 'updateBlock', blockId, patch: { content }, mergeKey: `text:${blockId}` })}
                   onEditBoxTitle={(boxId, title) => editor.dispatch({ type: 'updateBlock', blockId: boxId, patch: { title }, mergeKey: `box-title:${boxId}` })}
-                  onInsertAfter={(type, afterBlockId) => insertBlock(type, afterBlockId)}
+                  onInsertAfter={(type, afterBlockId, headingLevel) => insertBlock(type, afterBlockId, headingLevel)}
                   onMove={moveSelected}
                   onDuplicate={() => selected && !selected.boxId && editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id })}
                   onDelete={deleteSelected}

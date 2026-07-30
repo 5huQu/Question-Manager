@@ -7,7 +7,7 @@ import type { TeachingBlock } from '@/types/teachingDocument'
 
 /** 用户视角的内容类型名称 */
 export const USER_BLOCK_LABEL: Record<TeachingBlock['type'], string> = {
-  heading: '标题',
+  heading: '章节',
   paragraph: '段落',
   blockMath: '公式',
   figure: '图片',

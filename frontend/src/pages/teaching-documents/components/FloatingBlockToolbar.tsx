@@ -99,7 +99,7 @@ export function FloatingBlockToolbar(props: {
   )
 }
 
-/** 文本对象的块级样式：对应属性面板里的“标题级别”，不与行内字体混淆。 */
+/** 文本对象的块级样式：对应属性面板里的“章节层级”，不与行内字体混淆。 */
 function BlockStyleControl({ editor }: { editor: Editor }) {
   const { $from } = editor.state.selection
   let textBlock: typeof $from.parent | null = null
@@ -130,10 +130,10 @@ function BlockStyleControl({ editor }: { editor: Editor }) {
       className="h-7 max-w-20 cursor-pointer rounded bg-transparent px-1 text-[11px] text-zinc-600 outline-none hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-300 dark:hover:bg-zinc-800"
     >
       <option value="paragraph">正文</option>
-      <option value="heading-1">标题 1</option>
-      <option value="heading-2">标题 2</option>
-      <option value="heading-3">标题 3</option>
-      <option value="heading-4">标题 4</option>
+      <option value="heading-1">一级章节</option>
+      <option value="heading-2">二级章节</option>
+      <option value="heading-3">三级章节</option>
+      <option value="heading-4">四级章节</option>
     </select>
   )
 }

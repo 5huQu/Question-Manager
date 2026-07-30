@@ -13,7 +13,7 @@ import {
 import type { TeachingBlock } from '@/types/teachingDocument'
 import type { AutosaveState } from '@/utils/teachingDocument'
 import { springQuick } from '@/components/teaching-document/motion'
-import { InsertMenuPanel } from './BlockInsertMenu'
+import { InsertMenuPanel, type HeadingLevel } from './BlockInsertMenu'
 
 const SAVE_INDICATOR: Record<AutosaveState, { label: string; dot: string; text: string }> = {
   saved: { label: '已保存', dot: 'bg-emerald-500', text: 'text-zinc-500' },
@@ -39,7 +39,7 @@ export function EditorTopBar(props: {
   onRedo: () => void
   onCanvasModeChange: (mode: TeachingCanvasMode) => void
   onZoomChange: (zoom: number) => void
-  onInsert: (type: TeachingBlock['type']) => void
+  onInsert: (type: TeachingBlock['type'], headingLevel?: HeadingLevel) => void
   paperActions?: ReactNode
   printActions?: ReactNode
 }) {
@@ -243,7 +243,7 @@ export function EditorTopBar(props: {
                 style={{ top: menuPos.top, left: menuPos.left }}
                 className="fixed z-[70]"
               >
-                <InsertMenuPanel onPick={(type) => { props.onInsert(type); setInsertOpen(false) }} />
+                <InsertMenuPanel onPick={(type, headingLevel) => { props.onInsert(type, headingLevel); setInsertOpen(false) }} />
               </motion.div>
             ) : null}
           </AnimatePresence>,
