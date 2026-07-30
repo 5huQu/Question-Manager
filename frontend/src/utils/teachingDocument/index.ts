@@ -5,6 +5,8 @@ export { FIGURE_LAYOUT_PRESETS, FIGURE_LAYOUT_PRESET_IDS, isFigureLayoutPreset, 
 export type { FigureLayoutPreset, FigureLayoutPresetDefinition } from './figureLayoutPresets'
 export { markdownToTeachingBlocks, teachingBlocksToMarkdown, parseInlineMarkdown } from './markdownCompat'
 export type { MarkdownConversionResult } from './markdownCompat'
+export { buildDocumentOutline, headingLabelByBlockId } from './outline'
+export type { DocumentOutline, DocumentOutlineEntry, DocumentOutlineDiagnostic } from './outline'
 export {
   teachingInlinesToTiptapDoc,
   tiptapDocToTeachingInlines,

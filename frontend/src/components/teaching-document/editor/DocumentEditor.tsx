@@ -58,12 +58,14 @@ export function DocumentEditor({
     title: document.title,
     metadata: document.metadata,
     style: document.style,
+    outline: document.outline,
   })
   metaRef.current = {
     documentType: document.documentType,
     title: document.title,
     metadata: document.metadata,
     style: document.style,
+    outline: document.outline,
   }
 
   const initialDoc = useRef(teachingDocumentToEditorDoc(document))
@@ -114,29 +116,30 @@ export function DocumentEditor({
   // 外部文档更新同步（undo/redo、revision reload、外部 dispatch）
   useEffect(() => {
     if (!editor) return
-    const sig = JSON.stringify(document.content)
+    const sig = JSON.stringify({ content: document.content, outline: document.outline })
     // 比较当前编辑器内容是否与外部文档一致
     // 不能只依赖 lastEmittedSig：当撤销或异步更新让外层文档与编辑器
     // 暂时分叉时，缓存签名可能相同，进而留下“画布旧内容 / 大纲空”的假象。
     const currentJson = editor.getJSON()
     const currentDoc = editorDocToTeachingDocument(currentJson, metaRef.current)
-    const currentSig = JSON.stringify(currentDoc.content)
-    if (sig === currentSig) {
+    const currentSig = JSON.stringify({ content: currentDoc.content, outline: currentDoc.outline })
+    const nextEditorDoc = teachingDocumentToEditorDoc(document)
+    const editorMatches = JSON.stringify(currentJson) === JSON.stringify(nextEditorDoc)
+    if (sig === currentSig && editorMatches) {
       lastEmittedSig.current = sig
       return
     }
     // 外部更新：同步编辑器内容
     syncing.current = true
-    const editorDoc = teachingDocumentToEditorDoc(document)
     editor
       .chain()
       .setMeta(DOCUMENT_EXTERNAL_SYNC_META, true)
       .setMeta('addToHistory', false)
-      .setContent(editorDoc, { emitUpdate: false })
+      .setContent(nextEditorDoc, { emitUpdate: false })
       .run()
     syncing.current = false
     lastEmittedSig.current = sig
-  }, [editor, document.content])
+  }, [editor, document.content, document.outline])
 
   useEffect(() => {
     if (editor) editor.commands.setPaginationLayout(paginationLayout ?? null)

@@ -5,13 +5,14 @@ interface BlockDragReorderOptions {
   document: TeachingDocumentV1
   onSelect: (blockId: string) => void
   onReorder: (order: string[], mergeKey: string) => void
+  onMoveSection?: (headingId: string, targetHeadingId: string, position: 'before' | 'after', mergeKey: string) => void
 }
 
 /**
  * 为文档画布的顶层块提供原生拖放排序。
  * 块内控件维持原有交互；拖到目标块的上/下半区决定插入位置。
  */
-export function useBlockDragReorder({ document, onSelect, onReorder }: BlockDragReorderOptions) {
+export function useBlockDragReorder({ document, onSelect, onReorder, onMoveSection }: BlockDragReorderOptions) {
   const draggedIdRef = useRef('')
   const dropTargetRef = useRef<HTMLElement | null>(null)
   const previousLayoutRef = useRef<Map<string, DOMRect>>(new Map())
@@ -116,17 +117,26 @@ export function useBlockDragReorder({ document, onSelect, onReorder }: BlockDrag
     if (!target || target.dataset.blockId === draggedId) return
 
     const targetId = target.dataset.blockId || ''
+    const draggedBlock = document.content.find((block) => block.id === draggedId)
+    const targetBlock = document.content.find((block) => block.id === targetId)
+    const rect = target.getBoundingClientRect()
+    const position = event.clientY > rect.top + rect.height / 2 ? 'after' : 'before'
+    if (draggedBlock?.type === 'heading' && targetBlock?.type === 'heading' && onMoveSection) {
+      previousLayoutRef.current = captureLayout(event.currentTarget)
+      onMoveSection(draggedId, targetId, position, `drag-section:${draggedId}:${Date.now()}`)
+      onSelect(draggedId)
+      return
+    }
     const order = document.content.map((block) => block.id).filter((id) => id !== draggedId)
     const targetIndex = order.indexOf(targetId)
     if (targetIndex < 0) return
 
-    const rect = target.getBoundingClientRect()
-    const insertAfter = event.clientY > rect.top + rect.height / 2
+    const insertAfter = position === 'after'
     order.splice(targetIndex + (insertAfter ? 1 : 0), 0, draggedId)
     previousLayoutRef.current = captureLayout(event.currentTarget)
     onReorder(order, `drag-block:${draggedId}:${Date.now()}`)
     onSelect(draggedId)
-  }, [blockFromTarget, captureLayout, clearDropTarget, document.content, onReorder, onSelect])
+  }, [blockFromTarget, captureLayout, clearDropTarget, document.content, onMoveSection, onReorder, onSelect])
 
   return {
     onPointerDownCapture,

@@ -75,6 +75,11 @@ export const DocHeading = Node.create({
         default: 3,
         renderHTML: (attrs) => ({ 'data-level': String(attrs.level) }),
       },
+      numberLabel: {
+        default: '',
+        renderHTML: (attrs) => attrs.numberLabel ? { 'data-number-label': attrs.numberLabel } : {},
+      },
+      numbering: { default: '{}' },
     }
   },
   parseHTML() {

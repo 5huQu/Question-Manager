@@ -36,6 +36,7 @@ export function EditorCanvas(props: {
   onDelete: () => void
   onOpenProperties: () => void
   onReorder: (order: string[], mergeKey: string) => void
+  onMoveSection?: (headingId: string, targetHeadingId: string, position: 'before' | 'after', mergeKey: string) => void
   onEditQuestion?: () => void
   /** T3：文档级编辑器内容变化回调 */
   onEditorChange?: (doc: TeachingDocumentV1) => void
@@ -90,6 +91,7 @@ export function EditorCanvas(props: {
     document,
     onSelect: props.onSelect,
     onReorder: props.onReorder,
+    onMoveSection: props.onMoveSection,
   })
 
   return (

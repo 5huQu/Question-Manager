@@ -17,6 +17,7 @@ import {
   type PaperSpec,
   type PrintLayoutSpec,
 } from '@/utils/teachingDocument'
+import { headingLabelByBlockId } from '@/utils/teachingDocument'
 import type { PrintChromeSlotPosition } from '@/types/teachingDocument'
 import { PrintChrome, type PrintChromeSection } from './PrintChrome'
 import { TeachingDocumentFrame } from './TeachingDocumentRenderer'
@@ -74,6 +75,7 @@ export function PaperPageView({
   const headerSlots = pageHeaderSlots(printLayout, page.index)
   const footerSlots = pageFooterSlots(printLayout)
   const headerReserved = printLayout.header.enabled
+  const headingLabels = headingLabelByBlockId(document)
   const footerReserved = printLayout.footer.enabled
   // 页眉页脚仍占用原有的稳定分页高度；仅向纸张边缘移动到更自然的印刷位置。
   // 至少保留 8mm 物理留白，避免不同打印机的不可打印区裁切内容。
@@ -226,6 +228,7 @@ export function PaperPageView({
                 rawMarkdownOverflowWarning={block.type === 'rawMarkdown' && overflowBlockIds?.has(block.id)
                   ? '内容超过单页内容区高度，无法安全分页，导出已阻止。'
                   : undefined}
+                headingLabel={headingLabels.get(block.id)}
               />
             )
           })}

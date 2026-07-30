@@ -61,6 +61,34 @@ export interface HeadingBlock {
   id: string
   level: 1 | 2 | 3 | 4
   content: TeachingInline[]
+  /** 单个标题对文档编号规则的受控覆盖。 */
+  numbering?: HeadingNumberingOverride
+}
+
+export type HeadingNumberingMode = 'inherit' | 'none' | 'manual'
+export type HeadingNumberingStyle = 'arabic' | 'chinese' | 'roman-upper' | 'alpha-upper'
+export type TeachingDocumentOutlinePreset = 'textbook' | 'decimal' | 'chinese' | 'exam' | 'none'
+
+export interface HeadingNumberingOverride {
+  mode?: HeadingNumberingMode
+  /** mode=manual 时显示的纯文本标签。 */
+  manualLabel?: string
+  /** 从当前标题开始的计数值；只接受正整数。 */
+  restartAt?: number
+}
+
+export interface HeadingNumberLevelOptions {
+  style?: HeadingNumberingStyle
+  /** 仅允许 {n}、{cn}、{parent}、{path} 占位符。 */
+  template?: string
+  includeParents?: boolean
+}
+
+export interface TeachingDocumentOutlineOptions {
+  /** 旧文档缺省关闭，避免打开后改变既有版面。 */
+  numberingEnabled?: boolean
+  preset?: TeachingDocumentOutlinePreset
+  levels?: Partial<Record<1 | 2 | 3 | 4, HeadingNumberLevelOptions>>
 }
 
 export interface ParagraphBlock {
@@ -358,6 +386,8 @@ export interface TeachingDocumentV1 {
   title: string
   metadata: Record<string, unknown>
   content: TeachingBlock[]
+  /** 章节结构与自动编号偏好；章节树本身始终由 content 派生。 */
+  outline?: TeachingDocumentOutlineOptions
   /** 文档级打印样式（字体、边距）；缺省 = 全部使用默认值 */
   style?: TeachingDocumentStyle
 }

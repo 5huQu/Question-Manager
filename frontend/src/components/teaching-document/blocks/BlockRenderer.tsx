@@ -106,7 +106,7 @@ function BoxIcon({ name, className }: { name?: string; className?: string }) {
 
 // ─── 各块渲染器 ──────────────────────────────────────────────────────────────
 
-function HeadingBlockView({ block }: { block: HeadingBlock }) {
+function HeadingBlockView({ block, numberLabel }: { block: HeadingBlock; numberLabel?: string }) {
   const Tag = `h${block.level}` as 'h1' | 'h2' | 'h3' | 'h4'
   const sizeClass = {
     1: 'text-2xl font-bold mt-8 mb-4',
@@ -120,6 +120,7 @@ function HeadingBlockView({ block }: { block: HeadingBlock }) {
       data-block-id={block.id}
       data-block-type="heading"
     >
+      {numberLabel ? <span className="td-heading-number" aria-hidden="true">{numberLabel} </span> : null}
       <InlineContent inlines={block.content} />
     </Tag>
   )
@@ -809,6 +810,7 @@ function BoxBlockView({
   sourceIndex,
   boxTitleEditable,
   onEditBoxTitle,
+  headingLabel,
 }: {
   block: BoxBlock
   resolvers: TeachingDocumentResolvers
@@ -816,6 +818,7 @@ function BoxBlockView({
   sourceIndex?: number
   boxTitleEditable?: boolean
   onEditBoxTitle?: (boxId: string, title: string) => void
+  headingLabel?: string
 }) {
   return (
     <BoxFrame block={block} titleEditable={boxTitleEditable} onEditTitle={onEditBoxTitle}>
@@ -1105,7 +1108,7 @@ export function BlockRenderer({
   let content: ReactNode
   switch (block.type) {
     case 'heading':
-      content = <HeadingBlockView block={block} />
+      content = <HeadingBlockView block={block} numberLabel={headingLabel} />
       break
     case 'paragraph':
       content = <ParagraphBlockView block={block} />

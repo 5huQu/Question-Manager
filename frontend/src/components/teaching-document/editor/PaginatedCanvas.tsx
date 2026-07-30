@@ -66,6 +66,7 @@ export interface PaginatedCanvasProps {
   onDelete: () => void
   onOpenProperties: () => void
   onReorder: (order: string[], mergeKey: string) => void
+  onMoveSection?: (headingId: string, targetHeadingId: string, position: 'before' | 'after', mergeKey: string) => void
   onEditQuestion?: () => void
   onEditorChange?: (doc: TeachingDocumentV1) => void
   onEditorReady?: (editor: Editor | null) => void
@@ -104,6 +105,7 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
     onDelete,
     onOpenProperties,
     onReorder,
+    onMoveSection,
     onEditQuestion,
     onEditorChange,
     onEditorReady,
@@ -203,7 +205,7 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
   const [contentRoot, setContentRoot] = useState<HTMLDivElement | null>(null)
   const totalPages = pages.length || 1
   const diagnosticCount = pagination?.diagnostics.length ?? 0
-  const dragHandlers = useBlockDragReorder({ document, onSelect, onReorder })
+  const dragHandlers = useBlockDragReorder({ document, onSelect, onReorder, onMoveSection })
 
   return (
     <div

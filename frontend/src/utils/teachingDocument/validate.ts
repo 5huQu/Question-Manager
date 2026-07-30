@@ -300,11 +300,18 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
     case 'heading': {
       const id = extractId(node, 'h', index)
       const level = Number(node.level)
+      const rawNumbering = node.numbering && typeof node.numbering === 'object' && !Array.isArray(node.numbering) ? node.numbering as Record<string, unknown> : undefined
+      const numbering = rawNumbering && ['inherit', 'none', 'manual'].includes(String(rawNumbering.mode || 'inherit')) ? {
+        mode: String(rawNumbering.mode || 'inherit') as 'inherit' | 'none' | 'manual',
+        ...(typeof rawNumbering.manualLabel === 'string' && rawNumbering.manualLabel.trim() ? { manualLabel: rawNumbering.manualLabel.trim().slice(0, 40) } : {}),
+        ...(Number.isInteger(rawNumbering.restartAt) && Number(rawNumbering.restartAt) > 0 ? { restartAt: Number(rawNumbering.restartAt) } : {}),
+      } : undefined
       return {
         type: 'heading',
         id,
         level: ([1, 2, 3, 4].includes(level) ? level : 3) as 1 | 2 | 3 | 4,
         content: parseInlineArray(node.content, issues, id),
+        ...(numbering ? { numbering } : {}),
       }
     }
     case 'paragraph': {
@@ -500,9 +507,30 @@ export function parseTeachingDocument(json: unknown): { document: TeachingDocume
     metadata: root.metadata && typeof root.metadata === 'object' && !Array.isArray(root.metadata) ? root.metadata as Record<string, unknown> : {},
     content: blocks,
     style: parseDocumentStyle(root.style),
+    outline: parseDocumentOutline(root.outline),
   }
 
   return { document, issues }
+}
+
+function parseDocumentOutline(raw: unknown) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const node = raw as Record<string, unknown>
+  const preset = ['textbook', 'decimal', 'chinese', 'exam', 'none'].includes(String(node.preset)) ? node.preset as 'textbook' | 'decimal' | 'chinese' | 'exam' | 'none' : undefined
+  const levels: Record<number, { style?: 'arabic' | 'chinese' | 'roman-upper' | 'alpha-upper'; template?: string; includeParents?: boolean }> = {}
+  if (node.levels && typeof node.levels === 'object' && !Array.isArray(node.levels)) {
+    for (const level of [1, 2, 3, 4]) {
+      const value = (node.levels as Record<string, unknown>)[String(level)]
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+      const item = value as Record<string, unknown>
+      const style = ['arabic', 'chinese', 'roman-upper', 'alpha-upper'].includes(String(item.style)) ? item.style as 'arabic' | 'chinese' | 'roman-upper' | 'alpha-upper' : undefined
+      const template = typeof item.template === 'string' && item.template.length <= 80 ? item.template : undefined
+      const includeParents = typeof item.includeParents === 'boolean' ? item.includeParents : undefined
+      if (style || template || includeParents !== undefined) levels[level] = { style, template, includeParents }
+    }
+  }
+  const numberingEnabled = typeof node.numberingEnabled === 'boolean' ? node.numberingEnabled : undefined
+  return numberingEnabled === undefined && !preset && !Object.keys(levels).length ? undefined : { numberingEnabled, preset, ...(Object.keys(levels).length ? { levels } : {}) }
 }
 
 /**

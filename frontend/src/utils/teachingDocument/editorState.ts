@@ -3,13 +3,16 @@ import type {
   BoxChildBlock,
   TeachingBlock,
   TeachingDocumentStyle,
+  TeachingDocumentOutlineOptions,
   TeachingDocumentV1,
 } from '@/types/teachingDocument'
+import { buildDocumentOutline } from './outline'
 
 export type TeachingDocumentCommand =
   | { type: 'replaceDocument'; document: TeachingDocumentV1 }
   | { type: 'setTitle'; title: string; mergeKey?: string }
   | { type: 'setStyle'; patch: Partial<TeachingDocumentStyle>; mergeKey?: string }
+  | { type: 'setOutline'; patch: Partial<TeachingDocumentOutlineOptions>; mergeKey?: string }
   | { type: 'insertBlock'; block: TeachingBlock; afterBlockId?: string }
   /** 用多个顶层块替换一个块；用于将 Markdown + LaTeX 源码一次性结构化导入。 */
   | { type: 'replaceBlockWithBlocks'; blockId: string; blocks: TeachingBlock[] }
@@ -19,6 +22,10 @@ export type TeachingDocumentCommand =
   | { type: 'deleteBlock'; blockId: string }
   | { type: 'duplicateBlock'; blockId: string }
   | { type: 'moveBlock'; blockId: string; direction: -1 | 1 }
+  | { type: 'moveSection'; headingId: string; targetHeadingId: string; position: 'before' | 'after'; mergeKey?: string }
+  | { type: 'moveSectionByStep'; headingId: string; direction: -1 | 1; mergeKey?: string }
+  | { type: 'indentSection'; headingId: string; mergeKey?: string }
+  | { type: 'outdentSection'; headingId: string; mergeKey?: string }
   | { type: 'reorderBlocks'; order: string[]; mergeKey?: string }
   | { type: 'insertBoxChild'; boxId: string; child: BoxChildBlock; afterChildId?: string }
   | { type: 'updateBoxChild'; boxId: string; childId: string; patch: Partial<BoxChildBlock>; mergeKey?: string }
@@ -102,10 +109,54 @@ function moveAt<T>(items: T[], index: number, direction: -1 | 1) {
   return next
 }
 
+function replaceSectionRange(document: TeachingDocumentV1, headingId: string, targetHeadingId: string, position: 'before' | 'after') {
+  const outline = buildDocumentOutline(document)
+  const source = outline.entryByBlockId.get(headingId)
+  const target = outline.entryByBlockId.get(targetHeadingId)
+  if (!source || !target || source.blockId === target.blockId) return document
+  if (target.sourceIndex >= source.sourceIndex && target.sourceIndex < source.endIndex) return document
+  const moving = document.content.slice(source.sourceIndex, source.endIndex)
+  const remaining = document.content.filter((_, index) => index < source.sourceIndex || index >= source.endIndex)
+  const targetIndex = remaining.findIndex((block) => block.id === target.blockId)
+  if (targetIndex < 0) return document
+  const insertionIndex = targetIndex + (position === 'after'
+    ? (() => {
+        const targetInRemaining = remaining[targetIndex]
+        const nextHeadingIndex = remaining.findIndex((block, index) => index > targetIndex && block.type === 'heading' && block.level <= (targetInRemaining.type === 'heading' ? targetInRemaining.level : 4))
+        return nextHeadingIndex < 0 ? remaining.length - targetIndex : nextHeadingIndex - targetIndex
+      })()
+    : 0)
+  return { ...document, content: [...remaining.slice(0, insertionIndex), ...moving, ...remaining.slice(insertionIndex)] }
+}
+
+function shiftSectionLevels(document: TeachingDocumentV1, headingId: string, delta: -1 | 1) {
+  const outline = buildDocumentOutline(document)
+  const entry = outline.entryByBlockId.get(headingId)
+  if (!entry) return document
+  const headings = document.content.slice(entry.sourceIndex, entry.endIndex).filter((block): block is Extract<TeachingBlock, { type: 'heading' }> => block.type === 'heading')
+  if (headings.some((heading) => heading.level + delta < 1 || heading.level + delta > 4)) return document
+  return {
+    ...document,
+    content: document.content.map((block, index) => index >= entry.sourceIndex && index < entry.endIndex && block.type === 'heading'
+      ? { ...block, level: (block.level + delta) as 1 | 2 | 3 | 4 }
+      : block),
+  }
+}
+
+function siblingForStep(document: TeachingDocumentV1, headingId: string, direction: -1 | 1) {
+  const outline = buildDocumentOutline(document)
+  const entry = outline.entryByBlockId.get(headingId)
+  if (!entry) return undefined
+  const siblings = outline.entries.filter((candidate) => candidate.parentBlockId === entry.parentBlockId)
+  const index = siblings.findIndex((candidate) => candidate.blockId === headingId)
+  return siblings[index + direction]
+}
+
 function applyTeachingDocumentCommandRaw(document: TeachingDocumentV1, command: TeachingDocumentCommand): TeachingDocumentV1 {
   if (command.type === 'replaceDocument') return command.document
   if (command.type === 'setTitle') return { ...document, title: command.title }
   if (command.type === 'setStyle') return { ...document, style: { ...document.style, ...command.patch } }
+  if (command.type === 'setOutline') return { ...document, outline: { ...document.outline, ...command.patch } }
   const content = document.content
   if (command.type === 'insertBlock') {
     const index = command.afterBlockId ? content.findIndex((block) => block.id === command.afterBlockId) + 1 : content.length
@@ -118,6 +169,24 @@ function applyTeachingDocumentCommandRaw(document: TeachingDocumentV1, command: 
     const next = command.order.map((id) => blockMap.get(id))
     if (next.some((block) => !block)) return document
     return { ...document, content: next as TeachingBlock[] }
+  }
+  if (command.type === 'moveSection') return replaceSectionRange(document, command.headingId, command.targetHeadingId, command.position)
+  if (command.type === 'moveSectionByStep') {
+    const sibling = siblingForStep(document, command.headingId, command.direction)
+    if (!sibling) return document
+    return replaceSectionRange(document, command.headingId, sibling.blockId, command.direction === -1 ? 'before' : 'after')
+  }
+  if (command.type === 'indentSection') {
+    const outline = buildDocumentOutline(document)
+    const entry = outline.entryByBlockId.get(command.headingId)
+    if (!entry || entry.level >= 4) return document
+    const previous = outline.entries.filter((candidate) => candidate.sourceIndex < entry.sourceIndex && candidate.level === entry.level).at(-1)
+    return previous ? shiftSectionLevels(document, command.headingId, 1) : document
+  }
+  if (command.type === 'outdentSection') {
+    const outline = buildDocumentOutline(document)
+    const entry = outline.entryByBlockId.get(command.headingId)
+    return entry?.parentBlockId ? shiftSectionLevels(document, command.headingId, -1) : document
   }
   if (command.type === 'replaceBlockWithBlocks') {
     const blockIndex = content.findIndex((block) => block.id === command.blockId)

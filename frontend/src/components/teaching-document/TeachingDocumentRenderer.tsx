@@ -13,6 +13,7 @@
 import type { TeachingDocument, FigureAssetRef } from '@/types/teachingDocument'
 import type { ReactNode } from 'react'
 import { TEACHING_DOM } from '@/utils/teachingDocument'
+import { headingLabelByBlockId } from '@/utils/teachingDocument'
 import { BlockRenderer, type FigureResolution, type QuestionResolution, type TeachingDocumentResolvers } from './blocks/BlockRenderer'
 import 'katex/dist/katex.min.css'
 
@@ -86,6 +87,7 @@ export function TeachingDocumentRenderer({
     resolveFigure,
     eagerImages,
   }
+  const headingLabels = headingLabelByBlockId(document)
   return (
     <TeachingDocumentFrame
       document={document}
@@ -100,6 +102,7 @@ export function TeachingDocumentRenderer({
           resolvers={resolvers}
           sourceIndex={index}
           selectedBlockId={selectedBlockId}
+          headingLabel={headingLabels.get(block.id)}
         />
       ))}
       {!document.content.length ? (

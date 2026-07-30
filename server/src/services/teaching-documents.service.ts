@@ -18,6 +18,7 @@ const FATAL_ISSUE_CODES = new Set([
   'invalid-root', 'unsupported-version', 'invalid-document-type', 'invalid-title',
   'invalid-metadata', 'invalid-content', 'empty-id', 'duplicate-id', 'auto-id',
   'invalid-inline-content', 'invalid-box-children', 'absolute-legacy-path',
+  'invalid-outline', 'invalid-heading-numbering',
 ])
 const ALLOWED_IMAGE_TYPES = new Map([
   ['image/png', '.png'],
@@ -104,6 +105,22 @@ function validateInlines(value: unknown, blockId: string, issues: TeachingDocume
   }
 }
 
+function validateOutline(value: unknown, issues: TeachingDocumentIssue[]) {
+  if (value === undefined) return
+  if (!isObject(value)) { issues.push({ level: 'error', code: 'invalid-outline', message: '章节设置必须是对象。' }); return }
+  if (value.numberingEnabled !== undefined && typeof value.numberingEnabled !== 'boolean') issues.push({ level: 'error', code: 'invalid-outline', message: '章节编号开关必须是布尔值。' })
+  if (value.preset !== undefined && !['textbook', 'decimal', 'chinese', 'exam', 'none'].includes(String(value.preset))) issues.push({ level: 'error', code: 'invalid-outline', message: '章节编号方案无效。' })
+  if (value.levels !== undefined && !isObject(value.levels)) issues.push({ level: 'error', code: 'invalid-outline', message: '章节分级设置必须是对象。' })
+}
+
+function validateHeadingNumbering(value: unknown, blockId: string, issues: TeachingDocumentIssue[]) {
+  if (value === undefined) return
+  if (!isObject(value)) { issues.push({ level: 'error', code: 'invalid-heading-numbering', blockId, message: '标题编号设置必须是对象。' }); return }
+  if (value.mode !== undefined && !['inherit', 'none', 'manual'].includes(String(value.mode))) issues.push({ level: 'error', code: 'invalid-heading-numbering', blockId, message: '标题编号模式无效。' })
+  if (value.manualLabel !== undefined && (typeof value.manualLabel !== 'string' || value.manualLabel.length > 40)) issues.push({ level: 'error', code: 'invalid-heading-numbering', blockId, message: '手动标题编号必须是不超过 40 个字符的文本。' })
+  if (value.restartAt !== undefined && (typeof value.restartAt !== 'number' || !Number.isInteger(value.restartAt) || value.restartAt < 1 || value.restartAt > 999)) issues.push({ level: 'error', code: 'invalid-heading-numbering', blockId, message: '标题重新编号必须是 1 到 999 的整数。' })
+}
+
 export function inspectTeachingDocument(value: unknown) {
   const issues: TeachingDocumentIssue[] = []
   if (!isObject(value)) {
@@ -119,6 +136,7 @@ export function inspectTeachingDocument(value: unknown) {
     issues.push({ level: 'error', code: 'invalid-content', message: '文档 content 必须是数组。' })
     return { fatal: true, issues }
   }
+  validateOutline(value.outline, issues)
 
   const ids = new Set<string>()
   const visitBlock = (raw: unknown, insideBox: boolean) => {
@@ -143,6 +161,7 @@ export function inspectTeachingDocument(value: unknown) {
       issues.push({ level: 'warning', code: 'illegal-box-child', blockId: id, message: `盒子内非法块 "${type}" 将保留。` })
     }
     if (type === 'heading' || type === 'paragraph') validateInlines(raw.content, id, issues)
+    if (type === 'heading') validateHeadingNumbering(raw.numbering, id, issues)
     if (type === 'question' && (typeof raw.questionId !== 'string' || !raw.questionId.trim())) {
       issues.push({ level: 'error', code: 'invalid-question-ref', blockId: id, message: '题目引用必须是字符串。' })
     }

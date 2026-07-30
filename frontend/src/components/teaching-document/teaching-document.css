@@ -606,6 +606,11 @@
   color: var(--td-heading-color, inherit);
 }
 
+.td-heading[data-number-label]::before {
+  content: attr(data-number-label) " ";
+  white-space: pre;
+}
+
 /* ─── 编辑视图字体（与纸张预览/PDF 打印共用同一组 CSS 变量） ───────────── */
 /*
  * 编辑视图只应用 font-family（保持屏幕优化的字号/行高/间距），

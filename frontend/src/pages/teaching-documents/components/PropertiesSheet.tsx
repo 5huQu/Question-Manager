@@ -222,11 +222,19 @@ function SheetBody(props: {
           <p className="rounded-md bg-zinc-50 px-2.5 py-2 text-[11px] text-zinc-500 dark:bg-zinc-900">文字已支持在画布中直接点击编辑。</p>
         )}
         {block.type === 'heading' ? (
-          <Field label="标题级别">
-            <select className={fieldClass} value={block.level} onChange={(event) => props.onUpdate({ level: Number(event.target.value) as 1 | 2 | 3 | 4 })}>
-              {[1, 2, 3, 4].map((level) => <option key={level} value={level}>H{level}</option>)}
-            </select>
-          </Field>
+          <>
+            <Field label="标题级别">
+              <select className={fieldClass} value={block.level} onChange={(event) => props.onUpdate({ level: Number(event.target.value) as 1 | 2 | 3 | 4 })}>
+                {[1, 2, 3, 4].map((level) => <option key={level} value={level}>H{level}</option>)}
+              </select>
+            </Field>
+            <Field label="本标题编号">
+              <select className={fieldClass} value={block.numbering?.mode || 'inherit'} onChange={(event) => props.onUpdate({ numbering: { ...block.numbering, mode: event.target.value as 'inherit' | 'none' | 'manual' } })}>
+                <option value="inherit">跟随文档设置</option><option value="none">不显示编号</option><option value="manual">手动标签</option>
+              </select>
+            </Field>
+            {block.numbering?.mode === 'manual' ? <Field label="手动标签"><input className={fieldClass} value={block.numbering.manualLabel || ''} maxLength={40} onChange={(event) => props.onUpdate({ numbering: { ...block.numbering, manualLabel: event.target.value } })} placeholder="如：附录 A" /></Field> : null}
+          </>
         ) : null}
       </div>
     )

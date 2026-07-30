@@ -542,6 +542,7 @@ export default function TeachingDocumentEditorPage() {
   function moveSelected(direction: -1 | 1) {
     if (!selected) return
     if (selected.boxId) editor.dispatch({ type: 'moveBoxChild', boxId: selected.boxId, childId: selected.block.id, direction })
+    else if (selected.block.type === 'heading') editor.dispatch({ type: 'moveSectionByStep', headingId: selected.block.id, direction })
     else editor.dispatch({ type: 'moveBlock', blockId: selected.block.id, direction })
   }
 
@@ -853,6 +854,7 @@ export default function TeachingDocumentEditorPage() {
                 onDelete={deleteSelected}
                 onOpenProperties={() => setPropertiesOpen(true)}
                 onReorder={(order, mergeKey) => editor.dispatch({ type: 'reorderBlocks', order, mergeKey })}
+                onMoveSection={(headingId, targetHeadingId, position, mergeKey) => editor.dispatch({ type: 'moveSection', headingId, targetHeadingId, position, mergeKey })}
                 onEditQuestion={editQuestionTargetId ? () => setEditingQuestionBlockId(editQuestionTargetId) : undefined}
                 onEditorChange={editor.handleEditorChange}
                 onEditorReady={editor.registerEditor}
@@ -885,6 +887,7 @@ export default function TeachingDocumentEditorPage() {
                   onDelete={deleteSelected}
                   onOpenProperties={() => setPropertiesOpen(true)}
                   onReorder={(order, mergeKey) => editor.dispatch({ type: 'reorderBlocks', order, mergeKey })}
+                  onMoveSection={(headingId, targetHeadingId, position, mergeKey) => editor.dispatch({ type: 'moveSection', headingId, targetHeadingId, position, mergeKey })}
                   onEditQuestion={editQuestionTargetId ? () => setEditingQuestionBlockId(editQuestionTargetId) : undefined}
                   onEditorChange={editor.handleEditorChange}
                   onEditorReady={editor.registerEditor}
@@ -918,6 +921,8 @@ export default function TeachingDocumentEditorPage() {
           onClose={() => setOutlineOpen(false)}
           onSelect={selectFromOutline}
           onFixIds={() => editor.dispatch({ type: 'replaceDocument', document: migrateDocumentIds(document) })}
+          onOutlineChange={(patch) => editor.dispatch({ type: 'setOutline', patch, mergeKey: 'outline-settings' })}
+          onMoveSection={(headingId, direction) => editor.dispatch({ type: 'moveSectionByStep', headingId, direction })}
         />
 
         <PropertiesSheet
