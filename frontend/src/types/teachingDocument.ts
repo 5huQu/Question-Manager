@@ -28,6 +28,8 @@ export interface InlineText {
   marks?: InlineMark[]
   /** 行内字体覆盖，存字体 id（见 lectureFonts TEXT_FONT_OPTIONS）；缺省 = 继承文档默认字体。 */
   font?: string
+  /** 行内文字颜色，保存为受校验的 #RRGGBB；缺省 = 继承文档颜色。 */
+  color?: string
   /** 解析旧数据时保留暂不支持的 mark 原值。 */
   unknownMarks?: unknown[]
 }
@@ -183,7 +185,7 @@ export interface BoxBlock {
   /** 语义图标标记，如 "lightbulb"、"alert" */
   icon?: string
   breakBehavior: BoxBreakBehavior
-  /** 盒子子内容：允许段落、公式、图片、题目，但不允许嵌套盒子 */
+  /** 盒子子内容：允许段落、公式、自由 Markdown、图片、题目，但不允许嵌套盒子 */
   children: BoxChildBlock[]
 }
 
@@ -195,6 +197,7 @@ export type BoxChildBlock =
   | QuestionBlock
   | DividerBlock
   | SpacerBlock
+  | RawMarkdownBlock
   | UnknownBlock
 
 export interface DividerBlock {

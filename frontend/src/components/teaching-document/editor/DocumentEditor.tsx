@@ -16,7 +16,7 @@ import { teachingDocumentToEditorDoc, editorDocToTeachingDocument, type EditorDo
 import { PaperProvider, PaginationProvider, ResolverProvider, type DocumentEditorResolvers } from './NodeViews'
 import { createDocumentPrintLayout, resolveDocumentPaper, type PaginationResult, type PrintLayoutSpec } from '@/utils/teachingDocument'
 import type { EditorPaginationLayout } from './paginationDecorations'
-import { DOCUMENT_EXTERNAL_SYNC_META } from './selection'
+import { DOCUMENT_EXTERNAL_SYNC_META, isExternalDocumentSync } from './selection'
 
 export interface DocumentEditorProps {
   /** 文档数据（唯一事实来源） */
@@ -85,8 +85,10 @@ export function DocumentEditor({
         class: 'td-document td-document-editor min-h-[300px] px-6 py-4 text-sm leading-7 text-zinc-900 outline-none dark:text-zinc-50',
       },
     },
-    onUpdate: ({ editor: currentEditor }) => {
-      if (syncing.current) return
+    onUpdate: ({ editor: currentEditor, transaction }) => {
+      // setContent(..., { emitUpdate: false }) 的更新在部分编辑器调度时会在
+      // syncing 标志复位后才触发回调；事务标记才是可靠的外部同步边界。
+      if (syncing.current || isExternalDocumentSync(transaction)) return
       const json = currentEditor.getJSON()
       const nextDoc = editorDocToTeachingDocument(json, metaRef.current)
       lastEmittedSig.current = JSON.stringify(nextDoc.content)
@@ -113,8 +115,9 @@ export function DocumentEditor({
   useEffect(() => {
     if (!editor) return
     const sig = JSON.stringify(document.content)
-    if (sig === lastEmittedSig.current) return // 自身变更的回显，跳过
     // 比较当前编辑器内容是否与外部文档一致
+    // 不能只依赖 lastEmittedSig：当撤销或异步更新让外层文档与编辑器
+    // 暂时分叉时，缓存签名可能相同，进而留下“画布旧内容 / 大纲空”的假象。
     const currentJson = editor.getJSON()
     const currentDoc = editorDocToTeachingDocument(currentJson, metaRef.current)
     const currentSig = JSON.stringify(currentDoc.content)
@@ -128,6 +131,7 @@ export function DocumentEditor({
     editor
       .chain()
       .setMeta(DOCUMENT_EXTERNAL_SYNC_META, true)
+      .setMeta('addToHistory', false)
       .setContent(editorDoc, { emitUpdate: false })
       .run()
     syncing.current = false

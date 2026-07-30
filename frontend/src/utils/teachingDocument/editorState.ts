@@ -11,6 +11,10 @@ export type TeachingDocumentCommand =
   | { type: 'setTitle'; title: string; mergeKey?: string }
   | { type: 'setStyle'; patch: Partial<TeachingDocumentStyle>; mergeKey?: string }
   | { type: 'insertBlock'; block: TeachingBlock; afterBlockId?: string }
+  /** 用多个顶层块替换一个块；用于将 Markdown + LaTeX 源码一次性结构化导入。 */
+  | { type: 'replaceBlockWithBlocks'; blockId: string; blocks: TeachingBlock[] }
+  /** 用多个合法盒子子块替换一个盒子子块。 */
+  | { type: 'replaceBoxChildWithBlocks'; boxId: string; childId: string; blocks: BoxChildBlock[] }
   | { type: 'updateBlock'; blockId: string; patch: Partial<TeachingBlock>; mergeKey?: string }
   | { type: 'deleteBlock'; blockId: string }
   | { type: 'duplicateBlock'; blockId: string }
@@ -115,6 +119,15 @@ function applyTeachingDocumentCommandRaw(document: TeachingDocumentV1, command: 
     if (next.some((block) => !block)) return document
     return { ...document, content: next as TeachingBlock[] }
   }
+  if (command.type === 'replaceBlockWithBlocks') {
+    const blockIndex = content.findIndex((block) => block.id === command.blockId)
+    if (blockIndex < 0 || !command.blocks.length) return document
+    const replacementIds = command.blocks.map((block) => block.id)
+    if (new Set(replacementIds).size !== replacementIds.length) return document
+    const remainingIds = new Set(content.filter((block) => block.id !== command.blockId).map((block) => block.id))
+    if (replacementIds.some((id) => remainingIds.has(id))) return document
+    return { ...document, content: [...content.slice(0, blockIndex), ...command.blocks, ...content.slice(blockIndex + 1)] }
+  }
   const targetId = 'blockId' in command ? command.blockId : command.boxId
   const blockIndex = content.findIndex((block) => block.id === targetId)
   if (blockIndex < 0) return document
@@ -131,8 +144,23 @@ function applyTeachingDocumentCommandRaw(document: TeachingDocumentV1, command: 
   if (command.type === 'moveBlock') return { ...document, content: moveAt(content, blockIndex, command.direction) }
   if (block.type !== 'box') return document
   const box = block as BoxBlock
+  if (command.type === 'replaceBoxChildWithBlocks') {
+    const childIndex = box.children.findIndex((child) => child.id === command.childId)
+    if (childIndex < 0 || !command.blocks.length) return document
+    const replacementIds = command.blocks.map((child) => child.id)
+    if (new Set(replacementIds).size !== replacementIds.length) return document
+    const remainingIds = new Set(box.children.filter((child) => child.id !== command.childId).map((child) => child.id))
+    if (replacementIds.some((id) => remainingIds.has(id))) return document
+    return {
+      ...document,
+      content: replaceAt(content, blockIndex, {
+        ...box,
+        children: [...box.children.slice(0, childIndex), ...command.blocks, ...box.children.slice(childIndex + 1)],
+      }),
+    }
+  }
   if (command.type === 'insertBoxChild') {
-    if (['box', 'heading', 'pageBreak', 'rawMarkdown'].includes(command.child.type)) return document
+    if (['box', 'heading', 'pageBreak'].includes(command.child.type)) return document
     const childIndex = command.afterChildId ? box.children.findIndex((child) => child.id === command.afterChildId) + 1 : box.children.length
     const safeIndex = Math.max(0, Math.min(box.children.length, childIndex))
     const nextBox = { ...box, children: [...box.children.slice(0, safeIndex), command.child, ...box.children.slice(safeIndex)] }

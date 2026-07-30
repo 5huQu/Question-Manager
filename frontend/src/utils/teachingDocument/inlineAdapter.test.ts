@@ -64,6 +64,13 @@ describe('inlineAdapter: TeachingInline[] ↔ Tiptap 序列化', () => {
     ])
   })
 
+  it('受控文字颜色与字体、marks 一起无损往返', () => {
+    expectRoundTrip([
+      { type: 'text', text: '强调内容', marks: ['bold'], font: 'kaiti', color: '#2563eb' },
+      { type: 'text', text: '默认颜色' },
+    ])
+  })
+
   it('inlineMath 前后文本往返', () => {
     expectRoundTrip([
       { type: 'text', text: '设 ' },

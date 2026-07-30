@@ -59,6 +59,7 @@ function marksToTiptap(inline: Extract<TeachingInline, { type: 'text' }>): Array
   }
   // 行内字体覆盖：以 fontFamily mark 携带字体 id（不属于字符串 marks）
   if (inline.font) marks.push({ type: 'fontFamily', attrs: { family: inline.font } })
+  if (inline.color) marks.push({ type: 'textColor', attrs: { color: inline.color } })
   for (const [index, raw] of (inline.unknownMarks || []).entries()) {
     marks.push({ type: 'unknownMark', attrs: { data: JSON.stringify(raw ?? null), index } })
   }
@@ -112,6 +113,7 @@ function collectInline(node: JSONContent, out: TeachingInline[]): void {
     const text = node.text ?? ''
     const marks: InlineMark[] = []
     let font: string | undefined
+    let color: string | undefined
     const unknownEntries: Array<{ index: number; raw: unknown }> = []
     for (const mark of node.marks || []) {
       const known = TIPTAP_TO_MARK[mark.type || '']
@@ -120,6 +122,9 @@ function collectInline(node: JSONContent, out: TeachingInline[]): void {
       } else if (mark.type === 'fontFamily') {
         const family = mark.attrs?.family
         if (typeof family === 'string' && family) font = family
+      } else if (mark.type === 'textColor') {
+        const value = mark.attrs?.color
+        if (typeof value === 'string' && value) color = value
       } else if (mark.type === 'unknownMark') {
         let raw: unknown = null
         try { raw = JSON.parse(String(mark.attrs?.data ?? 'null')) } catch { raw = null }
@@ -137,9 +142,10 @@ function collectInline(node: JSONContent, out: TeachingInline[]): void {
       text,
       ...(deduped.length ? { marks: deduped } : {}),
       ...(font ? { font } : {}),
+      ...(color ? { color } : {}),
       ...(unknownMarks.length ? { unknownMarks } : {}),
     }
-    if (text || deduped.length || font || unknownMarks.length) out.push(inline)
+    if (text || deduped.length || font || color || unknownMarks.length) out.push(inline)
     return
   }
   if (node.type === 'inlineMath') {

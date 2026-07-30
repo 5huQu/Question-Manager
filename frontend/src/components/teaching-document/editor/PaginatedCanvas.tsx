@@ -38,6 +38,7 @@ import {
 } from '../blocks/BlockRenderer'
 import { FloatingBlockToolbar } from '@/pages/teaching-documents/components/FloatingBlockToolbar'
 import { BlockInsertPoint } from '@/pages/teaching-documents/components/BlockInsertMenu'
+import { useBlockDragReorder } from '@/pages/teaching-documents/components/useBlockDragReorder'
 import { paginationGapAnchors, type EditorPaginationLayout } from './paginationDecorations'
 import { BOX_CHILD_SELECT_EVENT, blockIdFromEditorSelection, isExternalDocumentSync, type BoxChildSelectDetail } from './selection'
 
@@ -64,6 +65,7 @@ export interface PaginatedCanvasProps {
   onDuplicate: () => void
   onDelete: () => void
   onOpenProperties: () => void
+  onReorder: (order: string[], mergeKey: string) => void
   onEditQuestion?: () => void
   onEditorChange?: (doc: TeachingDocumentV1) => void
   onEditorReady?: (editor: Editor | null) => void
@@ -101,6 +103,7 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
     onDuplicate,
     onDelete,
     onOpenProperties,
+    onReorder,
     onEditQuestion,
     onEditorChange,
     onEditorReady,
@@ -144,6 +147,7 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
     readinessWait,
   })
   const { pagination, readiness, generation, settled } = paginationState
+  const [documentEditor, setDocumentEditor] = useState<Editor | null>(null)
 
   // ─── 编辑器选区追踪（与 EditorCanvas 一致） ─────────────────────────────
   const handleSelectionUpdate = useCallback((editor: Editor) => {
@@ -152,6 +156,7 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
   }, [onSelect])
 
   const handleEditorReady = useCallback((editor: Editor | null) => {
+    setDocumentEditor(editor)
     onEditorReady?.(editor)
     if (!editor) return
     editor.on('selectionUpdate', ({ transaction }) => {
@@ -191,8 +196,14 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
   const selectedBlockIndex = document.content.findIndex(
     (block) => block.id === selectedTopLevelId,
   )
+  const selectionNodeType = documentEditor && documentEditor.state.selection.$from.depth >= 1
+    ? documentEditor.state.selection.$from.node(1).type.name
+    : ''
+  const showTextFormatting = selectionNodeType === 'docHeading' || selectionNodeType === 'docParagraph'
+  const [contentRoot, setContentRoot] = useState<HTMLDivElement | null>(null)
   const totalPages = pages.length || 1
   const diagnosticCount = pagination?.diagnostics.length ?? 0
+  const dragHandlers = useBlockDragReorder({ document, onSelect, onReorder })
 
   return (
     <div
@@ -277,8 +288,8 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
           ) : null}
 
           {/* 内容流 + ProseMirror 分页占位 */}
-          <div className="relative">
-            <div data-teaching-page-content="" style={{ width: `${contentWidthPx}px` }}>
+          <div className="relative" {...dragHandlers}>
+            <div ref={setContentRoot} data-teaching-page-content="" style={{ width: `${contentWidthPx}px` }}>
               <header
                 className="td-document-header mb-8 text-center"
                 {...{ 'data-teaching-document-header': '' }}
@@ -308,10 +319,14 @@ export function PaginatedCanvas(props: PaginatedCanvasProps) {
               ) : null}
             </div>
 
-            {selectedTopLevelId ? (
+            {selectedId ? (
               <FloatingBlockToolbar
-                visible={Boolean(selectedId)}
+                visible
+                anchorBlockId={selectedId}
+                anchorRoot={contentRoot}
                 isBoxChild={selectedIsBoxChild}
+                textEditor={documentEditor}
+                showTextFormatting={showTextFormatting}
                 onMove={onMove}
                 onDuplicate={onDuplicate}
                 onDelete={onDelete}

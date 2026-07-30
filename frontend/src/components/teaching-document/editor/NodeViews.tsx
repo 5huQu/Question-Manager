@@ -136,6 +136,7 @@ function selectionRing(selected: boolean) {
 // ─── BlockMath NodeView ──────────────────────────────────────────────────────
 
 export function BlockMathNodeView({ node, selected }: NodeViewProps) {
+  const blockId = String(node.attrs.blockId || '')
   const latex = String(node.attrs.latex || '')
   const label = String(node.attrs.label || '')
   const html = useMemo(() => {
@@ -148,7 +149,7 @@ export function BlockMathNodeView({ node, selected }: NodeViewProps) {
   }, [latex])
 
   return (
-    <NodeViewWrapper className={`td-block-math my-4 ${selectionRing(selected)}`}>
+    <NodeViewWrapper className={`td-block-math my-4 ${selectionRing(selected)}`} data-block-id={blockId}>
       <div className="overflow-x-auto text-center" data-block-type="blockMath">
         {html ? (
           <span dangerouslySetInnerHTML={{ __html: html }} />
@@ -252,7 +253,7 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
   }, [editor, blockId, contentWidthMm, mergeKey])
 
   return (
-    <NodeViewWrapper className={`td-figure my-4 ${selectionRing(selected)}`}>
+    <NodeViewWrapper className={`td-figure my-4 ${selectionRing(selected)}`} data-block-id={blockId}>
       {selected ? (
         <div className="mb-2 flex items-center justify-center gap-1" data-print-hide="">
           {([
@@ -410,21 +411,21 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
 
   if (resolution && 'status' in resolution && resolution.status === 'loading') {
     return (
-      <NodeViewWrapper className={`my-4 ${selectionRing(selected)}`}>
+      <NodeViewWrapper className={`my-4 ${selectionRing(selected)}`} data-block-id={block.id}>
         <QuestionPlaceholder block={block} message="题目加载中…" status="loading" />
       </NodeViewWrapper>
     )
   }
   if (resolution && 'status' in resolution && resolution.status === 'error') {
     return (
-      <NodeViewWrapper className={`my-4 ${selectionRing(selected)}`}>
+      <NodeViewWrapper className={`my-4 ${selectionRing(selected)}`} data-block-id={block.id}>
         <QuestionPlaceholder block={block} message={`题目加载失败：${resolution.message}`} status="error" tone="error" />
       </NodeViewWrapper>
     )
   }
   if (resolution && 'status' in resolution && resolution.status === 'missing') {
     return (
-      <NodeViewWrapper className={`my-4 ${selectionRing(selected)}`}>
+      <NodeViewWrapper className={`my-4 ${selectionRing(selected)}`} data-block-id={block.id}>
         <QuestionPlaceholder block={block} message={resolution.message || `题目不存在（ID: ${questionId || '未设置'}）`} status="missing" />
       </NodeViewWrapper>
     )
@@ -433,7 +434,7 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
   const question = resolution && !('status' in resolution) ? resolution : undefined
   if (!question) {
     return (
-      <NodeViewWrapper className={`my-4 ${selectionRing(selected)}`}>
+      <NodeViewWrapper className={`my-4 ${selectionRing(selected)}`} data-block-id={block.id}>
         <QuestionPlaceholder block={block} message={`题目不可用（ID: ${questionId || '未设置'}）`} status="missing" />
       </NodeViewWrapper>
     )
@@ -493,7 +494,7 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
   }
 
   return (
-    <NodeViewWrapper className={selectionRing(selected)}>
+    <NodeViewWrapper className={selectionRing(selected)} data-block-id={block.id}>
       {selectedFigure ? (
         <div className="mb-2 flex items-center justify-center gap-1.5 rounded-md border border-zinc-200 bg-white/95 p-1.5 text-[11px] shadow-sm dark:border-zinc-700 dark:bg-zinc-900" data-print-hide="">
           <span className="px-1 text-zinc-500">图片</span>
@@ -574,7 +575,7 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
 
 // ─── Box NodeView ────────────────────────────────────────────────────────────
 
-const BOX_INSERTABLE_TYPES: TeachingBlock['type'][] = ['paragraph', 'blockMath', 'figure', 'question', 'divider', 'spacer']
+const BOX_INSERTABLE_TYPES: TeachingBlock['type'][] = ['paragraph', 'blockMath', 'rawMarkdown', 'figure', 'question', 'divider', 'spacer']
 
 function replaceInlineRange(inlines: TeachingInline[], range: InlineRange, replacement: TeachingInline[]): TeachingInline[] {
   const full = { start: { inlineIndex: 0 }, end: { inlineIndex: inlines.length } }
@@ -735,7 +736,7 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
   ), [insertChildAfter])
 
   return (
-    <NodeViewWrapper className={`td-box my-5 ${selectionRing(selected)}`}>
+    <NodeViewWrapper className={`td-box my-5 ${selectionRing(selected)}`} data-block-id={boxBlock.id}>
       {boxFragments.length > 1 ? (
           boxFragments.map(({ item, pageIndex }, index) => (
             <div key={`${item.fragmentIndex}:${pageIndex}`}>
@@ -780,9 +781,9 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
 
 // ─── Divider NodeView ────────────────────────────────────────────────────────
 
-export function DividerNodeView({ selected }: NodeViewProps) {
+export function DividerNodeView({ node, selected }: NodeViewProps) {
   return (
-    <NodeViewWrapper className={`my-5 ${selectionRing(selected)}`}>
+    <NodeViewWrapper className={`my-5 ${selectionRing(selected)}`} data-block-id={String(node.attrs.blockId || '')}>
       <hr className="border-t border-zinc-200 dark:border-zinc-800" />
     </NodeViewWrapper>
   )
@@ -823,7 +824,7 @@ export function SpacerNodeView({ node, selected, editor }: NodeViewProps) {
   }, [editor, blockId, mergeKey])
 
   return (
-    <NodeViewWrapper className={`${selectionRing(selected)}`}>
+    <NodeViewWrapper className={`${selectionRing(selected)}`} data-block-id={blockId}>
       <div
         className={`td-spacer relative ${
           selected
@@ -848,9 +849,9 @@ export function SpacerNodeView({ node, selected, editor }: NodeViewProps) {
 
 // ─── PageBreak NodeView ──────────────────────────────────────────────────────
 
-export function PageBreakNodeView({ selected }: NodeViewProps) {
+export function PageBreakNodeView({ node, selected }: NodeViewProps) {
   return (
-    <NodeViewWrapper className={`td-page-break-marker ${selected ? 'is-selected' : ''}`}>
+    <NodeViewWrapper className={`td-page-break-marker ${selected ? 'is-selected' : ''}`} data-block-id={String(node.attrs.blockId || '')}>
       <div className="td-page-break-marker-line" aria-label="手动换页符">
         <span />
         <span className="td-page-break-marker-label">
@@ -869,7 +870,7 @@ export function PageBreakNodeView({ selected }: NodeViewProps) {
 export function RawMarkdownNodeView({ node, selected }: NodeViewProps) {
   const markdown = String(node.attrs.markdown || '')
   return (
-    <NodeViewWrapper className={`td-raw-markdown my-3 ${selectionRing(selected)}`}>
+    <NodeViewWrapper className={`td-raw-markdown my-3 ${selectionRing(selected)}`} data-block-id={String(node.attrs.blockId || '')}>
       <MarkdownContent content={markdown} />
     </NodeViewWrapper>
   )
@@ -880,7 +881,7 @@ export function RawMarkdownNodeView({ node, selected }: NodeViewProps) {
 export function UnknownNodeView({ node, selected }: NodeViewProps) {
   const originalType = String(node.attrs.originalType || 'unknown')
   return (
-    <NodeViewWrapper className={`my-3 ${selectionRing(selected)}`}>
+    <NodeViewWrapper className={`my-3 ${selectionRing(selected)}`} data-block-id={String(node.attrs.blockId || '')}>
       <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-900/30">
         <p className="text-xs text-zinc-400">
           未识别的块类型 &quot;{originalType}&quot;（已保留原始数据）

@@ -16,6 +16,7 @@ import {
   InlineMathNode,
   UnknownInlineNode,
   FontFamilyMark,
+  TextColorMark,
   UnknownMark,
 } from '../BlockInlineEditor/extensions'
 import {
@@ -31,6 +32,7 @@ import {
 } from './NodeViews'
 import { ResizeCommands } from './resizeCommands'
 import { PaginationDecorations } from './paginationDecorations'
+import { ActiveTextBlockDecoration, DocumentSelectionSafety } from './selection'
 
 function createPageBreakId() {
   const uuid = globalThis.crypto?.randomUUID?.()
@@ -387,9 +389,12 @@ export function createDocumentEditorExtensions() {
     InlineMathNode,
     UnknownInlineNode,
     FontFamilyMark,
+    TextColorMark,
     UnknownMark,
     // 尺寸调整 commands（setFigureWidth / setSpacerHeight + undo 合并）
     ResizeCommands,
     PaginationDecorations,
+    ActiveTextBlockDecoration,
+    DocumentSelectionSafety,
   ]
 }

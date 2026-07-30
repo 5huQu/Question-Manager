@@ -228,7 +228,24 @@ export function BlockInlineEditor({
   )
 }
 
-function InlineFormattingControls({ editor, onFormula }: { editor: Editor; onFormula: () => void }) {
+const TEXT_COLOR_OPTIONS = [
+  { value: '', label: '默认颜色' },
+  { value: '#18181b', label: '墨黑' },
+  { value: '#2563eb', label: '蓝色' },
+  { value: '#047857', label: '绿色' },
+  { value: '#b45309', label: '棕金' },
+  { value: '#be123c', label: '红色' },
+  { value: '#7c3aed', label: '紫色' },
+]
+
+function pickerColor(value: unknown) {
+  const color = String(value || '')
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : '#18181b'
+}
+
+/** 可嵌入单块编辑器或画布对象工具栏的共享文字格式控件。 */
+export function InlineFormattingControls({ editor, onFormula }: { editor: Editor; onFormula?: () => void }) {
+  const currentTextColor = String(editor.getAttributes('textColor').color || '')
   return (
     <>
       <select
@@ -246,14 +263,40 @@ function InlineFormattingControls({ editor, onFormula }: { editor: Editor; onFor
           <option key={option.id} value={option.id}>{option.label}</option>
         ))}
       </select>
+      <select
+        aria-label="文字颜色"
+        value={TEXT_COLOR_OPTIONS.some((option) => option.value === currentTextColor) ? currentTextColor : ''}
+        onChange={(event) => {
+          const value = event.target.value
+          if (value) editor.chain().focus().setTextColor(value).run()
+          else editor.chain().focus().unsetTextColor().run()
+        }}
+        className="h-7 max-w-20 cursor-pointer rounded bg-transparent px-1 text-[11px] text-zinc-600 outline-none hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-300 dark:hover:bg-zinc-800"
+      >
+        {TEXT_COLOR_OPTIONS.map((option) => (
+          <option key={option.value || 'default'} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+      <input
+        type="color"
+        aria-label="自定义文字颜色"
+        title="自定义文字颜色"
+        value={pickerColor(currentTextColor)}
+        onChange={(event) => editor.chain().focus().setTextColor(event.target.value).run()}
+        className="size-6 cursor-pointer rounded border border-zinc-200 bg-transparent p-0.5 dark:border-zinc-700"
+      />
       <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
       <MarkButton label="粗体" active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold className="size-3.5" /></MarkButton>
       <MarkButton label="斜体" active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic className="size-3.5" /></MarkButton>
       <MarkButton label="下划线" active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()}><UnderlineIcon className="size-3.5" /></MarkButton>
       <MarkButton label="删除线" active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough className="size-3.5" /></MarkButton>
       <MarkButton label="行内代码" active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()}><Code className="size-3.5" /></MarkButton>
-      <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-      <MarkButton label="插入行内公式" onClick={onFormula}><Sigma className="size-3.5" /></MarkButton>
+      {onFormula ? (
+        <>
+          <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+          <MarkButton label="插入行内公式" onClick={onFormula}><Sigma className="size-3.5" /></MarkButton>
+        </>
+      ) : null}
     </>
   )
 }

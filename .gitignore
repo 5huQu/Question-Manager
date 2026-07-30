@@ -50,6 +50,8 @@ frontend/*_design.html
 /docs/updates.md
 /docs/archive/
 /docs/task/
+# Local task package: teaching document outline, section ordering, and numbering.
+/docs/task/teaching-document-outline-numbering/
 /tmp/
 
 # Logs and caches

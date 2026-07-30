@@ -1,7 +1,8 @@
 import { createElement, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import katex from 'katex'
-import { Braces, Code2, X } from 'lucide-react'
+import { Braces, Code2, FileText, Sparkles, X } from 'lucide-react'
+import { MarkdownContent } from '../../MarkdownContent'
 
 type MathFieldElement = HTMLElement & { value: string; focus(): void }
 type MathliveStatus = 'loading' | 'ready' | 'error'
@@ -110,7 +111,27 @@ export interface FormulaEditorDialogProps {
   displayMode?: boolean
   title?: string
   onApply: (latex: string) => void
+  /**
+   * 提供后显示“混合源码”页签。该页签接收 OCR 常用的 Markdown + LaTeX 源码，
+   * 调用方负责将其转换、插入为对应的结构化内容块。
+   */
+  onApplyMixedMarkdown?: (markdown: string) => void
   onClose: () => void
+}
+
+const MIXED_MARKDOWN_MODEL_REQUIREMENTS = String.raw`请输出 Markdown 与 LaTeX 混合源码：
+
+- 普通文字直接使用 Markdown。
+- 行内公式使用 $...$。
+- 独立公式使用 $$...$$，并在公式前后换行。
+- 不要输出完整 LaTeX 文档外壳，如 \documentclass、\begin{document}。
+- 保证公式分隔符和花括号成对闭合。
+- 不要把普通文字全部放入 \text{...}。
+- 输出一段完整源码即可，不需要手动拆分成系统内容块；系统会自动转换。`
+
+function looksLikeMixedMarkdown(value: string) {
+  const source = String(value || '')
+  return /(^|[^\\])\${1,2}|\*\*|__|~~|`/.test(source)
 }
 
 export function FormulaEditorDialog({
@@ -118,14 +139,20 @@ export function FormulaEditorDialog({
   displayMode = false,
   title = '编辑公式',
   onApply,
+  onApplyMixedMarkdown,
   onClose,
 }: FormulaEditorDialogProps) {
-  const [advanced, setAdvanced] = useState(false)
+  const initialMixedMarkdown = Boolean(onApplyMixedMarkdown && looksLikeMixedMarkdown(initialLatex))
+  const [advanced, setAdvanced] = useState(initialMixedMarkdown)
+  const [mixedMarkdownMode, setMixedMarkdownMode] = useState(initialMixedMarkdown)
+  const [showModelRequirements, setShowModelRequirements] = useState(false)
   const [draft, setDraft] = useState(initialLatex)
   const [mathliveStatus, setMathliveStatus] = useState<MathliveStatus>('loading')
   const mathFieldRef = useRef<MathFieldElement | null>(null)
   const draftRef = useRef(draft)
   draftRef.current = draft
+  const mixedMarkdownDetected = Boolean(onApplyMixedMarkdown && looksLikeMixedMarkdown(draft))
+  const visualMixedPreview = !advanced && mixedMarkdownDetected
 
   useEffect(() => {
     let active = true
@@ -140,7 +167,7 @@ export function FormulaEditorDialog({
   }, [])
 
   useEffect(() => {
-    if (advanced || mathliveStatus !== 'ready') return
+    if (advanced || mixedMarkdownMode || mathliveStatus !== 'ready') return
     const field = mathFieldRef.current
     if (!field) return
     const handleInput = () => setDraft(field.value)
@@ -148,9 +175,13 @@ export function FormulaEditorDialog({
     field.addEventListener('input', handleInput)
     field.focus()
     return () => field.removeEventListener('input', handleInput)
-  }, [advanced, mathliveStatus])
+  }, [advanced, mathliveStatus, mixedMarkdownMode])
 
   function commit() {
+    if ((mixedMarkdownMode || visualMixedPreview) && onApplyMixedMarkdown) {
+      if (draft.trim()) onApplyMixedMarkdown(draft)
+      return
+    }
     const latestDraft = !advanced && mathliveStatus === 'ready'
       ? mathFieldRef.current?.value ?? draft
       : draft
@@ -180,46 +211,91 @@ export function FormulaEditorDialog({
       onKeyDown={handleDialogKeyDown}
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}
     >
-      <div className="w-full max-w-xl rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
         <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-3 dark:border-zinc-900">
           <div>
             <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{title}</h3>
-            <p className="mt-0.5 text-xs text-zinc-500">支持矩阵、分段函数与 LaTeX 源码，⌘/Ctrl + Enter 应用。</p>
+            <p className="mt-0.5 text-xs text-zinc-500">支持纯公式与 Markdown + LaTeX 混合源码，⌘/Ctrl + Enter 应用。</p>
           </div>
-          <button type="button" aria-label="关闭公式编辑器" className="rounded-md p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900" onClick={onClose}><X className="size-4" /></button>
+          <div className="flex items-center gap-1">
+            {onApplyMixedMarkdown ? (
+              <button type="button" className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50" onClick={() => setShowModelRequirements((current) => !current)}>
+                <Sparkles className="size-3.5" />模型格式要求
+              </button>
+            ) : null}
+            <button type="button" aria-label="关闭公式编辑器" className="rounded-md p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900" onClick={onClose}><X className="size-4" /></button>
+          </div>
         </div>
-        <div className="space-y-3 p-5">
+        <div className="min-h-0 space-y-3 overflow-y-auto p-5">
           <div className="flex rounded-lg border border-zinc-200 bg-zinc-100/80 p-0.5 dark:border-zinc-800 dark:bg-zinc-900/80">
-            <button type="button" disabled={mathliveStatus === 'error'} title={mathliveStatus === 'error' ? '可视化公式键盘加载失败，请使用 LaTeX 源码输入' : undefined} className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40 ${!advanced ? 'border border-zinc-200/50 bg-white text-zinc-900 shadow-xs dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500'}`} onClick={() => setAdvanced(false)}><Braces className="size-3.5" />可视化</button>
-            <button type="button" className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium ${advanced ? 'border border-zinc-200/50 bg-white text-zinc-900 shadow-xs dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500'}`} onClick={() => setAdvanced(true)}><Code2 className="size-3.5" />LaTeX 源码</button>
+            <button type="button" disabled={mathliveStatus === 'error'} title={mathliveStatus === 'error' ? '可视化公式键盘加载失败，请使用 LaTeX 源码输入' : undefined} className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40 ${!advanced && !mixedMarkdownMode ? 'border border-zinc-200/50 bg-white text-zinc-900 shadow-xs dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500'}`} onClick={() => { setAdvanced(false); setMixedMarkdownMode(false) }}><Braces className="size-3.5" />可视化</button>
+            <button type="button" className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium ${advanced && !mixedMarkdownMode ? 'border border-zinc-200/50 bg-white text-zinc-900 shadow-xs dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500'}`} onClick={() => { setAdvanced(true); setMixedMarkdownMode(false) }}><Code2 className="size-3.5" />LaTeX 源码</button>
+            {onApplyMixedMarkdown ? (
+              <button type="button" className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium ${mixedMarkdownMode ? 'border border-zinc-200/50 bg-white text-zinc-900 shadow-xs dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500'}`} onClick={() => { setAdvanced(true); setMixedMarkdownMode(true) }}><FileText className="size-3.5" />混合源码</button>
+            ) : null}
           </div>
+          {showModelRequirements ? (
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50/70 p-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+              <p className="mb-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300">给模型的输出要求</p>
+              <pre className="whitespace-pre-wrap font-mono text-[11px] leading-5 text-zinc-600 dark:text-zinc-400">{MIXED_MARKDOWN_MODEL_REQUIREMENTS}</pre>
+            </div>
+          ) : null}
           {mathliveStatus === 'error' ? (
             <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
               可视化公式键盘加载失败，已切换到 LaTeX 源码输入。
             </p>
           ) : null}
           {advanced ? (
-            <textarea autoFocus aria-label="LaTeX 源码" value={draft} onChange={(event) => setDraft(event.target.value)} className="min-h-32 w-full resize-y rounded-lg border border-zinc-200 bg-white p-3 font-mono text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50" />
-          ) : mathliveStatus === 'loading' ? (
-            <div role="status" className="flex min-h-20 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50/40 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/20">
-              正在加载公式键盘…
+            <div className="grid min-h-[22rem] grid-cols-1 gap-3 lg:grid-cols-2">
+              <div className="flex min-h-0 flex-col rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="border-b border-zinc-100 px-3 py-2 text-[11px] font-medium text-zinc-500 dark:border-zinc-900">{mixedMarkdownMode ? 'Markdown + LaTeX 源码' : 'LaTeX 源码'}</div>
+                <textarea autoFocus aria-label={mixedMarkdownMode ? 'Markdown + LaTeX 源码' : 'LaTeX 源码'} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={mixedMarkdownMode ? '输入 Markdown 文字，并用 $...$ 或 $$...$$ 标记公式' : undefined} className="min-h-[18rem] flex-1 resize-y bg-transparent p-3 font-mono text-sm leading-6 text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-50" />
+              </div>
+              <div className="min-h-0 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/20">
+                <div className="mb-2 text-[11px] font-medium text-zinc-500">实时预览</div>
+                {mixedMarkdownMode ? (
+                  draft.trim() ? <MarkdownContent content={draft} /> : <p className="text-xs italic text-zinc-400">输入混合源码后在此预览。</p>
+                ) : (
+                  <div className="flex min-h-[16rem] items-center justify-center overflow-x-auto text-center" dangerouslySetInnerHTML={{ __html: katex.renderToString(draft, { displayMode, throwOnError: false, strict: false }) }} />
+                )}
+              </div>
             </div>
           ) : (
-            <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
-              {(() => {
-                const element = createElement('math-field', { 'aria-label': '公式可视化输入' })
-                return <div ref={(host) => {
-                  const field = host?.firstElementChild as MathFieldElement | null
-                  mathFieldRef.current = field
-                }} className="min-h-12 text-lg">{element}</div>
-              })()}
-            </div>
+            visualMixedPreview ? (
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 text-left dark:border-zinc-800 dark:bg-zinc-900/20">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-[11px] font-medium text-zinc-500">文档预览</span>
+                  <button type="button" className="text-[11px] font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100" onClick={() => { setAdvanced(true); setMixedMarkdownMode(true) }}>编辑混合源码</button>
+                </div>
+                <MarkdownContent content={draft} />
+              </div>
+            ) : (
+              <div className="grid min-h-[22rem] grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className="flex min-h-0 flex-col rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+                  <div className="border-b border-zinc-100 px-3 py-2 text-[11px] font-medium text-zinc-500 dark:border-zinc-900">公式键盘</div>
+                  {mathliveStatus === 'loading' ? (
+                    <div role="status" className="flex min-h-[18rem] flex-1 items-center justify-center text-xs text-zinc-500">正在加载公式键盘…</div>
+                  ) : (
+                    (() => {
+                      const element = createElement('math-field', { 'aria-label': '公式可视化输入' })
+                      return <div ref={(host) => {
+                        const field = host?.firstElementChild as MathFieldElement | null
+                        mathFieldRef.current = field
+                      }} className="min-h-[18rem] flex-1 p-3 text-lg">{element}</div>
+                    })()
+                  )}
+                </div>
+                <div className="min-h-0 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/20">
+                  <div className="mb-2 text-[11px] font-medium text-zinc-500">实时渲染预览</div>
+                  <div className="flex min-h-[16rem] items-center justify-center overflow-x-auto text-center" dangerouslySetInnerHTML={{ __html: katex.renderToString(draft, { displayMode, throwOnError: false, strict: false }) }} />
+                </div>
+              </div>
+            )
           )}
-          <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 text-center dark:border-zinc-800 dark:bg-zinc-900/20" dangerouslySetInnerHTML={{ __html: katex.renderToString(draft, { displayMode, throwOnError: false, strict: false }) }} />
         </div>
         <div className="flex justify-end gap-2 border-t border-zinc-100 px-5 py-3 dark:border-zinc-900">
           <button type="button" className="h-9 rounded-md border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900" onClick={onClose}>取消</button>
-          <button type="button" disabled={!draft.trim()} className="h-9 rounded-md bg-zinc-900 px-4 text-sm font-medium text-zinc-50 hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200" onClick={commit}>应用公式</button>
+          <button type="button" disabled={!draft.trim()} className="h-9 rounded-md bg-zinc-900 px-4 text-sm font-medium text-zinc-50 hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200" onClick={commit}>{mixedMarkdownMode || visualMixedPreview ? '应用内容' : '应用公式'}</button>
         </div>
       </div>
     </div>,

@@ -55,7 +55,7 @@ const KNOWN_BLOCK_TYPES = new Set([
 ])
 
 const BOX_CHILD_TYPES = new Set([
-  'paragraph', 'blockMath', 'figure', 'question', 'divider', 'spacer',
+  'paragraph', 'blockMath', 'rawMarkdown', 'figure', 'question', 'divider', 'spacer',
 ])
 
 const VALID_MARKS = new Set<string>(['bold', 'italic', 'underline', 'strikethrough', 'code'])
@@ -737,7 +737,7 @@ export function validateTeachingDocument(document: TeachingDocument): DocumentVa
         for (const child of block.children) {
           // 运行时检查非法子节点（类型系统外的异常数据）
           const childRecord = child as unknown as Record<string, unknown>
-          if (childRecord.type === 'box' || childRecord.type === 'heading' || childRecord.type === 'pageBreak' || childRecord.type === 'rawMarkdown') {
+          if (childRecord.type === 'box' || childRecord.type === 'heading' || childRecord.type === 'pageBreak') {
             issues.push({ level: 'error', blockId: block.id, code: 'illegal-box-child', message: `盒子包含不允许的子节点类型 "${String(childRecord.type)}"。` })
           }
           if (childRecord.type === 'unknown') {

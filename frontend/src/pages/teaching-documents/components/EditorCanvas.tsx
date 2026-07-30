@@ -10,13 +10,14 @@
  * - 拖拽排序暂由 moveBlock 命令替代（完整 ProseMirror 拖拽由后续迭代实现）
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import type { FigureAssetRef, TeachingBlock, TeachingDocumentV1, TeachingInline } from '@/types/teachingDocument'
 import { type QuestionResolution, type FigureResolution } from '@/components/teaching-document/blocks/BlockRenderer'
 import { DocumentEditor } from '@/components/teaching-document/editor'
 import { FloatingBlockToolbar } from './FloatingBlockToolbar'
 import { BlockInsertPoint } from './BlockInsertMenu'
+import { useBlockDragReorder } from './useBlockDragReorder'
 import { BOX_CHILD_SELECT_EVENT, blockIdFromEditorSelection, isExternalDocumentSync, type BoxChildSelectDetail } from '@/components/teaching-document/editor/selection'
 
 export function EditorCanvas(props: {
@@ -42,7 +43,8 @@ export function EditorCanvas(props: {
   onEditorReady?: (editor: Editor | null) => void
 }) {
   const { document } = props
-  const containerRef = useRef<HTMLDivElement>(null)
+  const [anchorRoot, setAnchorRoot] = useState<HTMLDivElement | null>(null)
+  const [documentEditor, setDocumentEditor] = useState<Editor | null>(null)
   const [, setSelectedBlockId] = useState('')
 
   // 追踪 ProseMirror 选区所在的块
@@ -55,6 +57,7 @@ export function EditorCanvas(props: {
   }, [props.onSelect])
 
   const handleEditorReady = useCallback((editor: Editor | null) => {
+    setDocumentEditor(editor)
     props.onEditorReady?.(editor)
     if (!editor) return
     // 监听选区变化
@@ -79,14 +82,23 @@ export function EditorCanvas(props: {
 
   // 找到选中块的索引，用于显示插入点
   const selectedBlockIndex = document.content.findIndex((block) => block.id === props.selectedTopLevelId)
+  const selectionNodeType = documentEditor && documentEditor.state.selection.$from.depth >= 1
+    ? documentEditor.state.selection.$from.node(1).type.name
+    : ''
+  const showTextFormatting = selectionNodeType === 'docHeading' || selectionNodeType === 'docParagraph'
+  const dragHandlers = useBlockDragReorder({
+    document,
+    onSelect: props.onSelect,
+    onReorder: props.onReorder,
+  })
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8" ref={containerRef}>
+    <div className="mx-auto max-w-3xl px-6 py-8" ref={setAnchorRoot}>
       <h1 className="mb-8 text-center text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
         {document.title || '未命名文档'}
       </h1>
 
-      <div className="relative">
+      <div className="relative" {...dragHandlers}>
         <DocumentEditor
           document={document}
           onChange={props.onEditorChange || (() => {})}
@@ -95,10 +107,14 @@ export function EditorCanvas(props: {
         />
 
         {/* 浮动工具栏：选中块时显示 */}
-        {props.selectedTopLevelId ? (
+        {props.selectedId ? (
           <FloatingBlockToolbar
-            visible={Boolean(props.selectedId)}
+            visible
+            anchorBlockId={props.selectedId}
+            anchorRoot={anchorRoot}
             isBoxChild={props.selectedIsBoxChild}
+            textEditor={documentEditor}
+            showTextFormatting={showTextFormatting}
             onMove={props.onMove}
             onDuplicate={props.onDuplicate}
             onDelete={props.onDelete}

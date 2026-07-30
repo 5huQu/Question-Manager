@@ -79,6 +79,58 @@ export const FontFamilyMark = Mark.create({
   },
 })
 
+// ─── TextColorMark：受控行内文字颜色 ───────────────────────────────────
+
+/** 仅接受不含透明度/表达式的标准 RGB 色值，兼顾自定义取色与持久化安全。 */
+const TEXT_COLOR_HEX = /^#[0-9a-f]{6}$/i
+
+function normalizeTextColor(value: unknown) {
+  const color = String(value || '').trim().toLowerCase()
+  return TEXT_COLOR_HEX.test(color) ? color : null
+}
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    textColor: {
+      setTextColor: (color: string) => ReturnType
+      unsetTextColor: () => ReturnType
+    }
+  }
+}
+
+export const TextColorMark = Mark.create({
+  name: 'textColor',
+  addAttributes() {
+    return {
+      color: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('data-text-color') || null,
+        renderHTML: (attributes) => {
+          const color = normalizeTextColor(attributes.color)
+          return color
+            ? { 'data-text-color': color, style: `color: ${color}` }
+            : {}
+        },
+      },
+    }
+  },
+  parseHTML() {
+    return [{ tag: 'span[data-text-color]' }]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', mergeAttributes(HTMLAttributes), 0]
+  },
+  addCommands() {
+    return {
+      setTextColor: (color) => ({ commands }) => {
+        const normalized = normalizeTextColor(color)
+        return normalized ? commands.setMark('textColor', { color: normalized }) : false
+      },
+      unsetTextColor: () => ({ commands }) => commands.unsetMark('textColor'),
+    }
+  },
+})
+
 // ─── UnknownInlineNode：原子保留未识别行内节点 ───────────────────────────────
 
 function UnknownInlineView({ node, selected }: NodeViewProps) {
@@ -223,6 +275,7 @@ export function createBlockEditorExtensions() {
     }),
     UnknownMark,
     FontFamilyMark,
+    TextColorMark,
     UnknownInlineNode,
     InlineMathNode,
   ]

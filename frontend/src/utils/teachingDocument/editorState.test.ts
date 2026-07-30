@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { TeachingBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { BoxChildBlock, TeachingBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
 import {
   applyTeachingDocumentCommand,
   createTeachingDocumentHistory,
@@ -43,6 +43,26 @@ describe('TeachingDocument editor state', () => {
     expect(document.content.some((block) => block.id === 'p2')).toBe(false)
   })
 
+  it('replaces one top-level block with imported Markdown conversion blocks as one history action', () => {
+    const replacement: TeachingBlock[] = [
+      { type: 'paragraph', id: 'math-source', content: [{ type: 'text', text: '斜率为' }] },
+      { type: 'blockMath', id: 'math-1', latex: 'k=\\tan\\alpha' },
+    ]
+    const document = applyTeachingDocumentCommand(baseDocument, {
+      type: 'replaceBlockWithBlocks',
+      blockId: 'p1',
+      blocks: replacement,
+    })
+    expect(document.content.map((block) => block.id)).toEqual(['math-source', 'math-1', 'p2'])
+
+    const history = executeTeachingDocumentCommand(createTeachingDocumentHistory(baseDocument), {
+      type: 'replaceBlockWithBlocks',
+      blockId: 'p1',
+      blocks: replacement,
+    })
+    expect(undoTeachingDocument(history).document.content.map((block) => block.id)).toEqual(['p1', 'p2'])
+  })
+
   it('rejects nested boxes while supporting legal box child operations', () => {
     const box: TeachingDocumentV1['content'][number] = { type: 'box', id: 'box1', templateId: 'concept', breakBehavior: 'auto', children: [] }
     const document: TeachingDocumentV1 = { ...baseDocument, content: [box] }
@@ -58,6 +78,25 @@ describe('TeachingDocument editor state', () => {
     expect(moved.content[0]).toMatchObject({ type: 'box', children: [{ id: divider.id }, { id: paragraph.id }] })
     const removed = applyTeachingDocumentCommand(moved, { type: 'deleteBoxChild', boxId: 'box1', childId: paragraph.id })
     expect(removed.content[0]).toMatchObject({ type: 'box', children: [{ id: divider.id }] })
+  })
+
+  it('allows Markdown content as a box child and replaces a formula child with converted content', () => {
+    const document: TeachingDocumentV1 = {
+      ...baseDocument,
+      content: [{
+        type: 'box', id: 'box1', templateId: 'concept', breakBehavior: 'auto', children: [
+          { type: 'blockMath', id: 'formula1', latex: 'x' },
+        ],
+      }],
+    }
+    const markdownChild: BoxChildBlock = { type: 'rawMarkdown', id: 'formula1', markdown: '**斜率** $k=\\tan\\alpha$', reason: 'user-inserted' }
+    const updated = applyTeachingDocumentCommand(document, {
+      type: 'replaceBoxChildWithBlocks',
+      boxId: 'box1',
+      childId: 'formula1',
+      blocks: [markdownChild],
+    })
+    expect(updated.content[0]).toMatchObject({ type: 'box', children: [markdownChild] })
   })
 
   it('writes a picked question id into a box child instead of the top-level box', () => {

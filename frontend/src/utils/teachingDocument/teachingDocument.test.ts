@@ -580,6 +580,21 @@ describe('markdownToTeachingBlocks', () => {
     }
   })
 
+  it('recognizes indented block-math delimiters emitted by Markdown/LaTeX models', () => {
+    const { blocks, lossless } = markdownToTeachingBlocks('    $$\n    k=\\tan\\alpha\n    $$')
+    expect(lossless).toBe(true)
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toMatchObject({ type: 'blockMath', latex: '    k=\\tan\\alpha' })
+  })
+
+  it('preserves the remaining source when a block-math closing delimiter is absent', () => {
+    const source = '正文\n\n  $$\n  k=\\tan\\alpha'
+    const { blocks, lossless, warnings } = markdownToTeachingBlocks(source)
+    expect(lossless).toBe(false)
+    expect(warnings).toContain('块级公式缺少结束分隔符，已保留剩余原文。')
+    expect(blocks.at(-1)).toMatchObject({ type: 'rawMarkdown', markdown: '  $$\n  k=\\tan\\alpha' })
+  })
+
   it('converts single-line block math', () => {
     const { blocks } = markdownToTeachingBlocks('$$x+y=z$$')
     expect(blocks).toHaveLength(1)

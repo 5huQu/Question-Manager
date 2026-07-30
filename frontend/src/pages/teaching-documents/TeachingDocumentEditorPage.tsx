@@ -35,6 +35,7 @@ import {
   createDocumentPrintLayout,
   logicalPagePaper,
   migrateDocumentIds,
+  markdownToTeachingBlocks,
   newTeachingBlock,
   type PaperSpec,
   type PrintLayoutSpec,
@@ -851,6 +852,7 @@ export default function TeachingDocumentEditorPage() {
                 onDuplicate={() => { if (selected && !selected.boxId) editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id }) }}
                 onDelete={deleteSelected}
                 onOpenProperties={() => setPropertiesOpen(true)}
+                onReorder={(order, mergeKey) => editor.dispatch({ type: 'reorderBlocks', order, mergeKey })}
                 onEditQuestion={editQuestionTargetId ? () => setEditingQuestionBlockId(editQuestionTargetId) : undefined}
                 onEditorChange={editor.handleEditorChange}
                 onEditorReady={editor.registerEditor}
@@ -963,6 +965,24 @@ export default function TeachingDocumentEditorPage() {
             title="编辑公式"
             displayMode
             initialLatex={formulaBlock.latex}
+            onApplyMixedMarkdown={(markdown) => {
+              const conversion = markdownToTeachingBlocks(markdown)
+              if (!conversion.blocks.length) return
+              const blocks = conversion.blocks.map((block, index) => index === 0
+                ? { ...block, id: formulaBlock.id } as TeachingBlock
+                : block)
+              if (formulaLocation.boxId) {
+                editor.dispatch({
+                  type: 'replaceBoxChildWithBlocks',
+                  boxId: formulaLocation.boxId,
+                  childId: formulaBlock.id,
+                  blocks: blocks as BoxChildBlock[],
+                })
+              } else {
+                editor.dispatch({ type: 'replaceBlockWithBlocks', blockId: formulaBlock.id, blocks })
+              }
+              setFormulaBlockId('')
+            }}
             onApply={(latex) => {
               if (formulaLocation.boxId) editor.dispatch({ type: 'updateBoxChild', boxId: formulaLocation.boxId, childId: formulaBlock.id, patch: { latex } as Partial<BoxChildBlock> })
               else editor.dispatch({ type: 'updateBlock', blockId: formulaBlock.id, patch: { latex } })
