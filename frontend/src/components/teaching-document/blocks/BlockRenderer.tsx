@@ -810,7 +810,6 @@ function BoxBlockView({
   sourceIndex,
   boxTitleEditable,
   onEditBoxTitle,
-  headingLabel,
 }: {
   block: BoxBlock
   resolvers: TeachingDocumentResolvers
@@ -818,7 +817,6 @@ function BoxBlockView({
   sourceIndex?: number
   boxTitleEditable?: boolean
   onEditBoxTitle?: (boxId: string, title: string) => void
-  headingLabel?: string
 }) {
   return (
     <BoxFrame block={block} titleEditable={boxTitleEditable} onEditTitle={onEditBoxTitle}>
@@ -1092,6 +1090,7 @@ export function BlockRenderer({
   rawMarkdownOverflowWarning,
   boxTitleEditable,
   onEditBoxTitle,
+  headingLabel,
 }: {
   block: TeachingBlock
   resolvers: TeachingDocumentResolvers
@@ -1104,6 +1103,8 @@ export function BlockRenderer({
   /** 仅画布选中盒子本身时为真，允许点击标题行内编辑 */
   boxTitleEditable?: boolean
   onEditBoxTitle?: (boxId: string, title: string) => void
+  /** 文档级章节编号引擎派生的标题前缀，不写入标题正文。 */
+  headingLabel?: string
 }) {
   let content: ReactNode
   switch (block.type) {
