@@ -178,6 +178,7 @@ const expectedRoutes = new Set([
   'GET /api/teaching-documents/:id',
   'PATCH /api/teaching-documents/:id',
   'POST /api/teaching-documents/:id/duplicate',
+  'POST /api/teaching-documents/:id/tikz/render',
   'DELETE /api/teaching-documents/:id',
   'POST /api/teaching-documents/:id/assets',
   'GET /api/teaching-document-assets/:assetId',
