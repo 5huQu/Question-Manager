@@ -193,6 +193,7 @@ export function ChoiceOptions({
   optionIndexOffset = 0,
   optionDomAttributes,
   showFigureCaptions = true,
+  choiceLayoutBlockId,
 }: {
   options: ChoiceOption[]
   figures?: QuestionFigure[]
@@ -200,6 +201,8 @@ export function ChoiceOptions({
   optionIndexOffset?: number
   optionDomAttributes?: (optionIndex: number) => Record<string, string | number | undefined>
   showFigureCaptions?: boolean
+  /** 讲义测量树使用，关联本次实际测得的列数与题目块。 */
+  choiceLayoutBlockId?: string
 }) {
   const hasFigures = figures.some((figure) => Boolean(figure.path))
 
@@ -257,6 +260,8 @@ export function ChoiceOptions({
       ref={containerRef}
       className={`choice-options ${isAdaptive ? '' : `choice-options-${layoutClass}`}`.trim()}
       data-layout={isAdaptive ? `adaptive-${adaptiveColumns}` : resolvedLayout}
+      data-teaching-question-choice-layout={isAdaptive ? `adaptive-${adaptiveColumns}` : resolvedLayout}
+      data-teaching-question-choice-layout-block-id={choiceLayoutBlockId}
       style={isAdaptive ? {
         gridTemplateColumns: adaptiveColumns === 4
           ? 'repeat(4, minmax(0, 1fr))'

@@ -3,7 +3,7 @@
  * 编辑视图、A4 预览与 PDF 打印页共用；字体选择存于文档 style（唯一数据源）。
  */
 
-import type { TeachingDocumentStyle } from '@/types/teachingDocument'
+import type { TeachingDocumentStyle, TeachingDocumentType, TeachingDocumentTypographyPreset } from '@/types/teachingDocument'
 
 export interface LectureFontOption {
   id: string
@@ -15,8 +15,8 @@ export interface LectureFontOption {
 }
 
 export const BODY_FONT_OPTIONS: LectureFontOption[] = [
-  { id: 'songti', label: '宋体', stack: '"Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", "Source Han Serif SC", serif' },
-  { id: 'heiti', label: '黑体', stack: '"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif' },
+  { id: 'songti', label: '思源宋体', stack: '"Noto Serif SC Variable", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif' },
+  { id: 'heiti', label: '思源黑体', stack: '"Noto Sans SC Variable", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' },
   { id: 'kaiti', label: '楷体', stack: '"Kaiti SC", "STKaiti", "KaiTi", "Noto Serif CJK SC", serif' },
   { id: 'fangsong', label: '仿宋', stack: '"STFangsong", "FangSong", "Noto Serif CJK SC", serif' },
   { id: 'times', label: 'Times New Roman', stack: '"Times New Roman", "Songti SC", "SimSun", serif' },
@@ -24,8 +24,8 @@ export const BODY_FONT_OPTIONS: LectureFontOption[] = [
 ]
 
 export const HEADING_FONT_OPTIONS: LectureFontOption[] = [
-  { id: 'heiti', label: '黑体', stack: '"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Helvetica Neue", Arial, sans-serif' },
-  { id: 'songti', label: '宋体', stack: '"Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", serif' },
+  { id: 'heiti', label: '思源黑体', stack: '"Noto Sans SC Variable", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif' },
+  { id: 'songti', label: '思源宋体', stack: '"Noto Serif SC Variable", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif' },
   { id: 'kaiti', label: '楷体', stack: '"Kaiti SC", "STKaiti", "KaiTi", "Noto Serif CJK SC", serif' },
   { id: 'fangsong', label: '仿宋', stack: '"STFangsong", "FangSong", "Noto Serif CJK SC", serif' },
   { id: 'arial', label: 'Arial', stack: 'Arial, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif' },
@@ -54,8 +54,8 @@ export const LATIN_FONT_OPTIONS: LectureFontOption[] = [
  * InlineText.font 存储的是这里的 id；渲染端通过 fontStackById 派生 CSS font-family。
  */
 export const TEXT_FONT_OPTIONS: LectureFontOption[] = [
-  { id: 'songti', label: '宋体', stack: '"Songti SC", "STSong", "SimSun", "Noto Serif CJK SC", "Source Han Serif SC", serif' },
-  { id: 'heiti', label: '黑体', stack: '"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif' },
+  { id: 'songti', label: '思源宋体', stack: '"Noto Serif SC Variable", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif' },
+  { id: 'heiti', label: '思源黑体', stack: '"Noto Sans SC Variable", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' },
   { id: 'kaiti', label: '楷体', stack: '"Kaiti SC", "STKaiti", "KaiTi", "Noto Serif CJK SC", serif' },
   { id: 'fangsong', label: '仿宋', stack: '"STFangsong", "FangSong", "Noto Serif CJK SC", serif' },
   { id: 'times', label: 'Times New Roman', stack: '"Times New Roman", "Songti SC", "SimSun", serif' },
@@ -67,6 +67,38 @@ export const TEXT_FONT_OPTIONS: LectureFontOption[] = [
 export function fontStackById(id: string | undefined): string | undefined {
   if (!id) return undefined
   return TEXT_FONT_OPTIONS.find((option) => option.id === id)?.stack
+}
+
+export const TYPOGRAPHY_PRESETS: Record<TeachingDocumentTypographyPreset, {
+  label: string
+  description: string
+  style: Required<Pick<TeachingDocumentStyle, 'bodyFont' | 'bodyLatinFont' | 'bodyNumberFont' | 'headingFont' | 'headingLatinFont' | 'headingNumberFont' | 'marginPreset' | 'questionSpacing' | 'typographyPreset'>>
+}> = {
+  exam: {
+    label: '正式试卷',
+    description: '紧凑页边距与题目间距，适合测验、作业和考试。',
+    style: {
+      typographyPreset: 'exam', bodyFont: 'songti', bodyLatinFont: 'times', bodyNumberFont: 'times',
+      headingFont: 'heiti', headingLatinFont: 'arial', headingNumberFont: 'times', marginPreset: 'compact', questionSpacing: 'compact',
+    },
+  },
+  lecture: {
+    label: '阅读讲义',
+    description: '保留舒展留白，适合知识讲解、例题和推导。',
+    style: {
+      typographyPreset: 'lecture', bodyFont: 'songti', bodyLatinFont: 'georgia', bodyNumberFont: 'times',
+      headingFont: 'heiti', headingLatinFont: 'arial', headingNumberFont: 'times', marginPreset: 'normal', questionSpacing: 'normal',
+    },
+  },
+}
+
+/** 新建文档按用途填入预设；练习单沿用正式试卷的紧凑排版。 */
+export function typographyPresetForDocumentType(documentType: TeachingDocumentType): TeachingDocumentTypographyPreset {
+  return documentType === 'lecture' ? 'lecture' : 'exam'
+}
+
+export function typographyStyleForPreset(preset: TeachingDocumentTypographyPreset): TeachingDocumentStyle {
+  return { ...TYPOGRAPHY_PRESETS[preset].style }
 }
 
 /**

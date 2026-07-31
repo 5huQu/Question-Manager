@@ -28,15 +28,17 @@ describe('teaching document outline', () => {
   })
 
   it('supports textbook and per-heading manual labels', () => {
+    const secondHeading = documentWithSections.content[2]
+    if (secondHeading.type !== 'heading') throw new Error('fixture heading is missing')
     const document: TeachingDocumentV1 = { ...documentWithSections, outline: { numberingEnabled: true, preset: 'textbook' }, content: [
       documentWithSections.content[0],
-      { ...documentWithSections.content[2], numbering: { mode: 'manual', manualLabel: '附录 A' } },
+      { ...secondHeading, numbering: { mode: 'manual', manualLabel: '附录 A' } },
     ] }
     expect(buildDocumentOutline(document).entries.map((entry) => entry.displayLabel)).toEqual(['第一章', '附录 A'])
   })
 
   it('supports chapter, decimal, bracket, and western multi-level numbering presets', () => {
-    const labels = (preset: TeachingDocumentV1['outline']['preset']) => buildDocumentOutline({
+    const labels = (preset: NonNullable<TeachingDocumentV1['outline']>['preset']) => buildDocumentOutline({
       ...documentWithSections,
       outline: { numberingEnabled: true, preset },
       content: documentWithSections.content.slice(0, 3),

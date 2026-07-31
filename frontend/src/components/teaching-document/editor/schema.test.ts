@@ -189,3 +189,41 @@ describe('document editor heading serialization', () => {
     expect(editor.commands.setTextColor('url(javascript:alert(1))')).toBe(false)
   })
 })
+
+describe('document editor figure group serialization', () => {
+  it('keeps columns, spacing, assets and per-image captions across editor round-trip', () => {
+    const document: TeachingDocumentV1 = {
+      version: 1,
+      documentType: 'lecture',
+      title: '图片组',
+      metadata: {},
+      content: [{
+        type: 'figure',
+        id: 'group-1',
+        asset: { type: 'documentAsset', assetId: 'asset-1' },
+        alignment: 'center',
+        widthMm: 140,
+        groupColumns: 2,
+        groupGapMm: 4,
+        groupItems: [
+          { id: 'left', asset: { type: 'documentAsset', assetId: 'asset-1' }, caption: '左图' },
+          { id: 'right', asset: { type: 'documentAsset', assetId: 'asset-2' }, caption: '右图' },
+        ],
+      }],
+    }
+    const serialized = editorDocToTeachingDocument(teachingDocumentToEditorDoc(document), {
+      documentType: document.documentType,
+      title: document.title,
+      metadata: document.metadata,
+    })
+    expect(serialized.content[0]).toMatchObject({
+      type: 'figure',
+      groupColumns: 2,
+      groupGapMm: 4,
+      groupItems: [
+        { id: 'left', caption: '左图' },
+        { id: 'right', caption: '右图' },
+      ],
+    })
+  })
+})

@@ -324,7 +324,7 @@ export function ResultControlPanel({ state }: { state: QuickActionState }) {
             {/* Export Paper Section */}
             <div className="space-y-2.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600 block">
-                导出并下载试卷
+                备选导出（Markdown / PDF）
               </label>
               
               {/* Format Selection */}
@@ -384,27 +384,27 @@ export function ResultControlPanel({ state }: { state: QuickActionState }) {
               <button
                 disabled={isExporting}
                 onClick={handleExportPaper}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-50 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200 px-3 py-2.5 text-xs font-semibold shadow-sm transition-all disabled:opacity-50 cursor-pointer"
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-xs font-semibold text-zinc-700 transition-all hover:bg-zinc-50 disabled:opacity-50 cursor-pointer dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
               >
                 {isExporting ? (
                   <LoaderCircle className="size-3.5 animate-spin" />
                 ) : (
                   <FileDown className="size-3.5" />
                 )}
-                {isExporting ? '正在生成并导出...' : '导出并打开试卷'}
+                {isExporting ? '正在生成并导出...' : '导出文件'}
               </button>
             </div>
 
             {/* Save as new collection */}
             <div className="space-y-2.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600 block">
-                {'新建独立试卷 (放入试卷库)'}
+                {'保存组卷快照'}
               </label>
               <input
                 type="text"
                 value={paperTitle}
                 onChange={e => setPaperTitle(e.target.value)}
-                placeholder="请输入试卷名称..."
+                placeholder="请输入快照名称..."
                 className="w-full text-xs rounded-lg border border-zinc-200 bg-transparent px-3 py-2 outline-none focus:border-zinc-500 dark:border-zinc-800 dark:bg-zinc-900"
               />
               <button
@@ -421,7 +421,7 @@ export function ResultControlPanel({ state }: { state: QuickActionState }) {
                 ) : (
                   <Save className="size-3.5" />
                 )}
-                {saveSuccess ? '已成功保存并同步！' : '保存并同步为新试卷'}
+                {saveSuccess ? '已成功保存组卷快照！' : '保存组卷快照'}
               </button>
             </div>
           </div>

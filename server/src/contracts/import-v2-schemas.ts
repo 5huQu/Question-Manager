@@ -83,6 +83,7 @@ export const parseCandidatesRequestSchema = schema.object({
 })
 
 export const parserPreviewRequestSchema = schema.object({
+  presetId: schema.optional(string),
   config: schema.optional(partialParserConfigSchema),
   focusQuestionNo: schema.optional(string),
   candidateId: schema.optional(string),

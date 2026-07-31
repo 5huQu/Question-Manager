@@ -152,6 +152,31 @@ describe('TeachingDocumentRenderer fallbacks', () => {
     expect(html).toContain('loading="lazy"')
   })
 
+  it('renders a multi-image block as a controlled grid with per-image captions', () => {
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer
+        document={documentWith([{
+          type: 'figure',
+          id: 'figure-group',
+          asset: { type: 'documentAsset', assetId: 'asset-1' },
+          alignment: 'center',
+          widthMm: 140,
+          groupColumns: 2,
+          groupGapMm: 4,
+          groupItems: [
+            { id: 'left', asset: { type: 'documentAsset', assetId: 'asset-1' }, caption: '左图' },
+            { id: 'right', asset: { type: 'documentAsset', assetId: 'asset-2' }, caption: '右图' },
+          ],
+        }])}
+        resolveFigure={(asset) => asset.type === 'documentAsset' ? `/${asset.assetId}.png` : ''}
+      />,
+    )
+    expect(html).toContain('data-figure-columns="2"')
+    expect(html).toContain('grid-template-columns:repeat(2, minmax(0, 1fr))')
+    expect(html).toContain('左图')
+    expect(html).toContain('右图')
+  })
+
   it('renders missing figure and question states clearly', () => {
     const html = renderToStaticMarkup(
       <TeachingDocumentRenderer

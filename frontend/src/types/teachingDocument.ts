@@ -115,6 +115,19 @@ export interface BlockMathBlock {
   label?: string
 }
 
+/** 可视化表格单元格，复用正文块的行内文字与 LaTeX 能力。 */
+export interface TableCell {
+  content: TeachingInline[]
+}
+
+/** 首版表格为不可拆分的整体块；长表跨页能力后续单独演进。 */
+export interface TableBlock {
+  type: 'table'
+  id: string
+  rows: TableCell[][]
+  hasHeader?: boolean
+}
+
 export type FigureAlignment = 'left' | 'center' | 'right'
 
 /**
@@ -127,6 +140,13 @@ export type FigureAssetRef =
   | { type: 'questionFigure'; questionId: string; figureId: string }
   | { type: 'documentAsset'; assetId: string }
   | { type: 'legacyPath'; path: string }
+
+export interface FigureGroupItem {
+  id: string
+  asset: FigureAssetRef
+  caption?: string
+  alt?: string
+}
 
 export interface FigureBlock {
   type: 'figure'
@@ -143,6 +163,25 @@ export interface FigureBlock {
   widthMm?: number
   /** 是否锁定宽高比（默认 true） */
   lockAspectRatio?: boolean
+  caption?: string
+  /** 存在时作为多图网格渲染；asset 保留为旧数据与单图兼容入口。 */
+  groupItems?: FigureGroupItem[]
+  groupColumns?: 1 | 2 | 3
+  groupGapMm?: number
+}
+
+/** 受控 TikZ 源码及其最近一次成功生成的 SVG。编译中的状态不持久化。 */
+export interface TikzBlock {
+  type: 'tikz'
+  id: string
+  source: string
+  sourceHash?: string
+  svgAssetId?: string
+  alignment: FigureAlignment
+  /** 与普通图片共用的受控排版预设。 */
+  layoutPreset?: FigureLayoutPreset
+  widthMm?: number
+  alt?: string
   caption?: string
 }
 
@@ -223,7 +262,7 @@ export interface BoxBlock {
   /** 语义图标标记，如 "lightbulb"、"alert" */
   icon?: string
   breakBehavior: BoxBreakBehavior
-  /** 盒子子内容：允许段落、公式、自由 Markdown、图片、题目，但不允许嵌套盒子 */
+  /** 盒子子内容：允许段落、公式、表格、图片、题目，但不允许嵌套盒子 */
   children: BoxChildBlock[]
 }
 
@@ -231,7 +270,9 @@ export interface BoxBlock {
 export type BoxChildBlock =
   | ParagraphBlock
   | BlockMathBlock
+  | TableBlock
   | FigureBlock
+  | TikzBlock
   | QuestionBlock
   | DividerBlock
   | SpacerBlock
@@ -281,7 +322,9 @@ export type TeachingBlock =
   | HeadingBlock
   | ParagraphBlock
   | BlockMathBlock
+  | TableBlock
   | FigureBlock
+  | TikzBlock
   | QuestionBlock
   | BoxBlock
   | DividerBlock
@@ -370,12 +413,17 @@ export interface TeachingDocumentPaperOptions {
   margins?: { topMm: number; rightMm: number; bottomMm: number; leftMm: number }
 }
 
+/** 文档级排版预设；未设置表示用户已手动调整为自定义排版。 */
+export type TeachingDocumentTypographyPreset = 'exam' | 'lecture'
+
 /**
  * 文档级打印样式：正文/标题字体与页边距的唯一数据源。
  * 编辑视图、A4 预览、PDF 导出均从此读取，保证“所见即所得”（预览与输出一致）。
  * 仅存受约束的 id / 枚举，不存任意 CSS。
  */
 export interface TeachingDocumentStyle {
+  /** 正式试卷 / 阅读讲义预设；手动调整排版字段后会清除为自定义。 */
+  typographyPreset?: TeachingDocumentTypographyPreset
   /** 正文字体 id（见 lectureFonts BODY_FONT_OPTIONS）；缺省 = 默认正文字体 */
   bodyFont?: string
   /** 正文英文与数字字体 id；缺省时跟随 bodyFont，兼容旧文档。 */

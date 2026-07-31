@@ -20,10 +20,12 @@ export {
   createTeachingDocumentHistory,
   executeTeachingDocumentCommand,
   newTeachingBlock,
+  blocksForRawMarkdownFigureInsertion,
   redoTeachingDocument,
   undoTeachingDocument,
 } from './editorState'
 export type { TeachingDocumentCommand, TeachingDocumentHistory } from './editorState'
 export { TeachingDocumentAutosave } from './autosave'
 export type { AutosaveState } from './autosave'
+export { TYPOGRAPHY_PRESETS, typographyPresetForDocumentType, typographyStyleForPreset } from './lectureFonts'
 export * from './layout'

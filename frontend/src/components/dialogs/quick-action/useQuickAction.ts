@@ -242,7 +242,7 @@ export function useQuickAction(initialMode: QuickActionMode, onClose: () => void
     if (!randomResult || randomResult.questions.length === 0) return
     const title = paperTitle.trim()
     if (!title) {
-      alert('请输入试卷标题')
+      alert('请输入快照标题')
       return
     }
 
@@ -259,7 +259,7 @@ export function useQuickAction(initialMode: QuickActionMode, onClose: () => void
       notifyBasketUpdated()
       setSaveSuccess(true)
     } catch (err: any) {
-      alert(`保存试卷失败: ${err?.message || String(err)}`)
+      alert(`保存组卷快照失败: ${err?.message || String(err)}`)
     } finally {
       setIsSavingPaper(false)
     }

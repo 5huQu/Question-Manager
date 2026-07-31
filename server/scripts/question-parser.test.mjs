@@ -963,6 +963,12 @@ const questionThenHeadingPreview = buildParserPreview(questionThenHeadingSolutio
 })
 assert.match(questionThenHeadingPreview.candidatePreviews.find((preview) => preview.questionNo === '19')?.analysisPreview || '', /解：设函数/)
 assert.equal(questionThenHeadingPreview.diagnostics.some((diagnostic) => diagnostic.code === 'question_before_solution_heading'), false)
+const questionThenHeadingPresetPreview = buildParserPreview(questionThenHeadingSolutionDocument, {
+  presetId: 'question_then_heading',
+  focusQuestionNo: '19',
+})
+assert.equal(questionThenHeadingPresetPreview.config.solutionBindingStrategy, 'question_then_heading')
+assert.match(questionThenHeadingPresetPreview.candidatePreviews.find((preview) => preview.questionNo === '19')?.analysisPreview || '', /解：设函数/)
 const questionThenHeadingSolutions = parseSolutionDocument(questionThenHeadingSolutionDocument, {
   config: { ...defaultParserConfig, solutionBindingStrategy: 'question_then_heading' },
 })

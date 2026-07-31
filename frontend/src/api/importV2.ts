@@ -402,7 +402,7 @@ export const importV2Api = {
   getMarkdownPreview(ocrDocumentId: string) {
     return api<MarkdownPreviewResponse>('/api/import-flow-v2/ocr-documents/' + encodeURIComponent(ocrDocumentId) + '/markdown-preview')
   },
-  getParserPreview(ocrDocumentId: string, payload: { config?: Partial<ImportFlowV2ParserConfig>; focusQuestionNo?: string; candidateId?: string; candidateIds?: string[] } = {}) {
+  getParserPreview(ocrDocumentId: string, payload: { presetId?: string; config?: Partial<ImportFlowV2ParserConfig>; focusQuestionNo?: string; candidateId?: string; candidateIds?: string[] } = {}) {
     return api<ParserPreviewResponse>('/api/import-flow-v2/ocr-documents/' + encodeURIComponent(ocrDocumentId) + '/parser-preview', {
       method: 'POST',
       headers: jsonHeaders,

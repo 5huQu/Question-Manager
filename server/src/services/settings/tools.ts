@@ -47,11 +47,16 @@ export function xelatexPath() {
   ])
 }
 
+export function dvisvgmPath() {
+  return firstExecutable([process.env.DVISVGM_PATH || '', 'dvisvgm'])
+}
+
 export function toolAvailability() {
   const resolvedSofficePath = sofficePath()
   return {
     python: pythonDetails(),
     xelatex: Boolean(xelatexPath()),
+    dvisvgm: Boolean(dvisvgmPath()),
     soffice: Boolean(resolvedSofficePath),
     sofficePath: resolvedSofficePath,
   }

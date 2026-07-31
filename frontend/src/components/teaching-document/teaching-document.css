@@ -294,6 +294,21 @@
   padding-right: 0;
 }
 
+/*
+ * 长文档编辑：离开视口的顶层块不参与 paint/layout。
+ * ProseMirror 仍保留完整 DOM、选区与撤销历史；滚回或聚焦该块时浏览器会自动
+ * 恢复渲染。真实高度在首次可见后会被浏览器记住，避免影响编辑器分页装饰。
+ */
+.td-document-editor-virtualized > [data-block-id] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
+}
+
+.td-document-editor-virtualized > [data-block-id].is-selected,
+.td-document-editor-virtualized > .td-text-block-active {
+  content-visibility: visible;
+}
+
 /* ProseMirror 分页装饰会真实占据布局高度，正文不会绘制到页间隙下方。 */
 .td-page-transition-widget {
   position: relative;
@@ -531,6 +546,19 @@
   font-size: var(--box-continuation-label-size);
   color: var(--box-continuation-label-color);
   user-select: none;
+}
+
+/* 分页测量时读取真实续页栏/标签的高度。常规渲染不显示，也不占用布局空间。 */
+.td-box-continuation-probe {
+  display: none;
+}
+[data-teaching-measure-root] .td-box-continuation-probe {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  display: flex;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* ─── 续页栏（middle/end 弱化标题） ──────────────────────────────────── */

@@ -99,6 +99,31 @@ describe('BlockInlineEditor: 基础编辑', () => {
     ])
   })
 
+  it('卡片容器提供回调时，Enter 新建同级段落，段首 Backspace 交由容器处理', async () => {
+    const createSibling = vi.fn()
+    const backspaceAtStart = vi.fn()
+    let editorRef: Editor | undefined
+    const host = await render(createElement(BlockInlineEditor, {
+      inlines: [{ type: 'text', text: '段落' }],
+      onChange: () => {},
+      onEditorReady: (editor: Editor) => { editorRef = editor },
+      onCreateSiblingParagraph: createSibling,
+      onBackspaceAtStart: backspaceAtStart,
+    }))
+    const element = editorDom(host)
+    await act(async () => {
+      editorRef!.commands.focus('end')
+      element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    })
+    expect(createSibling).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      editorRef!.commands.focus('start')
+      element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
+    })
+    expect(backspaceAtStart).toHaveBeenCalledTimes(1)
+  })
+
   it('工具栏 marks 切换产生正确 inlines', async () => {
     let editorRef: Editor | undefined
     const changes: TeachingInline[][] = []

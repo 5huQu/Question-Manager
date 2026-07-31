@@ -13,6 +13,7 @@ import type {
   FigureAssetRef,
   QuestionBlock,
   TeachingBlock,
+  TeachingInline,
   TeachingDocumentV1,
   TeachingMarginPreset,
   TeachingDocumentPrintOptions,
@@ -36,6 +37,7 @@ import {
   migrateDocumentIds,
   markdownToTeachingBlocks,
   newTeachingBlock,
+  blocksForRawMarkdownFigureInsertion,
   type PaperSpec,
   type PrintLayoutSpec,
 } from '@/utils/teachingDocument'
@@ -46,6 +48,8 @@ import {
   lectureFontFaceCss,
   lectureFontCssVars,
   resolveDocumentFonts,
+  TYPOGRAPHY_PRESETS,
+  typographyStyleForPreset,
 } from '@/utils/teachingDocument/lectureFonts'
 import { assetUrl } from '@/utils/questionDisplay'
 import type { PrintChromeTemplate } from '@/api/teachingDocuments'
@@ -392,8 +396,11 @@ export default function TeachingDocumentEditorPage() {
   const navigate = useNavigate()
   const editor = useTeachingDocumentEditor(decodeURIComponent(documentId))
   const [selectedId, setSelectedId] = useState('')
+  const [viewportBlockId, setViewportBlockId] = useState('')
+  const [canvasScrollRoot, setCanvasScrollRoot] = useState<HTMLElement | null>(null)
   const [questionMap, setQuestionMap] = useState<Record<string, QuestionResolution>>({})
-  const [canvasMode, setCanvasMode] = useState<TeachingCanvasMode>('paginated')
+  // 连续流是正文撰写面：卡片正文以一个连续文本区编辑；页面编辑保留给版式核对。
+  const [canvasMode, setCanvasMode] = useState<TeachingCanvasMode>('continuous')
   const sheetPaper = useMemo<PaperSpec>(
     () => resolveDocumentPaper(editor.document?.style),
     [editor.document?.style],
@@ -512,6 +519,47 @@ export default function TeachingDocumentEditorPage() {
     return () => window.document.removeEventListener('keydown', handleKey)
   }, [])
 
+  // 中间画布的视口中心就是阅读位置。只更新大纲导航态，不修改编辑器选区，
+  // 因而滚动阅读不会打断正在编辑的文字或弹出右侧属性面板。
+  useEffect(() => {
+    if (!canvasScrollRoot || !editor.document) return
+    let frame = 0
+    const updateActiveBlock = () => {
+      frame = 0
+      const viewport = canvasScrollRoot.getBoundingClientRect()
+      const centerY = viewport.top + viewport.height / 2
+      const candidates = Array.from(canvasScrollRoot.querySelectorAll<HTMLElement>('[data-block-id]'))
+        .filter((node) => !node.closest('[data-teaching-measure-root]'))
+        .map((node) => ({ node, rect: node.getBoundingClientRect() }))
+        .filter(({ rect }) => rect.bottom >= viewport.top && rect.top <= viewport.bottom)
+      if (!candidates.length) return
+      const ranked = candidates
+        .map(({ node, rect }) => ({
+          id: node.dataset.blockId || '',
+          // 中心落在块内时优先最小的块（卡片内段落优先于整张卡片）。
+          containsCenter: rect.top <= centerY && rect.bottom >= centerY,
+          height: Math.max(1, rect.height),
+          distance: Math.abs((rect.top + rect.bottom) / 2 - centerY),
+        }))
+        .filter((item) => item.id)
+        .sort((a, b) => (Number(b.containsCenter) - Number(a.containsCenter)) || (a.containsCenter ? a.height - b.height : a.distance - b.distance))
+      const next = ranked[0]?.id || ''
+      if (next) setViewportBlockId((current) => current === next ? current : next)
+    }
+    const schedule = () => {
+      if (!frame) frame = window.requestAnimationFrame(updateActiveBlock)
+    }
+    updateActiveBlock()
+    canvasScrollRoot.addEventListener('scroll', schedule, { passive: true })
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
+    observer?.observe(canvasScrollRoot)
+    return () => {
+      canvasScrollRoot.removeEventListener('scroll', schedule)
+      observer?.disconnect()
+      if (frame) window.cancelAnimationFrame(frame)
+    }
+  }, [canvasScrollRoot, editor.document])
+
   if (editor.loading) {
     return <div className="flex h-[60vh] items-center justify-center text-sm text-zinc-500"><LoaderCircle className="mr-2 size-4 animate-spin" />正在读取文档…</div>
   }
@@ -554,6 +602,24 @@ export default function TeachingDocumentEditorPage() {
     else editor.dispatch({ type: 'updateBlock', blockId: selected.block.id, patch, mergeKey })
   }
 
+  async function insertImageInRawMarkdown(
+    block: Extract<TeachingBlock, { type: 'rawMarkdown' }>,
+    markdown: string,
+    cursor: number,
+    file: File,
+    boxId?: string,
+  ) {
+    const asset = await editor.uploadAsset(file)
+    const { blocks, figure } = blocksForRawMarkdownFigureInsertion(markdown, cursor, asset.id)
+    if (boxId) {
+      editor.dispatch({ type: 'replaceBoxChildWithBlocks', boxId, childId: block.id, blocks: blocks as BoxChildBlock[] })
+    } else {
+      editor.dispatch({ type: 'replaceBlockWithBlocks', blockId: block.id, blocks })
+    }
+    selectAndShow(figure.id)
+    setPropertiesOpen(true)
+  }
+
   function updatePrintOptions(patch: Partial<TeachingDocumentPrintOptions>) {
     editor.dispatch({
       type: 'setStyle',
@@ -594,6 +660,52 @@ export default function TeachingDocumentEditorPage() {
     setPropertiesOpen(false)
   }
 
+  function deleteBoxChildren(boxId: string, childIds: string[]) {
+    if (!childIds.length) return false
+    if (!window.confirm(`确定删除所选的 ${childIds.length} 项卡片内容？`)) return false
+    editor.dispatch({ type: 'deleteBoxChildren', boxId, childIds })
+    setSelectedId(boxId)
+    setPropertiesOpen(true)
+    return true
+  }
+
+  function inlineToMarkdown(inline: TeachingInline): string | null {
+    if (inline.type === 'inlineMath') return `$${inline.latex}$`
+    if (inline.type === 'hardBreak') return '\n'
+    if (inline.type === 'unknown') return null
+    if (inline.font || inline.color || inline.unknownMarks?.length) return null
+    let value = inline.text
+    for (const mark of inline.marks || []) {
+      if (mark === 'bold') value = `**${value}**`
+      else if (mark === 'italic') value = `*${value}*`
+      else if (mark === 'underline') value = `<u>${value}</u>`
+      else if (mark === 'strikethrough') value = `~~${value}~~`
+      else if (mark === 'code') value = `\`${value}\``
+    }
+    return value
+  }
+
+  function mergeBoxParagraphs(boxId: string, childIds: string[]) {
+    const box = document.content.find((block): block is BoxBlock => block.id === boxId && block.type === 'box')
+    if (!box || childIds.length < 2) return false
+    const selectedChildren = box.children.filter((child) => childIds.includes(child.id))
+    const firstIndex = box.children.findIndex((child) => child.id === selectedChildren[0]?.id)
+    const contiguous = selectedChildren.length === childIds.length
+      && selectedChildren.every((child, index) => box.children[firstIndex + index]?.id === child.id)
+    if (!contiguous || !selectedChildren.every((child): child is Extract<BoxChildBlock, { type: 'paragraph' }> => child.type === 'paragraph')) return false
+    const markdownParts = selectedChildren.map((child) => {
+      const parts = child.content.map(inlineToMarkdown)
+      return parts.every((part): part is string => part != null) ? parts.join('') : null
+    })
+    if (markdownParts.some((part) => part == null)) return false
+    if (!window.confirm(`确定将 ${selectedChildren.length} 个段落合并为一个“混合内容”块？`)) return false
+    const replacement = { ...newTeachingBlock('rawMarkdown'), markdown: markdownParts.join('\n\n') } as Extract<BoxChildBlock, { type: 'rawMarkdown' }>
+    editor.dispatch({ type: 'replaceBoxChildRange', boxId, childIds, replacement })
+    setSelectedId(replacement.id)
+    setPropertiesOpen(true)
+    return true
+  }
+
   function moveSelected(direction: -1 | 1) {
     if (!selected) return
     if (selected.boxId) editor.dispatch({ type: 'moveBoxChild', boxId: selected.boxId, childId: selected.block.id, direction })
@@ -612,10 +724,21 @@ export default function TeachingDocumentEditorPage() {
     const block = newTeachingBlock(type, type === 'heading' ? { headingLevel: resolvedHeadingLevel } : undefined)
     editor.dispatch({ type: 'insertBlock', block, afterBlockId: insertionAnchor })
     selectAndShow(block.id)
+    // 新建对象后立即给出可见的编辑入口；即使是段落或章节，也不让用户再额外寻找属性面板。
+    setPropertiesOpen(true)
     // 插入公式块自动弹出可视化公式编辑器（顶栏与块间菜单共用此入口）
     if (type === 'blockMath') setFormulaBlockId(block.id)
     // 插入题目块自动弹出题库筛选抽屉
     if (type === 'question') setPickerTarget({ blockId: block.id })
+  }
+
+  function insertBoxChild(type: BoxChildBlock['type'], boxId: string, afterChildId?: string) {
+    const child = newTeachingBlock(type) as BoxChildBlock
+    editor.dispatch({ type: 'insertBoxChild', boxId, child, afterChildId })
+    setSelectedId(child.id)
+    setPropertiesOpen(true)
+    if (type === 'blockMath') setFormulaBlockId(child.id)
+    if (type === 'question') setPickerTarget({ blockId: child.id, boxId })
   }
 
   function handlePickerPick(question: QuestionItem) {
@@ -685,24 +808,53 @@ export default function TeachingDocumentEditorPage() {
     ? selected.block.id
     : ''
 
+  const typographyPreset = document.style?.typographyPreset
+  const applyTypographyPreset = (preset: keyof typeof TYPOGRAPHY_PRESETS) => {
+    editor.dispatch({ type: 'setStyle', patch: typographyStyleForPreset(preset) })
+  }
+  const applyCustomTypography = (patch: Partial<TeachingDocumentStyle>) => {
+    editor.dispatch({ type: 'setStyle', patch: { ...patch, typographyPreset: undefined } })
+  }
+
   const fontSettings = (
     <div className="space-y-5">
+      <section>
+        <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">排版预设</h3>
+        <p className="mt-1 text-[11px] text-zinc-500">预设会一次设置字体、页边距和题目间距；继续手动调整后将显示为自定义。</p>
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {(Object.entries(TYPOGRAPHY_PRESETS) as Array<[keyof typeof TYPOGRAPHY_PRESETS, typeof TYPOGRAPHY_PRESETS[keyof typeof TYPOGRAPHY_PRESETS]]>).map(([preset, option]) => (
+            <button
+              key={preset}
+              type="button"
+              aria-pressed={typographyPreset === preset}
+              onClick={() => applyTypographyPreset(preset)}
+              className={`rounded-lg border p-3 text-left transition-colors ${typographyPreset === preset
+                ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900/40'
+                : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900/30'}`}
+            >
+              <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">{option.label}</span>
+              <span className="mt-1 block text-[11px] leading-4 text-zinc-500">{option.description}</span>
+            </button>
+          ))}
+        </div>
+        {!typographyPreset ? <p className="mt-2 text-[11px] text-zinc-500">当前为自定义排版。</p> : null}
+      </section>
       <section><h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">正文</h3><p className="mt-1 text-[11px] text-zinc-500">中文、英文和数字分别设置；数字字体覆盖阿拉伯数字。</p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <FontSelect label="中文字体" ariaLabel="正文中文字体" value={documentFonts.body.id} options={CJK_FONT_OPTIONS} onChange={(value) => editor.dispatch({ type: 'setStyle', patch: { bodyFont: value } })} />
-          <FontSelect label="英文字体" ariaLabel="正文英文字体" value={documentFonts.bodyLatin.id} options={LATIN_FONT_OPTIONS} onChange={(value) => editor.dispatch({ type: 'setStyle', patch: { bodyLatinFont: value } })} />
-          <FontSelect label="数字字体" ariaLabel="正文数字字体" value={documentFonts.bodyNumber.id} options={LATIN_FONT_OPTIONS} onChange={(value) => editor.dispatch({ type: 'setStyle', patch: { bodyNumberFont: value } })} />
+          <FontSelect label="中文字体" ariaLabel="正文中文字体" value={documentFonts.body.id} options={CJK_FONT_OPTIONS} onChange={(value) => applyCustomTypography({ bodyFont: value })} />
+          <FontSelect label="英文字体" ariaLabel="正文英文字体" value={documentFonts.bodyLatin.id} options={LATIN_FONT_OPTIONS} onChange={(value) => applyCustomTypography({ bodyLatinFont: value })} />
+          <FontSelect label="数字字体" ariaLabel="正文数字字体" value={documentFonts.bodyNumber.id} options={LATIN_FONT_OPTIONS} onChange={(value) => applyCustomTypography({ bodyNumberFont: value })} />
         </div>
       </section>
       <section className="border-t border-zinc-100 pt-5 dark:border-zinc-800"><h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">章节</h3><p className="mt-1 text-[11px] text-zinc-500">章节编号会跟随这里的数字字体。</p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <FontSelect label="中文字体" ariaLabel="章节中文字体" value={documentFonts.heading.id} options={CJK_FONT_OPTIONS} onChange={(value) => editor.dispatch({ type: 'setStyle', patch: { headingFont: value } })} />
-          <FontSelect label="英文字体" ariaLabel="章节英文字体" value={documentFonts.headingLatin.id} options={LATIN_FONT_OPTIONS} onChange={(value) => editor.dispatch({ type: 'setStyle', patch: { headingLatinFont: value } })} />
-          <FontSelect label="数字字体" ariaLabel="章节数字字体" value={documentFonts.headingNumber.id} options={LATIN_FONT_OPTIONS} onChange={(value) => editor.dispatch({ type: 'setStyle', patch: { headingNumberFont: value } })} />
+          <FontSelect label="中文字体" ariaLabel="章节中文字体" value={documentFonts.heading.id} options={CJK_FONT_OPTIONS} onChange={(value) => applyCustomTypography({ headingFont: value })} />
+          <FontSelect label="英文字体" ariaLabel="章节英文字体" value={documentFonts.headingLatin.id} options={LATIN_FONT_OPTIONS} onChange={(value) => applyCustomTypography({ headingLatinFont: value })} />
+          <FontSelect label="数字字体" ariaLabel="章节数字字体" value={documentFonts.headingNumber.id} options={LATIN_FONT_OPTIONS} onChange={(value) => applyCustomTypography({ headingNumberFont: value })} />
         </div>
       </section>
       <section className="border-t border-zinc-100 pt-5 dark:border-zinc-800"><h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">题目间距</h3>
-        <select aria-label="题目间距" value={questionSpacing} onChange={(event) => editor.dispatch({ type: 'setStyle', patch: { questionSpacing: event.target.value as 'compact' | 'normal' | 'relaxed' } })} className={paperFieldClass}>
+        <select aria-label="题目间距" value={questionSpacing} onChange={(event) => applyCustomTypography({ questionSpacing: event.target.value as 'compact' | 'normal' | 'relaxed' })} className={paperFieldClass}>
           <option value="compact">紧凑</option><option value="normal">标准</option><option value="relaxed">宽松</option>
         </select>
       </section>
@@ -801,7 +953,7 @@ export default function TeachingDocumentEditorPage() {
       ) : null}
 
       <div className="relative min-h-0 flex-1">
-        <section className="h-full overflow-auto">
+        <section ref={setCanvasScrollRoot} className="h-full overflow-auto">
           {canvasMode === 'a4' ? (
             <div className="p-5">
               <A4PaginationPreview
@@ -816,6 +968,11 @@ export default function TeachingDocumentEditorPage() {
                 selectedBlockId={selectedId}
                 renderVersion={renderResourceVersion}
                 onBlockSelect={selectBlock}
+                onDiagnosticNavigate={(blockId) => {
+                  // 预览本身只读；修复需回到连续编辑并打开对应卡片的跨页设置。
+                  setCanvasMode('continuous')
+                  window.requestAnimationFrame(() => selectFromOutline(blockId))
+                }}
                 editingChromeSlot={editingChromeSlot}
                 onChromeSlotEdit={openChromeSlot}
                 onPaginationState={setPaginationState}
@@ -838,6 +995,7 @@ export default function TeachingDocumentEditorPage() {
                 selectedIsBoxChild={Boolean(selected?.boxId)}
                 onSelect={selectAndShow}
                 onInsertAfter={(type, afterBlockId, headingLevel) => insertBlock(type, afterBlockId, headingLevel)}
+                onInsertBoxChild={insertBoxChild}
                 onMove={moveSelected}
                 onDuplicate={() => { if (selected && !selected.boxId) editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id }) }}
                 onDelete={deleteSelected}
@@ -846,6 +1004,8 @@ export default function TeachingDocumentEditorPage() {
                 onMoveSection={(headingId, targetHeadingId, position, mergeKey) => editor.dispatch({ type: 'moveSection', headingId, targetHeadingId, position, mergeKey })}
                 onEditQuestion={editQuestionTargetId ? () => setEditingQuestionBlockId(editQuestionTargetId) : undefined}
                 onEditorChange={editor.handleEditorChange}
+                onEditorDirty={editor.markEditorDirty}
+                onEditorFlushReady={editor.registerEditorFlush}
                 onEditorReady={editor.registerEditor}
                 onPageCountChange={setPaginatedPageCount}
                 editingChromeSlot={editingChromeSlot}
@@ -872,6 +1032,7 @@ export default function TeachingDocumentEditorPage() {
                   onEditContent={(blockId, content) => editor.dispatch({ type: 'updateBlock', blockId, patch: { content }, mergeKey: `text:${blockId}` })}
                   onEditBoxTitle={(boxId, title) => editor.dispatch({ type: 'updateBlock', blockId: boxId, patch: { title }, mergeKey: `box-title:${boxId}` })}
                   onInsertAfter={(type, afterBlockId, headingLevel) => insertBlock(type, afterBlockId, headingLevel)}
+                  onInsertBoxChild={insertBoxChild}
                   onMove={moveSelected}
                   onDuplicate={() => selected && !selected.boxId && editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id })}
                   onDelete={deleteSelected}
@@ -880,6 +1041,8 @@ export default function TeachingDocumentEditorPage() {
                   onMoveSection={(headingId, targetHeadingId, position, mergeKey) => editor.dispatch({ type: 'moveSection', headingId, targetHeadingId, position, mergeKey })}
                   onEditQuestion={editQuestionTargetId ? () => setEditingQuestionBlockId(editQuestionTargetId) : undefined}
                   onEditorChange={editor.handleEditorChange}
+                  onEditorDirty={editor.markEditorDirty}
+                  onEditorFlushReady={editor.registerEditorFlush}
                   onEditorReady={editor.registerEditor}
                 />
               </div>
@@ -895,7 +1058,7 @@ export default function TeachingDocumentEditorPage() {
           <PageSettingsDrawer
             open={chromePanelOpen}
             onClose={() => { setChromePanelOpen(false); setEditingChromeSlot(null) }}
-            printSettings={<div className="space-y-5"><section><h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">纸张与边距</h3><div className="mt-2"><PaperSettingsControl paper={sheetPaper} marginPreset={marginPreset} style={document.style} onChange={(patch) => editor.dispatch({ type: 'setStyle', patch })} /></div></section><section className="border-t border-zinc-100 pt-5 dark:border-zinc-800"><ChromeSettingsPanel printLayout={printLayout} activeSlot={editingChromeSlot} onPrintOptionChange={updatePrintOptions} onSlotChange={updateChromeSlot} onApplyTemplate={applyChromeTemplate} /></section></div>}
+            printSettings={<div className="space-y-5"><section><h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">纸张与边距</h3><div className="mt-2"><PaperSettingsControl paper={sheetPaper} marginPreset={marginPreset} style={document.style} onChange={applyCustomTypography} /></div></section><section className="border-t border-zinc-100 pt-5 dark:border-zinc-800"><ChromeSettingsPanel printLayout={printLayout} activeSlot={editingChromeSlot} onPrintOptionChange={updatePrintOptions} onSlotChange={updateChromeSlot} onApplyTemplate={applyChromeTemplate} /></section></div>}
             fontSettings={fontSettings}
             answerSettings={answerSettings}
           />
@@ -905,6 +1068,7 @@ export default function TeachingDocumentEditorPage() {
           open={outlineOpen}
           document={document}
           selectedId={selectedId}
+          activeBlockId={viewportBlockId}
           issues={editor.validation.issues}
           onClose={() => setOutlineOpen(false)}
           onSelect={selectFromOutline}
@@ -922,13 +1086,14 @@ export default function TeachingDocumentEditorPage() {
           onDuplicate={() => selected && !selected.boxId && editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id })}
           onMove={moveSelected}
           onInsertChild={(box, type) => {
-            const child = newTeachingBlock(type) as BoxChildBlock
-            editor.dispatch({ type: 'insertBoxChild', boxId: box.id, child })
-            setSelectedId(child.id)
-            if (type === 'question') setPickerTarget({ blockId: child.id })
+            insertBoxChild(type as BoxChildBlock['type'], box.id)
           }}
+          onDeleteBoxChildren={deleteBoxChildren}
+          onMergeBoxParagraphs={mergeBoxParagraphs}
           onSelect={setSelectedId}
           onUpload={editor.uploadAsset}
+          onInsertImageInRawMarkdown={insertImageInRawMarkdown}
+          onRenderTikz={editor.renderTikz}
           question={selectedQuestionResolution && !('status' in selectedQuestionResolution) ? selectedQuestionResolution : undefined}
           onQuestionLoaded={(question: QuestionItem) => setQuestionMap((current) => ({ ...current, [question.id]: question }))}
           onEditQuestion={openQuestionEditor}

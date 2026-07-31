@@ -7,22 +7,23 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react'
-import katex from 'katex'
 import 'katex/dist/katex.min.css'
-import { CornerDownRight, ImageOff, ArrowDown, ArrowUp, Copy, Trash2 } from 'lucide-react'
-import type { FigureAssetRef, FigureBlock, SpacerBlock, TeachingBlock, BoxBlock, BoxChildBlock, QuestionBlock, QuestionDisplayOptions, TeachingDocumentV1, TeachingInline, ParagraphBlock } from '@/types/teachingDocument'
+import { CornerDownRight, ImageOff, ArrowDown, ArrowUp, Copy, Trash2, Columns3, Plus, Minus } from 'lucide-react'
+import type { FigureAssetRef, FigureBlock, SpacerBlock, TeachingBlock, BoxBlock, BoxChildBlock, QuestionBlock, QuestionDisplayOptions, TeachingDocumentV1, TeachingInline, ParagraphBlock, TableBlock, TableCell } from '@/types/teachingDocument'
 import type { QuestionResolution, FigureResolution, QuestionLayoutEditor } from '../blocks/BlockRenderer'
 import { getBoxTemplateOrFallback } from '@/utils/teachingDocument/boxTemplates'
 import { createQuestionRuntimeModel } from '@/utils/teachingDocument/layout/questionRegions'
 import { BoxFragmentRenderer, QuestionRuntimeContent, QuestionPlaceholder } from '../blocks/BlockRenderer'
 import { BlockRenderer } from '../blocks/BlockRenderer'
 import { BlockInlineEditor } from '../BlockInlineEditor/BlockInlineEditor'
+import { BoxTextEditor } from './BoxTextEditor'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { DEFAULT_A4_PAPER, newTeachingBlock, sliceTeachingInlines, type PaperSpec, type PaginationResult, type PrintLayoutSpec, type BoxFragmentPaginationItem, type QuestionFragmentPaginationItem, type ParagraphBoxChildFragmentPaginationItem, type InlineRange } from '@/utils/teachingDocument'
 import { BlockInsertPoint } from '@/pages/teaching-documents/components/BlockInsertMenu'
 import { emitBoxChildSelect } from './selection'
 import { PrintChrome } from '../PrintChrome'
 import { effectiveSpacerHeightMm } from '@/utils/teachingDocument/layoutCompat'
+import { renderTeachingDocumentKatex } from '@/utils/teachingDocument/katexCache'
 import { clampFigureWidthMm } from './resizeLogic'
 import { resolveFigureLayout, type FigureLayoutPreset } from '@/utils/teachingDocument/figureLayoutPresets'
 import {
@@ -58,7 +59,9 @@ function useResolvers() {
 const PaperContext = createContext<PaperSpec>(DEFAULT_A4_PAPER)
 
 interface PaginationContextValue {
-  document: TeachingDocumentV1
+  /** 分页 chrome 只需标题与类型；不要把整篇文档放入 context，避免键入回传时重渲染全部 NodeView。 */
+  documentTitle: string
+  documentType: TeachingDocumentV1['documentType']
   pagination: PaginationResult | null
   paper: PaperSpec
   printLayout: PrintLayoutSpec
@@ -93,7 +96,7 @@ function PageTransition({ afterPageIndex, context }: { afterPageIndex: number; c
     <div className="td-page-transition-react" aria-hidden="true">
       <div style={{ height: `${blank}px` }} />
       {context.printLayout.footer.enabled ? (
-        <PrintChrome section="footer" slots={context.printLayout.footer.slots} documentTitle={context.document.title} documentType={context.document.documentType} pageNumber={afterPageIndex + 1} totalPages={context.pagination?.pages.length || 1} printLayout={context.printLayout} />
+        <PrintChrome section="footer" slots={context.printLayout.footer.slots} documentTitle={context.documentTitle} documentType={context.documentType} pageNumber={afterPageIndex + 1} totalPages={context.pagination?.pages.length || 1} printLayout={context.printLayout} />
       ) : null}
       <div
         className="td-page-transition-react-band"
@@ -112,7 +115,7 @@ function PageTransition({ afterPageIndex, context }: { afterPageIndex: number; c
         <span className="td-page-transition-top-margin" />
       </div>
       {context.printLayout.header.enabled ? (
-        <PrintChrome section="header" slots={context.printLayout.header.slots} documentTitle={context.document.title} documentType={context.document.documentType} pageNumber={afterPageIndex + 2} totalPages={context.pagination?.pages.length || 1} printLayout={context.printLayout} />
+        <PrintChrome section="header" slots={context.printLayout.header.slots} documentTitle={context.documentTitle} documentType={context.documentType} pageNumber={afterPageIndex + 2} totalPages={context.pagination?.pages.length || 1} printLayout={context.printLayout} />
       ) : null}
     </div>
   )
@@ -141,11 +144,7 @@ export function BlockMathNodeView({ node, selected }: NodeViewProps) {
   const label = String(node.attrs.label || '')
   const html = useMemo(() => {
     if (!latex) return ''
-    try {
-      return katex.renderToString(latex, { displayMode: true, throwOnError: true, strict: false })
-    } catch {
-      return ''
-    }
+    return renderTeachingDocumentKatex(latex, true)
   }, [latex])
 
   return (
@@ -163,6 +162,119 @@ export function BlockMathNodeView({ node, selected }: NodeViewProps) {
       </div>
     </NodeViewWrapper>
   )
+}
+
+// ─── Table NodeView ─────────────────────────────────────────────────────────
+
+function emptyTableCell(): TableCell {
+  return { content: [{ type: 'text', text: '' }] }
+}
+
+function parseTableRows(raw: unknown): TableCell[][] {
+  try {
+    const rows = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(rows) || !rows.length) throw new Error('empty')
+    const width = Array.isArray(rows[0]) && rows[0].length ? Math.min(12, rows[0].length) : 2
+    return rows.slice(0, 20).map((row) => Array.from({ length: width }, (_, index) => {
+      const cell = Array.isArray(row) ? row[index] : undefined
+      return cell && typeof cell === 'object' && Array.isArray((cell as TableCell).content)
+        ? { content: (cell as TableCell).content }
+        : emptyTableCell()
+    }))
+  } catch {
+    return Array.from({ length: 2 }, () => Array.from({ length: 2 }, emptyTableCell))
+  }
+}
+
+/** 表格保持为一个原子块；格内用既有 BlockInlineEditor，天然支持行内 LaTeX。 */
+export function TableNodeView({ node, selected, updateAttributes }: NodeViewProps) {
+  const blockId = String(node.attrs.blockId || '')
+  const rows = useMemo(() => parseTableRows(node.attrs.rows), [node.attrs.rows])
+  const hasHeader = node.attrs.hasHeader !== false
+  return (
+    <NodeViewWrapper className={`td-table my-5 ${selectionRing(selected)}`} data-block-id={blockId}>
+      <EditableTable blockId={blockId} rows={rows} hasHeader={hasHeader} selected={selected} onRowsChange={(next) => updateAttributes({ rows: JSON.stringify(next) })} onHeaderChange={(next) => updateAttributes({ hasHeader: next })} />
+    </NodeViewWrapper>
+  )
+}
+
+function EditableTable({
+  blockId,
+  rows,
+  hasHeader,
+  selected,
+  onRowsChange,
+  onHeaderChange,
+}: {
+  blockId: string
+  rows: TableCell[][]
+  hasHeader: boolean
+  selected: boolean
+  onRowsChange: (rows: TableCell[][]) => void
+  onHeaderChange: (hasHeader: boolean) => void
+}) {
+  const updateRows = onRowsChange
+  const updateCell = useCallback((rowIndex: number, columnIndex: number, content: TeachingInline[]) => {
+    updateRows(rows.map((row, currentRow) => currentRow === rowIndex
+      ? row.map((cell, currentColumn) => currentColumn === columnIndex ? { ...cell, content } : cell)
+      : row))
+  }, [rows, updateRows])
+  const addRow = useCallback(() => {
+    if (rows.length >= 20) return
+    updateRows([...rows, Array.from({ length: rows[0]?.length || 2 }, emptyTableCell)])
+  }, [rows, updateRows])
+  const removeRow = useCallback(() => {
+    if (rows.length <= 1) return
+    updateRows(rows.slice(0, -1))
+  }, [rows, updateRows])
+  const addColumn = useCallback(() => {
+    if ((rows[0]?.length || 0) >= 12) return
+    updateRows(rows.map((row) => [...row, emptyTableCell()]))
+  }, [rows, updateRows])
+  const removeColumn = useCallback(() => {
+    if ((rows[0]?.length || 0) <= 1) return
+    updateRows(rows.map((row) => row.slice(0, -1)))
+  }, [rows, updateRows])
+
+  return (
+    <div className="td-table my-5" data-block-id={blockId}>
+      {selected ? (
+        <div className="mb-2 flex items-center gap-1" data-print-hide="">
+          <span className="mr-1 inline-flex items-center gap-1 text-[11px] text-zinc-500"><Columns3 className="size-3.5" />表格</span>
+          <TableControl label="添加行" onClick={addRow}><Plus className="size-3" />行</TableControl>
+          <TableControl label="删除末行" onClick={removeRow} disabled={rows.length <= 1}><Minus className="size-3" />行</TableControl>
+          <TableControl label="添加列" onClick={addColumn}><Plus className="size-3" />列</TableControl>
+          <TableControl label="删除末列" onClick={removeColumn} disabled={(rows[0]?.length || 0) <= 1}><Minus className="size-3" />列</TableControl>
+          <label className="ml-2 flex items-center gap-1 text-[11px] text-zinc-500"><input type="checkbox" checked={hasHeader} onChange={(event) => onHeaderChange(event.target.checked)} />首行表头</label>
+        </div>
+      ) : null}
+      <div className="overflow-x-auto rounded-md border border-zinc-300 dark:border-zinc-700">
+        <table className="w-full table-fixed border-collapse text-sm">
+          <tbody>
+            {rows.map((row, rowIndex) => (
+              <tr key={rowIndex} className={hasHeader && rowIndex === 0 ? 'bg-zinc-50 dark:bg-zinc-900/60' : ''}>
+                {row.map((cell, columnIndex) => (
+                  <td key={columnIndex} className="border border-zinc-200 align-top dark:border-zinc-700">
+                    <BlockInlineEditor
+                      inlines={cell.content}
+                      variant="embedded"
+                      toolbar="floating"
+                      ariaLabel={`表格第 ${rowIndex + 1} 行第 ${columnIndex + 1} 列`}
+                      onChange={(content) => updateCell(rowIndex, columnIndex, content)}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function TableControl({ label, disabled, onClick, children }: { label: string; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" title={label} disabled={disabled} onClick={onClick} className="inline-flex items-center gap-0.5 rounded border border-zinc-200 px-1.5 py-1 text-[11px] text-zinc-600 hover:bg-zinc-50 disabled:opacity-35 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{children}</button>
 }
 
 // ─── Figure NodeView ─────────────────────────────────────────────────────────
@@ -192,6 +304,18 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
   const widthRatio = node.attrs.widthRatio != null ? Number(node.attrs.widthRatio) : undefined
   const caption = String(node.attrs.caption || '')
   const alt = String(node.attrs.alt || '')
+  const groupItems = useMemo<NonNullable<FigureBlock['groupItems']>>(() => {
+    try {
+      const parsed = JSON.parse(String(node.attrs.groupItems || '[]'))
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }, [node.attrs.groupItems])
+  const groupColumns = [1, 2, 3].includes(Number(node.attrs.groupColumns))
+    ? Number(node.attrs.groupColumns) as 1 | 2 | 3
+    : 2
+  const groupGapMm = Math.max(0, Number(node.attrs.groupGapMm) || 0)
 
   /** 供 effectiveFigureWidthMm 读取的最小 FigureBlock（widthMm 优先，widthRatio 回退） */
   const figureBlock = useMemo<FigureBlock>(() => ({
@@ -273,7 +397,22 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
           ))}
         </div>
       ) : null}
-      {!url || imageState === 'error' ? (
+      {groupItems.length ? (
+        <div
+          className={`grid items-start ${alignClass}`}
+          style={{
+            width: `${displayWidthMm}mm`,
+            maxWidth: '100%',
+            gridTemplateColumns: `repeat(${groupColumns}, minmax(0, 1fr))`,
+            gap: `${groupGapMm}mm`,
+          }}
+          data-figure-columns={groupColumns}
+        >
+          {groupItems.map((item) => (
+            <FigureGroupEditorItem key={item.id} item={item} resolveFigure={resolveFigure} />
+          ))}
+        </div>
+      ) : !url || imageState === 'error' ? (
         <div className="flex items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 py-8 text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/30">
           <ImageOff className="mr-2 size-5" />
           <span className="text-sm">图片资源缺失</span>
@@ -315,6 +454,33 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
         </figure>
       )}
     </NodeViewWrapper>
+  )
+}
+
+function FigureGroupEditorItem({
+  item,
+  resolveFigure,
+}: {
+  item: NonNullable<FigureBlock['groupItems']>[number]
+  resolveFigure?: (asset: FigureAssetRef) => FigureResolution
+}) {
+  const resolution = useMemo<FigureResolution>(() => {
+    try {
+      return resolveFigure ? resolveFigure(item.asset) : ''
+    } catch {
+      return { status: 'error' }
+    }
+  }, [item.asset, resolveFigure])
+  const url = typeof resolution === 'string' ? resolution : ''
+  return (
+    <figure className="min-w-0">
+      {url ? (
+        <img src={url} alt={item.alt || item.caption || '文档图片'} className="block h-auto max-h-[70vh] w-full rounded-lg border border-zinc-200 object-contain dark:border-zinc-800" />
+      ) : (
+        <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 text-xs text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/30">图片资源缺失</div>
+      )}
+      {item.caption ? <figcaption className="mt-1.5 text-center text-xs text-zinc-500">{item.caption}</figcaption> : null}
+    </figure>
   )
 }
 
@@ -575,7 +741,7 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
 
 // ─── Box NodeView ────────────────────────────────────────────────────────────
 
-const BOX_INSERTABLE_TYPES: TeachingBlock['type'][] = ['paragraph', 'blockMath', 'rawMarkdown', 'figure', 'question', 'divider', 'spacer']
+const BOX_INSERTABLE_TYPES: TeachingBlock['type'][] = ['paragraph', 'rawMarkdown', 'blockMath', 'table', 'figure', 'tikz', 'question', 'divider', 'spacer']
 
 function replaceInlineRange(inlines: TeachingInline[], range: InlineRange, replacement: TeachingInline[]): TeachingInline[] {
   const full = { start: { inlineIndex: 0 }, end: { inlineIndex: inlines.length } }
@@ -584,7 +750,7 @@ function replaceInlineRange(inlines: TeachingInline[], range: InlineRange, repla
   return [...before, ...replacement, ...after]
 }
 
-export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps) {
+export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }: NodeViewProps) {
   const { resolveQuestion, resolveFigure } = useResolvers()
   const templateId = String(node.attrs.templateId || 'concept')
   const title = String(node.attrs.title || '')
@@ -598,6 +764,8 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
     }
   }, [node.attrs.children])
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null)
+  const [focusChildId, setFocusChildId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState(false)
 
   const template = getBoxTemplateOrFallback(templateId)
   const boxBlock: BoxBlock = {
@@ -635,13 +803,82 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
     const next = [...children]
     next.splice(index + 1, 0, child)
     updateChildren(next)
+    setSelectedChildId(child.id)
+    setFocusChildId(child.type === 'paragraph' ? child.id : null)
+    // 属性面板依赖外层文档状态；下一帧再发出选中事件，确保新子块已进入该状态。
+    window.requestAnimationFrame(() => emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id }))
+  }, [boxBlock.id, children, updateChildren])
+
+  const mergeParagraphIntoPrevious = useCallback((childId: string) => {
+    const index = children.findIndex((child) => child.id === childId)
+    const current = children[index]
+    if (index <= 0 || current?.type !== 'paragraph') return
+    const previous = children[index - 1]
+    const currentHasContent = current.content.some((inline) => inline.type !== 'text' || inline.text.length > 0)
+    if (previous.type !== 'paragraph' && currentHasContent) return
+
+    const nextChildren = previous.type === 'paragraph'
+      ? children.flatMap((child, childIndex) => {
+          if (childIndex === index - 1) return [{ ...previous, content: [...previous.content, ...current.content] }]
+          if (childIndex === index) return []
+          return [child]
+        })
+      : children.filter((_, childIndex) => childIndex !== index)
+    updateChildren(nextChildren)
+    setSelectedChildId(previous.id)
+    setFocusChildId(previous.type === 'paragraph' ? previous.id : null)
+    window.requestAnimationFrame(() => emitBoxChildSelect({ blockId: previous.id, parentBlockId: boxBlock.id }))
+  }, [boxBlock.id, children, updateChildren])
+
+  const replaceParagraphGroup = useCallback((groupIds: string[], paragraphs: ParagraphBlock[]) => {
+    if (!groupIds.length || !paragraphs.length) return
+    const first = children.findIndex((child) => child.id === groupIds[0])
+    if (first < 0 || !groupIds.every((id, index) => children[first + index]?.id === id && children[first + index]?.type === 'paragraph')) return
+    updateChildren([
+      ...children.slice(0, first),
+      ...paragraphs,
+      ...children.slice(first + groupIds.length),
+    ])
   }, [children, updateChildren])
 
   const renderChild = (child: BoxChildBlock, index: number) => {
+    if (child.type === 'table') {
+      return (
+        <div
+          key={`${child.id}:${index}`}
+          className="td-box-child-editor relative"
+          data-block-id={child.id}
+          data-block-type={child.type}
+          onMouseDownCapture={(event) => event.stopPropagation()}
+          onPointerDownCapture={(event) => {
+            event.stopPropagation()
+            setSelectedChildId(child.id)
+            emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
+          }}
+          onClickCapture={(event) => {
+            event.stopPropagation()
+            setSelectedChildId(child.id)
+            emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
+          }}
+        >
+          <EditableTable
+            blockId={child.id}
+            rows={child.rows}
+            hasHeader={child.hasHeader !== false}
+            selected={selectedChildId === child.id}
+            onRowsChange={(rows) => updateChildren(children.map((item) => item.id === child.id ? { ...item, rows } as TableBlock : item))}
+            onHeaderChange={(hasHeader) => updateChildren(children.map((item) => item.id === child.id ? { ...item, hasHeader } as TableBlock : item))}
+          />
+        </div>
+      )
+    }
     if (child.type !== 'paragraph') {
       return (
         <div
           key={`${child.id}:${index}`}
+          className="td-box-child-editor relative"
+          data-block-id={child.id}
+          data-block-type={child.type}
           onMouseDownCapture={(event) => event.stopPropagation()}
           onPointerDownCapture={(event) => {
             event.stopPropagation()
@@ -678,9 +915,12 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
       <div
         key={`${child.id}:${index}`}
         className="td-box-child-editor relative"
+        data-block-id={child.id}
+        data-block-type={child.type}
         onMouseDownCapture={(event) => event.stopPropagation()}
         onPointerDownCapture={(event) => {
           event.stopPropagation()
+          setSelectedChildId(child.id)
           emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
         }}
         onClickCapture={(event) => {
@@ -693,6 +933,9 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
           variant="embedded"
           toolbar="floating"
           ariaLabel={`盒子内段落 ${index + 1}`}
+          autoFocus={focusChildId === child.id}
+          onCreateSiblingParagraph={() => insertChildAfter(child.id, 'paragraph')}
+          onBackspaceAtStart={() => mergeParagraphIntoPrevious(child.id)}
           onChange={(content) => {
             updateChildren(children.map((item) => item.id === child.id ? { ...item, content } : item))
           }}
@@ -700,6 +943,50 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
       </div>
     )
   }
+
+  const renderedContinuousChildren = useMemo(() => {
+    const slots: React.ReactNode[] = []
+    for (let index = 0; index < children.length;) {
+      const child = children[index]
+      if (child.type === 'paragraph') {
+        const group: ParagraphBlock[] = []
+        let end = index
+        while (children[end]?.type === 'paragraph') {
+          group.push(children[end] as ParagraphBlock)
+          end += 1
+        }
+        const groupIds = group.map((paragraph) => paragraph.id)
+        slots.push(
+          <div
+            key={`box-text-group:${groupIds[0]}`}
+            className="td-box-text-group relative"
+            data-box-text-group={groupIds.join(',')}
+            onMouseDownCapture={(event) => event.stopPropagation()}
+          >
+            <BoxTextEditor
+              paragraphs={group}
+              onChange={(paragraphs) => replaceParagraphGroup(groupIds, paragraphs)}
+              onActiveParagraphChange={(blockId) => {
+                setSelectedChildId(blockId)
+                emitBoxChildSelect({ blockId, parentBlockId: boxBlock.id })
+              }}
+            />
+          </div>,
+        )
+        slots.push(<BlockInsertPoint key={`box-insert:${groupIds.at(-1)}`} types={BOX_INSERTABLE_TYPES} onInsert={(type) => insertChildAfter(groupIds.at(-1), type)} />)
+        index = end
+        continue
+      }
+      slots.push(
+        <div key={`box-child-slot:${child.id}`}>
+          {renderChild(child, index)}
+          <BlockInsertPoint types={BOX_INSERTABLE_TYPES} onInsert={(type) => insertChildAfter(child.id, type)} />
+        </div>,
+      )
+      index += 1
+    }
+    return slots
+  }, [children, insertChildAfter, replaceParagraphGroup])
 
   const renderFragmentParagraph = useCallback((child: ParagraphBlock, item: ParagraphBoxChildFragmentPaginationItem) => {
     const fragmentInlines = sliceTeachingInlines(child.content, item.range).map((entry) => entry.inline)
@@ -735,6 +1022,17 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
     />
   ), [insertChildAfter])
 
+  const selectBox = useCallback(() => {
+    const position = typeof getPos === 'function' ? getPos() : undefined
+    if (typeof position !== 'number') return
+    editor.chain().focus().setNodeSelection(position).run()
+  }, [editor, getPos])
+
+  const commitTitle = useCallback((nextTitle: string) => {
+    setEditingTitle(false)
+    updateAttributes({ title: nextTitle.trim() })
+  }, [updateAttributes])
+
   return (
     <NodeViewWrapper className={`td-box my-5 ${selectionRing(selected)}`} data-block-id={boxBlock.id}>
       {boxFragments.length > 1 ? (
@@ -744,6 +1042,9 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
                 block={boxBlock}
                 item={item}
                 resolvers={{ resolveQuestion, resolveFigure }}
+                titleEditable={selected}
+                onEditBoxTitle={(_, nextTitle) => commitTitle(nextTitle)}
+                onSelectBox={selectBox}
                 renderEditableParagraph={renderFragmentParagraph}
                 renderInsertPoint={renderChildInsertPoint}
                 onSelectChild={(blockId) => emitBoxChildSelect({ blockId, parentBlockId: boxBlock.id })}
@@ -754,24 +1055,42 @@ export function BoxNodeView({ node, selected, updateAttributes }: NodeViewProps)
       ) : (
         <div className="overflow-hidden rounded-lg border" style={{ borderColor: `var(--box-${template.tone}-border)` }}>
           {(template.showHeader || title) ? (
-            <div className="flex min-w-0 items-center gap-2 px-4 py-2.5" style={{ background: `var(--box-${template.tone}-header)` }}>
-              <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">{title || template.label}</span>
+            <div className="flex min-w-0 items-center gap-2 px-4 py-2.5" style={{ background: `var(--box-${template.tone}-header)` }} onPointerDown={selectBox}>
+              {editingTitle && selected ? (
+                <input
+                  autoFocus
+                  defaultValue={title || template.label}
+                  aria-label="卡片标题"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') { event.preventDefault(); commitTitle(event.currentTarget.value) }
+                    if (event.key === 'Escape') { event.preventDefault(); setEditingTitle(false) }
+                  }}
+                  onBlur={(event) => commitTitle(event.currentTarget.value)}
+                  className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-700 outline-none dark:text-zinc-200"
+                />
+              ) : (
+                <span onDoubleClick={(event) => { event.stopPropagation(); setEditingTitle(true) }} title="单击选中卡片，双击编辑标题" className={`text-sm font-semibold text-zinc-700 dark:text-zinc-200 ${selected ? 'cursor-text rounded hover:underline' : ''}`}>{title || template.label}</span>
+              )}
             </div>
           ) : null}
           <div className="px-4 py-3" style={{ background: `var(--box-${template.tone}-body)` }}>
-            {children.length ? children.map((child, index) => (
-              <div key={`box-child-slot:${child.id}`}>
-                {renderChild(child, index)}
-                <BlockInsertPoint
-                  types={BOX_INSERTABLE_TYPES}
-                  onInsert={(type) => insertChildAfter(child.id, type)}
-                />
-              </div>
-            )) : <p className="text-sm text-zinc-400">（空盒子）</p>}
-            <BlockInsertPoint
-              types={BOX_INSERTABLE_TYPES}
-              onInsert={(type) => insertChildAfter(undefined, type)}
-            />
+            {children.length ? renderedContinuousChildren : (
+              <BlockInsertPoint
+                empty
+                emptySize="box"
+                emptyLabel="向卡片添加内容"
+                emptyDescription="点击后可添加正文、题目、公式、图片等"
+                types={BOX_INSERTABLE_TYPES}
+                onInsert={(type) => insertChildAfter(undefined, type)}
+              />
+            )}
+            {children.length ? (
+              <BlockInsertPoint
+                types={BOX_INSERTABLE_TYPES}
+                onInsert={(type) => insertChildAfter(undefined, type)}
+              />
+            ) : null}
           </div>
         </div>
       )}
@@ -874,6 +1193,30 @@ export function RawMarkdownNodeView({ node, selected }: NodeViewProps) {
       <MarkdownContent content={markdown} />
     </NodeViewWrapper>
   )
+}
+
+/** TikZ is persisted as source plus a stable SVG asset. Rendering never injects SVG markup. */
+export function TikzNodeView({ node, selected }: NodeViewProps) {
+  const { resolveFigure } = useResolvers()
+  const paper = usePaper()
+  const contentWidthMm = paperContentWidthMm(paper)
+  const assetId = String(node.attrs.svgAssetId || '')
+  const resolution = assetId && resolveFigure ? resolveFigure({ type: 'documentAsset', assetId }) : undefined
+  const url = typeof resolution === 'string' ? resolution : ''
+  const stale = !assetId || String(node.attrs.sourceHash || '') === ''
+  const layoutPreset = node.attrs.layoutPreset as FigureLayoutPreset | undefined
+  const layout = resolveFigureLayout({
+    preset: layoutPreset,
+    explicitWidthMm: node.attrs.widthMm != null ? Number(node.attrs.widthMm) : undefined,
+    legacyAlignment: String(node.attrs.alignment || 'center') as 'left' | 'center' | 'right',
+    containerWidthMm: contentWidthMm,
+  })
+  const alignClass = { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[layout.alignment]
+  const caption = String(node.attrs.caption || '')
+  return <NodeViewWrapper className={`td-figure my-4 ${alignClass} ${selectionRing(selected)}`} data-block-id={String(node.attrs.blockId || '')} style={{ width: `${layout.widthMm}mm`, maxWidth: '100%' }}>
+    {url ? <figure><img src={url} alt={String(node.attrs.alt || caption || 'TikZ 绘图')} className="block h-auto w-full rounded border border-zinc-200" />{caption ? <figcaption className="mt-1.5 text-center text-xs text-zinc-500">{caption}</figcaption> : null}</figure> : <div className="rounded border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">TikZ 源码尚未生成预览。</div>}
+    {stale ? <p className="mt-1 text-xs text-amber-700">预览已过期，请在属性面板重新生成。</p> : null}
+  </NodeViewWrapper>
 }
 
 // ─── Unknown NodeView ────────────────────────────────────────────────────────

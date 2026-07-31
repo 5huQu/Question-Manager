@@ -15,7 +15,7 @@ import {
   uploadFigure,
 } from '../../services/question-bank/items.service.js'
 import { previewQuestionAiClean as previewQuestionAiCleanService } from '../../services/question-bank/ai-cleaner.service.js'
-import { getQuestionBatchClassificationTask, startQuestionBatchClassification } from '../../services/question-bank/batch-classification.js'
+import { getActiveQuestionBatchClassificationTask, getQuestionBatchClassificationTask, startQuestionBatchClassification } from '../../services/question-bank/batch-classification.js'
 
 export function mountQuestionBankItemsRoutes(app: Express) {
   app.get('/api/question-bank/items', (req, res) => {
@@ -48,6 +48,10 @@ export function mountQuestionBankItemsRoutes(app: Express) {
     } catch (error) {
       sendRouteError(res, error)
     }
+  })
+
+  app.get('/api/question-bank/classification-tasks/active', (_req, res) => {
+    res.json({ task: getActiveQuestionBatchClassificationTask() })
   })
 
   app.get('/api/question-bank/classification-tasks/:id', (req, res) => {

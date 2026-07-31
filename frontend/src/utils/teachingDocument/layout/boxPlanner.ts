@@ -1,4 +1,4 @@
-import type { BoxBlock, ParagraphBlock, QuestionBlock } from '@/types/teachingDocument'
+import type { BoxBlock, ParagraphBlock, QuestionBlock, RawMarkdownBlock } from '@/types/teachingDocument'
 import type { BoxMeasurement } from './boxMeasurement'
 import {
   blockSourcePathKey,
@@ -9,6 +9,8 @@ import type { ParagraphMeasurement } from './paragraphMeasurement'
 import { planParagraphFragments, type ParagraphSplitOptions } from './paragraphPlanner'
 import type { QuestionMeasurement } from './questionMeasurement'
 import { planQuestionFragments } from './questionPlanner'
+import type { RawMarkdownMeasurement } from './rawMarkdownMeasurement'
+import { planRawMarkdownFragments } from './rawMarkdownPlanner'
 import type { RenderDiagnostic } from './types'
 
 export interface BoxFragmentPlan {
@@ -28,6 +30,7 @@ export function planBoxFragments(input: {
   measurement: BoxMeasurement
   paragraphMeasurements: Map<string, ParagraphMeasurement>
   questionMeasurements?: Map<string, QuestionMeasurement>
+  rawMarkdownMeasurements?: Map<string, RawMarkdownMeasurement>
   firstPageAvailableHeight: number
   pageContentHeight: number
   paragraphSplitOptions?: ParagraphSplitOptions
@@ -41,31 +44,35 @@ export function planBoxFragments(input: {
   } = input
   const diagnostics: RenderDiagnostic[] = []
   const drafts: Draft[] = [{ pageOffset: 0, childItems: [], childHeight: 0 }]
-  const endReserve = Math.max(
-    0,
-    measurement.fragmentChrome.end - measurement.fragmentChrome.middle,
-  )
-
   const availableForPage = (pageOffset: number) => (
     pageOffset === 0
       ? Math.max(0, input.firstPageAvailableHeight)
       : pageContentHeight
   )
+  const hasEarlierContent = (pageOffset: number) => drafts.some(
+    (draft) => draft.pageOffset < pageOffset && draft.childItems.length > 0,
+  )
+  // 规划阶段尚不知道某一页最终会是 single/start/middle/end。
+  // 首个非空片段可能是 single 或 start；已有前序片段后的页面只能是 middle 或
+  // end。分别预留两种情况下的最大 chrome，既避免续页装饰造成的溢出，也不额外
+  // 吃掉续页可用空间。
   const chromeForPage = (pageOffset: number) => (
-    pageOffset === 0
-      ? measurement.fragmentChrome.start
-      : measurement.fragmentChrome.middle
+    pageOffset === 0 || !hasEarlierContent(pageOffset)
+      ? Math.max(measurement.fragmentChrome.single, measurement.fragmentChrome.start)
+      : Math.max(
+        measurement.fragmentChrome.middle,
+        measurement.fragmentChrome.end,
+      )
   )
   const childCapacity = (draft: Draft) => Math.max(
     0,
     availableForPage(draft.pageOffset)
       - chromeForPage(draft.pageOffset)
-      - endReserve
       - draft.childHeight,
   )
-  const fullPageChildCapacity = Math.max(
+  const fullPageChildCapacity = () => Math.max(
     0,
-    pageContentHeight - measurement.fragmentChrome.middle - endReserve,
+    pageContentHeight - chromeForPage(currentOffset + 1),
   )
   const ensureDraft = (pageOffset: number) => {
     while (drafts.length <= pageOffset) {
@@ -82,11 +89,11 @@ export function planBoxFragments(input: {
   ) => {
     let draft = ensureDraft(currentOffset)
     if (height > childCapacity(draft) + 0.01
-      && (draft.childItems.length > 0 || height <= fullPageChildCapacity + 0.01)) {
+      && (draft.childItems.length > 0 || height <= fullPageChildCapacity() + 0.01)) {
       currentOffset += 1
       draft = ensureDraft(currentOffset)
     }
-    if (height > fullPageChildCapacity + 0.01) {
+    if (height > fullPageChildCapacity() + 0.01) {
       diagnostics.push({
         code: 'box-child-overflow',
         severity: 'error',
@@ -133,12 +140,49 @@ export function planBoxFragments(input: {
       currentOffset += 1
       draft = ensureDraft(currentOffset)
     }
-    if (child.type !== 'paragraph' && child.type !== 'question') {
+    if (child.type !== 'paragraph' && child.type !== 'question' && child.type !== 'rawMarkdown') {
       placeWholeChild(child, childIndex, childMeasurement.height)
       return
     }
     if (childMeasurement.height <= childCapacity(draft) + 0.01) {
       placeWholeChild(child, childIndex, childMeasurement.height)
+      return
+    }
+
+    if (child.type === 'rawMarkdown') {
+      const rawMeasurement = input.rawMarkdownMeasurements?.get(blockSourcePathKey(childMeasurement.sourcePath))
+      if (!rawMeasurement) {
+        diagnostics.push({
+          code: 'rawmarkdown-measurement-missing', severity: 'warning', blockId: child.id,
+          message: `盒子 ${block.id} 的混合内容子块 ${childIndex}:${child.id} 缺少安全分段测量，按整体子块保留。`,
+        })
+        placeWholeChild(child, childIndex, childMeasurement.height)
+        return
+      }
+      const plan = planRawMarkdownFragments({
+        block: child as RawMarkdownBlock,
+        measurement: rawMeasurement,
+        firstPageAvailableHeight: childCapacity(draft),
+        pageContentHeight: fullPageChildCapacity(),
+      })
+      if (!plan) {
+        placeWholeChild(child, childIndex, childMeasurement.height)
+        return
+      }
+      diagnostics.push(...plan.diagnostics)
+      const baseOffset = currentOffset
+      plan.fragments.forEach((fragment) => {
+        const pageOffset = baseOffset + fragment.pageOffset
+        const target = ensureDraft(pageOffset)
+        target.childItems.push({
+          kind: 'raw-markdown-child-fragment', sourcePath: childMeasurement.sourcePath,
+          parentBlockId: block.id, childBlockId: child.id, childIndex,
+          fragmentIndex: fragment.fragmentIndex, segmentStart: fragment.segmentStart,
+          segmentEnd: fragment.segmentEnd, continuation: fragment.continuation, height: fragment.height,
+        })
+        target.childHeight += fragment.height
+        currentOffset = Math.max(currentOffset, pageOffset)
+      })
       return
     }
 
@@ -165,7 +209,7 @@ export function planBoxFragments(input: {
         block: child as QuestionBlock,
         measurement: questionMeasurement,
         firstPageAvailableHeight: childCapacity(draft),
-        pageContentHeight: fullPageChildCapacity,
+        pageContentHeight: fullPageChildCapacity(),
         paragraphSplitOptions: input.paragraphSplitOptions,
       })
       diagnostics.push(...plan.diagnostics)
@@ -214,7 +258,7 @@ export function planBoxFragments(input: {
       block: child as ParagraphBlock,
       measurement: paragraphMeasurement,
       firstPageAvailableHeight: childCapacity(draft),
-      pageContentHeight: fullPageChildCapacity,
+      pageContentHeight: fullPageChildCapacity(),
       options: input.paragraphSplitOptions,
     })
     diagnostics.push(...plan.diagnostics)

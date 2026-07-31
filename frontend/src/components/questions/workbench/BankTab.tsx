@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, PlusSquare, Search, ShoppingBag, Tag, Trash2, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, LoaderCircle, Plus, PlusSquare, Search, ShoppingBag, Tag, Trash2, X } from 'lucide-react'
 import { questionBankApi } from '@/api/questionBank'
 import { learningTagsApi } from '@/api/learningTags'
 import { Button, Empty } from '@/components/ui'
@@ -58,6 +58,7 @@ export function BankTab({
   const [classifying, setClassifying] = useState(false)
   const [classificationStatus, setClassificationStatus] = useState('')
   const [classificationTask, setClassificationTask] = useState<QuestionBankClassificationTask | null>(null)
+  const [showClassificationProgress, setShowClassificationProgress] = useState(false)
 
   const rawItems = questionBank?.items ?? []
   const items = rawItems
@@ -105,6 +106,18 @@ export function BankTab({
     return () => window.removeEventListener('question-bank-reset-filters', handleReset)
   }, [])
 
+  useEffect(() => {
+    let active = true
+    void questionBankApi.getActiveClassificationTask()
+      .then(({ task }) => {
+        if (!active || !task) return
+        setClassificationTask(task)
+        setClassifying(true)
+      })
+      .catch(() => undefined)
+    return () => { active = false }
+  }, [])
+
   async function addToBasket(id: string) {
     if (id.startsWith('mock_')) {
       alert('已将模拟题目加入试题篮 (静态操作)')
@@ -134,6 +147,7 @@ export function BankTab({
     if (!confirmed) return
     setClassifying(true)
     setClassificationStatus('')
+    setShowClassificationProgress(true)
     try {
       const result = await questionBankApi.classifyAllItems()
       setClassificationTask(result.task)
@@ -153,7 +167,9 @@ export function BankTab({
         if (['succeeded', 'failed'].includes(task.status)) {
           window.clearInterval(timer)
           setClassifying(false)
-          setClassificationStatus(`分类完成：已更新 ${task.updated}/${task.total} 题${task.failed ? `，失败 ${task.failed} 题` : ''}。`)
+          setClassificationStatus(task.status === 'succeeded'
+            ? `分类完成：已更新 ${task.updated}/${task.total} 题。`
+            : `分类结束：已更新 ${task.updated}/${task.total} 题${task.failed ? `，失败 ${task.failed} 题` : '。'}`)
           reload()
         }
       }).catch(() => undefined)
@@ -167,11 +183,35 @@ export function BankTab({
     return () => window.removeEventListener('question-bank-start-classification', handleStartClassification)
   }, [classifyAllQuestions])
 
+  useEffect(() => {
+    const handleShowClassificationProgress = () => {
+      if (classificationTask) setShowClassificationProgress(true)
+    }
+    window.addEventListener('question-bank-show-classification-progress', handleShowClassificationProgress)
+    return () => window.removeEventListener('question-bank-show-classification-progress', handleShowClassificationProgress)
+  }, [classificationTask])
+
+  useEffect(() => {
+    if (!classificationTask) return
+    window.dispatchEvent(new CustomEvent('question-bank-classification-task-updated', { detail: { task: classificationTask } }))
+  }, [classificationTask])
+
   function selectAllCurrentPage() {
     const pageIds = items.map((item) => item.id)
     const allSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id))
     setSelectedIds(allSelected ? [] : pageIds)
   }
+
+  const taskProgress = classificationTask?.total
+    ? Math.min(100, Math.round((classificationTask.completed / classificationTask.total) * 100))
+    : 0
+  const taskState = classificationTask?.status ?? 'queued'
+  const taskStateLabel = taskState === 'queued' ? '等待启动' : taskState === 'running' ? '正在分类' : taskState === 'succeeded' ? '分类完成' : '分类异常'
+  const TaskStateIcon = taskState === 'running' || taskState === 'queued'
+    ? LoaderCircle
+    : taskState === 'succeeded'
+      ? CheckCircle2
+      : AlertTriangle
 
   return (
     <div className="mock-page-root flex h-[calc(100vh-7rem)] overflow-hidden rounded-lg border border-zinc-200 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
@@ -234,12 +274,12 @@ export function BankTab({
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4 pb-16">
-          {classificationStatus ? (
+          {classificationStatus && !showClassificationProgress ? (
             <div className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-600 shadow-xs dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
               {classificationStatus}
             </div>
           ) : null}
-          {classificationTask?.failures.length ? (
+          {classificationTask?.failures.length && !showClassificationProgress ? (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
               <div className="font-semibold">失败题目（{classificationTask.failures.length}）</div>
               <div className="mt-1 space-y-0.5">{classificationTask.failures.slice(0, 8).map((failure) => <div key={failure.id} className="truncate">{failure.id}：{failure.error}</div>)}</div>
@@ -278,6 +318,55 @@ export function BankTab({
           {error ? <Empty text={`题目读取失败：${error}`} /> : null}
           {!items.length && !loading && !error ? <Empty text={hasActiveFilters ? '未找到匹配筛选条件的题目' : '题库中暂无题目'} /> : null}
         </div>
+
+        {showClassificationProgress && classificationTask ? (
+          <div className="absolute inset-0 z-30 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-12 sm:items-center sm:p-6">
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="classification-progress-title"
+              className="w-full max-w-lg overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-950"
+            >
+              <header className="flex items-start justify-between gap-4 border-b border-zinc-100 bg-zinc-50/50 px-5 py-4 dark:border-zinc-900 dark:bg-zinc-900/10">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <TaskStateIcon className={`size-4 shrink-0 ${taskState === 'running' || taskState === 'queued' ? 'animate-spin text-zinc-500' : taskState === 'succeeded' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`} />
+                  <div>
+                    <h2 id="classification-progress-title" className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">题库数据分类</h2>
+                    <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{taskStateLabel} · 任务 {classificationTask.id}</p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setShowClassificationProgress(false)} className="rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50" aria-label="关闭分类进度">
+                  <X className="size-4" />
+                </button>
+              </header>
+
+              <div className="space-y-5 p-5">
+                <div>
+                  <div className="mb-2 flex items-end justify-between gap-3">
+                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">已处理 {classificationTask.completed} / {classificationTask.total || '…'} 题</span>
+                    <span className="font-mono text-xs font-semibold text-zinc-900 dark:text-zinc-50">{classificationTask.total ? `${taskProgress}%` : '准备中'}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                    <div className={`h-full rounded-full transition-all duration-500 ${taskState === 'failed' ? 'bg-red-500' : taskState === 'succeeded' ? 'bg-emerald-500' : 'bg-zinc-900 dark:bg-zinc-100'}`} style={{ width: `${taskState === 'succeeded' ? 100 : taskProgress}%` }} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-800"><p className="text-[11px] text-zinc-500">待处理</p><p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{Math.max(0, classificationTask.total - classificationTask.completed)}</p></div>
+                  <div className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-800"><p className="text-[11px] text-zinc-500">已更新</p><p className="mt-1 text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">{classificationTask.updated}</p></div>
+                  <div className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-800"><p className="text-[11px] text-zinc-500">失败</p><p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{classificationTask.failed}</p></div>
+                </div>
+
+                {classificationTask.error ? <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50/30 p-3 text-xs text-red-800 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span>{classificationTask.error}</span></div> : null}
+                {classificationTask.failures.length ? <div className="rounded-lg border border-red-200 bg-red-50/30 p-3 text-xs text-red-800 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400"><p className="font-semibold">失败题目（{classificationTask.failures.length}）</p><div className="mt-1.5 space-y-1">{classificationTask.failures.slice(0, 5).map((failure) => <p key={failure.id} className="truncate">{failure.id}：{failure.error}</p>)}</div>{classificationTask.failures.length > 5 ? <p className="mt-1.5 text-[11px]">其余失败题目可按 ID 搜索查看。</p> : null}</div> : null}
+              </div>
+
+              <footer className="flex justify-end border-t border-zinc-100 bg-zinc-50/10 px-5 py-3 dark:border-zinc-900 dark:bg-zinc-900/5">
+                <Button size="sm" variant="outline" onClick={() => setShowClassificationProgress(false)}>{['queued', 'running'].includes(taskState) ? '后台继续执行' : '关闭'}</Button>
+              </footer>
+            </section>
+          </div>
+        ) : null}
 
         {/* Unified Bottom Footer Control Center */}
         <footer className="absolute bottom-0 left-0 right-0 z-10 flex h-12 items-center border-t border-zinc-200/80 bg-white/70 px-4 backdrop-blur-md dark:border-zinc-800/80 dark:bg-zinc-950/70 select-none text-xs">

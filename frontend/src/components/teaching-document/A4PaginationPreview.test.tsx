@@ -303,6 +303,43 @@ describe('A4PaginationPreview', () => {
     expect(selected).toEqual(['child-b'])
   })
 
+  it('explains an allow-box overflow without incorrectly telling the user it is set to avoid', async () => {
+    const container = document.createElement('div')
+    root = createRoot(container)
+    const boxDocument: TeachingDocumentV1 = {
+      ...documentWith([]),
+      content: [{
+        type: 'box',
+        id: 'allow-box',
+        templateId: 'method',
+        breakBehavior: 'allow',
+        children: [{ type: 'paragraph', id: 'child', content: [{ type: 'text', text: '甲' }] }],
+      }],
+    }
+    const oversizedGeometry: GeometryAdapter = {
+      measure(element) {
+        if (element.matches('[data-teaching-document-header]')) return { width: 600, height: 0, top: 0, bottom: 0 }
+        const childIndex = element.getAttribute('data-teaching-child-index')
+        const height = childIndex === null ? 1500 : 1470
+        return { width: 600, height, top: 0, bottom: height }
+      },
+    }
+
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={boxDocument}
+          geometryAdapter={oversizedGeometry}
+          boxGeometryAdapter={boxGeometry}
+          readinessWait={readinessWait}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('已启用跨页拆分')
+    expect(container.textContent).not.toContain('被设置为“不拆开”')
+  })
+
   it('renders a long question as source-backed regions and selects the source question', async () => {
     const selected: string[] = []
     const container = document.createElement('div')

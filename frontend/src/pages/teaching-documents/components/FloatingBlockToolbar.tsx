@@ -77,7 +77,10 @@ export function FloatingBlockToolbar(props: {
           {props.showTextFormatting && props.textEditor ? (
             <>
               <BlockStyleControl editor={props.textEditor} />
-              <InlineFormattingControls editor={props.textEditor} />
+              <InlineFormattingControls
+                editor={props.textEditor}
+                inheritedFontLabel={selectedTextBlockFontLabel(props.textEditor)}
+              />
               <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
             </>
           ) : null}
@@ -97,6 +100,20 @@ export function FloatingBlockToolbar(props: {
     </AnimatePresence>,
     document.body,
   )
+}
+
+/**
+ * 工具栏编辑的是文字的“局部覆盖”。没有覆盖时应明确说明会继承文档级的
+ * 正文/章节字体，避免与右侧“字体与题距”的全局设置混淆。
+ */
+function selectedTextBlockFontLabel(editor: Editor) {
+  const { $from } = editor.state.selection
+  for (let depth = $from.depth; depth >= 1; depth -= 1) {
+    const node = $from.node(depth)
+    if (node.type.name === 'docHeading') return '继承章节字体'
+    if (node.type.name === 'docParagraph') return '继承正文字体'
+  }
+  return '继承文档字体'
 }
 
 /** 文本对象的块级样式：对应属性面板里的“章节层级”，不与行内字体混淆。 */

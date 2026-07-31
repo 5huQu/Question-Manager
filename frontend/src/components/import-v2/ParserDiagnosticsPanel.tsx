@@ -1,5 +1,11 @@
 import { AlertTriangle, CheckCircle2, Info, ListChecks, LoaderCircle } from 'lucide-react'
-import type { CandidateParsePreview, ImportFlowV2ParserConfig, ParserDiagnostic, ParserPreviewResponse } from '@/api/importV2'
+import type {
+  CandidateParsePreview,
+  ImportFlowV2ParserConfig,
+  ImportParserPreset,
+  ParserDiagnostic,
+  ParserPreviewResponse,
+} from '@/api/importV2'
 import { Badge } from '@/components/ui'
 import { parserDiagnosticLabel } from '@/utils/importDiagnostics'
 import { ParserStrategyControls } from './ParserStrategyControls'
@@ -23,13 +29,26 @@ function previewText(value: string) {
 type ParserDiagnosticsPanelProps = {
   preview: ParserPreviewResponse | null
   config: ImportFlowV2ParserConfig | null
+  presets: ImportParserPreset[]
+  selectedPresetId: string
   loading?: boolean
   focusQuestionNo?: string
   onQuestionSelect?: (questionNo: string) => void
+  onPresetChange: (presetId: string) => void
   onConfigChange: (config: ImportFlowV2ParserConfig) => void
 }
 
-export function ParserDiagnosticsPanel({ preview, config, loading, focusQuestionNo, onQuestionSelect, onConfigChange }: ParserDiagnosticsPanelProps) {
+export function ParserDiagnosticsPanel({
+  preview,
+  config,
+  presets,
+  selectedPresetId,
+  loading,
+  focusQuestionNo,
+  onQuestionSelect,
+  onPresetChange,
+  onConfigChange,
+}: ParserDiagnosticsPanelProps) {
   const diagnostics = preview?.diagnostics || []
   const focusedPreview = focusQuestionNo
     ? preview?.candidatePreviews.find((item) => item.questionNo === focusQuestionNo)
@@ -49,7 +68,14 @@ export function ParserDiagnosticsPanel({ preview, config, loading, focusQuestion
           </div>
           {loading ? <LoaderCircle className="size-4 animate-spin text-zinc-400" /> : null}
         </div>
-        <ParserStrategyControls config={config} loading={loading} onChange={onConfigChange} />
+        <ParserStrategyControls
+          config={config}
+          presets={presets}
+          selectedPresetId={selectedPresetId}
+          loading={loading}
+          onPresetChange={onPresetChange}
+          onChange={onConfigChange}
+        />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">

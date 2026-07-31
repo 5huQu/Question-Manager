@@ -3,12 +3,12 @@
  * hover 时在内容块之间显示 "+" 按钮，点击弹出类型选择面板
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   Box, CornerDownRight, Heading, Image, Minus, Plus, FileQuestion,
-  PilcrowLeft, TextCursorInput, FileCode2, ScissorsLineDashed,
+  PilcrowLeft, TextCursorInput, FileCode2, ScissorsLineDashed, Spline,
 } from 'lucide-react'
 import type { TeachingBlock } from '@/types/teachingDocument'
 import { springQuick } from '@/components/teaching-document/motion'
@@ -21,6 +21,7 @@ export const TYPE_ICONS: Partial<Record<TeachingBlock['type'], typeof Plus>> = {
   box: Box,
   question: FileQuestion,
   figure: Image,
+  tikz: Spline,
   divider: Minus,
   spacer: ScissorsLineDashed,
   pageBreak: CornerDownRight,
@@ -94,6 +95,13 @@ export function BlockInsertPoint(props: {
   types?: TeachingBlock['type'][]
   /** 空文档使用大面积可点击的虚线插入区，复用同一选择菜单。 */
   empty?: boolean
+  /** 空盒子使用更紧凑、语义明确的内部插入区。 */
+  emptySize?: 'document' | 'box'
+  emptyLabel?: string
+  emptyDescription?: string
+  /** 选中对象后，将插入点贴在该对象下方，而不是放在整份编辑器末尾。 */
+  anchorBlockId?: string
+  anchorRoot?: HTMLElement | null
 }) {
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
@@ -101,6 +109,7 @@ export function BlockInsertPoint(props: {
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const reduced = useReducedMotion()
+  const [blockAnchor, setBlockAnchor] = useState<{ left: number; top: number; width: number } | null>(null)
 
   // 以“+”按钮的视口坐标为锚点，供 portal 菜单 fixed 定位
   const reposition = useCallback(() => {
@@ -133,6 +142,36 @@ export function BlockInsertPoint(props: {
     }
   }, [open, reposition])
 
+  // 文档级编辑器只有一个 ProseMirror 根节点，不能把插入点直接插进每一个
+  // 节点之间；因此将轻量的“虚线 +”锚到真实对象的下边缘。
+  useLayoutEffect(() => {
+    if (!props.anchorBlockId || !props.anchorRoot) {
+      setBlockAnchor(null)
+      return
+    }
+    const update = () => {
+      const block = props.anchorRoot?.querySelector<HTMLElement>(
+        `[data-block-id="${CSS.escape(props.anchorBlockId!)}"]`,
+      )
+      if (!block) {
+        setBlockAnchor(null)
+        return
+      }
+      const rect = block.getBoundingClientRect()
+      setBlockAnchor({ left: rect.left, top: rect.bottom + 3, width: rect.width })
+    }
+    update()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
+    observer?.observe(props.anchorRoot)
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [props.anchorBlockId, props.anchorRoot])
+
   const menu = createPortal(
     <AnimatePresence>
       {open ? (
@@ -153,23 +192,52 @@ export function BlockInsertPoint(props: {
   )
 
   if (props.empty) {
+    const compact = props.emptySize === 'box'
     return (
       <div ref={anchorRef} className="relative">
         <button
           ref={buttonRef}
           type="button"
           onClick={toggleOpen}
-          className="group/empty-insert flex min-h-72 w-full flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50/40 px-6 py-12 text-center text-zinc-500 transition-colors hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/10 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/30 dark:hover:text-zinc-200"
+          className={`group/empty-insert flex w-full flex-col items-center justify-center border border-dashed border-zinc-300 bg-zinc-50/40 text-center text-zinc-500 transition-colors hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900/10 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/30 dark:hover:text-zinc-200 ${compact ? 'min-h-28 rounded-md px-4 py-5' : 'min-h-72 rounded-xl px-6 py-12'}`}
           title="点击插入内容"
         >
-          <span className="mb-3 flex size-9 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-400 transition-colors group-hover/empty-insert:border-zinc-400 group-hover/empty-insert:text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:group-hover/empty-insert:border-zinc-600 dark:group-hover/empty-insert:text-zinc-200">
-            <Plus className="size-4" />
+          <span className={`flex items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-400 transition-colors group-hover/empty-insert:border-zinc-400 group-hover/empty-insert:text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:group-hover/empty-insert:border-zinc-600 dark:group-hover/empty-insert:text-zinc-200 ${compact ? 'mb-2 size-8' : 'mb-3 size-9'}`}>
+            <Plus className={compact ? 'size-3.5' : 'size-4'} />
           </span>
-          <span className="text-sm font-medium">点击插入第一块内容</span>
-          <span className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">可插入章节、正文、题目、公式、图片等内容</span>
+          <span className={`${compact ? 'text-[13px]' : 'text-sm'} font-medium`}>{props.emptyLabel || '点击插入第一块内容'}</span>
+          <span className={`${compact ? 'mt-0.5 text-[11px]' : 'mt-1 text-xs'} text-zinc-400 dark:text-zinc-500`}>{props.emptyDescription || '可插入章节、正文、题目、公式、图片等内容'}</span>
         </button>
         {menu}
       </div>
+    )
+  }
+
+  if (props.anchorBlockId) {
+    if (!blockAnchor) return menu
+    return (
+      <>
+        {createPortal(
+          <div
+            ref={anchorRef}
+            className="group/anchored-insert fixed z-40 flex h-7 items-center justify-center"
+            style={{ left: blockAnchor.left, top: blockAnchor.top, width: blockAnchor.width }}
+          >
+            <span className="pointer-events-none absolute inset-x-2 top-1/2 border-t border-dashed border-zinc-300 transition-colors group-hover/anchored-insert:border-zinc-400 dark:border-zinc-700 dark:group-hover/anchored-insert:border-zinc-600" />
+            <button
+              ref={buttonRef}
+              type="button"
+              onClick={toggleOpen}
+              className="relative z-10 flex size-6 items-center justify-center rounded-full border border-dashed border-zinc-300 bg-white text-zinc-500 shadow-sm transition-colors hover:border-zinc-500 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:text-zinc-100"
+              title="在此对象后插入内容"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          </div>,
+          document.body,
+        )}
+        {menu}
+      </>
     )
   }
 

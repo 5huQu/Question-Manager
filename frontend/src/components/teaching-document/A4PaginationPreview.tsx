@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { AlertTriangle, LoaderCircle } from 'lucide-react'
+import { AlertTriangle, LoaderCircle, MapPin } from 'lucide-react'
 import type { FigureAssetRef, TeachingDocumentV1 } from '@/types/teachingDocument'
+import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
   resolveDocumentPaper,
   measureTeachingDocumentBoxes,
@@ -8,6 +9,8 @@ import {
   measureTeachingDocumentParagraphs,
   measureTeachingDocumentQuestions,
   measureBoxChildQuestions,
+  measureBoxChildRawMarkdowns,
+  measuredChoiceLayoutOverrides,
   paginateTeachingDocument,
   createDefaultPrintLayout,
   effectivePaperMetrics,
@@ -66,6 +69,8 @@ export interface A4PaginationPreviewProps {
   selectedBlockId?: string
   renderVersion?: string
   onBlockSelect?: (blockId: string, pageIndex: number) => void
+  /** 诊断的明确修复入口；例如切回编辑模式并打开对应块的属性。 */
+  onDiagnosticNavigate?: (blockId: string, pageIndex: number) => void
   editingChromeSlot?: { section: 'header' | 'footer'; slot: import('@/types/teachingDocument').PrintChromeSlotPosition } | null
   onChromeSlotEdit?: (section: 'header' | 'footer', slot: import('@/types/teachingDocument').PrintChromeSlotPosition) => void
   /** 分页状态变化回调，供外部获取 pagination/readiness/generation */
@@ -90,6 +95,7 @@ export function A4PaginationPreview({
   selectedBlockId,
   renderVersion = '',
   onBlockSelect,
+  onDiagnosticNavigate,
   editingChromeSlot,
   onChromeSlotEdit,
   onPaginationState,
@@ -112,6 +118,10 @@ export function A4PaginationPreview({
   const [pagination, setPagination] = useState<PaginationResult | null>(null)
   const [measurementGeneration, setMeasurementGeneration] = useState(0)
   const [paragraphLineCount, setParagraphLineCount] = useState(0)
+  const [choiceLayoutOverrides, setChoiceLayoutOverrides] = useState<ChoiceLayoutOverrides>({})
+  useEffect(() => {
+    setChoiceLayoutOverrides((current) => Object.keys(current).length ? {} : current)
+  }, [document, renderVersion])
   const printLayout = useMemo(
     () => printLayoutProp ?? createDefaultPrintLayout(paper),
     [printLayoutProp, paper],
@@ -138,6 +148,11 @@ export function A4PaginationPreview({
       .then((nextReadiness) => {
         if (controller.signal.aborted || generation !== generationRef.current) return
         setReadiness(nextReadiness)
+        const measuredLayouts = measuredChoiceLayoutOverrides(root, choiceLayoutOverrides)
+        if (!choiceLayoutOverridesEqual(measuredLayouts, choiceLayoutOverrides)) {
+          setChoiceLayoutOverrides(measuredLayouts)
+          return
+        }
         const measurement = measureTeachingDocument(root, document, geometryAdapter)
         const paragraphMeasurements = measureTeachingDocumentParagraphs(root, document, paragraphGeometryAdapter)
         const boxMeasurements = measureTeachingDocumentBoxes(
@@ -154,6 +169,7 @@ export function A4PaginationPreview({
           geometryAdapter,
           paragraphGeometryAdapter,
           questionGeometryAdapter,
+          choiceLayoutOverrides,
         )
         const boxChildQuestionMeasurements = measureBoxChildQuestions(
           root,
@@ -163,7 +179,9 @@ export function A4PaginationPreview({
           geometryAdapter,
           paragraphGeometryAdapter,
           questionGeometryAdapter,
+          choiceLayoutOverrides,
         )
+        const boxChildRawMarkdownMeasurements = measureBoxChildRawMarkdowns(root, document)
         measurement.diagnostics.push(...nextReadiness.diagnostics)
         if (controller.signal.aborted || generation !== generationRef.current) return
         setParagraphLineCount(paragraphMeasurements.reduce((total, paragraph) => total + paragraph.lines.length, 0))
@@ -175,6 +193,7 @@ export function A4PaginationPreview({
           boxMeasurements,
           questionMeasurements,
           boxChildQuestionMeasurements,
+          boxChildRawMarkdownMeasurements,
           paper,
           metrics,
           documentHeaderSpanColumns: spread ? 2 : 1,
@@ -201,7 +220,7 @@ export function A4PaginationPreview({
       })
 
     return () => controller.abort()
-  }, [boxGeometryAdapter, document, fontVars, geometryAdapter, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion, spread])
+  }, [boxGeometryAdapter, choiceLayoutOverrides, document, fontVars, geometryAdapter, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion, spread])
 
   const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure'> = {
     resolveQuestion,
@@ -234,6 +253,19 @@ export function A4PaginationPreview({
     }, 0),
     0,
   ) || 0
+  const diagnosticGuide = (diagnostic: import('@/utils/teachingDocument').RenderDiagnostic) => {
+    if (diagnostic.code === 'box-overflow') {
+      const box = document.content.find((block) => block.id === diagnostic.blockId && block.type === 'box')
+      if (box?.type === 'box' && box.breakBehavior === 'avoid') {
+        return '该知识卡片被设置为“不拆开”，且自身高度已超过一页的可用内容区。定位后可在右侧「高级 → 跨页方式」改为“自动”或“允许拆散”；也可以精简或拆分卡片内容。'
+      }
+      return '该知识卡片已启用跨页拆分，但其中一个分页片段仍超过页面。点击“定位并修复”可查看对应内容；重点检查无法继续拆分的图片、公式或表格。'
+    }
+    if (diagnostic.code === 'box-child-overflow') return '该知识卡片已启用跨页拆分，但这个子内容本身无法继续拆开。定位后可缩小图片/公式、拆分表格，或把内容拆成多张卡片。'
+    if (diagnostic.code === 'table-overflow') return '定位后可缩短表格内容、拆分为多张表，或调整页面设置。'
+    if (diagnostic.code === 'rawmarkdown-overflow') return '定位后可拆分该段 Markdown 内容，或缩短其中不可拆分的表格。'
+    return '点击定位到对应内容后，可在右侧属性面板调整该块或修改正文。'
+  }
 
   return (
     <div
@@ -255,6 +287,8 @@ export function A4PaginationPreview({
             {...rendererProps}
             eagerImages
             surface="paper"
+            choiceLayoutOverrides={choiceLayoutOverrides}
+            probeChoiceLayouts
           />
         </div>
       </div>
@@ -289,14 +323,26 @@ export function A4PaginationPreview({
       {pagination?.diagnostics.length ? (
         <div className="mb-3 max-h-28 overflow-auto rounded-lg border border-amber-200 bg-amber-50/40 p-2 dark:border-amber-900/50 dark:bg-amber-950/20">
           {pagination.diagnostics.slice(0, 20).map((diagnostic, index) => (
-            <button
-              type="button"
+            <div
               key={`${diagnostic.code}:${diagnostic.blockId || ''}:${diagnostic.pageIndex ?? ''}:${index}`}
-              onClick={() => diagnostic.blockId && onBlockSelect?.(diagnostic.blockId, diagnostic.pageIndex ?? 0)}
-              className="block w-full rounded px-2 py-1 text-left text-[11px] text-amber-900 hover:bg-amber-100/70 dark:text-amber-300 dark:hover:bg-amber-950/40"
+              className="flex items-start gap-2 rounded px-2 py-1.5 text-[11px] text-amber-900 dark:text-amber-300"
             >
-              [{diagnostic.code}] {diagnostic.message}
-            </button>
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">{diagnostic.code === 'box-overflow' ? '知识卡片无法完整放入单页' : `[${diagnostic.code}]`}</p>
+                <p className="mt-0.5">{diagnostic.message}</p>
+                <p className="mt-1 text-amber-800/80 dark:text-amber-300/80">{diagnosticGuide(diagnostic)}</p>
+              </div>
+              {diagnostic.blockId ? (
+                <button
+                  type="button"
+                  onClick={() => (onDiagnosticNavigate || onBlockSelect)?.(diagnostic.blockId!, diagnostic.pageIndex ?? 0)}
+                  className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-300 bg-white px-2 py-1 text-[11px] font-medium text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/60"
+                >
+                  <MapPin className="size-3" />定位并修复
+                </button>
+              ) : null}
+            </div>
           ))}
         </div>
       ) : null}
@@ -322,6 +368,7 @@ export function A4PaginationPreview({
                 printLayout={printLayout}
                 pageProps={{
                   resolvers: rendererProps,
+                  choiceLayoutOverrides,
                   selectedBlockId,
                   overflowBlockIds: overflowIdsByPage.get(leftPage.index),
                   editingChromeSlot,
@@ -349,6 +396,7 @@ export function A4PaginationPreview({
               printLayout={printLayout}
               totalPages={pagination?.pages.length ?? 0}
               resolvers={rendererProps}
+              choiceLayoutOverrides={choiceLayoutOverrides}
             selectedBlockId={selectedBlockId}
             overflowBlockIds={overflowIdsByPage.get(page.index)}
             editingChromeSlot={editingChromeSlot}

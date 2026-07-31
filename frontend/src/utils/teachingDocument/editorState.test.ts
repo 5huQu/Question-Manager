@@ -4,6 +4,7 @@ import {
   applyTeachingDocumentCommand,
   createTeachingDocumentHistory,
   executeTeachingDocumentCommand,
+  blocksForRawMarkdownFigureInsertion,
   newTeachingBlock,
   redoTeachingDocument,
   undoTeachingDocument,
@@ -21,6 +22,15 @@ const baseDocument: TeachingDocumentV1 = {
 }
 
 describe('TeachingDocument editor state', () => {
+  it('splits mixed Markdown at the cursor and inserts one independent figure', () => {
+    const markdown = '第一段\n\n第二段'
+    const { blocks, figure } = blocksForRawMarkdownFigureInsertion(markdown, markdown.indexOf('第二段'), 'asset-1')
+    expect(blocks.map((block) => block.type)).toEqual(['rawMarkdown', 'figure', 'rawMarkdown'])
+    expect(blocks[0]).toMatchObject({ type: 'rawMarkdown', markdown: '第一段' })
+    expect(figure.asset).toEqual({ type: 'documentAsset', assetId: 'asset-1' })
+    expect(blocks[2]).toMatchObject({ type: 'rawMarkdown', markdown: '第二段' })
+  })
+
   it('assigns document-order numbers to uncustomized questions', () => {
     const first = { ...newTeachingBlock('question'), questionId: 'bank-19' } as TeachingBlock
     const second = { ...newTeachingBlock('question'), questionId: 'bank-3' } as TeachingBlock
@@ -85,6 +95,36 @@ describe('TeachingDocument editor state', () => {
     expect(moved.content[0]).toMatchObject({ type: 'box', children: [{ id: divider.id }, { id: paragraph.id }] })
     const removed = applyTeachingDocumentCommand(moved, { type: 'deleteBoxChild', boxId: 'box1', childId: paragraph.id })
     expect(removed.content[0]).toMatchObject({ type: 'box', children: [{ id: divider.id }] })
+  })
+
+  it('deletes multiple card children atomically and merges a contiguous paragraph range', () => {
+    const document: TeachingDocumentV1 = {
+      ...baseDocument,
+      content: [{
+        type: 'box', id: 'box1', templateId: 'concept', breakBehavior: 'auto', children: [
+          { type: 'paragraph', id: 'p1', content: [{ type: 'text', text: '第一段' }] },
+          { type: 'paragraph', id: 'p2', content: [{ type: 'text', text: '第二段' }] },
+          { type: 'blockMath', id: 'm1', latex: 'x=1' },
+        ],
+      }],
+    }
+    const deleted = applyTeachingDocumentCommand(document, {
+      type: 'deleteBoxChildren', boxId: 'box1', childIds: ['p1', 'p2'],
+    })
+    expect(deleted.content[0]).toMatchObject({ type: 'box', children: [{ id: 'm1' }] })
+    const history = executeTeachingDocumentCommand(createTeachingDocumentHistory(document), {
+      type: 'deleteBoxChildren', boxId: 'box1', childIds: ['p1', 'p2'],
+    })
+    expect(undoTeachingDocument(history).document).toEqual(document)
+
+    const replacement: BoxChildBlock = { type: 'rawMarkdown', id: 'merged', markdown: '第一段\n\n第二段', reason: 'user-inserted' }
+    const merged = applyTeachingDocumentCommand(document, {
+      type: 'replaceBoxChildRange', boxId: 'box1', childIds: ['p1', 'p2'], replacement,
+    })
+    expect(merged.content[0]).toMatchObject({ type: 'box', children: [{ id: 'merged' }, { id: 'm1' }] })
+    expect(applyTeachingDocumentCommand(document, {
+      type: 'replaceBoxChildRange', boxId: 'box1', childIds: ['p1', 'm1'], replacement,
+    })).toBe(document)
   })
 
   it('allows Markdown content as a box child and replaces a formula child with converted content', () => {

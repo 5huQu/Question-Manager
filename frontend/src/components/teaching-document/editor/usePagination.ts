@@ -16,9 +16,12 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
+import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
   effectivePaperMetrics,
   measureBoxChildQuestions,
+  measureBoxChildRawMarkdowns,
+  measuredChoiceLayoutOverrides,
   measureTeachingDocument,
   measureTeachingDocumentBoxes,
   measureTeachingDocumentParagraphs,
@@ -77,6 +80,8 @@ export interface UsePaginationResult {
   paragraphLineCount: number
   /** 分页结果是否属于当前依赖（即最近一轮测量已完成）。 */
   settled: boolean
+  /** 已由真实 DOM 宽度确认的题目选项列数。 */
+  choiceLayoutOverrides: ChoiceLayoutOverrides
 }
 
 export function usePagination(options: UsePaginationOptions): UsePaginationResult {
@@ -105,6 +110,11 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
   const [generation, setGeneration] = useState(0)
   const [paragraphLineCount, setParagraphLineCount] = useState(0)
   const [settled, setSettled] = useState(false)
+  const [choiceLayoutOverrides, setChoiceLayoutOverrides] = useState<ChoiceLayoutOverrides>({})
+
+  useEffect(() => {
+    setChoiceLayoutOverrides((current) => Object.keys(current).length ? {} : current)
+  }, [document, renderVersion])
 
   useEffect(() => {
     if (!measureRoot) return
@@ -128,6 +138,12 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
           if (controller.signal.aborted || currentGeneration !== generationRef.current) return
           setReadiness(nextReadiness)
 
+          const measuredLayouts = measuredChoiceLayoutOverrides(measureRoot, choiceLayoutOverrides)
+          if (!choiceLayoutOverridesEqual(measuredLayouts, choiceLayoutOverrides)) {
+            setChoiceLayoutOverrides(measuredLayouts)
+            return
+          }
+
           const measurement = measureTeachingDocument(measureRoot, document, geometryAdapter)
           const paragraphMeasurements = measureTeachingDocumentParagraphs(
             measureRoot,
@@ -148,6 +164,7 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
             geometryAdapter,
             paragraphGeometryAdapter,
             questionGeometryAdapter,
+            choiceLayoutOverrides,
           )
           const boxChildQuestionMeasurements = measureBoxChildQuestions(
             measureRoot,
@@ -157,7 +174,9 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
             geometryAdapter,
             paragraphGeometryAdapter,
             questionGeometryAdapter,
+            choiceLayoutOverrides,
           )
+          const boxChildRawMarkdownMeasurements = measureBoxChildRawMarkdowns(measureRoot, document)
           measurement.diagnostics.push(...nextReadiness.diagnostics)
           if (controller.signal.aborted || currentGeneration !== generationRef.current) return
 
@@ -171,6 +190,7 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
             boxMeasurements,
             questionMeasurements,
             boxChildQuestionMeasurements,
+            boxChildRawMarkdownMeasurements,
             paper,
             metrics,
           })
@@ -216,7 +236,8 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     boxGeometryAdapter,
     questionGeometryAdapter,
     readinessWait,
+    choiceLayoutOverrides,
   ])
 
-  return { pagination, readiness, generation, paragraphLineCount, settled }
+  return { pagination, readiness, generation, paragraphLineCount, settled, choiceLayoutOverrides }
 }

@@ -3,7 +3,9 @@ import { Braces, FileText, ListPlus, LoaderCircle, PencilLine, Save, X } from 'l
 import {
   importV2Api,
   type ImportFlowV2ParserConfig,
+  type ImportParserPreset,
   type MarkdownPreviewResponse,
+  type ParseCandidatesRequest,
   type ParserPreviewResponse,
 } from '@/api/importV2'
 import { Button } from '@/components/ui'
@@ -49,7 +51,10 @@ type MarkdownStructurePreviewDialogProps = {
   focusKind?: FocusKind
   title?: string
   applying?: boolean
-  onApplyConfig?: (config: ImportFlowV2ParserConfig) => void | Promise<unknown>
+  parserPresets?: ImportParserPreset[]
+  selectedParserPresetId?: string
+  onSelectedParserPresetChange?: (presetId: string) => void
+  onApplyParserRequest?: (request: ParseCandidatesRequest) => void | Promise<unknown>
   onClose: () => void
 }
 
@@ -63,12 +68,16 @@ export function MarkdownStructurePreviewDialog({
   focusKind,
   title,
   applying,
-  onApplyConfig,
+  parserPresets = [],
+  selectedParserPresetId = '',
+  onSelectedParserPresetChange,
+  onApplyParserRequest,
   onClose,
 }: MarkdownStructurePreviewDialogProps) {
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewResponse | null>(null)
   const [parserPreview, setParserPreview] = useState<ParserPreviewResponse | null>(null)
   const [workingConfig, setWorkingConfig] = useState<ImportFlowV2ParserConfig | null>(null)
+  const [workingPresetId, setWorkingPresetId] = useState(selectedParserPresetId)
   const [loading, setLoading] = useState(false)
   const [parserLoading, setParserLoading] = useState(false)
   const [savingMarkdown, setSavingMarkdown] = useState(false)
@@ -109,6 +118,7 @@ export function MarkdownStructurePreviewDialog({
       {index + 1}
     </div>
   )), [markdownLineCount])
+  const workingPreset = parserPresets.find((preset) => preset.id === workingPresetId)
 
   useEffect(() => {
     if (!open) return undefined
@@ -140,11 +150,17 @@ export function MarkdownStructurePreviewDialog({
     setMarkdownPreview(null)
     setParserPreview(null)
     setWorkingConfig(null)
+    setWorkingPresetId(selectedParserPresetId)
     setEditingMarkdown(false)
     setMarkdownDraft('')
     Promise.all([
       importV2Api.getMarkdownPreview(effectiveOcrDocumentId),
-      importV2Api.getParserPreview(effectiveOcrDocumentId, { candidateId, candidateIds, focusQuestionNo: questionNo }),
+      importV2Api.getParserPreview(effectiveOcrDocumentId, {
+        presetId: selectedParserPresetId || undefined,
+        candidateId,
+        candidateIds,
+        focusQuestionNo: questionNo,
+      }),
     ])
       .then(([markdown, parser]) => {
         if (!active) return
@@ -230,12 +246,35 @@ export function MarkdownStructurePreviewDialog({
 
   async function rerunParserPreview(nextConfig: ImportFlowV2ParserConfig) {
     if (!effectiveOcrDocumentId) return
+    setWorkingPresetId('')
     setWorkingConfig(nextConfig)
     setParserLoading(true)
     setError('')
     try {
       const parser = await importV2Api.getParserPreview(effectiveOcrDocumentId, {
         config: nextConfig,
+        candidateId,
+        candidateIds,
+        focusQuestionNo: questionNo,
+      })
+      setParserPreview(parser)
+      setWorkingConfig(parser.config)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setParserLoading(false)
+    }
+  }
+
+  async function selectParserPreset(presetId: string) {
+    if (!effectiveOcrDocumentId || !presetId) return
+    setWorkingPresetId(presetId)
+    onSelectedParserPresetChange?.(presetId)
+    setParserLoading(true)
+    setError('')
+    try {
+      const parser = await importV2Api.getParserPreview(effectiveOcrDocumentId, {
+        presetId,
         candidateId,
         candidateIds,
         focusQuestionNo: questionNo,
@@ -259,7 +298,8 @@ export function MarkdownStructurePreviewDialog({
       const [markdown, parser] = await Promise.all([
         importV2Api.getMarkdownPreview(effectiveOcrDocumentId),
         importV2Api.getParserPreview(effectiveOcrDocumentId, {
-          config: workingConfig || undefined,
+          presetId: workingPresetId || undefined,
+          config: workingPresetId ? undefined : workingConfig || undefined,
           candidateId,
           candidateIds,
           focusQuestionNo: questionNo,
@@ -364,15 +404,21 @@ export function MarkdownStructurePreviewDialog({
                 编辑识别稿 / 人工标记
               </Button>
             )}
-            {onApplyConfig ? (
+            {onApplyParserRequest ? (
               <Button
                 size="sm"
                 icon={applying ? LoaderCircle : FileText}
                 disabled={!workingConfig || editingMarkdown || loading || parserLoading || savingMarkdown || Boolean(applying)}
                 className="sf-pressable"
-                onClick={() => workingConfig && onApplyConfig(workingConfig)}
+                title={workingPreset ? `使用解析预设「${workingPreset.name}」重新生成候选题` : '使用自定义高级参数重新生成候选题'}
+                onClick={() => {
+                  if (!workingConfig) return
+                  onApplyParserRequest(workingPresetId
+                    ? { presetId: workingPresetId }
+                    : { configOverride: workingConfig })
+                }}
               >
-                {applying ? '重解析中...' : '用当前设置重解析'}
+                {applying ? '重解析中...' : workingPreset ? `用「${workingPreset.name}」重解析` : '用自定义设置重解析'}
               </Button>
             ) : null}
             <Button size="sm" variant="outline" icon={X} onClick={onClose} className="sf-pressable">
@@ -476,6 +522,8 @@ export function MarkdownStructurePreviewDialog({
           <ParserDiagnosticsPanel
             preview={parserPreview}
             config={workingConfig}
+            presets={parserPresets}
+            selectedPresetId={workingPresetId}
             loading={loading || parserLoading || savingMarkdown}
             focusQuestionNo={questionNo}
             onQuestionSelect={(selectedQuestionNo) => {
@@ -484,6 +532,7 @@ export function MarkdownStructurePreviewDialog({
                 requestId: (current?.requestId || 0) + 1,
               }))
             }}
+            onPresetChange={selectParserPreset}
             onConfigChange={rerunParserPreview}
           />
         </div>

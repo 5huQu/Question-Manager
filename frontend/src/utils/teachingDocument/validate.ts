@@ -29,6 +29,7 @@ import type {
   TeachingBlock,
   TeachingDocument,
   TeachingDocumentStyle,
+  TeachingDocumentOutlineOptions,
   TeachingDocumentPrintOptions,
   PrintChromeAlignment,
   PrintChromeContentType,
@@ -51,11 +52,12 @@ import { isFigureLayoutPreset } from './figureLayoutPresets'
 
 const KNOWN_BLOCK_TYPES = new Set([
   'heading', 'paragraph', 'blockMath', 'figure', 'question',
-  'box', 'divider', 'spacer', 'pageBreak', 'rawMarkdown',
+  'box', 'divider', 'spacer', 'pageBreak', 'rawMarkdown', 'table',
+  'tikz',
 ])
 
 const BOX_CHILD_TYPES = new Set([
-  'paragraph', 'blockMath', 'rawMarkdown', 'figure', 'question', 'divider', 'spacer',
+  'paragraph', 'blockMath', 'table', 'rawMarkdown', 'figure', 'tikz', 'question', 'divider', 'spacer',
 ])
 
 const VALID_MARKS = new Set<string>(['bold', 'italic', 'underline', 'strikethrough', 'code'])
@@ -329,10 +331,40 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
         latex: typeof node.latex === 'string' ? node.latex : '',
         label: typeof node.label === 'string' ? node.label : undefined,
       }
+    case 'table': {
+      const id = extractId(node, 'table', index)
+      const rawRows = Array.isArray(node.rows) ? node.rows.slice(0, 20) : []
+      const rows = rawRows.map((rawRow, rowIndex) => {
+        const rawCells = Array.isArray(rawRow) ? rawRow.slice(0, 12) : []
+        return rawCells.map((rawCell, cellIndex) => {
+          const cell = rawCell && typeof rawCell === 'object' && !Array.isArray(rawCell) ? rawCell as Record<string, unknown> : {}
+          return { content: parseInlineArray(cell.content, issues, `${id}-${rowIndex}-${cellIndex}`) }
+        })
+      }).filter((row) => row.length)
+      const columnCount = rows[0]?.length || 2
+      const normalizedRows = (rows.length ? rows : Array.from({ length: 2 }, () => Array.from({ length: 2 }, () => ({ content: [] })))).map((row) => Array.from({ length: columnCount }, (_, columnIndex) => row[columnIndex] || { content: [] }))
+      return { type: 'table', id, rows: normalizedRows, hasHeader: typeof node.hasHeader === 'boolean' ? node.hasHeader : true }
+    }
     case 'figure': {
       const alignment = String(node.alignment || 'center')
       const widthRatio = Number(node.widthRatio)
       const widthMm = Number(node.widthMm)
+      const groupItems = Array.isArray(node.groupItems)
+        ? node.groupItems.slice(0, 12).flatMap((rawItem, itemIndex) => {
+            if (!rawItem || typeof rawItem !== 'object' || Array.isArray(rawItem)) return []
+            const item = rawItem as Record<string, unknown>
+            return [{
+              id: typeof item.id === 'string' && item.id ? item.id : `${extractId(node, 'fig', index)}-item-${itemIndex + 1}`,
+              asset: parseFigureAssetRef({ asset: item.asset }),
+              ...(typeof item.caption === 'string' ? { caption: item.caption } : {}),
+              ...(typeof item.alt === 'string' ? { alt: item.alt } : {}),
+            }]
+          })
+        : []
+      const groupColumns = [1, 2, 3].includes(Number(node.groupColumns))
+        ? Number(node.groupColumns) as 1 | 2 | 3
+        : 2
+      const groupGapMm = Number(node.groupGapMm)
       if (node.layoutPreset != null && !isFigureLayoutPreset(node.layoutPreset)) {
         issues.push({ level: 'warning', blockId: extractId(node, 'fig', index), code: 'invalid-figure-preset', message: `图片排版预设 "${String(node.layoutPreset)}" 无效，已回退旧字段。` })
       }
@@ -347,7 +379,18 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
         widthMm: Number.isFinite(widthMm) && widthMm > 0 ? widthMm : undefined,
         lockAspectRatio: typeof node.lockAspectRatio === 'boolean' ? node.lockAspectRatio : undefined,
         caption: typeof node.caption === 'string' ? node.caption : undefined,
+        groupItems: groupItems.length ? groupItems : undefined,
+        groupColumns: groupItems.length ? groupColumns : undefined,
+        groupGapMm: groupItems.length && Number.isFinite(groupGapMm) ? Math.max(0, Math.min(20, groupGapMm)) : undefined,
       }
+    }
+    case 'tikz': {
+      const alignment = String(node.alignment || 'center')
+      const widthMm = Number(node.widthMm)
+      if (node.layoutPreset != null && !isFigureLayoutPreset(node.layoutPreset)) {
+        issues.push({ level: 'warning', blockId: extractId(node, 'tikz', index), code: 'invalid-figure-preset', message: `TikZ 绘图的排版预设 "${String(node.layoutPreset)}" 无效，已回退旧字段。` })
+      }
+      return { type: 'tikz', id: extractId(node, 'tikz', index), source: typeof node.source === 'string' ? node.source.slice(0, 50_000) : '', sourceHash: typeof node.sourceHash === 'string' ? node.sourceHash : undefined, svgAssetId: typeof node.svgAssetId === 'string' ? node.svgAssetId : undefined, alignment: (['left', 'center', 'right'].includes(alignment) ? alignment : 'center') as 'left' | 'center' | 'right', layoutPreset: isFigureLayoutPreset(node.layoutPreset) ? node.layoutPreset : undefined, widthMm: Number.isFinite(widthMm) && widthMm > 0 ? widthMm : undefined, alt: typeof node.alt === 'string' ? node.alt : undefined, caption: typeof node.caption === 'string' ? node.caption : undefined }
     }
     case 'question': {
       const display = node.display && typeof node.display === 'object' ? node.display as Record<string, unknown> : undefined
@@ -543,6 +586,9 @@ function parseDocumentOutline(raw: unknown) {
 function parseDocumentStyle(raw: unknown): TeachingDocumentStyle | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
   const node = raw as Record<string, unknown>
+  const typographyPreset = node.typographyPreset === 'exam' || node.typographyPreset === 'lecture'
+    ? node.typographyPreset
+    : undefined
   const bodyFont = typeof node.bodyFont === 'string' && node.bodyFont ? node.bodyFont : undefined
   const bodyLatinFont = typeof node.bodyLatinFont === 'string' && node.bodyLatinFont ? node.bodyLatinFont : undefined
   const bodyNumberFont = typeof node.bodyNumberFont === 'string' && node.bodyNumberFont ? node.bodyNumberFont : undefined
@@ -556,8 +602,8 @@ function parseDocumentStyle(raw: unknown): TeachingDocumentStyle | undefined {
     ? node.questionSpacing as TeachingQuestionSpacing
     : undefined
   const print = parseDocumentPrintOptions(node.print)
-  if (!bodyFont && !bodyLatinFont && !bodyNumberFont && !headingFont && !headingLatinFont && !headingNumberFont && !marginPreset && !questionSpacing && !print) return undefined
-  return { bodyFont, bodyLatinFont, bodyNumberFont, headingFont, headingLatinFont, headingNumberFont, marginPreset, questionSpacing, print }
+  if (!typographyPreset && !bodyFont && !bodyLatinFont && !bodyNumberFont && !headingFont && !headingLatinFont && !headingNumberFont && !marginPreset && !questionSpacing && !print) return undefined
+  return { typographyPreset, bodyFont, bodyLatinFont, bodyNumberFont, headingFont, headingLatinFont, headingNumberFont, marginPreset, questionSpacing, print }
 }
 
 function parseDocumentPrintOptions(raw: unknown): TeachingDocumentPrintOptions | undefined {
@@ -760,8 +806,31 @@ export function validateTeachingDocument(document: TeachingDocument): DocumentVa
         if (block.layoutPreset && !isFigureLayoutPreset(block.layoutPreset)) {
           issues.push({ level: 'warning', blockId: block.id, code: 'invalid-figure-preset', message: `图片排版预设 "${block.layoutPreset}" 无效。` })
         }
+        if (block.groupItems?.length) {
+          if (![1, 2, 3].includes(block.groupColumns || 2)) {
+            issues.push({ level: 'error', blockId: block.id, code: 'invalid-figure-ref', message: '图片组列数只能为 1、2 或 3。' })
+          }
+          const ids = new Set<string>()
+          for (const item of block.groupItems) {
+            if (!item.id.trim() || ids.has(item.id)) {
+              issues.push({ level: 'error', blockId: block.id, code: 'invalid-figure-ref', message: '图片组项目 ID 不能为空或重复。' })
+            }
+            ids.add(item.id)
+            const itemAsset = item.asset
+            const missing = itemAsset.type === 'documentAsset'
+              ? !itemAsset.assetId.trim()
+              : itemAsset.type === 'questionFigure'
+                ? !itemAsset.questionId.trim() || !itemAsset.figureId.trim()
+                : !itemAsset.path.trim()
+            if (missing) issues.push({ level: 'error', blockId: block.id, code: 'invalid-figure-ref', message: `图片组项目 "${item.id}" 缺少有效资源引用。` })
+          }
+        }
         break
       }
+      case 'tikz':
+        if (!block.source.trim()) issues.push({ level: 'warning', blockId: block.id, code: 'empty-tikz-source', message: 'TikZ 绘图缺少源码。' })
+        if (!block.svgAssetId) issues.push({ level: 'warning', blockId: block.id, code: 'missing-tikz-preview', message: 'TikZ 绘图尚未生成 SVG 预览。' })
+        break
       case 'box':
         if (!block.templateId.trim()) {
           issues.push({ level: 'warning', blockId: block.id, code: 'empty-template-id', message: '盒子块缺少 templateId。' })

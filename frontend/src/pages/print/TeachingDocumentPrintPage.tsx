@@ -12,7 +12,14 @@
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { FigureAssetRef, TeachingDocumentV1 } from '@/types/teachingDocument'
+import type {
+  BoxChildBlock,
+  FigureAssetRef,
+  QuestionBlock,
+  TeachingBlock,
+  TeachingDocumentV1,
+} from '@/types/teachingDocument'
+import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import { questionBankApi } from '@/api/questionBank'
 import { teachingDocumentsApi, type TeachingDocumentRecord } from '@/api/teachingDocuments'
 import { ApiError } from '@/api/client'
@@ -27,6 +34,8 @@ import {
   measureTeachingDocumentParagraphs,
   measureTeachingDocumentQuestions,
   measureBoxChildQuestions,
+  measureBoxChildRawMarkdowns,
+  measuredChoiceLayoutOverrides,
   paginateTeachingDocument,
   createDocumentPrintLayout,
   effectivePaperMetrics,
@@ -52,12 +61,43 @@ import '@/components/teaching-document/teaching-document.css'
 import '@/components/teaching-document/print.css'
 
 type PageState = 'loading' | 'error' | 'measuring' | 'ready'
+type PrintVariant = 'student' | 'teacher'
+
+/**
+ * 导出版本只影响打印态的答案/解析可见性，不回写文档内容。
+ * 这样同一份教学文档可以按需生成学生版或教师版，编辑器中的原始配置保持不变。
+ */
+function documentForPrintVariant(source: TeachingDocumentV1, variant: PrintVariant): TeachingDocumentV1 {
+  const showSolutions = variant === 'teacher'
+  const transformQuestion = (block: QuestionBlock): QuestionBlock => ({
+    ...block,
+    display: {
+      ...block.display,
+      showAnswer: showSolutions,
+      showAnalysis: showSolutions,
+    },
+  })
+  const transformChild = (block: BoxChildBlock): BoxChildBlock => {
+    if (block.type === 'question') return transformQuestion(block)
+    return block
+  }
+  const transformBlock = (block: TeachingBlock): TeachingBlock => {
+    if (block.type === 'question') return transformQuestion(block)
+    if (block.type === 'box') return { ...block, children: block.children.map(transformChild) }
+    return block
+  }
+  return {
+    ...source,
+    content: source.content.map(transformBlock),
+  }
+}
 
 export default function TeachingDocumentPrintPage() {
   const [searchParams] = useSearchParams()
   const docId = searchParams.get('docId') || ''
   const revisionParam = Number(searchParams.get('revision') || '0')
   const autoPrint = searchParams.get('autoPrint') === '1'
+  const printVariant: PrintVariant = searchParams.get('variant') === 'teacher' ? 'teacher' : 'student'
 
   const [state, setState] = useState<PageState>('loading')
   const [error, setError] = useState('')
@@ -65,6 +105,7 @@ export default function TeachingDocumentPrintPage() {
   const [pagination, setPagination] = useState<PaginationResult | null>(null)
   const [readiness, setReadiness] = useState<RenderReadinessResult | null>(null)
   const [questionMap, setQuestionMap] = useState<Record<string, QuestionResolution>>({})
+  const [choiceLayoutOverrides, setChoiceLayoutOverrides] = useState<ChoiceLayoutOverrides>({})
 
   const measurementRootRef = useRef<HTMLDivElement>(null)
   const printRootRef = useRef<HTMLDivElement>(null)
@@ -112,7 +153,14 @@ export default function TeachingDocumentPrintPage() {
   // 页眉页脚参与分页有效高度（保守统一扣除，首页 showOnFirstPage=false 同样扣除）。
   const metrics = useMemo(() => effectivePaperMetrics(printLayout), [printLayout])
 
-  const document: TeachingDocumentV1 | null = record?.content || null
+  const sourceDocument: TeachingDocumentV1 | null = record?.content || null
+  const document = useMemo(
+    () => sourceDocument ? documentForPrintVariant(sourceDocument, printVariant) : null,
+    [sourceDocument, printVariant],
+  )
+  useEffect(() => {
+    setChoiceLayoutOverrides((current) => Object.keys(current).length ? {} : current)
+  }, [document])
 
   // ─── revision 校验：后端实际 revision 与请求不一致时禁止导出 ────────────────
   const revisionMismatch = Boolean(record) && record!.revision !== revisionParam
@@ -234,15 +282,23 @@ export default function TeachingDocumentPrintPage() {
       .then((result: RenderReadinessResult) => {
         if (controller.signal.aborted || generation !== generationRef.current) return
         setReadiness(result)
+        const measuredLayouts = measuredChoiceLayoutOverrides(root, choiceLayoutOverrides)
+        if (!choiceLayoutOverridesEqual(measuredLayouts, choiceLayoutOverrides)) {
+          setChoiceLayoutOverrides(measuredLayouts)
+          return
+        }
         const measurement = measureTeachingDocument(root, document)
         const paragraphMeasurements = measureTeachingDocumentParagraphs(root, document)
         const boxMeasurements = measureTeachingDocumentBoxes(root, document, measurement)
         const questionMeasurements = measureTeachingDocumentQuestions(
-          root, document, measurement, resolveQuestion,
+          root, document, measurement, resolveQuestion, undefined, undefined, undefined,
+          choiceLayoutOverrides,
         )
         const boxChildQuestionMeasurements = measureBoxChildQuestions(
-          root, document, measurement, resolveQuestion,
+          root, document, measurement, resolveQuestion, undefined, undefined, undefined,
+          choiceLayoutOverrides,
         )
+        const boxChildRawMarkdownMeasurements = measureBoxChildRawMarkdowns(root, document)
         measurement.diagnostics.push(...result.diagnostics)
         if (controller.signal.aborted || generation !== generationRef.current) return
         const paginationResult = paginateTeachingDocument({
@@ -252,6 +308,7 @@ export default function TeachingDocumentPrintPage() {
           boxMeasurements,
           questionMeasurements,
           boxChildQuestionMeasurements,
+          boxChildRawMarkdownMeasurements,
           paper: pagePaper,
           metrics,
           documentHeaderSpanColumns: spread ? 2 : 1,
@@ -268,7 +325,7 @@ export default function TeachingDocumentPrintPage() {
       })
 
     return () => controller.abort()
-  }, [state, document, pagePaper, metrics, resolveQuestion, spread])
+  }, [state, document, pagePaper, metrics, resolveQuestion, spread, choiceLayoutOverrides])
 
   // ─── 仅在同一 readiness 通过后 notifyReady ──────────────────────────────────
   useEffect(() => {
@@ -366,6 +423,8 @@ export default function TeachingDocumentPrintPage() {
               resolveFigure={resolveFigure}
               eagerImages
               surface="paper"
+              choiceLayoutOverrides={choiceLayoutOverrides}
+              probeChoiceLayouts
             />
           </div>
         </div>
@@ -394,7 +453,7 @@ export default function TeachingDocumentPrintPage() {
               sheetPaper={paper}
               columnPaper={pagePaper}
               printLayout={printLayout}
-              pageProps={{ resolvers: { resolveQuestion, resolveFigure } }}
+              pageProps={{ resolvers: { resolveQuestion, resolveFigure }, choiceLayoutOverrides }}
             />
           )
         }) : (pagination?.pages || []).map((page) => (
@@ -406,6 +465,7 @@ export default function TeachingDocumentPrintPage() {
             printLayout={printLayout}
             totalPages={totalPages}
             resolvers={{ resolveQuestion, resolveFigure }}
+            choiceLayoutOverrides={choiceLayoutOverrides}
           />
         ))
       )}

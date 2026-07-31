@@ -109,6 +109,12 @@ export function getQuestionBatchClassificationTask(id: string) {
   return tasks.get(id) || null
 }
 
+export function getActiveQuestionBatchClassificationTask() {
+  return Array.from(tasks.values())
+    .filter((task) => task.status === 'queued' || task.status === 'running')
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0] || null
+}
+
 async function executeClassificationTask(task: QuestionBatchClassificationTask, options: { onlyMissing?: boolean }) {
   task.status = 'running'
   try {
@@ -135,10 +141,15 @@ function runQuestionBatchClassificationWithProgress(scope: QuestionBatchClassifi
   const child = spawn(pythonCommand(), [scriptPath, '--scope-type', normalized.type, '--scope-id', normalized.id, '--concurrency', settings.cleanupConcurrency || '20', ...(options.onlyMissing === false ? [] : ['--only-missing'])], { cwd: pythonRoot, env: ocrRunnerEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
   return new Promise((resolve, reject) => {
     let stdout = ''; let stderr = ''
+    let progressBuffer = ''
     child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-      for (const line of chunk.toString().split(/\r?\n/)) {
+      const text = chunk.toString()
+      stderr += text
+      progressBuffer += text
+      const lines = progressBuffer.split(/\r?\n/)
+      progressBuffer = lines.pop() || ''
+      for (const line of lines) {
         if (!line.startsWith('CLASSIFICATION_PROGRESS ')) continue
         try { onProgress(JSON.parse(line.slice('CLASSIFICATION_PROGRESS '.length))) } catch { /* ignore malformed progress */ }
       }

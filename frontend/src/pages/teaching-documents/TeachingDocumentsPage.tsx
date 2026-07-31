@@ -140,7 +140,7 @@ export default function TeachingDocumentsPage() {
                   }`}
                 >
                   <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{label}</span>
-                  <span className="text-xs text-zinc-500">{type === 'exam' ? '用于组卷与测验' : type === 'lecture' ? '用于教学讲解' : '用于课堂练习'}</span>
+                  <span className="text-xs text-zinc-500">{type === 'lecture' ? '阅读讲义排版' : type === 'exam' ? '正式试卷排版' : '正式试卷排版'}</span>
                 </button>
               ))}
             </div>

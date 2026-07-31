@@ -20,6 +20,28 @@ try {
     return { response, body: await response.json() }
   }
 
+  const defaultExam = await json('/api/teaching-documents', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: '默认试卷', documentType: 'exam' }),
+  })
+  assert.equal(defaultExam.response.status, 201)
+  assert.deepEqual(defaultExam.body.content.style, {
+    typographyPreset: 'exam', bodyFont: 'songti', bodyLatinFont: 'times', bodyNumberFont: 'times',
+    headingFont: 'heiti', headingLatinFont: 'arial', headingNumberFont: 'times', marginPreset: 'compact', questionSpacing: 'compact',
+  })
+
+  const defaultLecture = await json('/api/teaching-documents', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: '默认讲义', documentType: 'lecture' }),
+  })
+  assert.equal(defaultLecture.response.status, 201)
+  assert.deepEqual(defaultLecture.body.content.style, {
+    typographyPreset: 'lecture', bodyFont: 'songti', bodyLatinFont: 'georgia', bodyNumberFont: 'times',
+    headingFont: 'heiti', headingLatinFont: 'arial', headingNumberFont: 'times', marginPreset: 'normal', questionSpacing: 'normal',
+  })
+
   const originalUnknown = { nested: ['kept', { value: 1 }] }
   const content = {
     version: 1,
@@ -28,6 +50,10 @@ try {
     metadata: { source: 'test' },
     content: [
       { type: 'paragraph', id: 'paragraph-1', content: [{ type: 'text', text: '正文' }] },
+      { type: 'table', id: 'table-1', hasHeader: true, rows: [
+        [{ content: [{ type: 'text', text: '变量' }] }, { content: [{ type: 'inlineMath', latex: 'x^2' }] }],
+        [{ content: [{ type: 'text', text: '定义域' }] }, { content: [{ type: 'text', text: 'R' }] }],
+      ] },
       { type: 'unknown', id: 'unknown-1', originalType: 'futureBlock', rawData: originalUnknown },
     ],
   }
@@ -38,12 +64,14 @@ try {
   })
   assert.equal(created.response.status, 201)
   assert.equal(created.body.revision, 1)
-  assert.deepEqual(created.body.content.content[1].rawData, originalUnknown)
+  assert.equal(created.body.content.content[1].type, 'table')
+  assert.equal(created.body.content.content[1].rows[0][1].content[0].latex, 'x^2')
+  assert.deepEqual(created.body.content.content[2].rawData, originalUnknown)
   const documentId = created.body.id
 
   const fetched = await json(`/api/teaching-documents/${documentId}`)
   assert.equal(fetched.response.status, 200)
-  assert.deepEqual(fetched.body.content.content[1].rawData, originalUnknown)
+  assert.deepEqual(fetched.body.content.content[2].rawData, originalUnknown)
 
   const updatedContent = { ...content, title: '更新后', content: [...content.content, { type: 'divider', id: 'divider-1' }] }
   const updated = await json(`/api/teaching-documents/${documentId}`, {
@@ -62,7 +90,7 @@ try {
   assert.equal(conflict.response.status, 409)
   assert.equal(conflict.body.error, 'revision_conflict')
   assert.equal(conflict.body.actualRevision, 2)
-  assert.equal(conflict.body.current.blockCount, 3)
+  assert.equal(conflict.body.current.blockCount, 4)
 
   const invalid = await json('/api/teaching-documents', {
     method: 'POST',
@@ -71,6 +99,32 @@ try {
   })
   assert.equal(invalid.response.status, 422)
   assert.equal(invalid.body.error, 'teaching_document_validation_failed')
+
+  const tableInBox = await json('/api/teaching-documents', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      title: '卡片表格',
+      documentType: 'lecture',
+      content: {
+        version: 1,
+        documentType: 'lecture',
+        title: '卡片表格',
+        metadata: {},
+        content: [{
+          type: 'box', id: 'box-with-table', templateId: 'concept', breakBehavior: 'auto', children: [{
+            type: 'table', id: 'table-in-box', hasHeader: true,
+            rows: [[{ content: [{ type: 'text', text: '表头' }] }]],
+          }, {
+            type: 'rawMarkdown', id: 'markdown-in-box', markdown: '**要点**：$y=kx+b$', reason: 'user-inserted',
+          }],
+        }],
+      },
+    }),
+  })
+  assert.equal(tableInBox.response.status, 201)
+  assert.equal(tableInBox.body.content.content[0].children[0].type, 'table')
+  assert.equal(tableInBox.body.content.content[0].children[1].type, 'rawMarkdown')
 
   const unboundQuestion = await json('/api/teaching-documents', {
     method: 'POST',
@@ -113,7 +167,7 @@ try {
   assert.equal(duplicated.response.status, 201)
   assert.notEqual(duplicated.body.id, documentId)
   assert.notEqual(duplicated.body.content.content[0].id, updated.body.content.content[0].id)
-  assert.deepEqual(duplicated.body.content.content[1].rawData, originalUnknown)
+  assert.deepEqual(duplicated.body.content.content[2].rawData, originalUnknown)
 
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=', 'base64')
   const form = new FormData()

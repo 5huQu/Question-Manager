@@ -29,6 +29,66 @@ import {
 // ─── 文档解析与验证 ──────────────────────────────────────────────────────────
 
 describe('parseTeachingDocument', () => {
+  it('normalizes a visual table and keeps inline LaTeX in its cells', () => {
+    const { document } = parseTeachingDocument({
+      version: 1,
+      documentType: 'lecture',
+      title: '表格',
+      metadata: {},
+      content: [{
+        type: 'table', id: 'table-1', hasHeader: true,
+        rows: [[{ content: [{ type: 'text', text: '变量' }] }, { content: [{ type: 'inlineMath', latex: 'x^2' }] }]],
+      }],
+    })
+    expect(document?.content[0]).toMatchObject({ type: 'table', hasHeader: true })
+    expect(document?.content[0]).toMatchObject({ rows: [[{ content: [{ text: '变量' }] }, { content: [{ latex: 'x^2' }] }]] })
+  })
+
+  it('keeps a controlled TikZ layout preset and rejects invalid values', () => {
+    const base = {
+      version: 1,
+      documentType: 'lecture',
+      title: 'TikZ 排版',
+      metadata: {},
+      content: [{ type: 'tikz', id: 'tikz-1', source: '\\draw (0,0) -- (1,1);', svgAssetId: 'asset-1', alignment: 'center', layoutPreset: 'block-left', widthMm: 70, caption: '图 1 直线示意图' }],
+    }
+    const valid = parseTeachingDocument(base)
+    expect(valid.document?.content[0]).toMatchObject({ type: 'tikz', layoutPreset: 'block-left', widthMm: 70, caption: '图 1 直线示意图' })
+
+    const invalid = parseTeachingDocument({ ...base, content: [{ ...base.content[0], layoutPreset: 'unsafe-layout' }] })
+    expect(invalid.document?.content[0]).toMatchObject({ type: 'tikz', layoutPreset: undefined })
+    expect(invalid.issues.some((issue) => issue.code === 'invalid-figure-preset')).toBe(true)
+  })
+
+  it('normalizes a controlled multi-image grid', () => {
+    const { document, issues } = parseTeachingDocument({
+      version: 1,
+      documentType: 'lecture',
+      title: '图片组',
+      metadata: {},
+      content: [{
+        type: 'figure',
+        id: 'figure-group',
+        asset: { type: 'documentAsset', assetId: 'asset-1' },
+        alignment: 'center',
+        widthMm: 140,
+        groupColumns: 3,
+        groupGapMm: 5,
+        groupItems: [
+          { id: 'item-1', asset: { type: 'documentAsset', assetId: 'asset-1' }, caption: '左图' },
+          { id: 'item-2', asset: { type: 'documentAsset', assetId: 'asset-2' }, caption: '右图' },
+        ],
+      }],
+    })
+    expect(issues.filter((issue) => issue.level === 'error')).toHaveLength(0)
+    expect(document?.content[0]).toMatchObject({
+      type: 'figure',
+      groupColumns: 3,
+      groupGapMm: 5,
+      groupItems: [{ id: 'item-1', caption: '左图' }, { id: 'item-2', caption: '右图' }],
+    })
+  })
+
   it('keeps only controlled question-spacing preferences', () => {
     const base = {
       version: 1,

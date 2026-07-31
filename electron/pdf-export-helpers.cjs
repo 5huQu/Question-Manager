@@ -9,6 +9,8 @@
 const PAPER_SIZES = new Set(['A3', 'A4', 'custom'])
 /** 合法的纸张方向枚举。 */
 const PAPER_ORIENTATIONS = new Set(['portrait', 'landscape'])
+/** 合法的教学文档导出版本。 */
+const EXPORT_VARIANTS = new Set(['student', 'teacher'])
 
 /**
  * 判断纸张数值字段是否可用（有限正数）。
@@ -24,12 +26,13 @@ function isPositiveMm(value) {
  * - documentId 必须为非空字符串；
  * - revision/pageCount 如提供必须为非负整数；
  * - title 如提供必须为字符串；
+ * - variant 如提供必须为 student 或 teacher；
  * - paper 如提供必须为合法的纸张规格（size/orientation 枚举 + 正数宽高）。
- * @param {{documentId?: unknown, revision?: unknown, pageCount?: unknown, title?: unknown, paper?: unknown}} options
+ * @param {{documentId?: unknown, revision?: unknown, pageCount?: unknown, title?: unknown, variant?: unknown, paper?: unknown}} options
  * @returns {string | null}
  */
 function validatePdfExportOptions(options) {
-  const { documentId, revision, pageCount, title, paper } = options || {}
+  const { documentId, revision, pageCount, title, variant, paper } = options || {}
   if (typeof documentId !== 'string' || documentId.trim() === '') {
     return '缺少文档 ID。'
   }
@@ -41,6 +44,9 @@ function validatePdfExportOptions(options) {
   }
   if (title !== undefined && title !== null && typeof title !== 'string') {
     return 'title 参数无效。'
+  }
+  if (variant !== undefined && variant !== null && !EXPORT_VARIANTS.has(variant)) {
+    return '导出版本无效。'
   }
   if (paper !== undefined && paper !== null) {
     if (typeof paper !== 'object' || Array.isArray(paper)) {
@@ -107,12 +113,16 @@ function buildPrintToPDFOptions(paper) {
  * @param {string} documentId
  * @param {number} [revision]
  * @param {object} [paper] 文档纸张规格（PaperSpec）
+ * @param {'student'|'teacher'} [variant] 教学文档导出版本
  * @returns {string}
  */
-function buildPrintUrl(appOrigin, documentId, revision, paper) {
+function buildPrintUrl(appOrigin, documentId, revision, paper, variant) {
   let url = `${appOrigin}/print/teaching-document?docId=${encodeURIComponent(documentId)}&revision=${encodeURIComponent(String(revision ?? 0))}`
   if (paper && typeof paper === 'object') {
     url += `&paper=${encodeURIComponent(JSON.stringify(paper))}`
+  }
+  if (variant === 'student' || variant === 'teacher') {
+    url += `&variant=${encodeURIComponent(variant)}`
   }
   return url
 }

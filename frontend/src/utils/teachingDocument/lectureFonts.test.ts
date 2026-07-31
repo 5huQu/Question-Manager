@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lectureFontCssVars, resolveDocumentFonts } from './lectureFonts'
+import { lectureFontCssVars, resolveDocumentFonts, typographyPresetForDocumentType, typographyStyleForPreset } from './lectureFonts'
 
 describe('lecture font resolution', () => {
   it('keeps old documents on their original font stacks when Latin font settings are absent', () => {
@@ -17,5 +17,13 @@ describe('lecture font resolution', () => {
     expect(vars['--td-body-font']).toContain('td-body-number')
     expect(vars['--td-heading-font']).toContain('td-heading-latin')
     expect(vars['--td-heading-number-font']).toContain('td-heading-number')
+  })
+
+  it('maps new documents to type-appropriate typography presets', () => {
+    expect(typographyPresetForDocumentType('exam')).toBe('exam')
+    expect(typographyPresetForDocumentType('worksheet')).toBe('exam')
+    expect(typographyPresetForDocumentType('lecture')).toBe('lecture')
+    expect(typographyStyleForPreset('exam')).toMatchObject({ typographyPreset: 'exam', bodyFont: 'songti', headingFont: 'heiti', marginPreset: 'compact' })
+    expect(typographyStyleForPreset('lecture')).toMatchObject({ typographyPreset: 'lecture', bodyFont: 'songti', headingFont: 'heiti', marginPreset: 'normal' })
   })
 })

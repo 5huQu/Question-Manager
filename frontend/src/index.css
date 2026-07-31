@@ -581,6 +581,60 @@ input[type=number] {
   animation: command-bar-fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* 组卷快照：专属右侧抽屉动效。面板和遮罩分开运动，避免通用 Sheet 的硬切感。 */
+@keyframes basket-snapshot-sheet-enter {
+  from {
+    opacity: 0.96;
+    transform: translate3d(104%, 0, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes basket-snapshot-sheet-exit {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    opacity: 0.96;
+    transform: translate3d(104%, 0, 0) scale(0.985);
+  }
+}
+
+@keyframes basket-snapshot-sheet-overlay-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes basket-snapshot-sheet-overlay-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.basket-snapshot-sheet {
+  transform-origin: right center;
+  will-change: transform, opacity;
+}
+
+.basket-snapshot-sheet[data-state='open'] {
+  animation: basket-snapshot-sheet-enter 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.basket-snapshot-sheet[data-state='closed'] {
+  animation: basket-snapshot-sheet-exit 300ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.basket-snapshot-sheet-overlay[data-state='open'] {
+  animation: basket-snapshot-sheet-overlay-enter 220ms ease-out both;
+}
+
+.basket-snapshot-sheet-overlay[data-state='closed'] {
+  animation: basket-snapshot-sheet-overlay-exit 180ms ease-in both;
+}
+
 @keyframes command-bar-fade-in {
   from {
     opacity: 0;
@@ -726,6 +780,12 @@ input[type=number] {
     transition: opacity 150ms ease !important;
     transform: none !important;
     animation: none !important;
+  }
+
+  .basket-snapshot-sheet,
+  .basket-snapshot-sheet-overlay {
+    animation: none !important;
+    transform: none !important;
   }
 }
 

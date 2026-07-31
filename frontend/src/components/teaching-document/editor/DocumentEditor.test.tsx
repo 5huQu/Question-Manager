@@ -27,6 +27,7 @@ describe('DocumentEditor external insertion', () => {
         <DocumentEditor
           document={documentWithContent([])}
           onChange={onChange}
+          modelSyncDelayMs={0}
           onEditorReady={(instance) => { editorRef.current = instance }}
         />,
       )
@@ -44,6 +45,7 @@ describe('DocumentEditor external insertion', () => {
         <DocumentEditor
           document={headingDocument}
           onChange={onChange}
+          modelSyncDelayMs={0}
           onEditorReady={(instance) => { editorRef.current = instance }}
         />,
       )
@@ -72,5 +74,51 @@ describe('DocumentEditor external insertion', () => {
     })
     act(() => root.unmount())
     container.remove()
+  })
+})
+
+describe('DocumentEditor model synchronization', () => {
+  it('waits until typing becomes idle before synchronizing the latest snapshot', async () => {
+    vi.useFakeTimers()
+    const onChange = vi.fn()
+    const editorRef: { current: Editor | null } = { current: null }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => {
+        root.render(
+          <DocumentEditor
+            document={documentWithContent([{ type: 'paragraph', id: 'p-1', content: [{ type: 'text', text: '甲' }] }])}
+            onChange={onChange}
+            modelSyncDelayMs={350}
+            onEditorReady={(instance) => { editorRef.current = instance }}
+          />,
+        )
+      })
+      const editor = editorRef.current
+      if (!editor) throw new Error('编辑器未就绪')
+      await act(async () => {
+        editor.commands.setTextSelection(2)
+        editor.commands.insertContent('乙')
+      })
+      expect(onChange).not.toHaveBeenCalled()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+      await act(async () => { editor.commands.insertContent('丙') })
+      await act(async () => { await vi.advanceTimersByTimeAsync(349) })
+      expect(onChange).not.toHaveBeenCalled()
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(onChange.mock.calls[0]?.[0].content[0]).toMatchObject({
+        type: 'paragraph',
+        id: 'p-1',
+        content: [{ type: 'text', text: '甲乙丙' }],
+      })
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+      vi.useRealTimers()
+    }
   })
 })

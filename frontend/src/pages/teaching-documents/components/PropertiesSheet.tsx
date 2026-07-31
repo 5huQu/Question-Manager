@@ -3,19 +3,23 @@
  * 选中内容后滑入，按"内容 / 高级"分组展示编辑控件
  */
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
   ArrowDown, ArrowUp, ChevronDown, Copy, Database, ImagePlus, Pencil, Sigma, Trash2, X,
 } from 'lucide-react'
 import type { QuestionItem } from '@/types'
-import type { BoxBlock, BoxChildBlock, QuestionBlock, TeachingBlock, TeachingInline } from '@/types/teachingDocument'
+import type { BoxBlock, BoxChildBlock, QuestionBlock, TeachingBlock, TeachingInline, TikzBlock } from '@/types/teachingDocument'
 import { BlockInlineEditor } from '@/components/teaching-document/BlockInlineEditor/BlockInlineEditor'
 import { FormulaLiveInput } from '@/components/questions/editor/FormulaLiveInput'
+import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
+import { MarkdownContent } from '@/components/MarkdownContent'
 import { springPanel } from '@/components/teaching-document/motion'
 import { BUILTIN_BOX_TEMPLATES, hasProtectedInlineContent, protectedInlineReason } from '@/utils/teachingDocument'
 import { figureDisplayLabels } from '@/utils/questionDisplay'
+import { FIGURE_LAYOUT_PRESETS, resolveFigureLayout } from '@/utils/teachingDocument/figureLayoutPresets'
 import { CARD_CHILD_TYPES, USER_BLOCK_LABEL } from './blockLabels'
+import { TikzEditorDialog } from './TikzEditorDialog'
 
 export type SelectedLocation = {
   block: TeachingBlock
@@ -39,8 +43,12 @@ export function PropertiesSheet(props: {
   onDuplicate: () => void
   onMove: (direction: -1 | 1) => void
   onInsertChild: (box: BoxBlock, type: BoxChildBlock['type']) => void
+  onDeleteBoxChildren: (boxId: string, childIds: string[]) => boolean
+  onMergeBoxParagraphs: (boxId: string, childIds: string[]) => boolean
   onSelect: (id: string) => void
   onUpload: (file: File) => Promise<{ id: string }>
+  onInsertImageInRawMarkdown: (block: Extract<TeachingBlock, { type: 'rawMarkdown' }>, markdown: string, cursor: number, file: File, boxId?: string) => Promise<void>
+  onRenderTikz: (source: string) => Promise<{ asset: { id: string; url: string }; sourceHash: string; cached: boolean }>
   onQuestionLoaded: (question: QuestionItem) => void
   question?: QuestionItem
   onEditQuestion?: (blockId: string) => void
@@ -65,8 +73,12 @@ function PropertiesSheetPanel(props: {
   onDuplicate: () => void
   onMove: (direction: -1 | 1) => void
   onInsertChild: (box: BoxBlock, type: BoxChildBlock['type']) => void
+  onDeleteBoxChildren: (boxId: string, childIds: string[]) => boolean
+  onMergeBoxParagraphs: (boxId: string, childIds: string[]) => boolean
   onSelect: (id: string) => void
   onUpload: (file: File) => Promise<{ id: string }>
+  onInsertImageInRawMarkdown: (block: Extract<TeachingBlock, { type: 'rawMarkdown' }>, markdown: string, cursor: number, file: File, boxId?: string) => Promise<void>
+  onRenderTikz: (source: string) => Promise<{ asset: { id: string; url: string }; sourceHash: string; cached: boolean }>
   onQuestionLoaded: (question: QuestionItem) => void
   question?: QuestionItem
   onEditQuestion?: (blockId: string) => void
@@ -78,11 +90,11 @@ function PropertiesSheetPanel(props: {
 
   return (
     <motion.aside
-      initial={props.reduced ? { opacity: 0 } : { x: 320, opacity: 0 }}
+      initial={props.reduced ? { opacity: 0 } : { x: 432, opacity: 0 }}
       animate={props.reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
-      exit={props.reduced ? { opacity: 0 } : { x: 320, opacity: 0 }}
+      exit={props.reduced ? { opacity: 0 } : { x: 432, opacity: 0 }}
       transition={springPanel}
-      className="absolute inset-y-0 right-0 z-30 flex w-80 flex-col border-l border-zinc-200/50 bg-white/90 shadow-[-8px_0_24px_-6px_rgba(0,0,0,0.08)] backdrop-blur-2xl backdrop-saturate-150 dark:border-zinc-800/50 dark:bg-zinc-950/90 dark:shadow-[-8px_0_24px_-6px_rgba(0,0,0,0.5)]"
+      className="absolute inset-y-0 right-0 z-30 flex w-[min(26rem,calc(100vw-2rem))] flex-col border-l border-zinc-200/50 bg-white/90 shadow-[-8px_0_24px_-6px_rgba(0,0,0,0.08)] backdrop-blur-2xl backdrop-saturate-150 dark:border-zinc-800/50 dark:bg-zinc-950/90 dark:shadow-[-8px_0_24px_-6px_rgba(0,0,0,0.5)]"
     >
       <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2.5 dark:border-zinc-900">
         <span className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">{USER_BLOCK_LABEL[block.type]}</span>
@@ -193,8 +205,12 @@ function SheetBody(props: {
   selected: SelectedLocation | null
   onUpdate: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
   onInsertChild: (box: BoxBlock, type: BoxChildBlock['type']) => void
+  onDeleteBoxChildren: (boxId: string, childIds: string[]) => boolean
+  onMergeBoxParagraphs: (boxId: string, childIds: string[]) => boolean
   onSelect: (id: string) => void
   onUpload: (file: File) => Promise<{ id: string }>
+  onInsertImageInRawMarkdown: (block: Extract<TeachingBlock, { type: 'rawMarkdown' }>, markdown: string, cursor: number, file: File, boxId?: string) => Promise<void>
+  onRenderTikz: (source: string) => Promise<{ asset: { id: string; url: string }; sourceHash: string; cached: boolean }>
   onQuestionLoaded: (question: QuestionItem) => void
   question?: QuestionItem
   onEditQuestion?: (blockId: string) => void
@@ -256,12 +272,12 @@ function SheetBody(props: {
     )
   }
 
+  if (block.type === 'tikz') {
+    return <TikzSettings block={block} onUpdate={props.onUpdate} onRender={props.onRenderTikz} />
+  }
+
   if (block.type === 'rawMarkdown') {
-    return (
-      <Field label="自由文本（Markdown）">
-        <textarea className={areaClass} value={block.markdown} onChange={(event) => props.onUpdate({ markdown: event.target.value }, `markdown:${block.id}`)} />
-      </Field>
-    )
+    return <RichTextMarkdownSettings block={block} boxId={selected.boxId} onUpdate={props.onUpdate} onInsertImage={props.onInsertImageInRawMarkdown} />
   }
 
   if (block.type === 'spacer') {
@@ -273,37 +289,7 @@ function SheetBody(props: {
   }
 
   if (block.type === 'box') {
-    return (
-      <div className="space-y-3">
-        <Field label="卡片模板">
-          <select className={fieldClass} value={block.templateId} onChange={(event) => props.onUpdate({ templateId: event.target.value })}>
-            {BUILTIN_BOX_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.label}</option>)}
-          </select>
-        </Field>
-        <Field label="卡片标题">
-          <input className={fieldClass} value={block.title || ''} onChange={(event) => props.onUpdate({ title: event.target.value }, `box-title:${block.id}`)} />
-        </Field>
-        <div className="border-t border-zinc-100 pt-3 dark:border-zinc-900">
-          <p className="text-[13px] font-medium text-zinc-500">卡片内容</p>
-          <div className="mt-2 space-y-1">
-            {block.children.map((child, index) => (
-              <button key={child.id} type="button" onClick={() => props.onSelect(child.id)} className="flex w-full items-center gap-2 rounded-md border border-zinc-200 px-2 py-1.5 text-left text-xs text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900">
-                <span className="text-[10px] tabular-nums text-zinc-400">{index + 1}</span>
-                {USER_BLOCK_LABEL[child.type]}
-              </button>
-            ))}
-          </div>
-          <select
-            className={`${fieldClass} mt-2`}
-            defaultValue=""
-            onChange={(event) => { if (event.target.value) props.onInsertChild(block, event.target.value as BoxChildBlock['type']); event.target.value = '' }}
-          >
-            <option value="">添加内容…</option>
-            {CARD_CHILD_TYPES.map((type) => <option key={type} value={type}>{USER_BLOCK_LABEL[type]}</option>)}
-          </select>
-        </div>
-      </div>
-    )
+    return <BoxSettings {...props} block={block} />
   }
 
   if (block.type === 'question') {
@@ -319,6 +305,167 @@ function SheetBody(props: {
   }
 
   return <p className="text-xs text-zinc-400">该内容没有可编辑的属性。</p>
+}
+
+function BoxSettings(props: {
+  block: BoxBlock
+  onUpdate: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
+  onInsertChild: (box: BoxBlock, type: BoxChildBlock['type']) => void
+  onDeleteBoxChildren: (boxId: string, childIds: string[]) => boolean
+  onMergeBoxParagraphs: (boxId: string, childIds: string[]) => boolean
+  onSelect: (id: string) => void
+}) {
+  const [selectedChildIds, setSelectedChildIds] = useState<Set<string>>(() => new Set())
+  const [rangeAnchorId, setRangeAnchorId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setSelectedChildIds(new Set())
+    setRangeAnchorId(null)
+  }, [props.block.id])
+
+  const selectedInOrder = useMemo(
+    () => props.block.children.filter((child) => selectedChildIds.has(child.id)),
+    [props.block.children, selectedChildIds],
+  )
+  const canMergeParagraphs = selectedInOrder.length >= 2
+    && selectedInOrder.every((child) => child.type === 'paragraph')
+    && selectedInOrder.every((child) => child.type === 'paragraph' && child.content.every((inline) => inline.type !== 'unknown' && (inline.type !== 'text' || (!inline.font && !inline.color && !inline.unknownMarks?.length))))
+    && selectedInOrder.every((child, index) => index === 0 || props.block.children.indexOf(child) === props.block.children.indexOf(selectedInOrder[index - 1]) + 1)
+
+  function toggleChild(childId: string, shiftKey: boolean) {
+    const childIndex = props.block.children.findIndex((child) => child.id === childId)
+    if (childIndex < 0) return
+    setSelectedChildIds((current) => {
+      const next = new Set(current)
+      const anchorIndex = rangeAnchorId ? props.block.children.findIndex((child) => child.id === rangeAnchorId) : -1
+      if (shiftKey && anchorIndex >= 0) {
+        const from = Math.min(anchorIndex, childIndex)
+        const to = Math.max(anchorIndex, childIndex)
+        for (const child of props.block.children.slice(from, to + 1)) next.add(child.id)
+      } else if (next.has(childId)) {
+        next.delete(childId)
+      } else {
+        next.add(childId)
+      }
+      return next
+    })
+    setRangeAnchorId(childId)
+  }
+
+  const clearSelection = () => {
+    setSelectedChildIds(new Set())
+    setRangeAnchorId(null)
+  }
+
+  return (
+    <div className="space-y-3">
+      <Field label="卡片模板">
+        <select className={fieldClass} value={props.block.templateId} onChange={(event) => props.onUpdate({ templateId: event.target.value })}>
+          {BUILTIN_BOX_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.label}</option>)}
+        </select>
+      </Field>
+      <Field label="卡片标题">
+        <input className={fieldClass} value={props.block.title || ''} onChange={(event) => props.onUpdate({ title: event.target.value }, `box-title:${props.block.id}`)} />
+      </Field>
+      <div className="border-t border-zinc-100 pt-3 dark:border-zinc-900">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[13px] font-medium text-zinc-500">卡片内容</p>
+          {props.block.children.length ? (
+            <button type="button" onClick={() => selectedChildIds.size === props.block.children.length ? clearSelection() : setSelectedChildIds(new Set(props.block.children.map((child) => child.id)))} className="text-[11px] text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">
+              {selectedChildIds.size === props.block.children.length ? '取消全选' : '全选'}
+            </button>
+          ) : null}
+        </div>
+        <p className="mt-1 text-[11px] leading-4 text-zinc-400">勾选内容后可批量删除；按 Shift 勾选可连续选择。</p>
+        <div className="mt-2 space-y-1">
+          {props.block.children.map((child, index) => (
+            <div key={child.id} className={`flex items-center gap-1 rounded-md border px-1.5 py-1 transition-colors ${selectedChildIds.has(child.id) ? 'border-sky-300 bg-sky-50/60 dark:border-sky-800 dark:bg-sky-950/20' : 'border-zinc-200 dark:border-zinc-800'}`}>
+              <input
+                type="checkbox"
+                aria-label={`选择第 ${index + 1} 项${USER_BLOCK_LABEL[child.type]}`}
+                checked={selectedChildIds.has(child.id)}
+                readOnly
+                onClick={(event) => {
+                  event.preventDefault()
+                  toggleChild(child.id, event.shiftKey)
+                }}
+                className="size-3.5 accent-sky-600"
+              />
+              <button type="button" onClick={() => props.onSelect(child.id)} className="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-left text-xs text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100">
+                <span className="text-[10px] tabular-nums text-zinc-400">{index + 1}</span>
+                <span className="truncate">{USER_BLOCK_LABEL[child.type]}</span>
+              </button>
+            </div>
+          ))}
+        </div>
+        {selectedChildIds.size ? (
+          <div className="mt-2 flex items-center gap-2">
+            <button type="button" onClick={() => { if (props.onDeleteBoxChildren(props.block.id, selectedInOrder.map((child) => child.id))) clearSelection() }} className="h-8 rounded-md border border-red-200 px-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/30">
+              删除 {selectedChildIds.size} 项
+            </button>
+            {canMergeParagraphs ? (
+              <button type="button" onClick={() => { if (props.onMergeBoxParagraphs(props.block.id, selectedInOrder.map((child) => child.id))) clearSelection() }} className="h-8 rounded-md border border-zinc-200 px-2 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900">
+                合并为混合内容
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        <select
+          className={`${fieldClass} mt-2`}
+          defaultValue=""
+          onChange={(event) => { if (event.target.value) props.onInsertChild(props.block, event.target.value as BoxChildBlock['type']); event.target.value = '' }}
+        >
+          <option value="">添加内容…</option>
+          {CARD_CHILD_TYPES.map((type) => <option key={type} value={type}>{USER_BLOCK_LABEL[type]}</option>)}
+        </select>
+      </div>
+    </div>
+  )
+}
+
+function RichTextMarkdownSettings({
+  block,
+  boxId,
+  onUpdate,
+  onInsertImage,
+}: {
+  block: Extract<TeachingBlock, { type: 'rawMarkdown' }>
+  boxId?: string
+  onUpdate: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
+  onInsertImage: (block: Extract<TeachingBlock, { type: 'rawMarkdown' }>, markdown: string, cursor: number, file: File, boxId?: string) => Promise<void>
+}) {
+  const [editorOpen, setEditorOpen] = useState(false)
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-[13px] font-medium text-zinc-500">混合内容</p>
+        <p className="mt-1 text-xs leading-5 text-zinc-400">适合整段讲义：可混排文字、编号列表、强调样式与 LaTeX 公式。</p>
+      </div>
+      <button type="button" onClick={() => setEditorOpen(true)} className="flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-zinc-200 bg-white text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900">
+        <Pencil className="size-3.5" />编辑混合内容…
+      </button>
+      <div className="max-h-52 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50/50 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-900/20">
+        {block.markdown.trim() ? <MarkdownContent content={block.markdown} /> : <p className="text-xs italic text-zinc-400">尚未添加内容。</p>}
+      </div>
+      {editorOpen ? (
+        <FormulaEditorDialog
+          title="编辑混合内容"
+          initialLatex={block.markdown}
+          initialMixedMarkdown
+          onApply={(latex) => {
+            onUpdate({ markdown: latex }, `markdown:${block.id}`)
+            setEditorOpen(false)
+          }}
+          onApplyMixedMarkdown={(markdown) => {
+            onUpdate({ markdown }, `markdown:${block.id}`)
+            setEditorOpen(false)
+          }}
+          onInsertImageAtCursor={(markdown, cursor, file) => onInsertImage(block, markdown, cursor, file, boxId)}
+          onClose={() => setEditorOpen(false)}
+        />
+      ) : null}
+    </div>
+  )
 }
 
 function QuestionSettings(props: {
@@ -494,7 +641,7 @@ function QuestionSettings(props: {
         <p className="text-[13px] font-medium text-zinc-500">插入文档图片</p>
         <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-zinc-200 px-3 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900">
           <ImagePlus className="size-4" />{uploading ? '上传中…' : '上传并插入'}
-          <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" disabled={uploading} onChange={async (event) => {
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" className="hidden" disabled={uploading} onChange={async (event) => {
             const file = event.target.files?.[0]
             if (!file) return
             setUploading(true)
@@ -553,26 +700,52 @@ function FigureSettings(props: {
 }) {
   const { block } = props
   const [uploading, setUploading] = useState(false)
+  const groupItems = block.groupItems || []
+  const grouped = groupItems.length > 0
+  const updateGroupItems = (items: typeof groupItems, mergeKey?: string) => props.onUpdate({ groupItems: items }, mergeKey)
 
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <p className="text-[13px] font-medium text-zinc-500">图片</p>
+        <p className="text-[13px] font-medium text-zinc-500">{grouped ? '图片组' : '图片'}</p>
         <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-zinc-200 px-3 text-xs text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900">
           <ImagePlus className="size-4" />
-          {uploading ? '上传中…' : '替换图片'}
+          {uploading ? '上传中…' : grouped ? '添加图片' : '替换图片'}
           <input
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            multiple
+            accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg"
             className="hidden"
             disabled={uploading}
             onChange={async (event) => {
-              const file = event.target.files?.[0]
-              if (!file) return
+              const files = Array.from(event.target.files || [])
+              if (!files.length) return
               setUploading(true)
               try {
-                const asset = await props.onUpload(file)
-                props.onUpdate({ asset: { type: 'documentAsset', assetId: asset.id } })
+                const assets = await Promise.all(files.map((file) => props.onUpload(file)))
+                if (grouped) {
+                  updateGroupItems([
+                    ...groupItems,
+                    ...assets.map((asset, index) => ({
+                      id: `figure-item-${Date.now().toString(36)}-${index}`,
+                      asset: { type: 'documentAsset' as const, assetId: asset.id },
+                    })),
+                  ])
+                } else if (assets.length === 1) {
+                  props.onUpdate({ asset: { type: 'documentAsset', assetId: assets[0].id } })
+                } else {
+                  props.onUpdate({
+                    asset: { type: 'documentAsset', assetId: assets[0].id },
+                    groupItems: assets.map((asset, index) => ({
+                      id: `figure-item-${Date.now().toString(36)}-${index}`,
+                      asset: { type: 'documentAsset' as const, assetId: asset.id },
+                    })),
+                    groupColumns: Math.min(3, assets.length) as 2 | 3,
+                    groupGapMm: 4,
+                    widthMm: Math.max(140, block.widthMm || 80),
+                    caption: undefined,
+                  })
+                }
               } finally {
                 setUploading(false)
                 event.target.value = ''
@@ -580,13 +753,84 @@ function FigureSettings(props: {
             }}
           />
         </label>
+        {!grouped ? (
+          <button
+            type="button"
+            onClick={() => props.onUpdate({
+              groupItems: [{
+                id: `figure-item-${Date.now().toString(36)}`,
+                asset: block.asset,
+                ...(block.caption ? { caption: block.caption } : {}),
+              }],
+              groupColumns: 2,
+              groupGapMm: 4,
+              caption: undefined,
+              widthMm: Math.max(120, block.widthMm || 80),
+            })}
+            className="ml-2 inline-flex h-9 items-center rounded-md border border-zinc-200 px-3 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+          >
+            组合多图
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              const first = groupItems[0]
+              props.onUpdate({
+                asset: first?.asset || block.asset,
+                caption: first?.caption,
+                groupItems: undefined,
+                groupColumns: undefined,
+                groupGapMm: undefined,
+              })
+            }}
+            className="ml-2 inline-flex h-9 items-center rounded-md border border-zinc-200 px-3 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+          >
+            转为单图
+          </button>
+        )}
       </div>
-      <Field label="替代文本">
-        <input className={fieldClass} value={block.alt || ''} onChange={(event) => props.onUpdate({ alt: event.target.value }, `figure-alt:${block.id}`)} />
-      </Field>
-      <Field label="图注">
-        <input className={fieldClass} value={block.caption || ''} onChange={(event) => props.onUpdate({ caption: event.target.value }, `figure-caption:${block.id}`)} />
-      </Field>
+      {grouped ? (
+        <>
+          <Field label="每行图片">
+            <div className="mt-1 grid grid-cols-3 gap-1 rounded-md bg-zinc-100 p-0.5 dark:bg-zinc-900">
+              {([1, 2, 3] as const).map((columns) => (
+                <button key={columns} type="button" onClick={() => props.onUpdate({ groupColumns: columns })} className={`h-8 rounded text-xs ${block.groupColumns === columns ? 'bg-white font-medium text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50' : 'text-zinc-500'}`}>{columns} 列</button>
+              ))}
+            </div>
+          </Field>
+          <Field label={`图片间距 ${Math.round(block.groupGapMm ?? 4)} mm`}>
+            <input type="range" min={0} max={12} step={1} className="mt-2 w-full" value={block.groupGapMm ?? 4} onChange={(event) => props.onUpdate({ groupGapMm: Number(event.target.value) }, `figure-group-gap:${block.id}`)} />
+          </Field>
+          <div className="space-y-2">
+            {groupItems.map((item, index) => (
+              <div key={item.id} className="space-y-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-zinc-500">图片 {index + 1}</span>
+                  <div className="flex items-center gap-0.5">
+                    <button type="button" title="上移" aria-label={`图片 ${index + 1} 上移`} disabled={index === 0} onClick={() => {
+                      const next = [...groupItems]
+                      ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
+                      updateGroupItems(next)
+                    }} className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"><ArrowUp className="size-3.5" /></button>
+                    <button type="button" title="下移" aria-label={`图片 ${index + 1} 下移`} disabled={index === groupItems.length - 1} onClick={() => {
+                      const next = [...groupItems]
+                      ;[next[index], next[index + 1]] = [next[index + 1], next[index]]
+                      updateGroupItems(next)
+                    }} className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"><ArrowDown className="size-3.5" /></button>
+                    <button type="button" title="删除" aria-label={`删除图片 ${index + 1}`} onClick={() => updateGroupItems(groupItems.filter((entry) => entry.id !== item.id))} className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"><Trash2 className="size-3.5" /></button>
+                  </div>
+                </div>
+                <input className={fieldClass} placeholder="图片下方说明" value={item.caption || ''} onChange={(event) => updateGroupItems(groupItems.map((entry) => entry.id === item.id ? { ...entry, caption: event.target.value } : entry), `figure-group-caption:${block.id}:${item.id}`)} />
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <Field label="图注">
+          <input className={fieldClass} value={block.caption || ''} onChange={(event) => props.onUpdate({ caption: event.target.value }, `figure-caption:${block.id}`)} />
+        </Field>
+      )}
       <Field label="对齐">
         <select className={fieldClass} value={block.alignment} onChange={(event) => props.onUpdate({ alignment: event.target.value as 'left' | 'center' | 'right' })}>
           <option value="left">左对齐</option>
@@ -599,4 +843,30 @@ function FigureSettings(props: {
       </Field>
     </div>
   )
+}
+
+function TikzSettings({ block, onUpdate, onRender }: { block: TikzBlock; onUpdate: (patch: Partial<TeachingBlock>, mergeKey?: string) => void; onRender: (source: string) => Promise<{ asset: { id: string; url: string }; sourceHash: string; cached: boolean }> }) {
+  const [editorOpen, setEditorOpen] = useState(false)
+  const stale = !block.svgAssetId || !block.sourceHash
+  return <div className="space-y-3">
+    <div className={`rounded-md px-2.5 py-2 text-xs ${stale ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200' : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200'}`}>{stale ? '预览已过期：编辑源码后点击生成预览。' : '当前 SVG 预览与源码一致。'}</div>
+    <button type="button" onClick={() => setEditorOpen(true)} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300">编辑 TikZ 绘图</button>
+    <Field label="排版方式">
+      <select className={fieldClass} value={block.layoutPreset || 'block-center'} onChange={(event) => {
+        const layoutPreset = event.target.value as TikzBlock['layoutPreset']
+        const layout = resolveFigureLayout({ preset: layoutPreset, legacyAlignment: block.alignment, containerWidthMm: 160 })
+        onUpdate({ layoutPreset, alignment: layout.alignment, widthMm: layout.widthMm }, `tikz-layout:${block.id}`)
+      }}>
+        {FIGURE_LAYOUT_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+      </select>
+    </Field>
+    <Field label="对齐">
+      <select className={fieldClass} value={block.alignment} onChange={(event) => onUpdate({ alignment: event.target.value as TikzBlock['alignment'] }, `tikz-alignment:${block.id}`)}>
+        <option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option>
+      </select>
+    </Field>
+    <Field label="图注"><input className={fieldClass} value={block.caption || ''} onChange={(event) => onUpdate({ caption: event.target.value }, `tikz-caption:${block.id}`)} /></Field>
+    <Field label={`宽度 ${block.widthMm || 80} mm`}><input type="range" min={20} max={240} step={1} className="mt-2 w-full" value={block.widthMm || 80} onChange={(event) => onUpdate({ widthMm: Number(event.target.value) }, `tikz-width:${block.id}`)} /></Field>
+    {editorOpen ? <TikzEditorDialog source={block.source} svgAssetId={block.svgAssetId} sourceHash={block.sourceHash} onRender={onRender} onApply={(value) => onUpdate(value, `tikz-edit:${block.id}`)} onClose={() => setEditorOpen(false)} /> : null}
+  </div>
 }

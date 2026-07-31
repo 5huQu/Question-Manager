@@ -1,16 +1,20 @@
-import { ChevronDown, ChevronRight, ChevronUp, Download, GripVertical, Hash, Award, Clock, Maximize2, ShoppingBag, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronUp, FileStack, GripVertical, Hash, Award, Clock, Maximize2, NotebookPen, ShoppingBag, Trash2 } from 'lucide-react'
 import { collectionsApi } from '../../api/collections'
 import { Badge, Empty } from '../ui'
 import { QuestionMarkdownContent } from '../questions/QuestionContent'
 import { getDefaultScore, notifyBasketUpdated, stripLeadingQuestionNo } from './constants'
 import type { BasketState } from './useBasketState'
 
-export function BasketDrawerView({ state }: { state: BasketState }) {
+export function BasketDrawerView({
+  state,
+  onSnapshotsOpenChange,
+}: {
+  state: BasketState
+  onSnapshotsOpenChange: (open: boolean) => void
+}) {
   const {
     navigate,
     collapsed, setCollapsed,
-    exportMenuOpen, setExportMenuOpen,
-    exporting,
     draggedIndex, setDraggedIndex,
     localTitle, setLocalTitle,
     localSubtitle, setLocalSubtitle,
@@ -18,7 +22,7 @@ export function BasketDrawerView({ state }: { state: BasketState }) {
     active,
     totalScore, activeQuestions,
     patchCollection, patchItem, removeItem, clearCollection, moveItem,
-    exportCollection,
+    importToTeachingDocument,
     handleDragDrop,
   } = state
 
@@ -71,6 +75,13 @@ export function BasketDrawerView({ state }: { state: BasketState }) {
           <div className="flex items-center gap-1.5">
             <button
               className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+              title="查看组卷快照"
+              onClick={() => onSnapshotsOpenChange(true)}
+            >
+              <FileStack className="w-4 h-4" />
+            </button>
+            <button
+              className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
               title="全屏独立编辑"
               onClick={() => {
                 setCollapsed(true)
@@ -108,7 +119,7 @@ export function BasketDrawerView({ state }: { state: BasketState }) {
                   value={localTitle}
                   onChange={(event) => setLocalTitle(event.target.value)}
                   onBlur={() => localTitle !== active.data?.title && patchCollection({ title: localTitle })}
-                  placeholder="试卷标题"
+                  placeholder="组卷标题"
                 />
                 <span className="text-zinc-300 dark:text-zinc-700 select-none shrink-0 font-medium text-xs">/</span>
                 <input
@@ -292,85 +303,23 @@ export function BasketDrawerView({ state }: { state: BasketState }) {
           </div>
         </div>
 
-        {/* Drawer Footer (Export Dropdown Menu) */}
+        {/* Drawer Footer */}
         {active.data?.questions.length ? (
-          <div className="p-4 bg-card/95 backdrop-blur-md border-t border-border absolute bottom-0 left-0 right-0 z-20 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+          <div className="absolute bottom-0 left-0 right-0 z-20 flex gap-2 border-t border-border bg-card/95 p-4 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] backdrop-blur-md">
             <button
-              onClick={() => setExportMenuOpen(!exportMenuOpen)}
-              disabled={exporting}
-              className="w-full py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-50 font-semibold rounded-md shadow-sm transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
+              onClick={() => void importToTeachingDocument()}
+              className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90"
             >
-              <Download className="w-4 h-4" />
-              <span>{exporting ? '正在生成...' : '导出练习单'}</span>
-              <ChevronUp className={`w-3.5 h-3.5 transition-transform duration-200 ${exportMenuOpen ? 'rotate-180' : ''}`} />
+              <NotebookPen className="w-4 h-4" />
+              生成试卷文档
             </button>
-
-            {exportMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-30" onClick={() => setExportMenuOpen(false)} />
-                <div className="absolute right-4 left-4 bottom-16 z-40 rounded-lg border border-border bg-popover text-popover-foreground p-2 shadow-md animate-in fade-in slide-in-from-bottom-1 duration-150">
-                  <div className="p-1">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1 select-none font-medium">
-                      Markdown 格式
-                    </p>
-                    <div className="grid grid-cols-2 gap-1 mt-1">
-                      <button
-                        onClick={() => {
-                          exportCollection('markdown', 'student')
-                          setExportMenuOpen(false)
-                        }}
-                        className="flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground transition-colors border border-transparent hover:border-border cursor-pointer"
-                      >
-                        <span>学生版</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          exportCollection('markdown', 'teacher')
-                          setExportMenuOpen(false)
-                        }}
-                        className="flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground transition-colors border border-transparent hover:border-border cursor-pointer"
-                      >
-                        <span>教师版</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="p-1 border-t border-border mt-1 font-medium">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1 select-none font-semibold">试卷 PDF</p>
-                    <div className="grid grid-cols-2 gap-1 mt-1">
-                      <button onClick={() => { exportCollection('pdf', 'student', 'exam'); setExportMenuOpen(false) }} className="flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground transition-colors border border-transparent hover:border-border cursor-pointer"><span>学生版</span></button>
-                      <button onClick={() => { exportCollection('pdf', 'teacher', 'exam'); setExportMenuOpen(false) }} className="flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground transition-colors border border-transparent hover:border-border cursor-pointer"><span>教师版</span></button>
-                    </div>
-                  </div>
-
-                  <div className="p-1 border-t border-border mt-1">
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1 select-none font-medium">
-                      练习单 PDF
-                    </p>
-                    <div className="grid grid-cols-2 gap-1 mt-1">
-                      <button
-                        onClick={() => {
-                          exportCollection('pdf', 'student', 'worksheet')
-                          setExportMenuOpen(false)
-                        }}
-                        className="flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground transition-colors border border-transparent hover:border-border cursor-pointer"
-                      >
-                        <span>学生版</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          exportCollection('pdf', 'teacher', 'worksheet')
-                          setExportMenuOpen(false)
-                        }}
-                        className="flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs text-foreground hover:bg-accent hover:text-accent-foreground transition-colors border border-transparent hover:border-border cursor-pointer"
-                      >
-                        <span>教师版</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
+            <button
+              onClick={() => { setCollapsed(true); navigate('/questions/basket') }}
+              className="rounded-md border border-border px-3 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              title="打开完整组卷工作台"
+            >
+              完整工作台
+            </button>
           </div>
         ) : null}
       </aside>

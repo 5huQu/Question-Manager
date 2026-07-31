@@ -94,7 +94,7 @@ const DEFAULT_LEVELS: Record<TeachingDocumentOutlinePreset, Record<1 | 2 | 3 | 4
 }
 
 const CN_DIGITS = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九']
-function chineseNumber(value: number) {
+function chineseNumber(value: number): string {
   if (value <= 0 || value > 999) return String(value)
   if (value < 10) return CN_DIGITS[value]
   if (value < 20) return value === 10 ? '十' : `十${CN_DIGITS[value % 10]}`

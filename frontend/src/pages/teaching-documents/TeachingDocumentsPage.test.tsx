@@ -83,6 +83,7 @@ describe('TeachingDocumentsPage', () => {
       createTrigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain('新建文档')
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('阅读讲义排版')
 
     const examChoice = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('试卷'))
     await act(async () => {

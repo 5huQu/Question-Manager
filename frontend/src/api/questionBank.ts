@@ -143,6 +143,9 @@ export const questionBankApi = {
   getClassificationTask(id: string) {
     return api<{ task: QuestionBankClassificationTask }>(`/api/question-bank/classification-tasks/${encodeURIComponent(id)}`)
   },
+  getActiveClassificationTask() {
+    return api<{ task: QuestionBankClassificationTask | null }>('/api/question-bank/classification-tasks/active')
+  },
   importJsonItems(payload: Record<string, unknown>) {
     return api<{ items: QuestionItem[]; count: number; pendingBankUrl?: string }>('/api/question-bank/import-json', {
       method: 'POST',

@@ -30,6 +30,10 @@ export type TeachingDocumentCommand =
   | { type: 'insertBoxChild'; boxId: string; child: BoxChildBlock; afterChildId?: string }
   | { type: 'updateBoxChild'; boxId: string; childId: string; patch: Partial<BoxChildBlock>; mergeKey?: string }
   | { type: 'deleteBoxChild'; boxId: string; childId: string }
+  /** 一次删除同一知识卡片中的多个子块，保留为单个撤销步骤。 */
+  | { type: 'deleteBoxChildren'; boxId: string; childIds: string[] }
+  /** 用一个合法子块替换同一卡片内连续的一段子块。 */
+  | { type: 'replaceBoxChildRange'; boxId: string; childIds: string[]; replacement: BoxChildBlock }
   | { type: 'moveBoxChild'; boxId: string; childId: string; direction: -1 | 1 }
 
 export type TeachingDocumentHistory = {
@@ -84,7 +88,14 @@ export function newTeachingBlock(type: TeachingBlock['type'], options?: { headin
     case 'heading': return { type, id, level: options?.headingLevel ?? 3, content: [{ type: 'text', text: '新章节' }] }
     case 'paragraph': return { type, id, content: [{ type: 'text', text: '' }] }
     case 'blockMath': return { type, id, latex: '' }
+    case 'table': return {
+      type,
+      id,
+      hasHeader: true,
+      rows: Array.from({ length: 2 }, () => Array.from({ length: 2 }, () => ({ content: [{ type: 'text', text: '' }] }))),
+    }
     case 'figure': return { type, id, asset: { type: 'documentAsset', assetId: '' }, alignment: 'center', layoutPreset: 'block-center', widthRatio: 0.8, widthMm: 80, lockAspectRatio: true }
+    case 'tikz': return { type, id, source: '\\draw[->] (0,0) -- (4,0);\n\\draw[->] (0,0) -- (0,3);', alignment: 'center', layoutPreset: 'block-center', widthMm: 80, alt: 'TikZ 绘图', caption: '' }
     case 'question': return { type, id, questionId: '', breakBehavior: 'auto', display: { showAnswer: false, showAnalysis: false } }
     case 'box': return { type, id, templateId: 'concept', title: '知识点', breakBehavior: 'auto', children: [] }
     case 'divider': return { type, id }
@@ -93,6 +104,26 @@ export function newTeachingBlock(type: TeachingBlock['type'], options?: { headin
     case 'rawMarkdown': return { type, id, markdown: '', reason: 'user-inserted' }
     case 'unknown': return { type, id, originalType: 'unknown', rawData: null }
   }
+}
+
+/** 在 Markdown 光标处生成“前文 + 图片 + 后文”，供顶层与盒子内共用。 */
+export function blocksForRawMarkdownFigureInsertion(
+  markdown: string,
+  cursor: number,
+  assetId: string,
+) {
+  const safeCursor = Math.max(0, Math.min(markdown.length, Math.trunc(cursor)))
+  const before = markdown.slice(0, safeCursor).trim()
+  const after = markdown.slice(safeCursor).trim()
+  const figure = {
+    ...newTeachingBlock('figure'),
+    asset: { type: 'documentAsset' as const, assetId },
+  } as Extract<TeachingBlock, { type: 'figure' }>
+  const blocks: TeachingBlock[] = []
+  if (before) blocks.push({ ...newTeachingBlock('rawMarkdown'), markdown: before } as Extract<TeachingBlock, { type: 'rawMarkdown' }>)
+  blocks.push(figure)
+  if (after) blocks.push({ ...newTeachingBlock('rawMarkdown'), markdown: after } as Extract<TeachingBlock, { type: 'rawMarkdown' }>)
+  return { blocks, figure }
 }
 
 function cloneBlock(block: TeachingBlock): TeachingBlock {
@@ -240,6 +271,28 @@ function applyTeachingDocumentCommandRaw(document: TeachingDocumentV1, command: 
     const safeIndex = Math.max(0, Math.min(box.children.length, childIndex))
     const nextBox = { ...box, children: [...box.children.slice(0, safeIndex), command.child, ...box.children.slice(safeIndex)] }
     return { ...document, content: replaceAt(content, blockIndex, nextBox) }
+  }
+  if (command.type === 'deleteBoxChildren') {
+    const ids = new Set(command.childIds)
+    if (!ids.size || !box.children.some((child) => ids.has(child.id))) return document
+    return { ...document, content: replaceAt(content, blockIndex, { ...box, children: box.children.filter((item) => !ids.has(item.id)) }) }
+  }
+  if (command.type === 'replaceBoxChildRange') {
+    if (['box', 'heading', 'pageBreak'].includes(command.replacement.type)) return document
+    const ids = new Set(command.childIds)
+    if (!ids.size || ids.size !== command.childIds.length || ids.has(command.replacement.id)) return document
+    const indexes = box.children.reduce<number[]>((result, child, index) => ids.has(child.id) ? [...result, index] : result, [])
+    if (indexes.length !== ids.size) return document
+    const first = indexes[0]
+    const contiguous = indexes.every((index, offset) => index === first + offset)
+    if (!contiguous || box.children.some((child) => child.id === command.replacement.id)) return document
+    return {
+      ...document,
+      content: replaceAt(content, blockIndex, {
+        ...box,
+        children: [...box.children.slice(0, first), command.replacement, ...box.children.slice(first + indexes.length)],
+      }),
+    }
   }
   const childIndex = box.children.findIndex((child) => child.id === command.childId)
   if (childIndex < 0) return document

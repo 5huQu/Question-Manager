@@ -3,6 +3,7 @@ import type { BoxBlock, BoxChildBlock, ParagraphBlock } from '@/types/teachingDo
 import type { BoxMeasurement } from './boxMeasurement'
 import { blockSourcePathKey } from './fragment'
 import type { ParagraphMeasurement } from './paragraphMeasurement'
+import type { RawMarkdownMeasurement } from './rawMarkdownMeasurement'
 import { planBoxFragments } from './boxPlanner'
 
 function paragraph(id: string, text = '甲乙丙丁戊己'): ParagraphBlock {
@@ -93,6 +94,26 @@ describe('planBoxFragments', () => {
     })
   })
 
+  it('reserves the largest possible fragment chrome before placing children', () => {
+    const block = box([paragraph('a'), paragraph('b')])
+    const boxMeasurement = measurement(block, [50, 30])
+    // start 页带有“续下页”标签，实际 chrome 比完整卡片更高。
+    boxMeasurement.fragmentChrome = { single: 25, start: 35, middle: 10, end: 15 }
+
+    const plan = planBoxFragments({
+      block,
+      sourceIndex: 0,
+      measurement: boxMeasurement,
+      paragraphMeasurements: new Map(),
+      firstPageAvailableHeight: 75,
+      pageContentHeight: 100,
+    })
+
+    expect(plan.fragments).toHaveLength(2)
+    expect(plan.fragments.every((fragment) => fragment.height <= 100)).toBe(true)
+    expect(plan.fragments.map((fragment) => fragment.continuation)).toEqual(['start', 'end'])
+  })
+
   it('reuses paragraph line fragments inside a box without copying the child block', () => {
     const child = paragraph('long-child')
     const block = box([child])
@@ -148,5 +169,30 @@ describe('planBoxFragments', () => {
       childIndex: 0,
     })
     expect(plan.diagnostics.some((item) => item.code === 'box-child-overflow')).toBe(true)
+  })
+
+  it('keeps the fitting raw Markdown segments beside a figure and continues the rest', () => {
+    const raw: BoxChildBlock = {
+      type: 'rawMarkdown', id: 'mixed', reason: 'user-inserted',
+      markdown: '1. 第一项\n\n2. 第二项\n\n3. 第三项',
+    }
+    const figure: BoxChildBlock = { type: 'tikz', id: 'diagram', alignment: 'center', source: '\\draw (0,0)--(1,1);' }
+    const block = box([figure, raw])
+    const boxMeasurement = measurement(block, [20, 90])
+    const sourcePath = boxMeasurement.children[1].sourcePath
+    const rawMeasurement: RawMarkdownMeasurement = {
+      blockId: raw.id, sourcePath, segmentHeights: [30, 30, 30], marginTop: 0, marginBottom: 0,
+      diagnostics: [], measurementVersion: 'raw-v1',
+    }
+    const plan = planBoxFragments({
+      block, sourceIndex: 0, measurement: boxMeasurement, paragraphMeasurements: new Map(),
+      rawMarkdownMeasurements: new Map([[blockSourcePathKey(sourcePath), rawMeasurement]]),
+      firstPageAvailableHeight: 80, pageContentHeight: 80,
+    })
+    const fragments = plan.fragments.flatMap((fragment) => fragment.childItems)
+      .filter((item) => item.kind === 'raw-markdown-child-fragment')
+    expect(fragments).toHaveLength(2)
+    expect(fragments.map((item) => [item.segmentStart, item.segmentEnd])).toEqual([[0, 1], [1, 3]])
+    expect(plan.fragments[0].childItems.map((item) => item.childBlockId)).toEqual(['diagram', 'mixed'])
   })
 })

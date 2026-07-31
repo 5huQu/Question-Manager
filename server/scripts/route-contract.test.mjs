@@ -128,6 +128,7 @@ const expectedRoutes = new Set([
   'POST /api/question-bank/items/:id/rerun-ocr',
   'POST /api/question-bank/items/:id/ai-clean-preview',
   'POST /api/question-bank/items/classify',
+  'GET /api/question-bank/classification-tasks/active',
   'GET /api/question-bank/classification-tasks/:id',
   'POST /api/question-bank/items',
   'POST /api/question-bank/import-json',

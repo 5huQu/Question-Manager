@@ -21,6 +21,7 @@ import {
 } from '../BlockInlineEditor/extensions'
 import {
   BlockMathNodeView,
+  TableNodeView,
   FigureNodeView,
   QuestionNodeView,
   BoxNodeView,
@@ -28,6 +29,7 @@ import {
   SpacerNodeView,
   PageBreakNodeView,
   RawMarkdownNodeView,
+  TikzNodeView,
   UnknownNodeView,
 } from './NodeViews'
 import { ResizeCommands } from './resizeCommands'
@@ -123,7 +125,32 @@ export const DocBlockMath = Node.create({
   },
 })
 
-/** 图片块：atom，attrs: blockId, asset(JSON), layoutPreset, alignment, widthMm, widthRatio, lockAspectRatio, caption, alt */
+/** 可视化表格：单元格内容以受控 JSON 保存，交由 React NodeView 编辑。 */
+export const DocTable = Node.create({
+  name: 'docTable',
+  group: 'block',
+  atom: true,
+  selectable: true,
+  draggable: true,
+  addAttributes() {
+    return {
+      blockId: { default: '' },
+      rows: { default: '[]' },
+      hasHeader: { default: true },
+    }
+  },
+  parseHTML() {
+    return [{ tag: 'div[data-block-type="table"]' }]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-block-type': 'table' })]
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(TableNodeView)
+  },
+})
+
+/** 图片块：可为单图或 1/2/3 列图片组。 */
 export const DocFigure = Node.create({
   name: 'docFigure',
   group: 'block',
@@ -141,6 +168,9 @@ export const DocFigure = Node.create({
       lockAspectRatio: { default: true },
       caption: { default: '' },
       alt: { default: '' },
+      groupItems: { default: '[]' },
+      groupColumns: { default: 2 },
+      groupGapMm: { default: 4 },
     }
   },
   parseHTML() {
@@ -313,6 +343,14 @@ export const DocRawMarkdown = Node.create({
   },
 })
 
+export const DocTikz = Node.create({
+  name: 'docTikz', group: 'block', atom: true, selectable: true, draggable: true,
+  addAttributes() { return { blockId: { default: '' }, source: { default: '' }, sourceHash: { default: '' }, svgAssetId: { default: '' }, alignment: { default: 'center' }, layoutPreset: { default: null }, widthMm: { default: null }, alt: { default: '' }, caption: { default: '' } } },
+  parseHTML() { return [{ tag: 'div[data-block-type="tikz"]' }] },
+  renderHTML({ HTMLAttributes }) { return ['div', mergeAttributes(HTMLAttributes, { 'data-block-type': 'tikz' })] },
+  addNodeView() { return ReactNodeViewRenderer(TikzNodeView) },
+})
+
 /** 未知块：atom，attrs: blockId, originalType, rawData(JSON) */
 export const DocUnknown = Node.create({
   name: 'docUnknown',
@@ -382,6 +420,7 @@ export function createDocumentEditorExtensions() {
     DocHeading,
     // 原子块节点
     DocBlockMath,
+    DocTable,
     DocFigure,
     DocQuestion,
     DocBox,
@@ -389,6 +428,7 @@ export function createDocumentEditorExtensions() {
     DocSpacer,
     DocPageBreak,
     DocRawMarkdown,
+    DocTikz,
     DocUnknown,
     // 行内扩展（复用现有）
     InlineMathNode,

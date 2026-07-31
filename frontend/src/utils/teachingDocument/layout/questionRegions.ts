@@ -17,6 +17,7 @@ import type {
 import type { FigureLayoutPreset } from '../figureLayoutPresets'
 import { normalizeMarkdownForRender } from '@/components/MarkdownContent'
 import { choiceLayoutForTexts, type ChoiceLayout } from '@/utils/choiceLayout'
+import type { ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
   figuresByUsage,
   parseChoiceQuestion,
@@ -429,6 +430,10 @@ function inlineQuestionNumber(
 export function createQuestionRuntimeModel(
   block: QuestionBlock,
   question: QuestionItem,
+  options: {
+    choiceLayoutOverrides?: ChoiceLayoutOverrides
+    probeChoiceLayouts?: boolean
+  } = {},
 ): QuestionRuntimeModel {
   const displayNumber = block.display?.displayNumber || question.questionNo || ''
   const score = block.display?.scoreOverride ?? question.totalScore
@@ -475,11 +480,17 @@ export function createQuestionRuntimeModel(
   if (parsedChoice?.options.length) {
     // 选项按排版行建模，使分页器可以在“行”之间换页，同时保证单个选项
     // 不被截断。四栏=1 行、双栏=2 行、单栏=4 行；题图强制单栏。
-    const layout = choiceLayoutForTexts(
+    const heuristicLayout = choiceLayoutForTexts(
       parsedChoice.options.map((option) => option.content),
       optionFigures.length > 0,
     )
-    const columns = layout === 'quad' ? 4 : layout === 'double' ? 2 : 1
+    // 纸张排版的首轮由真实 KaTeX 宽度探测列数；首轮完成后固定结果，
+    // 使选项行模型、测量高度和最终分页使用同一个列数。
+    const layout = options.choiceLayoutOverrides?.[block.id]
+      || (options.probeChoiceLayouts && !optionFigures.length && parsedChoice.options.length === 4
+        ? 'adaptive'
+        : heuristicLayout)
+    const columns = layout === 'quad' || layout === 'adaptive' ? 4 : layout === 'double' ? 2 : 1
     for (let optionStart = 0, rowIndex = 0; optionStart < parsedChoice.options.length; optionStart += columns, rowIndex += 1) {
       const optionEnd = Math.min(parsedChoice.options.length, optionStart + columns)
       const rowOptions = parsedChoice.options.slice(optionStart, optionEnd)

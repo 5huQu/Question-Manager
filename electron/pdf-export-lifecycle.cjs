@@ -57,7 +57,7 @@ class PdfExportController {
 
   /**
    * 运行一次完整导出。
-   * @param {{documentId?: string, revision?: number, pageCount?: number, title?: string}} options
+   * @param {{documentId?: string, revision?: number, pageCount?: number, title?: string, variant?: 'student'|'teacher'}} options
    * @param {{
    *   appOrigin: string,
    *   showSaveDialog: (options: object) => Promise<{canceled: boolean, filePath?: string}>,
@@ -122,7 +122,7 @@ class PdfExportController {
 
       // BrowserRouter 真实路径（非 hash），由前端 App.tsx 的 /print/* bypass 渲染。
       // 附带 paper 查询参数，供打印页交叉校验文档纸张与导出期望纸张。
-      const printUrl = buildPrintUrl(deps.appOrigin, options.documentId, options.revision, options.paper)
+      const printUrl = buildPrintUrl(deps.appOrigin, options.documentId, options.revision, options.paper, options.variant)
       await context.printWindow.loadURL(printUrl)
       // load 边界：已被取消则不再等待 ready。
       if (context.cancelled) {

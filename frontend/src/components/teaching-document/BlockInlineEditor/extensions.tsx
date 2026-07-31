@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Node, Mark, mergeAttributes } from '@tiptap/core'
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import Paragraph from '@tiptap/extension-paragraph'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
@@ -238,6 +239,23 @@ export const InlineMathNode = Node.create({
   },
 })
 
+/**
+ * 连续卡片正文仍由多个 paragraph 组成。将业务 id 写入 ProseMirror 节点属性，
+ * 而非在 DOM 上事后打标，避免被 ProseMirror DOMObserver 当成外部改动。
+ */
+export const ParagraphWithBlockId = Paragraph.extend({
+  addAttributes() {
+    return {
+      ...(this.parent?.() || {}),
+      blockId: {
+        default: '',
+        parseHTML: (element) => element.getAttribute('data-block-id') || '',
+        renderHTML: (attributes) => attributes.blockId ? { 'data-block-id': String(attributes.blockId) } : {},
+      },
+    }
+  },
+})
+
 // ─── 扩展集工厂 ─────────────────────────────────────────────────────────────
 
 /**
@@ -251,6 +269,7 @@ export function createBlockEditorExtensions() {
   return [
     StarterKit.configure({
       // 块级节点全部禁用：单块编辑器只含一个 paragraph
+      paragraph: false,
       heading: false,
       blockquote: false,
       bulletList: false,
@@ -273,6 +292,7 @@ export function createBlockEditorExtensions() {
       gapcursor: false,
       trailingNode: false,
     }),
+    ParagraphWithBlockId,
     UnknownMark,
     FontFamilyMark,
     TextColorMark,

@@ -38,6 +38,12 @@ export interface BlockInlineEditorProps {
   toolbar?: 'inline' | 'floating' | 'none'
   /** 编辑器实例就绪回调（用于外部协调焦点/选区，也供测试驱动） */
   onEditorReady?: (editor: Editor) => void
+  /** 在卡片内按 Enter 新建同级段落。 */
+  onCreateSiblingParagraph?: () => void
+  /** 光标位于段首时按 Backspace，交由卡片容器合并或删除当前段落。 */
+  onBackspaceAtStart?: () => void
+  /** 新建或合并后将焦点放到该段末尾。 */
+  autoFocus?: boolean
 }
 
 function MarkButton({ label, active, disabled, onClick, children }: {
@@ -53,6 +59,7 @@ function MarkButton({ label, active, disabled, onClick, children }: {
       aria-label={label}
       aria-pressed={active}
       disabled={disabled}
+      title={label}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
       className={`flex size-7 items-center justify-center rounded text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:pointer-events-none disabled:opacity-35 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 ${active ? 'bg-zinc-200/70 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-50' : ''}`}
@@ -89,6 +96,9 @@ export function BlockInlineEditor({
   variant = 'panel',
   toolbar = 'inline',
   onEditorReady,
+  onCreateSiblingParagraph,
+  onBackspaceAtStart,
+  autoFocus = false,
 }: BlockInlineEditorProps) {
   const [formulaDialogOpen, setFormulaDialogOpen] = useState(false)
   const editable = !protectedReason
@@ -97,6 +107,10 @@ export function BlockInlineEditor({
   const syncing = useRef(false)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  const onCreateSiblingParagraphRef = useRef(onCreateSiblingParagraph)
+  onCreateSiblingParagraphRef.current = onCreateSiblingParagraph
+  const onBackspaceAtStartRef = useRef(onBackspaceAtStart)
+  onBackspaceAtStartRef.current = onBackspaceAtStart
   const [, refreshToolbar] = useState(0)
 
   const initialDoc = useRef(teachingInlinesToTiptapDoc(inlines))
@@ -116,9 +130,19 @@ export function BlockInlineEditor({
           : 'min-h-20 px-2.5 py-2 text-sm leading-6 text-zinc-900 outline-none dark:text-zinc-50',
       },
       handleKeyDown: (_view, event) => {
-        // 单块编辑器不允许 Enter 创建新段落/标题；Shift+Enter 插入 hardBreak
+        // 卡片内 Enter 创建同级段落；Shift+Enter 保留为当前段内换行。
         if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+          if (onCreateSiblingParagraphRef.current) {
+            event.preventDefault()
+            onCreateSiblingParagraphRef.current()
+            return true
+          }
           event.preventDefault()
+          return true
+        }
+        if (event.key === 'Backspace' && !event.isComposing && _view.state.selection.empty && _view.state.selection.from === 1 && onBackspaceAtStartRef.current) {
+          event.preventDefault()
+          onBackspaceAtStartRef.current()
           return true
         }
         return false
@@ -151,6 +175,10 @@ export function BlockInlineEditor({
   useEffect(() => {
     if (editor) onEditorReadyRef.current?.(editor)
   }, [editor])
+
+  useEffect(() => {
+    if (autoFocus && editor) editor.commands.focus('end')
+  }, [autoFocus, editor])
 
   useEffect(() => {
     if (!editor || toolbar !== 'floating') return
@@ -197,7 +225,7 @@ export function BlockInlineEditor({
           <InlineFormattingControls editor={editor} onFormula={() => setFormulaDialogOpen(true)} />
         </div>
       ) : null}
-      {toolbar === 'floating' && !protectedReason && editor.isFocused && editor.state.selection.from !== editor.state.selection.to ? (
+      {toolbar === 'floating' && !protectedReason && editor.isFocused ? (
         <div
           role="toolbar"
           aria-label="文字格式工具"
@@ -270,13 +298,25 @@ function applyTextFormat(editor: Editor, apply: () => void) {
 }
 
 /** 可嵌入单块编辑器或画布对象工具栏的共享文字格式控件。 */
-export function InlineFormattingControls({ editor, onFormula }: { editor: Editor; onFormula?: () => void }) {
+export function InlineFormattingControls({
+  editor,
+  onFormula,
+  /**
+   * 行内没有 fontFamily mark 时显示的说明。文档编辑器的全局字体由画布
+   * 继承，不应再笼统地写成“默认”，否则会被误解为没有应用页面字体。
+   */
+  inheritedFontLabel = '继承默认字体',
+}: {
+  editor: Editor
+  onFormula?: () => void
+  inheritedFontLabel?: string
+}) {
   const currentTextColor = String(editor.getAttributes('textColor').color || '')
   return (
     <>
       <select
         aria-label="字体"
-        title="未选中文字时，应用到当前章节或段落的全部文字"
+        title={`当前${inheritedFontLabel}；选择字体后会覆盖当前选中文本。未选中文字时，会应用到当前章节或段落的全部文字`}
         value={String(editor.getAttributes('fontFamily').family || '')}
         onChange={(event) => {
           const value = event.target.value
@@ -287,7 +327,7 @@ export function InlineFormattingControls({ editor, onFormula }: { editor: Editor
         }}
         className="h-7 max-w-28 cursor-pointer rounded bg-transparent px-1 text-[11px] text-zinc-600 outline-none hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-300 dark:hover:bg-zinc-800"
       >
-        <option value="">默认</option>
+        <option value="">{inheritedFontLabel}</option>
         {TEXT_FONT_OPTIONS.map((option) => (
           <option key={option.id} value={option.id}>{option.label}</option>
         ))}

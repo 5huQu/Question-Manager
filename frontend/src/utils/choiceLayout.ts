@@ -1,4 +1,20 @@
 export type ChoiceLayout = 'quad' | 'double' | 'single' | 'adaptive'
+export type ResolvedChoiceLayout = Exclude<ChoiceLayout, 'adaptive'>
+export type ChoiceLayoutOverrides = Readonly<Record<string, ResolvedChoiceLayout>>
+
+export function choiceLayoutFromColumns(columns: number): ResolvedChoiceLayout {
+  return columns >= 4 ? 'quad' : columns >= 2 ? 'double' : 'single'
+}
+
+export function choiceLayoutOverridesEqual(
+  left: ChoiceLayoutOverrides,
+  right: ChoiceLayoutOverrides,
+): boolean {
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key) => left[key] === right[key])
+}
 
 function requiresSingleColumn(value: string) {
   const source = String(value || '').replace(/\r\n?/g, '\n')

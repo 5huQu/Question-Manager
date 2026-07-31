@@ -16,6 +16,8 @@ export type TeachingDocumentAsset = {
   createdAt: string
 }
 
+export type TikzRenderResult = { asset: TeachingDocumentAsset; sourceHash: string; cached: boolean; warnings: string[] }
+
 export type TeachingDocumentSummary = {
   id: string
   title: string
@@ -94,6 +96,9 @@ export const teachingDocumentsApi = {
       body: form,
     })
   },
+  renderTikz: (id: string, input: { source: string }) => api<TikzRenderResult>(`/api/teaching-documents/${encodeURIComponent(id)}/tikz/render`, {
+    method: 'POST', headers: jsonHeaders, body: JSON.stringify(input),
+  }),
   getAsset: (assetId: string) =>
     api<TeachingDocumentAsset>(`/api/teaching-document-assets/${encodeURIComponent(assetId)}`),
 }
