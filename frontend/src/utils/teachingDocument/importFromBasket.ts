@@ -47,7 +47,6 @@ export function groupExamEntriesByType(entries: ExamImportEntry[]): Array<[strin
 export function buildExamDocumentFromQuestions(entries: ExamImportEntry[], title: string): TeachingDocumentV1 {
   const groups = groupExamEntriesByType(entries)
   const content: TeachingBlock[] = []
-  let questionNo = 0
 
   groups.forEach(([type, items], groupIndex) => {
     const groupScore = items.reduce((sum, entry) => sum + entry.score, 0)
@@ -58,7 +57,6 @@ export function buildExamDocumentFromQuestions(entries: ExamImportEntry[], title
       content: [{ type: 'text', text: `${sectionLabel(groupIndex)}、${type}（共 ${items.length} 题，共 ${formatScore(groupScore)} 分）` }],
     })
     for (const entry of items) {
-      questionNo += 1
       content.push({
         type: 'question',
         id: generateBlockId('question'),
@@ -67,7 +65,6 @@ export function buildExamDocumentFromQuestions(entries: ExamImportEntry[], title
           showAnswer: false,
           showAnalysis: false,
           scoreOverride: entry.score,
-          displayNumber: String(questionNo),
         },
       })
     }

@@ -512,7 +512,11 @@ export function findSolutionSections(markdown: string, config: ImportFlowV2Parse
       .replace(/^\s*【\s*/, '')
       .replace(/\s*】\s*$/, '')
       .replace(/\s*[:：]?\s*$/, '')
-    const title = config.solutionSectionKeywords.find((keyword) => clean === keyword || clean.endsWith(keyword))
+    const title = config.solutionSectionKeywords.find((keyword) => {
+      if (clean === keyword) return true
+      if (!clean.startsWith(keyword)) return false
+      return /^[：:（(]/.test(clean.slice(keyword.length))
+    })
     if (!title) { offset += lineWithNewline.length; continue }
     const start = offset
     const contentStart = offset + lineWithNewline.length

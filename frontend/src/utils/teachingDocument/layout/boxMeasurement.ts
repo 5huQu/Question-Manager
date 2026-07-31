@@ -57,6 +57,14 @@ function cssPixels(value: string | undefined) {
   return Number.parseFloat(value || '0') || 0
 }
 
+function outerHeight(element: HTMLElement | null) {
+  if (!element) return 0
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element)
+  return element.getBoundingClientRect().height
+    + cssPixels(style?.marginTop)
+    + cssPixels(style?.marginBottom)
+}
+
 export const browserBoxChromeGeometryAdapter: BoxChromeGeometryAdapter = {
   boxChrome(boxElement, headerElement, bodyElement) {
     const view = boxElement.ownerDocument.defaultView
@@ -139,6 +147,12 @@ export function measureTeachingDocumentBoxes(
     const boxElement = topLevel?.querySelector<HTMLElement>(`[${TEACHING_DOM.boxRoot}]`) || null
     const headerElement = boxElement?.querySelector<HTMLElement>(`[${TEACHING_DOM.boxHeader}]`) || null
     const bodyElement = boxElement?.querySelector<HTMLElement>(`[${TEACHING_DOM.boxBody}]`) || null
+    const continuationHeaderProbe = boxElement?.querySelector<HTMLElement>(
+      `[${TEACHING_DOM.boxContinuationHeaderProbe}]`,
+    ) || null
+    const continuationLabelProbe = boxElement?.querySelector<HTMLElement>(
+      `[${TEACHING_DOM.boxContinuationLabelProbe}]`,
+    ) || null
 
     if (!topLevel || !blockMeasurement || !boxElement || !bodyElement) {
       diagnostics.push({
@@ -178,6 +192,8 @@ export function measureTeachingDocumentBoxes(
       + safe.borderBottom
       + safe.bodyPaddingTop
       + safe.bodyPaddingBottom
+    const continuationHeaderHeight = outerHeight(continuationHeaderProbe)
+    const continuationLabelHeight = outerHeight(continuationLabelProbe)
     const childMeasurements: BoxChildMeasurement[] = []
     block.children.forEach((child, childIndex) => {
       const matches = blockMeasurement?.childMeasurements.filter(
@@ -223,9 +239,13 @@ export function measureTeachingDocumentBoxes(
       bodyPaddingBottom: safe.bodyPaddingBottom,
       fragmentChrome: {
         single: safe.marginTop + fixedChrome + safe.marginBottom,
-        start: safe.marginTop + fixedChrome,
-        middle: fixedChrome,
-        end: fixedChrome + safe.marginBottom,
+        // start/middle 会真实渲染“续下页”标签；middle/end 则使用较短的续页栏。
+        // 这两部分必须进入测量，否则贴近页底时会在最终渲染中溢出。
+        start: safe.marginTop + fixedChrome + continuationLabelHeight,
+        middle: safe.borderTop + safe.borderBottom + safe.bodyPaddingTop + safe.bodyPaddingBottom
+          + continuationHeaderHeight + continuationLabelHeight,
+        end: safe.borderTop + safe.borderBottom + safe.bodyPaddingTop + safe.bodyPaddingBottom
+          + continuationHeaderHeight + safe.marginBottom,
       },
       children: childMeasurements,
       diagnostics,

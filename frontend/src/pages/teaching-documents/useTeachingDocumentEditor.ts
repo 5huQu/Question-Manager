@@ -13,6 +13,7 @@ import {
   createTeachingDocumentHistory,
   executeTeachingDocumentCommand,
   hasFatalTeachingDocumentIssues,
+  renumberAutomaticQuestionNumbers,
   redoTeachingDocument,
   undoTeachingDocument,
   validateTeachingDocument,
@@ -33,6 +34,8 @@ export function useTeachingDocumentEditor(documentId: string) {
   const autosaveRef = useRef<TeachingDocumentAutosave<TeachingDocumentV1> | null>(null)
   /** 文档级编辑器实例（T3：undo/redo 由编辑器管理） */
   const editorInstanceRef = useRef<Editor | null>(null)
+  /** 由 DocumentEditor 注册；结构操作和保存前用于冲刷尚在合并窗口中的文字。 */
+  const editorFlushRef = useRef<(() => void) | null>(null)
   const [editorHistoryState, setEditorHistoryState] = useState({ canUndo: false, canRedo: false })
   const editorHistoryListenerRef = useRef<((payload?: unknown) => void) | null>(null)
 
@@ -123,6 +126,7 @@ export function useTeachingDocumentEditor(documentId: string) {
   }, [saveState])
 
   const dispatch = useCallback((command: TeachingDocumentCommand) => {
+    editorFlushRef.current?.()
     setHistory((current) => {
       if (!current) return current
       const next = executeTeachingDocumentCommand(current, command)
@@ -170,11 +174,17 @@ export function useTeachingDocumentEditor(documentId: string) {
 
   /** 编辑器内容变化回调（由 DocumentEditor onChange 调用） */
   const handleEditorChange = useCallback((doc: TeachingDocumentV1) => {
-    documentRef.current = doc
+    const normalized = renumberAutomaticQuestionNumbers(doc)
+    documentRef.current = normalized
     setHistory((current) => {
       if (!current) return current
-      return { ...current, document: doc }
+      return { ...current, document: normalized }
     })
+    autosaveRef.current?.changed()
+  }, [])
+
+  /** 键入发生时立即标脏；全文模型可在编辑器合并窗口结束后再同步。 */
+  const markEditorDirty = useCallback(() => {
     autosaveRef.current?.changed()
   }, [])
 
@@ -199,6 +209,10 @@ export function useTeachingDocumentEditor(documentId: string) {
     editorHistoryListenerRef.current = syncHistoryState
     editor.on('transaction', syncHistoryState)
     syncHistoryState()
+  }, [])
+
+  const registerEditorFlush = useCallback((flush: (() => void) | null) => {
+    editorFlushRef.current = flush
   }, [])
 
   /**
@@ -229,6 +243,17 @@ export function useTeachingDocumentEditor(documentId: string) {
     return asset
   }, [documentId])
 
+  const renderTikz = useCallback(async (source: string) => {
+    const result = await teachingDocumentsApi.renderTikz(documentId, { source })
+    setRecord((current) => {
+      if (!current) return current
+      const next = { ...current, assets: [...current.assets.filter((item) => item.id !== result.asset.id), result.asset] }
+      recordRef.current = next
+      return next
+    })
+    return result
+  }, [documentId])
+
   const validation = useMemo(
     () => history ? validateTeachingDocument(history.document) : { valid: true, issues: [] },
     [history],
@@ -247,13 +272,19 @@ export function useTeachingDocumentEditor(documentId: string) {
     dispatch,
     undo,
     redo,
-    saveNow: () => autosaveRef.current?.flush(),
+    saveNow: async () => {
+      editorFlushRef.current?.()
+      await autosaveRef.current?.flush()
+    },
     reload: load,
     uploadAsset,
+    renderTikz,
     /** T3：编辑器内容变化回调 */
     handleEditorChange,
+    markEditorDirty,
     /** T3：注册编辑器实例 */
     registerEditor,
+    registerEditorFlush,
     activeTopLevelBlockId,
     canUndo: editorHistoryState.canUndo || Boolean(history?.past.length),
     canRedo: editorHistoryState.canRedo || Boolean(history?.future.length),

@@ -4,11 +4,13 @@
  */
 
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   AlertTriangle, Box, FileCode2, Heading, Image, Minus,
-  FileQuestion, PilcrowLeft, ScissorsLineDashed, TextCursorInput, X,
+  ChevronDown, ChevronRight, FileQuestion, PilcrowLeft, ScissorsLineDashed, TextCursorInput, X, ArrowDown, ArrowUp,
 } from 'lucide-react'
-import type { DocumentValidationIssue, TeachingBlock, TeachingDocumentV1, TeachingInline } from '@/types/teachingDocument'
+import type { DocumentValidationIssue, TeachingBlock, TeachingDocumentOutlineOptions, TeachingDocumentV1, TeachingInline } from '@/types/teachingDocument'
+import { buildDocumentOutline } from '@/utils/teachingDocument'
 import { springPanel } from '@/components/teaching-document/motion'
 import { USER_BLOCK_LABEL } from './blockLabels'
 
@@ -38,7 +40,9 @@ function blockSummary(block: TeachingBlock): string {
     case 'question':
       return block.display?.displayNumber ? `第 ${block.display.displayNumber} 题` : '题目'
     case 'figure':
-      return block.caption || block.alt || '图片'
+      return block.groupItems?.length
+        ? `图片组 · ${block.groupItems.length} 张`
+        : block.caption || block.alt || '图片'
     case 'rawMarkdown':
       return block.markdown.slice(0, 18) || '（空）'
     case 'spacer':
@@ -59,14 +63,39 @@ function inlineText(inlines: TeachingInline[]): string {
     .trim()
 }
 
+type DocumentTreeItem = { block: TeachingBlock; children: DocumentTreeItem[] }
+
+/** 将章节与其间的普通块合并为同一棵可导航文档树。 */
+function documentTree(content: TeachingBlock[]): DocumentTreeItem[] {
+  const roots: DocumentTreeItem[] = []
+  const stack: Array<{ level: number; item: DocumentTreeItem }> = []
+  for (const block of content) {
+    const item: DocumentTreeItem = { block, children: [] }
+    if (block.type === 'heading') {
+      while (stack.length && stack.at(-1)!.level >= block.level) stack.pop()
+      const parent = stack.at(-1)?.item
+      ;(parent ? parent.children : roots).push(item)
+      stack.push({ level: block.level, item })
+    } else {
+      const parent = stack.at(-1)?.item
+      ;(parent ? parent.children : roots).push(item)
+    }
+  }
+  return roots
+}
+
 export function OutlinePanel(props: {
   open: boolean
   document: TeachingDocumentV1
   selectedId: string
+  /** 画布视口中心所在块；仅用于导航反馈，不改变编辑器选区。 */
+  activeBlockId?: string
   issues: DocumentValidationIssue[]
   onClose: () => void
   onSelect: (blockId: string) => void
   onFixIds: () => void
+  onOutlineChange?: (patch: Partial<TeachingDocumentOutlineOptions>) => void
+  onMoveSection?: (headingId: string, direction: -1 | 1) => void
 }) {
   const reduced = useReducedMotion()
   return (
@@ -79,12 +108,63 @@ export function OutlinePanel(props: {
 function OutlinePanelBody(props: {
   document: TeachingDocumentV1
   selectedId: string
+  activeBlockId?: string
   issues: DocumentValidationIssue[]
   onClose: () => void
   onSelect: (blockId: string) => void
   onFixIds: () => void
+  onOutlineChange?: (patch: Partial<TeachingDocumentOutlineOptions>) => void
+  onMoveSection?: (headingId: string, direction: -1 | 1) => void
   reduced: boolean | null
 }) {
+  const outline = buildDocumentOutline(props.document)
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(outline.entries.map((entry) => entry.blockId)))
+  const listRef = useRef<HTMLDivElement>(null)
+  const documentItems = documentTree(props.document.content)
+  useEffect(() => {
+    if (!props.activeBlockId) return
+    const target = listRef.current?.querySelector<HTMLElement>(`[data-outline-block-id="${CSS.escape(props.activeBlockId)}"]`)
+    target?.scrollIntoView({ block: 'nearest' })
+  }, [props.activeBlockId])
+  const renderTreeItem = (item: DocumentTreeItem, depth = 0): ReactNode => {
+    const { block } = item
+    const isHeading = block.type === 'heading'
+    const hasChildren = item.children.length > 0
+    const isExpanded = expanded.has(block.id)
+    const isSelected = props.selectedId === block.id
+    const isActive = props.activeBlockId === block.id
+    const Icon = BLOCK_ICONS[block.type] || PilcrowLeft
+    const label = isHeading ? outline.entryByBlockId.get(block.id)?.displayLabel : undefined
+    return (
+      <div key={block.id} data-outline-block-id={block.id}>
+        <div className={`group flex items-center gap-1 rounded-md pr-1 ${isSelected ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : isActive ? 'bg-zinc-200/80 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900'}`} style={{ paddingLeft: `${Math.min(depth, 4) * 10}px` }}>
+          {isHeading ? (
+            <button type="button" className="flex size-5 shrink-0 items-center justify-center" aria-label={isExpanded ? '折叠章节' : '展开章节'} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(block.id)) next.delete(block.id); else next.add(block.id); return next })}>
+              {hasChildren ? (isExpanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />) : null}
+            </button>
+          ) : <span className="w-5 shrink-0" />}
+          <button type="button" onClick={() => props.onSelect(block.id)} className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left text-xs">
+            <Icon className={`size-3.5 shrink-0 ${isSelected ? 'opacity-80' : 'opacity-50'}`} />
+            <span className="truncate">{label ? `${label} ` : ''}{blockSummary(block)}</span>
+          </button>
+          {isHeading && props.onMoveSection ? <span className="hidden shrink-0 group-hover:flex">
+            <button type="button" title="章节上移" onClick={() => props.onMoveSection?.(block.id, -1)} className="rounded p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700"><ArrowUp className="size-3" /></button>
+            <button type="button" title="章节下移" onClick={() => props.onMoveSection?.(block.id, 1)} className="rounded p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700"><ArrowDown className="size-3" /></button>
+          </span> : null}
+        </div>
+        {isHeading && hasChildren && isExpanded ? <div className="border-l border-zinc-200 dark:border-zinc-800">{item.children.map((child) => renderTreeItem(child, depth + 1))}</div> : null}
+        {block.type === 'box' && block.children.length ? <div className="ml-6 border-l border-zinc-200 pl-1 dark:border-zinc-800">
+          {block.children.map((child) => {
+            const childBlock = child as TeachingBlock
+            const ChildIcon = BLOCK_ICONS[childBlock.type] || PilcrowLeft
+            const childSelected = props.selectedId === child.id
+            const childActive = props.activeBlockId === child.id
+            return <button key={child.id} data-outline-block-id={child.id} type="button" onClick={() => props.onSelect(child.id)} className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[11px] transition-colors ${childSelected ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100' : childActive ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800/70 dark:text-zinc-100' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}><ChildIcon className="size-3 shrink-0 opacity-50" /><span className="truncate">{blockSummary(childBlock)}</span></button>
+          })}
+        </div> : null}
+      </div>
+    )
+  }
   return (
     <motion.aside
       initial={props.reduced ? { opacity: 0 } : { x: -260, opacity: 0 }}
@@ -100,45 +180,24 @@ function OutlinePanelBody(props: {
         </button>
       </div>
 
-      <div className="flex-1 space-y-0.5 overflow-auto p-2">
-        {props.document.content.map((block, index) => {
-          const Icon = BLOCK_ICONS[block.type] || PilcrowLeft
-          const isSelected = props.selectedId === block.id
-          return (
-            <div key={`${block.id}:${index}`}>
-              <button
-                type="button"
-                onClick={() => props.onSelect(block.id)}
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
-                  isSelected
-                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                    : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900'
-                }`}
-              >
-                <Icon className={`size-3.5 shrink-0 ${isSelected ? 'opacity-80' : 'opacity-50'}`} />
-                <span className="truncate">{blockSummary(block)}</span>
-              </button>
-              {block.type === 'box' && block.children.length ? (
-                <div className="ml-6 border-l border-zinc-200 pl-1 dark:border-zinc-800">
-                  {block.children.map((child) => (
-                    <button
-                      key={child.id}
-                      type="button"
-                      onClick={() => props.onSelect(child.id)}
-                      className={`block w-full truncate rounded px-2 py-1 text-left text-[11px] transition-colors ${
-                        props.selectedId === child.id
-                          ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                          : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900'
-                      }`}
-                    >
-                      {blockSummary(child as TeachingBlock)}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          )
-        })}
+      <div className="space-y-2 border-b border-zinc-100 px-3 py-2.5 dark:border-zinc-900">
+        <label className="flex items-center justify-between gap-2 text-[11px] text-zinc-600 dark:text-zinc-300"><span>自动章节编号</span><input type="checkbox" checked={props.document.outline?.numberingEnabled === true} onChange={(event) => props.onOutlineChange?.({ numberingEnabled: event.target.checked })} /></label>
+        <select aria-label="章节编号方案" value={props.document.outline?.preset || 'decimal'} disabled={props.document.outline?.numberingEnabled !== true} onChange={(event) => props.onOutlineChange?.({ preset: event.target.value as TeachingDocumentOutlineOptions['preset'] })} className="h-7 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] dark:border-zinc-700 dark:bg-zinc-950">
+          <option value="decimal">1 / 1.1 / 1.1.1</option>
+          <option value="chinese">一、/（一）/ 1.</option>
+          <option value="paren">（一）/ 1. /（1）</option>
+          <option value="textbook">第 X 章 / 第 X 节 / 一、</option>
+          <option value="chapter-chinese">第 X 章 / 一、/ 1.</option>
+          <option value="chapter-decimal">第 X 章 / 1.1 / 1.1.1</option>
+          <option value="chapter-section">第 X 章 / 第 X 节 / 第 X 条</option>
+          <option value="roman">I. / A. / 1.</option>
+          <option value="exam">试卷式</option>
+          <option value="none">不编号</option>
+        </select>
+      </div>
+
+      <div ref={listRef} className="flex-1 space-y-0.5 overflow-auto p-2">
+        {documentItems.map((item) => renderTreeItem(item))}
         {!props.document.content.length ? (
           <p className="px-2 py-4 text-center text-[11px] text-zinc-400">暂无内容</p>
         ) : null}

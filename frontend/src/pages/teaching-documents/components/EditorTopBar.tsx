@@ -8,12 +8,12 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
   ArrowLeft, Check, ChevronDown, CornerDownRight, FileText, LayoutTemplate,
-  LoaderCircle, Plus, Redo2, Undo2, AlignLeft,
+  LoaderCircle, Minus, Plus, Redo2, Undo2, AlignLeft,
 } from 'lucide-react'
 import type { TeachingBlock } from '@/types/teachingDocument'
 import type { AutosaveState } from '@/utils/teachingDocument'
 import { springQuick } from '@/components/teaching-document/motion'
-import { InsertMenuPanel } from './BlockInsertMenu'
+import { InsertMenuPanel, type HeadingLevel } from './BlockInsertMenu'
 
 const SAVE_INDICATOR: Record<AutosaveState, { label: string; dot: string; text: string }> = {
   saved: { label: '已保存', dot: 'bg-emerald-500', text: 'text-zinc-500' },
@@ -32,12 +32,14 @@ export function EditorTopBar(props: {
   canUndo: boolean
   canRedo: boolean
   canvasMode: TeachingCanvasMode
+  zoom: number
   onBack: () => void
   onTitleChange: (title: string) => void
   onUndo: () => void
   onRedo: () => void
   onCanvasModeChange: (mode: TeachingCanvasMode) => void
-  onInsert: (type: TeachingBlock['type']) => void
+  onZoomChange: (zoom: number) => void
+  onInsert: (type: TeachingBlock['type'], headingLevel?: HeadingLevel) => void
   paperActions?: ReactNode
   printActions?: ReactNode
 }) {
@@ -98,6 +100,48 @@ export function EditorTopBar(props: {
         aria-label="文档标题"
         placeholder="未命名文档"
       />
+
+      <div
+        className="hidden h-8 shrink-0 items-center gap-0.5 rounded-md border border-zinc-200 bg-white px-1 lg:flex dark:border-zinc-800 dark:bg-zinc-950"
+        aria-label="视图缩放"
+      >
+        <button
+          type="button"
+          onClick={() => props.onZoomChange(Math.max(0.5, Math.round((props.zoom - 0.05) * 100) / 100))}
+          className="flex size-6 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
+          aria-label="缩小视图"
+          title="缩小视图"
+        >
+          <Minus className="size-3.5" />
+        </button>
+        <input
+          className="h-1 w-20 cursor-pointer appearance-none rounded-full bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-100"
+          type="range"
+          min={50}
+          max={150}
+          step={5}
+          value={Math.round(props.zoom * 100)}
+          onChange={(event) => props.onZoomChange(Number(event.target.value) / 100)}
+          aria-label="视图缩放比例"
+        />
+        <button
+          type="button"
+          onClick={() => props.onZoomChange(Math.min(1.5, Math.round((props.zoom + 0.05) * 100) / 100))}
+          className="flex size-6 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
+          aria-label="放大视图"
+          title="放大视图"
+        >
+          <Plus className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => props.onZoomChange(1)}
+          className="w-10 rounded px-1 py-1 text-center text-[11px] font-medium tabular-nums text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+          title="恢复到 100%"
+        >
+          {Math.round(props.zoom * 100)}%
+        </button>
+      </div>
 
       <span className={`hidden items-center gap-1.5 text-[11px] font-normal tracking-wide sm:inline-flex ${indicator.text}`}>
         <span className={`size-1.5 rounded-full ${indicator.dot}`} />
@@ -199,7 +243,7 @@ export function EditorTopBar(props: {
                 style={{ top: menuPos.top, left: menuPos.left }}
                 className="fixed z-[70]"
               >
-                <InsertMenuPanel onPick={(type) => { props.onInsert(type); setInsertOpen(false) }} />
+                <InsertMenuPanel onPick={(type, headingLevel) => { props.onInsert(type, headingLevel); setInsertOpen(false) }} />
               </motion.div>
             ) : null}
           </AnimatePresence>,

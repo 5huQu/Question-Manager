@@ -30,6 +30,8 @@ declare global {
           revision?: number
           pageCount?: number
           title?: string
+          /** 导出版本：学生版隐藏答案与解析，教师版显示答案与解析。 */
+          variant?: PdfExportVariant
           /** 文档纸张规格：供主进程生成 printToPDF 参数与打印页交叉校验。 */
           paper?: PaperSpec
         }) => Promise<PdfExportResult>
@@ -43,6 +45,8 @@ declare global {
     }
   }
 }
+
+export type PdfExportVariant = 'student' | 'teacher'
 
 export interface PdfExportResult {
   success: boolean

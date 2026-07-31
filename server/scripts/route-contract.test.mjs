@@ -9,6 +9,10 @@ process.env.QUESTION_DATA_DIR = tempRoot
 const { app, closeDatabase } = await import('../dist/index.js')
 
 const expectedRoutes = new Set([
+  'GET /api/teaching-document-templates',
+  'POST /api/teaching-document-templates',
+  'PATCH /api/teaching-document-templates/:id',
+  'DELETE /api/teaching-document-templates/:id',
   'GET /api/health',
   'GET /api/settings',
   'PATCH /api/settings',
@@ -124,6 +128,8 @@ const expectedRoutes = new Set([
   'POST /api/question-bank/items/:id/rerun-ocr',
   'POST /api/question-bank/items/:id/ai-clean-preview',
   'POST /api/question-bank/items/classify',
+  'GET /api/question-bank/classification-tasks/active',
+  'GET /api/question-bank/classification-tasks/:id',
   'POST /api/question-bank/items',
   'POST /api/question-bank/import-json',
   'POST /api/question-bank/import-json-from-slices',
@@ -172,6 +178,7 @@ const expectedRoutes = new Set([
   'GET /api/teaching-documents/:id',
   'PATCH /api/teaching-documents/:id',
   'POST /api/teaching-documents/:id/duplicate',
+  'POST /api/teaching-documents/:id/tikz/render',
   'DELETE /api/teaching-documents/:id',
   'POST /api/teaching-documents/:id/assets',
   'GET /api/teaching-document-assets/:assetId',

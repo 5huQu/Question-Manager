@@ -5,6 +5,7 @@ import * as importJobRepo from '../../repositories/import-jobs.repo.js'
 import * as sourceRepo from '../../repositories/source-documents.repo.js'
 import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
 import * as candidateRepo from '../../repositories/question-candidates.repo.js'
+import { deleteQuestionBankItemsForImportSources } from '../../repositories/question-bank/items.repo.js'
 import type { ImportJob, ImportJobDocument, ImportJobDocumentRole, ImportJobMode } from '../../types/import-job.js'
 import type { SourceDocument } from '../../types/source-document.js'
 import type { CandidateParseDiagnostic, QuestionCandidate } from '../../types/question-candidate.js'
@@ -383,8 +384,9 @@ export function deleteImportJob(id: string) {
   }
 
   db.exec('BEGIN IMMEDIATE')
+  let deletedQuestionIds: string[] = []
   try {
-    db.prepare('UPDATE question_bank_items SET import_job_id = NULL WHERE import_job_id = ?').run(id)
+    deletedQuestionIds = deleteQuestionBankItemsForImportSources(sourceDocumentIds, id)
     for (const sourceDocumentId of sourceDocumentIds) {
       db.prepare('DELETE FROM source_documents WHERE id = ?').run(sourceDocumentId)
     }
@@ -410,6 +412,10 @@ export function deleteImportJob(id: string) {
     `).run(message, new Date().toISOString(), id)
     importJobRepo.updateImportJob(id, { status: 'failed' })
     throw error
+  }
+
+  for (const questionId of deletedQuestionIds) {
+    fs.rmSync(path.join(importDataDir(), '..', 'question_figures', questionId), { recursive: true, force: true })
   }
 
   return { success: true, recoveryPath: trashRoot }

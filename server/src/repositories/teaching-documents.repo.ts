@@ -23,6 +23,14 @@ export type TeachingDocumentAssetRow = {
   created_at: string
 }
 
+export type PrintTemplateRow = { id: string; name: string; options_json: string; created_at: string; updated_at: string }
+
+export function listPrintTemplates() { return db.prepare('SELECT * FROM print_templates ORDER BY updated_at DESC, id ASC').all() as PrintTemplateRow[] }
+export function getPrintTemplate(id: string) { return db.prepare('SELECT * FROM print_templates WHERE id = ?').get(id) as PrintTemplateRow | undefined }
+export function insertPrintTemplate(row: PrintTemplateRow) { return db.prepare('INSERT INTO print_templates (id,name,options_json,created_at,updated_at) VALUES (?,?,?,?,?)').run(row.id,row.name,row.options_json,row.created_at,row.updated_at) }
+export function updatePrintTemplate(row: Pick<PrintTemplateRow, 'id'|'name'|'options_json'|'updated_at'>) { return db.prepare('UPDATE print_templates SET name=?, options_json=?, updated_at=? WHERE id=?').run(row.name,row.options_json,row.updated_at,row.id) }
+export function deletePrintTemplate(id: string) { return db.prepare('DELETE FROM print_templates WHERE id=?').run(id) }
+
 export function listTeachingDocuments() {
   return db.prepare(`
     SELECT d.*,

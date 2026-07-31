@@ -1,11 +1,10 @@
 import type { OCRDocument } from '../../../types/ocr-document.js'
 import type { QuestionCandidate } from '../../../types/question-candidate.js'
 import {
-  defaultParserConfig,
   type ImportFlowV2ParserConfig,
   type SolutionBindingStrategy,
 } from '../default-parser-config.js'
-import { normalizeParserConfig } from '../parser-config.js'
+import { parserConfigForRequest } from '../parser-config.js'
 import { detectSolutionQuestionNumbers } from '../question-number-detector.js'
 import {
   extractInlineAnswerTableBlocks,
@@ -254,7 +253,7 @@ export function buildParserPreview(
   candidate?: QuestionCandidate,
   recognizedCandidates: QuestionCandidate[] = [],
 ): ParserPreviewResponse {
-  const config = normalizeParserConfig({ ...defaultParserConfig, ...(request.config || {}) })
+  const config = parserConfigForRequest(request)
   const markdown = String(document.markdown || '')
   const lines = lineOffsetsFor(markdown)
   const focusQuestionNo = request.focusQuestionNo || candidate?.questionNo || ''

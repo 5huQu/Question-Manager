@@ -75,6 +75,16 @@ describe('createQuestionRuntimeModel', () => {
     expect(model.regions.some((region) => region.type === 'analysis')).toBe(false)
   })
 
+  it('uses the measured layout override for formula-heavy choices', () => {
+    const block: QuestionBlock = { type: 'question', id: 'question-block', questionId: 'question-1' }
+    const model = createQuestionRuntimeModel(block, question({
+      stemMarkdown: '选择正确结论。\n\nA. $x^2+y^2=1$\nB. $x^2+y^2=4$\nC. $x^2+y^2=9$\nD. $x^2+y^2=16$',
+    }), { choiceLayoutOverrides: { 'question-block': 'double' } })
+    expect(model.regions.filter((region) => region.kind === 'options-row')).toHaveLength(2)
+    expect(model.regions.filter((region) => region.kind === 'options-row').map((region) => [region.optionStart, region.optionEnd]))
+      .toEqual([[0, 2], [2, 4]])
+  })
+
   it('keeps complex markdown whole instead of cutting its source string', () => {
     const block: QuestionBlock = {
       type: 'question',

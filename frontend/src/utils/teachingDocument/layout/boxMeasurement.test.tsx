@@ -38,6 +38,14 @@ function renderedRoot() {
   return root
 }
 
+function setMeasuredHeight(element: HTMLElement | null, height: number) {
+  if (!element) throw new Error('expected continuation probe')
+  Object.defineProperty(element, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ width: 0, height, top: 0, bottom: height, left: 0, right: 0, x: 0, y: 0, toJSON: () => ({}) }),
+  })
+}
+
 const geometry: GeometryAdapter = {
   measure(element) {
     const height = Number(element.dataset.height || 0)
@@ -60,6 +68,8 @@ const chromeGeometry: BoxChromeGeometryAdapter = {
 describe('measureTeachingDocumentBoxes', () => {
   it('measures stable chrome and resolves duplicate child IDs by explicit child index', () => {
     const root = renderedRoot()
+    setMeasuredHeight(root.querySelector(`[${TEACHING_DOM.boxContinuationHeaderProbe}]`), 11)
+    setMeasuredHeight(root.querySelector(`[${TEACHING_DOM.boxContinuationLabelProbe}]`), 7)
     const documentMeasurement = measureTeachingDocument(root, fixture, geometry)
     const [box] = measureTeachingDocumentBoxes(
       root,
@@ -70,9 +80,9 @@ describe('measureTeachingDocumentBoxes', () => {
 
     expect(box.fragmentChrome).toEqual({
       single: 40,
-      start: 30,
-      middle: 20,
-      end: 30,
+      start: 37,
+      middle: 26,
+      end: 29,
     })
     expect(box.children.map((child) => [child.childIndex, child.childBlockId, child.height]))
       .toEqual([[0, 'same', 30], [1, 'same', 40]])

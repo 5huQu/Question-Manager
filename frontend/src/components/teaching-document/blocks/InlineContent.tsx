@@ -7,9 +7,9 @@
  */
 
 import { useMemo, type ReactNode } from 'react'
-import katex from 'katex'
 import type { TeachingInline, InlineMark } from '@/types/teachingDocument'
 import { fontStackById } from '@/utils/teachingDocument/lectureFonts'
+import { renderTeachingDocumentKatex } from '@/utils/teachingDocument/katexCache'
 import {
   sliceTeachingInlines,
   TEACHING_DOM,
@@ -21,11 +21,7 @@ import {
 
 function InlineMathSpan({ latex }: { latex: string }) {
   const html = useMemo(() => {
-    try {
-      return katex.renderToString(latex, { displayMode: false, throwOnError: true, strict: false })
-    } catch {
-      return ''
-    }
+    return renderTeachingDocumentKatex(latex, false)
   }, [latex])
 
   if (!html) {

@@ -34,6 +34,7 @@ export type RenderDiagnosticCode =
   | 'question-fragment-invalid'
   | 'question-resource-unresolved'
   | 'rawmarkdown-overflow'
+  | 'rawmarkdown-measurement-missing'
   | 'table-overflow'
 
 export interface RenderDiagnostic {
@@ -123,6 +124,7 @@ export interface PaginationInput {
   measurements: TeachingDocumentMeasurement
   paragraphMeasurements?: import('./paragraphMeasurement').ParagraphMeasurement[]
   boxMeasurements?: import('./boxMeasurement').BoxMeasurement[]
+  boxChildRawMarkdownMeasurements?: import('./rawMarkdownMeasurement').RawMarkdownMeasurement[]
   questionMeasurements?: import('./questionMeasurement').QuestionMeasurement[]
   /** Box child question measurements keyed by blockSourcePathKey */
   boxChildQuestionMeasurements?: Map<string, import('./questionMeasurement').QuestionMeasurement>

@@ -62,9 +62,11 @@ assert.equal(validatePdfExportOptions({ documentId: 'd', revision: -1 }), 'revis
 assert.equal(validatePdfExportOptions({ documentId: 'd', revision: 1.5 }), 'revision 参数无效。')
 assert.equal(validatePdfExportOptions({ documentId: 'd', pageCount: -2 }), 'pageCount 参数无效。')
 assert.equal(validatePdfExportOptions({ documentId: 'd', title: 42 }), 'title 参数无效。')
+assert.equal(validatePdfExportOptions({ documentId: 'd', variant: 'answer-key' }), '导出版本无效。')
 // 合法参数返回 null（revision/pageCount/title 可省略，revision=0 合法）。
 assert.equal(validatePdfExportOptions({ documentId: 'doc_1' }), null)
 assert.equal(validatePdfExportOptions({ documentId: 'doc_1', revision: 0, pageCount: 3, title: '讲义' }), null)
+assert.equal(validatePdfExportOptions({ documentId: 'doc_1', variant: 'teacher' }), null)
 
 // ─── 打印 URL 必须基于 canonical origin（可执行测试） ─────────────
 // URL 纯由传入的 appOrigin 构造，不依赖 argv/PORT；正确编码 documentId 与 revision。
@@ -76,6 +78,10 @@ assert.equal(
 assert.equal(
   buildPrintUrl('http://127.0.0.1:60000', 'x'),
   'http://127.0.0.1:60000/print/teaching-document?docId=x&revision=0',
+)
+assert.equal(
+  buildPrintUrl('http://127.0.0.1:60000', 'x', 2, undefined, 'teacher'),
+  'http://127.0.0.1:60000/print/teaching-document?docId=x&revision=2&variant=teacher',
 )
 
 // ─── 纸张参数校验（可执行测试） ─────────────
@@ -158,7 +164,7 @@ assert.ok(
 assert.match(mainSource, /appOrigin = appUrl/)
 assert.match(mainSource, /mainWindow = win/)
 assert.match(mainSource, /pdfExportController\.runExport\(/)
-assert.match(lifecycleSource, /buildPrintUrl\(deps\.appOrigin, options\.documentId, options\.revision, options\.paper\)/)
+assert.match(lifecycleSource, /buildPrintUrl\(deps\.appOrigin, options\.documentId, options\.revision, options\.paper, options\.variant\)/)
 // start/cancel 的 sender 必须来自主应用窗口。
 assert.match(mainSource, /event\.sender\.id !== mainWindow\.webContents\.id/)
 // 隐藏打印窗口应用现有 secureWebContents 安全策略。
@@ -250,6 +256,15 @@ assert.deepEqual(new PdfExportController().cancel(), { success: true })
   assert.equal(deps.calls.unlink.length, 0)
   assert.equal(controller.inProgress, false)
   assert.equal(controller.activeContext, null)
+}
+
+// 学生版/教师版沿生命周期透传到打印页 URL。
+{
+  const controller = new PdfExportController()
+  const deps = makeDeps()
+  const result = await controller.runExport({ documentId: 'doc-1', revision: 3, variant: 'teacher' }, deps)
+  assert.equal(result.success, true)
+  assert.deepEqual(deps.calls.loadURL, ['http://127.0.0.1:51234/print/teaching-document?docId=doc-1&revision=3&variant=teacher'])
 }
 
 // PDF 结构校验失败必须阻断成功结果，并清理已写入的无效产物。

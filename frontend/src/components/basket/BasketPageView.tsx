@@ -1,15 +1,27 @@
-import { BookOpen, Calendar, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, EyeOff, FileCode2, FileDown, FileText, GripVertical, HelpCircle, NotebookPen, PencilLine, Save, Settings2, ShoppingBag, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
-import type { CollectionSummary } from '../../types'
+import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, EyeOff, FileDown, FileText, GripVertical, HelpCircle, NotebookPen, PencilLine, Save, Settings2, ShoppingBag, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
 import { Button } from '../ui'
-import { MarkdownWithInlineFigures, QuestionMarkdownContent } from '../questions/QuestionContent'
 import { EditDialog } from '../questions/EditDialog'
 import { Modal } from '../dialogs/Modal'
-import { richBlocksPlainText } from '../RichContent'
-import { difficultyLabel10, displaySource } from '../../utils/questionDisplay'
 import { basketCardOutlineButtonClass, basketCardDangerButtonClass, getDefaultScore, stripLeadingQuestionNo } from './constants'
 import type { BasketState } from './useBasketState'
+import {
+  QuestionCardContextLabel,
+  QuestionCardFooter,
+  QuestionCardFrame,
+  QuestionCardHeader,
+  QuestionCardKnowledge,
+  QuestionCardSolution,
+  QuestionCardStem,
+  resolveQuestionCardContent,
+} from '../questions/workbench/QuestionCard'
 
-export function BasketPageView({ state }: { state: BasketState }) {
+export function BasketPageView({
+  state,
+  onSnapshotsOpenChange,
+}: {
+  state: BasketState
+  onSnapshotsOpenChange: (open: boolean) => void
+}) {
   const {
     navigate,
     editingPaperId, activeId,
@@ -18,7 +30,6 @@ export function BasketPageView({ state }: { state: BasketState }) {
     localTitle, setLocalTitle,
     localSubtitle, setLocalSubtitle,
     localTimeLimit, setLocalTimeLimit,
-    pageExportFormat, setPageExportFormat,
     pageVariant, setPageVariant,
     expandedQuestionIds, setExpandedQuestionIds,
     editingItem, setEditingItem,
@@ -32,7 +43,7 @@ export function BasketPageView({ state }: { state: BasketState }) {
     totalScore, activeQuestions, allExpanded,
     savedPapers,
     toggleExpandAll,
-    openPaper, backToBasket, deletePaper,
+    backToBasket,
     openSaveDialog, closeSaveDialog, confirmSavePaper, overwriteSavePaper,
     patchCollection, patchItem, removeItem, clearCollection, moveItem,
     openEditor, saveEditedQuestion,
@@ -40,32 +51,6 @@ export function BasketPageView({ state }: { state: BasketState }) {
     importingDocument, importToTeachingDocument,
     handleDragDrop,
   } = state
-
-  function renderPaperRow(paper: CollectionSummary, onOpen: (paperId: string) => void) {
-    const isActive = editingPaperId === paper.id
-    return (
-      <div key={paper.id} className={`group relative overflow-hidden rounded-lg border transition-all duration-150 ${isActive ? 'border-zinc-900 bg-zinc-50 shadow-sm dark:border-zinc-100 dark:bg-zinc-900/70' : 'border-zinc-200 bg-white hover:border-zinc-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700'}`}>
-        {isActive ? <span className="absolute inset-y-0 left-0 w-[3px] bg-zinc-900 dark:bg-zinc-100" /> : null}
-        <div className="flex items-center">
-          <button type="button" onClick={() => onOpen(paper.id)} title="打开并编辑这份试卷" className={`flex min-w-0 flex-1 items-center gap-2.5 py-2.5 pr-2 text-left ${isActive ? 'pl-4' : 'pl-3.5'}`}>
-            <FileText className={`size-4 shrink-0 ${isActive ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}`} />
-            <span className="min-w-0 flex-1">
-              <span className={`block truncate text-[13px] font-semibold leading-snug ${isActive ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-700 dark:text-zinc-300'}`}>{paper.title}</span>
-              <span className="block text-[10px] text-zinc-400 dark:text-zinc-500">{paper.questionCount} 题 · {paper.totalScore || 0} 分{paper.updatedAt ? ` · ${new Date(paper.updatedAt).toLocaleDateString()}` : ''}</span>
-            </span>
-            {isActive ? (
-              <span className="shrink-0 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-[9px] font-semibold text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">编辑中</span>
-            ) : (
-              <ChevronRight className="size-4 shrink-0 text-zinc-300 opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:text-zinc-600" />
-            )}
-          </button>
-          <button type="button" onClick={() => void deletePaper(paper)} title="删除试卷" className="mr-2 shrink-0 rounded p-1.5 text-zinc-300 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-zinc-600 dark:hover:bg-red-950/30 dark:hover:text-red-400">
-            <Trash2 className="size-3.5" />
-          </button>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="mock-page-root relative flex min-h-[calc(100vh-6rem)] flex-col overflow-auto bg-zinc-50/20 select-none xl:h-[calc(100vh-6rem)] xl:flex-row xl:overflow-hidden dark:bg-zinc-950">
@@ -107,17 +92,16 @@ export function BasketPageView({ state }: { state: BasketState }) {
               {active.data.questions.map((entry, index) => {
                 const itemKey = entry.relationId || entry.item.id
                 const showAnalysis = expandedQuestionIds.has(itemKey)
-                const stem = entry.item.stemMarkdown || richBlocksPlainText(entry.item.problemBlocks)
-                const answer = entry.item.answerText || richBlocksPlainText(entry.item.answerBlocks)
-                const analysis = entry.item.analysisMarkdown || richBlocksPlainText(entry.item.analysisBlocks)
-                const chapter = entry.item.chapter || entry.item.knowledgePoints?.[0] || '未分类'
-                const date = entry.item.updatedAt ? new Date(entry.item.updatedAt).toLocaleDateString() : ''
+                const { stem } = resolveQuestionCardContent(entry.item)
 
                 return (
-                  <article
+                  <QuestionCardFrame
                     key={itemKey}
                     draggable
-                    onDragStart={(event) => {
+                    animateLayout
+                    dragging={draggedIndex === index}
+                    className="cursor-grab active:cursor-grabbing"
+                    onDragStartCapture={(event) => {
                       if ((event.target as HTMLElement).closest('button, input')) {
                         event.preventDefault()
                         return
@@ -132,74 +116,24 @@ export function BasketPageView({ state }: { state: BasketState }) {
                       if (draggedIndex === null) return
                       await handleDragDrop(draggedIndex, index)
                     }}
-                    className={`group relative flex cursor-grab flex-col gap-3 rounded-lg border bg-white p-5 text-left transition-all duration-200 active:cursor-grabbing dark:bg-zinc-950 ${
-                      draggedIndex === index
-                        ? 'border-dashed border-zinc-400 bg-zinc-50 opacity-40 dark:border-zinc-600 dark:bg-zinc-900/10'
-                        : 'border-zinc-200 hover:-translate-y-0.5 hover:border-zinc-400 hover:shadow-md dark:border-zinc-800 dark:hover:border-zinc-600 dark:hover:shadow-none'
-                    }`}
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex min-w-0 flex-1 items-center gap-3">
-                        <GripVertical className="size-4 shrink-0 text-zinc-300 transition-colors group-hover:text-zinc-500 dark:text-zinc-700 dark:group-hover:text-zinc-500" />
-                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                          <span className="inline-flex items-center rounded bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold text-white dark:bg-zinc-100 dark:text-zinc-900">第 {index + 1} 题</span>
-                          {[entry.item.questionType || '未设题型', entry.item.stage || '未设学段', chapter].map((tag) => (
-                            <span key={tag} className="inline-flex items-center rounded bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                              {tag}
-                            </span>
-                          ))}
-                          <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold ${String(difficultyLabel10(entry.item)).includes('难') ? 'bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'}`}>
-                            难度: {difficultyLabel10(entry.item)}
-                          </span>
-                        </div>
-                      </div>
-                      <span className="ml-1 shrink-0 font-mono text-[10px] text-zinc-400 dark:text-zinc-500">
-                        #{entry.item.serialNo ?? entry.item.questionNo ?? entry.item.id.slice(0, 6)}
-                      </span>
-                    </div>
-
-                    <div className="select-text font-sans text-xs leading-relaxed text-zinc-900 dark:text-zinc-100">
-                      <QuestionMarkdownContent
-                        content={stripLeadingQuestionNo(stem || '题干为空', entry.item.questionNo)}
-                        figures={entry.item.figures}
-                      />
-                    </div>
-
-                    {entry.item.knowledgePoints?.length ? (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {entry.item.knowledgePoints.map((knowledgePoint) => (
-                          <span key={knowledgePoint} className="inline-flex items-center rounded border border-zinc-200/60 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:border-zinc-800/80 dark:bg-zinc-900/30 dark:text-zinc-400">
-                            {knowledgePoint}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    <div className={`grid transition-all duration-300 ease-in-out ${showAnalysis ? 'mt-2 grid-rows-[1fr] opacity-100' : 'pointer-events-none grid-rows-[0fr] opacity-0'}`}>
-                      <div className="overflow-hidden">
-                        <div className="space-y-3 rounded border-t border-zinc-200 bg-zinc-50/50 p-3 pt-3 dark:border-zinc-800 dark:bg-zinc-900/30">
-                          <div>
-                            <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【答案】</span>
-                            <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                              <MarkdownWithInlineFigures content={answer || '暂无答案'} figures={entry.item.figures} />
-                            </div>
-                          </div>
-                          <div>
-                            <span className="mb-1 block text-[9px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">【解析】</span>
-                            <div className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                              <MarkdownWithInlineFigures content={analysis || '暂无解析'} figures={entry.item.figures} />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className={`mt-1 flex flex-wrap items-center justify-between gap-3 pt-3 ${showAnalysis ? '' : 'border-t border-zinc-200 dark:border-zinc-800'}`}>
-                      <div className="flex items-center gap-3 text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
-                        {date ? <span className="flex items-center gap-1"><Calendar className="size-3" />{date}</span> : null}
-                        <span className="flex items-center gap-1"><BookOpen className="size-3" />{displaySource(entry.item.sourceTitle || '') || '高中数学专项试卷'}</span>
-                      </div>
-                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    <QuestionCardHeader
+                      item={entry.item}
+                      leading={
+                        <>
+                          <GripVertical className="size-4 shrink-0 text-zinc-300 transition-colors group-hover:text-zinc-500 dark:text-zinc-700 dark:group-hover:text-zinc-500" />
+                          <QuestionCardContextLabel>第 {index + 1} 题</QuestionCardContextLabel>
+                        </>
+                      }
+                    />
+                    <QuestionCardStem item={entry.item} content={stripLeadingQuestionNo(stem || '题干为空', entry.item.questionNo)} />
+                    <QuestionCardKnowledge item={entry.item} />
+                    <QuestionCardSolution item={entry.item} open={showAnalysis} />
+                    <QuestionCardFooter
+                      item={entry.item}
+                      open={showAnalysis}
+                      actions={
+                        <>
                         <label className="flex h-7 items-center gap-1 rounded-md border border-zinc-200 bg-white px-2 text-[10px] font-medium text-zinc-500 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
                           分值
                           <input
@@ -237,9 +171,10 @@ export function BasketPageView({ state }: { state: BasketState }) {
                         <button type="button" onClick={() => entry.relationId && removeItem(entry.relationId)} className={basketCardDangerButtonClass}>
                           <Trash2 className="size-3.5" />移出试题篮
                         </button>
-                      </div>
-                    </div>
-                  </article>
+                        </>
+                      }
+                    />
+                  </QuestionCardFrame>
                 )
               })}
             </div>
@@ -253,7 +188,7 @@ export function BasketPageView({ state }: { state: BasketState }) {
             <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50/70 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/50">
               <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                 {editingPaperId ? <FileText className="size-3.5" /> : <ShoppingBag className="size-3.5" />}
-                {editingPaperId ? '正在编辑试卷' : '试题篮 · 唯一暂存区'}
+                {editingPaperId ? '正在编辑组卷快照' : '试题篮 · 唯一暂存区'}
               </span>
               <div className="flex shrink-0 items-center gap-2">
                 {editingPaperId ? (
@@ -267,8 +202,8 @@ export function BasketPageView({ state }: { state: BasketState }) {
             </div>
             <div className="space-y-3 px-4 py-3.5">
               <label className="block">
-                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">试卷大标题</span>
-                <input value={localTitle} onChange={(event) => setLocalTitle(event.target.value)} onBlur={() => localTitle !== active.data?.title && patchCollection({ title: localTitle })} className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 outline-none transition-colors focus:border-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-200" placeholder="试卷" />
+                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">组卷标题</span>
+                <input value={localTitle} onChange={(event) => setLocalTitle(event.target.value)} onBlur={() => localTitle !== active.data?.title && patchCollection({ title: localTitle })} className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 outline-none transition-colors focus:border-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-200" placeholder="组卷" />
               </label>
               <div>
                 <button type="button" onClick={() => setShowMoreSettings((value) => !value)} className="flex items-center gap-1 text-[11px] font-medium text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">
@@ -315,34 +250,26 @@ export function BasketPageView({ state }: { state: BasketState }) {
               </div>
             )}
               <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-                {editingPaperId ? '题目修改已实时写入原卷；"覆盖保存"用于提交标题与考试设置。' : '保存时会创建一份独立试卷快照，试题篮是唯一暂存区。'}
+                {editingPaperId ? '题目修改已实时写入当前快照；“覆盖保存”用于提交标题与考试设置。' : '保存时会创建一份独立组卷快照，试题篮是唯一暂存区。'}
               </p>
               {saveNotice ? <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">{saveNotice}</span> : null}
             </div>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">我的试卷</span>
-                <span className="font-mono text-[10px] font-semibold text-zinc-400 dark:text-zinc-500">{savedPapers.length}</span>
+          <div className="space-y-2 rounded-xl border border-zinc-200 bg-zinc-50/60 px-4 py-3.5 dark:border-zinc-800 dark:bg-zinc-900/25">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">组卷快照</span>
+                  <span className="font-mono text-[10px] font-semibold text-zinc-400 dark:text-zinc-500">{savedPapers.length}</span>
+                </div>
+                <p className="mt-1 text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">保存后的题目组合，可随时恢复继续组卷。</p>
               </div>
-              {savedPapers.length ? (
-                <button type="button" onClick={() => navigate('/questions/papers')} className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
-                  查看全部
-                  <ChevronRight className="size-3" />
-                </button>
-              ) : null}
+              <button type="button" onClick={() => onSnapshotsOpenChange(true)} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                查看快照
+                <ChevronRight className="size-3" />
+              </button>
             </div>
-            {savedPapers.length ? (
-              <div className="max-h-72 space-y-2 overflow-y-auto pr-0.5">
-                {savedPapers.map((paper) => renderPaperRow(paper, openPaper))}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-dashed border-zinc-200 px-3 py-4 text-center text-[10px] leading-relaxed text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-                还没有保存的试卷。<br />整理好题目后点击上方"保存并清空"即可存档。
-              </div>
-            )}
           </div>
 
           <div className="space-y-4 rounded-xl border border-zinc-200 bg-zinc-50/60 px-4 py-3.5 dark:border-zinc-800 dark:bg-zinc-900/25">
@@ -372,23 +299,7 @@ export function BasketPageView({ state }: { state: BasketState }) {
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">输出目标格式</span>
-            <div className="grid grid-cols-3 gap-2">
-              <button type="button" onClick={() => setPageExportFormat('Markdown')} className={`flex flex-col items-center gap-1.5 p-2.5 border rounded-lg transition-colors ${pageExportFormat === 'Markdown' ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900/60 font-semibold' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800'}`}>
-                <FileCode2 className={`size-5 ${pageExportFormat === 'Markdown' ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}`} />
-                <span className="text-[10px]">Markdown (.md)</span>
-              </button>
-              <button type="button" onClick={() => setPageExportFormat('PDF')} className={`flex flex-col items-center gap-1.5 p-2.5 border rounded-lg transition-colors ${pageExportFormat === 'PDF' ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900/60 font-semibold' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800'}`}>
-                <FileText className={`size-5 ${pageExportFormat === 'PDF' ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}`} />
-                <span className="text-[10px]">PDF 电子卷</span>
-              </button>
-              <button type="button" onClick={() => setPageExportFormat('LaTeX')} className={`flex flex-col items-center gap-1.5 p-2.5 border rounded-lg transition-colors ${pageExportFormat === 'LaTeX' ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900/60 font-semibold' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800'}`}>
-                <FileCode2 className={`size-5 ${pageExportFormat === 'LaTeX' ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}`} />
-                <span className="text-[10px]">LaTeX 源码</span>
-              </button>
-            </div>
-          </div>
+          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">试卷版本以上方选择为准。生成试卷文档后，可在文档编辑器中选择学生版或教师版导出；PDF 仅作为备选输出。</p>
 
             <div className="grid grid-cols-3 divide-x divide-zinc-200/80 border-t border-zinc-200/80 pt-3 dark:divide-zinc-800 dark:border-zinc-800">
               <div className="px-1 text-center">
@@ -415,11 +326,11 @@ export function BasketPageView({ state }: { state: BasketState }) {
           <button
             onClick={() => void importToTeachingDocument()}
             disabled={importingDocument || !active.data?.questionCount}
-            title="将当前题目一键生成为文档，题目按题型自动分组，随后可在文档编辑器中继续编辑"
-            className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-md border border-zinc-300 bg-white py-2.5 text-xs font-semibold text-zinc-800 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
+            title="将当前题目一键生成试卷文档，题目按题型自动分组，随后可在文档编辑器中继续编辑"
+            className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-md bg-zinc-900 py-2.5 text-xs font-semibold text-zinc-50 transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
           >
             <NotebookPen className="size-3.5" />
-            {importingDocument ? '正在生成文档…' : '导入为文档'}
+            {importingDocument ? '正在生成试卷文档…' : '生成试卷文档'}
           </button>
           <button
             onClick={() => void createLayoutDraft()}
@@ -431,45 +342,45 @@ export function BasketPageView({ state }: { state: BasketState }) {
             排版并预览
           </button>
           <button
-            onClick={() => exportCollection(pageExportFormat === 'Markdown' ? 'markdown' : pageExportFormat === 'LaTeX' ? 'latex' : 'pdf', pageVariant, 'exam')}
+            onClick={() => exportCollection('pdf', pageVariant, 'exam')}
             disabled={exporting}
-            className="w-full flex items-center justify-center gap-1.5 rounded-md bg-zinc-900 hover:bg-zinc-800 text-zinc-50 text-xs font-semibold py-2.5 transition-colors disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200 shadow-sm"
+            className="w-full flex items-center justify-center gap-1.5 rounded-md border border-zinc-300 bg-white py-2.5 text-xs font-semibold text-zinc-800 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
           >
             <FileDown className="size-3.5" />
-            确认无误，导出试卷文档
+            备选导出 PDF
           </button>
         </div>
       </aside>
       {editingItem ? <EditDialog draft={editDraft} setDraft={setEditDraft} onClose={() => setEditingItem(null)} onSave={saveEditedQuestion} /> : null}
       {paperSaveAction ? (
         <Modal
-          title={paperSaveAction === 'save_as' ? '另存为新卷' : '保存为试卷'}
-          desc={'将当前题目保存为一份独立试卷，可随时在"我的试卷"中打开、修改或导出。'}
+          title={paperSaveAction === 'save_as' ? '另存为组卷快照' : '保存组卷快照'}
+          desc={'将当前题目保存为一份独立组卷快照，可随时恢复、修改或生成试卷文档。'}
           onClose={closeSaveDialog}
         >
           <div className="space-y-4">
             <label className="block space-y-1.5">
-              <span className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400">试卷标题</span>
+              <span className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400">快照标题</span>
               <input
                 autoFocus
                 value={paperTitleInput}
                 onChange={(event) => setPaperTitleInput(event.target.value)}
                 onKeyDown={(event) => { if (event.key === 'Enter') void confirmSavePaper() }}
-                placeholder="请输入试卷标题"
+                placeholder="请输入快照标题"
                 className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition-colors focus:border-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-200"
               />
             </label>
             <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
               {paperSaveAction === 'save_clear'
-                ? '保存后试题篮将被清空，题目保留在这份试卷中，可随时从"我的试卷"重新打开。'
+                ? '保存后试题篮将被清空，题目保留在这份组卷快照中，可随时恢复。'
                 : paperSaveAction === 'save_copy'
                   ? '保存后试题篮中的题目保持不变，相当于为当前题目创建一份快照。'
-                  : '将以当前试卷的题目创建一份新试卷，原试卷保持不变。'}
+                  : '将以当前组卷的题目创建一份新快照，原快照保持不变。'}
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={closeSaveDialog} disabled={savingPaper}>取消</Button>
               <Button size="sm" onClick={() => void confirmSavePaper()} disabled={savingPaper || !paperTitleInput.trim()}>
-                {savingPaper ? '保存中…' : '保存试卷'}
+                {savingPaper ? '保存中…' : '保存快照'}
               </Button>
             </div>
           </div>

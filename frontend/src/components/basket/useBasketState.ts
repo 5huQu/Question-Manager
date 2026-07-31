@@ -15,13 +15,11 @@ export function useBasketState(options?: { initialPaperId?: string | null }) {
   const [collapsed, setCollapsed] = useState(true)
   const [editingPaperId, setEditingPaperId] = useState<string | null>(options?.initialPaperId ?? null)
   const activeId = editingPaperId ?? DEFAULT_BASKET_ID
-  const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [localTitle, setLocalTitle] = useState('')
   const [localSubtitle, setLocalSubtitle] = useState('')
   const [localTimeLimit, setLocalTimeLimit] = useState<string | number>('')
-  const [pageExportFormat, setPageExportFormat] = useState<'Markdown' | 'PDF' | 'LaTeX'>('Markdown')
   const [pageVariant, setPageVariant] = useState<'student' | 'teacher' | 'error_notebook'>('teacher')
   const [expandedQuestionIds, setExpandedQuestionIds] = useState<Set<string>>(() => new Set())
   const [editingItem, setEditingItem] = useState<QuestionItem | null>(null)
@@ -95,7 +93,7 @@ export function useBasketState(options?: { initialPaperId?: string | null }) {
   }
 
   async function deletePaper(paper: CollectionSummary) {
-    if (!window.confirm(`确定删除试卷「${paper.title}」？\n\n删除后不可恢复，但不会影响题库中的题目。`)) return
+    if (!window.confirm(`确定删除组卷快照「${paper.title}」？\n\n删除后不可恢复，但不会影响题库中的题目。`)) return
     await collectionsApi.deleteCollection(paper.id)
     if (editingPaperId === paper.id) setEditingPaperId(null)
     collections.reload()
@@ -108,7 +106,7 @@ export function useBasketState(options?: { initialPaperId?: string | null }) {
   }
 
   function openSaveDialog(action: 'save_clear' | 'save_copy' | 'save_as') {
-    setPaperTitleInput(localTitle.trim() || '试卷')
+    setPaperTitleInput(localTitle.trim() || '组卷')
     setPaperSaveAction(action)
   }
 
@@ -133,7 +131,7 @@ export function useBasketState(options?: { initialPaperId?: string | null }) {
         await collectionsApi.clearItems(DEFAULT_BASKET_ID)
       }
       setPaperSaveAction(null)
-      showSaveNotice(`已保存试卷《${title}》`)
+      showSaveNotice(`已保存组卷快照《${title}》`)
       notifyBasketUpdated()
     } catch (error) {
       alert(error instanceof Error ? error.message : String(error))
@@ -151,7 +149,7 @@ export function useBasketState(options?: { initialPaperId?: string | null }) {
         subtitle: localSubtitle,
         timeLimit: Number(localTimeLimit || 0),
       })
-      showSaveNotice('已覆盖保存到原卷')
+      showSaveNotice('已覆盖保存到当前快照')
       notifyBasketUpdated()
     } catch (error) {
       alert(error instanceof Error ? error.message : String(error))
@@ -236,7 +234,7 @@ export function useBasketState(options?: { initialPaperId?: string | null }) {
     }
   }
 
-  /** 一键将当前题目列表快照为讲义文档（试卷型），题目按题型分大题，随后跳转编辑器 */
+  /** 将当前组卷生成正式试卷文档，题目按题型分大题，随后跳转文档编辑器。 */
   async function importToTeachingDocument() {
     if (importingDocument || !activeQuestions.length) return
     setImportingDocument(true)
@@ -285,13 +283,11 @@ export function useBasketState(options?: { initialPaperId?: string | null }) {
     navigate,
     collapsed, setCollapsed,
     editingPaperId, activeId,
-    exportMenuOpen, setExportMenuOpen,
     exporting,
     draggedIndex, setDraggedIndex,
     localTitle, setLocalTitle,
     localSubtitle, setLocalSubtitle,
     localTimeLimit, setLocalTimeLimit,
-    pageExportFormat, setPageExportFormat,
     pageVariant, setPageVariant,
     expandedQuestionIds, setExpandedQuestionIds,
     editingItem, setEditingItem,

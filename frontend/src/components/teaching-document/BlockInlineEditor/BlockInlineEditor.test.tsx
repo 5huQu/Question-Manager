@@ -99,6 +99,31 @@ describe('BlockInlineEditor: 基础编辑', () => {
     ])
   })
 
+  it('卡片容器提供回调时，Enter 新建同级段落，段首 Backspace 交由容器处理', async () => {
+    const createSibling = vi.fn()
+    const backspaceAtStart = vi.fn()
+    let editorRef: Editor | undefined
+    const host = await render(createElement(BlockInlineEditor, {
+      inlines: [{ type: 'text', text: '段落' }],
+      onChange: () => {},
+      onEditorReady: (editor: Editor) => { editorRef = editor },
+      onCreateSiblingParagraph: createSibling,
+      onBackspaceAtStart: backspaceAtStart,
+    }))
+    const element = editorDom(host)
+    await act(async () => {
+      editorRef!.commands.focus('end')
+      element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    })
+    expect(createSibling).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      editorRef!.commands.focus('start')
+      element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
+    })
+    expect(backspaceAtStart).toHaveBeenCalledTimes(1)
+  })
+
   it('工具栏 marks 切换产生正确 inlines', async () => {
     let editorRef: Editor | undefined
     const changes: TeachingInline[][] = []
@@ -136,6 +161,31 @@ describe('BlockInlineEditor: 基础编辑', () => {
       fontSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
     expect(changes[changes.length - 1]).toEqual([{ type: 'text', text: '改字体' }])
+  })
+
+  it('没有文字选区时将字体、颜色和样式应用到当前文字块', async () => {
+    let editorRef: Editor | undefined
+    const changes: TeachingInline[][] = []
+    const host = await renderEditorCapture([{ type: 'text', text: '整块格式' }], (inlines) => changes.push(inlines), (editor) => { editorRef = editor })
+    const fontSelect = host.querySelector<HTMLSelectElement>('select[aria-label="字体"]')!
+    const colorSelect = host.querySelector<HTMLSelectElement>('select[aria-label="文字颜色"]')!
+    expect(editorRef!.state.selection.empty).toBe(true)
+
+    await act(async () => {
+      fontSelect.value = 'kaiti'
+      fontSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(changes.at(-1)).toEqual([{ type: 'text', text: '整块格式', font: 'kaiti' }])
+
+    await act(async () => {
+      colorSelect.value = '#2563eb'
+      colorSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(changes.at(-1)).toEqual([{ type: 'text', text: '整块格式', font: 'kaiti', color: '#2563eb' }])
+
+    const boldButton = host.querySelector<HTMLButtonElement>('button[aria-label="粗体"]')!
+    await act(async () => boldButton.click())
+    expect(changes.at(-1)).toEqual([{ type: 'text', text: '整块格式', font: 'kaiti', color: '#2563eb', marks: ['bold'] }])
   })
 
   it('插入行内公式后内容包含 inlineMath', async () => {

@@ -212,6 +212,18 @@ export function figureUsageLabel(usage: string) {
   return { stem: '题干图', analysis: '解析图', options: '选项图' }[usage] || usage || '题图'
 }
 
+export function figureDisplayLabels(figures: QuestionFigure[]) {
+  const counts: Record<string, number> = {}
+  return figures.map((figure) => {
+    const usage = reviewFigureUsage(figure)
+    counts[usage] = (counts[usage] || 0) + 1
+    const option = usage === 'options' && figure.optionLabel
+      ? ` · 选项 ${String(figure.optionLabel).toUpperCase()}`
+      : ''
+    return `${figureUsageLabel(usage)} ${counts[usage]}${option}`
+  })
+}
+
 export function reviewFigureUsage(figure: Record<string, unknown> | undefined) {
   const usage = String(figure?.usage || figure?.category || 'stem')
   return ['stem', 'analysis', 'options'].includes(usage) ? usage : 'stem'

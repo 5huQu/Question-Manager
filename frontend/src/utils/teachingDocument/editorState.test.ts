@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { BoxChildBlock, TeachingBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
 import {
   applyTeachingDocumentCommand,
   createTeachingDocumentHistory,
   executeTeachingDocumentCommand,
+  blocksForRawMarkdownFigureInsertion,
   newTeachingBlock,
   redoTeachingDocument,
   undoTeachingDocument,
@@ -21,6 +22,24 @@ const baseDocument: TeachingDocumentV1 = {
 }
 
 describe('TeachingDocument editor state', () => {
+  it('splits mixed Markdown at the cursor and inserts one independent figure', () => {
+    const markdown = '第一段\n\n第二段'
+    const { blocks, figure } = blocksForRawMarkdownFigureInsertion(markdown, markdown.indexOf('第二段'), 'asset-1')
+    expect(blocks.map((block) => block.type)).toEqual(['rawMarkdown', 'figure', 'rawMarkdown'])
+    expect(blocks[0]).toMatchObject({ type: 'rawMarkdown', markdown: '第一段' })
+    expect(figure.asset).toEqual({ type: 'documentAsset', assetId: 'asset-1' })
+    expect(blocks[2]).toMatchObject({ type: 'rawMarkdown', markdown: '第二段' })
+  })
+
+  it('assigns document-order numbers to uncustomized questions', () => {
+    const first = { ...newTeachingBlock('question'), questionId: 'bank-19' } as TeachingBlock
+    const second = { ...newTeachingBlock('question'), questionId: 'bank-3' } as TeachingBlock
+    const custom = { ...newTeachingBlock('question'), questionId: 'bank-8', display: { displayNumber: '例 2' } } as TeachingBlock
+    const history = createTeachingDocumentHistory({ ...baseDocument, content: [first, custom, second] })
+    expect(history.document.content.filter((block) => block.type === 'question').map((block) => block.display?.displayNumber)).toEqual(['1', '例 2', '3'])
+    expect(history.document.content[0].type === 'question' && history.document.content[0].display?.displayNumberAuto).toBe(true)
+  })
+
   it('inserts, moves, duplicates, and deletes blocks by stable id', () => {
     const heading = newTeachingBlock('heading')
     let document = applyTeachingDocumentCommand(baseDocument, { type: 'insertBlock', block: heading, afterBlockId: 'p1' })
@@ -32,6 +51,33 @@ describe('TeachingDocument editor state', () => {
     expect(document.content[1]).toMatchObject({ type: 'paragraph', content: [{ type: 'text', text: '第一段' }] })
     document = applyTeachingDocumentCommand(document, { type: 'deleteBlock', blockId: 'p2' })
     expect(document.content.some((block) => block.id === 'p2')).toBe(false)
+  })
+
+  it('creates a section at the level explicitly chosen by the insert menu', () => {
+    const firstLevel = newTeachingBlock('heading', { headingLevel: 1 })
+    const childLevel = newTeachingBlock('heading', { headingLevel: 2 })
+    expect(firstLevel).toMatchObject({ type: 'heading', level: 1, content: [{ type: 'text', text: '新章节' }] })
+    expect(childLevel).toMatchObject({ type: 'heading', level: 2, content: [{ type: 'text', text: '新章节' }] })
+  })
+
+  it('replaces one top-level block with imported Markdown conversion blocks as one history action', () => {
+    const replacement: TeachingBlock[] = [
+      { type: 'paragraph', id: 'math-source', content: [{ type: 'text', text: '斜率为' }] },
+      { type: 'blockMath', id: 'math-1', latex: 'k=\\tan\\alpha' },
+    ]
+    const document = applyTeachingDocumentCommand(baseDocument, {
+      type: 'replaceBlockWithBlocks',
+      blockId: 'p1',
+      blocks: replacement,
+    })
+    expect(document.content.map((block) => block.id)).toEqual(['math-source', 'math-1', 'p2'])
+
+    const history = executeTeachingDocumentCommand(createTeachingDocumentHistory(baseDocument), {
+      type: 'replaceBlockWithBlocks',
+      blockId: 'p1',
+      blocks: replacement,
+    })
+    expect(undoTeachingDocument(history).document.content.map((block) => block.id)).toEqual(['p1', 'p2'])
   })
 
   it('rejects nested boxes while supporting legal box child operations', () => {
@@ -49,6 +95,80 @@ describe('TeachingDocument editor state', () => {
     expect(moved.content[0]).toMatchObject({ type: 'box', children: [{ id: divider.id }, { id: paragraph.id }] })
     const removed = applyTeachingDocumentCommand(moved, { type: 'deleteBoxChild', boxId: 'box1', childId: paragraph.id })
     expect(removed.content[0]).toMatchObject({ type: 'box', children: [{ id: divider.id }] })
+  })
+
+  it('deletes multiple card children atomically and merges a contiguous paragraph range', () => {
+    const document: TeachingDocumentV1 = {
+      ...baseDocument,
+      content: [{
+        type: 'box', id: 'box1', templateId: 'concept', breakBehavior: 'auto', children: [
+          { type: 'paragraph', id: 'p1', content: [{ type: 'text', text: '第一段' }] },
+          { type: 'paragraph', id: 'p2', content: [{ type: 'text', text: '第二段' }] },
+          { type: 'blockMath', id: 'm1', latex: 'x=1' },
+        ],
+      }],
+    }
+    const deleted = applyTeachingDocumentCommand(document, {
+      type: 'deleteBoxChildren', boxId: 'box1', childIds: ['p1', 'p2'],
+    })
+    expect(deleted.content[0]).toMatchObject({ type: 'box', children: [{ id: 'm1' }] })
+    const history = executeTeachingDocumentCommand(createTeachingDocumentHistory(document), {
+      type: 'deleteBoxChildren', boxId: 'box1', childIds: ['p1', 'p2'],
+    })
+    expect(undoTeachingDocument(history).document).toEqual(document)
+
+    const replacement: BoxChildBlock = { type: 'rawMarkdown', id: 'merged', markdown: '第一段\n\n第二段', reason: 'user-inserted' }
+    const merged = applyTeachingDocumentCommand(document, {
+      type: 'replaceBoxChildRange', boxId: 'box1', childIds: ['p1', 'p2'], replacement,
+    })
+    expect(merged.content[0]).toMatchObject({ type: 'box', children: [{ id: 'merged' }, { id: 'm1' }] })
+    expect(applyTeachingDocumentCommand(document, {
+      type: 'replaceBoxChildRange', boxId: 'box1', childIds: ['p1', 'm1'], replacement,
+    })).toBe(document)
+  })
+
+  it('allows Markdown content as a box child and replaces a formula child with converted content', () => {
+    const document: TeachingDocumentV1 = {
+      ...baseDocument,
+      content: [{
+        type: 'box', id: 'box1', templateId: 'concept', breakBehavior: 'auto', children: [
+          { type: 'blockMath', id: 'formula1', latex: 'x' },
+        ],
+      }],
+    }
+    const markdownChild: BoxChildBlock = { type: 'rawMarkdown', id: 'formula1', markdown: '**斜率** $k=\\tan\\alpha$', reason: 'user-inserted' }
+    const updated = applyTeachingDocumentCommand(document, {
+      type: 'replaceBoxChildWithBlocks',
+      boxId: 'box1',
+      childId: 'formula1',
+      blocks: [markdownChild],
+    })
+    expect(updated.content[0]).toMatchObject({ type: 'box', children: [markdownChild] })
+  })
+
+  it('writes a picked question id into a box child instead of the top-level box', () => {
+    const document: TeachingDocumentV1 = {
+      ...baseDocument,
+      content: [{
+        type: 'box',
+        id: 'box1',
+        templateId: 'concept',
+        breakBehavior: 'auto',
+        children: [{ type: 'question', id: 'child-question', questionId: '', breakBehavior: 'auto' }],
+      }],
+    }
+
+    const updated = applyTeachingDocumentCommand(document, {
+      type: 'updateBoxChild',
+      boxId: 'box1',
+      childId: 'child-question',
+      patch: { questionId: 'bank-question-1' },
+    })
+
+    expect(updated.content[0]).toMatchObject({
+      type: 'box',
+      children: [{ id: 'child-question', questionId: 'bank-question-1' }],
+    })
   })
 
   it('keeps UnknownBlock and complex inline data unchanged', () => {

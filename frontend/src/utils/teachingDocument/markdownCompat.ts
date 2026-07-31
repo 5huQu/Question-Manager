@@ -94,6 +94,17 @@ function hasInlineFormatting(text: string): boolean {
   return /(?:\*\*|__|~~|`)[^\n]+(?:\*\*|__|~~|`)/.test(text)
 }
 
+function isBlockMathDelimiter(line: string) {
+  return line.trim() === '$$'
+}
+
+function findBlockMathClosingDelimiter(lines: string[], start: number) {
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (isBlockMathDelimiter(lines[index])) return index
+  }
+  return -1
+}
+
 export interface MarkdownConversionResult {
   blocks: TeachingBlock[]
   /** 是否完全无损转换 */
@@ -128,8 +139,8 @@ export function markdownToTeachingBlocks(source: string): MarkdownConversionResu
       }
 
       // 块级公式 $$...$$（多行）
-      if (lines[cursor].trim() === '$$') {
-        const end = lines.indexOf('$$', cursor + 1)
+      if (isBlockMathDelimiter(lines[cursor])) {
+        const end = findBlockMathClosingDelimiter(lines, cursor)
         if (end >= 0) {
           const latex = lines.slice(cursor + 1, end).join('\n')
           blocks.push({
@@ -140,6 +151,16 @@ export function markdownToTeachingBlocks(source: string): MarkdownConversionResu
           cursor = end + 1
           continue
         }
+        lossless = false
+        const rawText = lines.slice(cursor).join('\n')
+        warnings.push('块级公式缺少结束分隔符，已保留剩余原文。')
+        blocks.push({
+          type: 'rawMarkdown',
+          id: generateBlockId('md'),
+          markdown: rawText,
+          reason: 'fallback',
+        } satisfies RawMarkdownBlock)
+        break
       }
 
       // 块级公式 $$...$$（单行）
@@ -160,7 +181,7 @@ export function markdownToTeachingBlocks(source: string): MarkdownConversionResu
         cursor += 1
         while (cursor < lines.length && lines[cursor].trim() && isSimpleParagraphLine(lines[cursor])) {
           // 如果下一行是 $$ 开头则停止
-          if (lines[cursor].trim() === '$$' || /^\s*\$\$.+\$\$\s*$/.test(lines[cursor])) break
+          if (isBlockMathDelimiter(lines[cursor]) || /^\s*\$\$.+\$\$\s*$/.test(lines[cursor])) break
           paragraphLines.push(lines[cursor])
           cursor += 1
         }
@@ -191,7 +212,7 @@ export function markdownToTeachingBlocks(source: string): MarkdownConversionResu
       cursor += 1
       while (cursor < lines.length && lines[cursor].trim()) {
         // 遇到 $$ 或简单段落则停止
-        if (lines[cursor].trim() === '$$' || /^\s*\$\$.+\$\$\s*$/.test(lines[cursor])) break
+        if (isBlockMathDelimiter(lines[cursor]) || /^\s*\$\$.+\$\$\s*$/.test(lines[cursor])) break
         if (isSimpleParagraphLine(lines[cursor]) && !hasInlineFormatting(lines[cursor])) break
         complexLines.push(lines[cursor])
         cursor += 1

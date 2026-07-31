@@ -12,7 +12,9 @@
 
 import type { TeachingDocument, FigureAssetRef } from '@/types/teachingDocument'
 import type { ReactNode } from 'react'
+import type { ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import { TEACHING_DOM } from '@/utils/teachingDocument'
+import { headingLabelByBlockId } from '@/utils/teachingDocument'
 import { BlockRenderer, type FigureResolution, type QuestionResolution, type TeachingDocumentResolvers } from './blocks/BlockRenderer'
 import 'katex/dist/katex.min.css'
 
@@ -30,6 +32,8 @@ export interface TeachingDocumentRendererProps {
   surface?: 'continuous' | 'paper'
   /** 隐藏测量树必须主动加载图片，避免 lazy 图片永远不进入视口。 */
   eagerImages?: boolean
+  choiceLayoutOverrides?: ChoiceLayoutOverrides
+  probeChoiceLayouts?: boolean
   selectedBlockId?: string
 }
 
@@ -54,7 +58,10 @@ export function TeachingDocumentFrame({
       className={`td-document ${surfaceClass} text-zinc-900 dark:text-zinc-100 ${className}`}
       data-document-version={document.version}
       data-document-type={document.documentType}
-      {...{ [TEACHING_DOM.document]: '' }}
+      {...{
+        [TEACHING_DOM.document]: '',
+        [TEACHING_DOM.documentSurface]: surface,
+      }}
     >
       {showTitle && document.title ? (
         <header className="td-document-header mb-8 text-center" {...{ [TEACHING_DOM.documentHeader]: '' }}>
@@ -76,13 +83,18 @@ export function TeachingDocumentRenderer({
   showTitle = true,
   surface = 'continuous',
   eagerImages = false,
+  choiceLayoutOverrides,
+  probeChoiceLayouts = false,
   selectedBlockId,
 }: TeachingDocumentRendererProps) {
   const resolvers: TeachingDocumentResolvers = {
     resolveQuestion,
     resolveFigure,
     eagerImages,
+    choiceLayoutOverrides,
+    probeChoiceLayouts,
   }
+  const headingLabels = headingLabelByBlockId(document)
   return (
     <TeachingDocumentFrame
       document={document}
@@ -97,6 +109,7 @@ export function TeachingDocumentRenderer({
           resolvers={resolvers}
           sourceIndex={index}
           selectedBlockId={selectedBlockId}
+          headingLabel={headingLabels.get(block.id)}
         />
       ))}
       {!document.content.length ? (

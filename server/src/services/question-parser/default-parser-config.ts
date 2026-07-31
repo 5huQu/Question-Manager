@@ -1,5 +1,7 @@
 export type SolutionBindingStrategy = 'heading_then_question' | 'question_then_heading' | 'auto'
 
+export type DocumentLayout = 'auto' | 'inline' | 'appendix' | 'questions_only' | 'solution_only'
+
 export type MetadataBlockPolicy = 'ignore' | 'append_to_analysis' | 'store_as_note'
 
 export type AnswerTablePolicy =
@@ -19,6 +21,7 @@ export type ImportFlowV2ParserConfig = {
   allowParenthesizedNumberAsPrimary: boolean
   figureKeywords: string[]
   solutionBindingStrategy: SolutionBindingStrategy
+  documentLayout: DocumentLayout
   metadataBlockKeywords: string[]
   metadataBlockPolicy: MetadataBlockPolicy
   answerTablePolicy: AnswerTablePolicy
@@ -35,6 +38,7 @@ export const defaultParserConfig: ImportFlowV2ParserConfig = {
   allowParenthesizedNumberAsPrimary: false,
   figureKeywords: ['如图', '下图', '图中', '示意图', '函数图象', '几何图形'],
   solutionBindingStrategy: 'heading_then_question',
+  documentLayout: 'auto',
   metadataBlockKeywords: ['命题说明', '教材题源', '高考题源', '课标要求', '评分说明'],
   metadataBlockPolicy: 'ignore',
   answerTablePolicy: 'fill_empty_only',

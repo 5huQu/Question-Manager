@@ -267,6 +267,16 @@ export function classifyQuestionDocumentLayout(
     firstQuestionNoAfterHeading: globalSection?.firstQuestionNoAfterHeading || markerAppendix?.firstQuestionNoAfterHeading || restartedAppendix?.firstQuestionNoAfterHeading,
   }
 
+  if (config.documentLayout === 'inline') {
+    return { layout: 'inline_solution', cleaningRule: 'same_document_inline', confidence: 1, evidence }
+  }
+  if (config.documentLayout === 'questions_only') {
+    return { layout: 'questions_only', cleaningRule: 'question_document_only', confidence: 1, evidence }
+  }
+  if (config.documentLayout === 'solution_only') {
+    return { layout: 'solution_only', cleaningRule: 'solution_document_only', confidence: 1, solutionStart: 0, evidence }
+  }
+
   if (!questionMatches.length) {
     if (answerMarkers.length || analysisMarkers.length || solutionSections.length) {
       return { layout: 'solution_only', cleaningRule: 'solution_document_only', confidence: 0.74, evidence }

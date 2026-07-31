@@ -12,6 +12,8 @@
 
 import type { QuestionContentDraft } from './questionContent'
 import type { PaperOrientation, PaperSize } from '@/utils/teachingDocument/layout/types'
+import type { FigureLayoutPreset } from '@/utils/teachingDocument/figureLayoutPresets'
+export type { FigureLayoutPreset } from '@/utils/teachingDocument/figureLayoutPresets'
 
 // ─── 文档类型 ────────────────────────────────────────────────────────────────
 
@@ -26,6 +28,8 @@ export interface InlineText {
   marks?: InlineMark[]
   /** 行内字体覆盖，存字体 id（见 lectureFonts TEXT_FONT_OPTIONS）；缺省 = 继承文档默认字体。 */
   font?: string
+  /** 行内文字颜色，保存为受校验的 #RRGGBB；缺省 = 继承文档颜色。 */
+  color?: string
   /** 解析旧数据时保留暂不支持的 mark 原值。 */
   unknownMarks?: unknown[]
 }
@@ -57,6 +61,44 @@ export interface HeadingBlock {
   id: string
   level: 1 | 2 | 3 | 4
   content: TeachingInline[]
+  /** 单个标题对文档编号规则的受控覆盖。 */
+  numbering?: HeadingNumberingOverride
+}
+
+export type HeadingNumberingMode = 'inherit' | 'none' | 'manual'
+export type HeadingNumberingStyle = 'arabic' | 'chinese' | 'roman-upper' | 'alpha-upper'
+export type TeachingDocumentOutlinePreset =
+  | 'textbook'
+  | 'decimal'
+  | 'chinese'
+  | 'exam'
+  | 'chapter-chinese'
+  | 'chapter-decimal'
+  | 'chapter-section'
+  | 'roman'
+  | 'paren'
+  | 'none'
+
+export interface HeadingNumberingOverride {
+  mode?: HeadingNumberingMode
+  /** mode=manual 时显示的纯文本标签。 */
+  manualLabel?: string
+  /** 从当前标题开始的计数值；只接受正整数。 */
+  restartAt?: number
+}
+
+export interface HeadingNumberLevelOptions {
+  style?: HeadingNumberingStyle
+  /** 仅允许 {n}、{cn}、{parent}、{path} 占位符。 */
+  template?: string
+  includeParents?: boolean
+}
+
+export interface TeachingDocumentOutlineOptions {
+  /** 旧文档缺省关闭，避免打开后改变既有版面。 */
+  numberingEnabled?: boolean
+  preset?: TeachingDocumentOutlinePreset
+  levels?: Partial<Record<1 | 2 | 3 | 4, HeadingNumberLevelOptions>>
 }
 
 export interface ParagraphBlock {
@@ -73,6 +115,19 @@ export interface BlockMathBlock {
   label?: string
 }
 
+/** 可视化表格单元格，复用正文块的行内文字与 LaTeX 能力。 */
+export interface TableCell {
+  content: TeachingInline[]
+}
+
+/** 首版表格为不可拆分的整体块；长表跨页能力后续单独演进。 */
+export interface TableBlock {
+  type: 'table'
+  id: string
+  rows: TableCell[][]
+  hasHeader?: boolean
+}
+
 export type FigureAlignment = 'left' | 'center' | 'right'
 
 /**
@@ -86,6 +141,13 @@ export type FigureAssetRef =
   | { type: 'documentAsset'; assetId: string }
   | { type: 'legacyPath'; path: string }
 
+export interface FigureGroupItem {
+  id: string
+  asset: FigureAssetRef
+  caption?: string
+  alt?: string
+}
+
 export interface FigureBlock {
   type: 'figure'
   id: string
@@ -93,6 +155,8 @@ export interface FigureBlock {
   asset: FigureAssetRef
   alt?: string
   alignment: FigureAlignment
+  /** 受控图片排版预设；缺省时使用旧 alignment/width 字段。 */
+  layoutPreset?: FigureLayoutPreset
   /** 宽度比例 0.1 ~ 1.0，相对于内容区域（旧数据兼容） */
   widthRatio?: number
   /** 物理宽度 mm；优先级高于 widthRatio */
@@ -100,6 +164,52 @@ export interface FigureBlock {
   /** 是否锁定宽高比（默认 true） */
   lockAspectRatio?: boolean
   caption?: string
+  /** 存在时作为多图网格渲染；asset 保留为旧数据与单图兼容入口。 */
+  groupItems?: FigureGroupItem[]
+  groupColumns?: 1 | 2 | 3
+  groupGapMm?: number
+}
+
+/** 受控 TikZ 源码及其最近一次成功生成的 SVG。编译中的状态不持久化。 */
+export interface TikzBlock {
+  type: 'tikz'
+  id: string
+  source: string
+  sourceHash?: string
+  svgAssetId?: string
+  alignment: FigureAlignment
+  /** 与普通图片共用的受控排版预设。 */
+  layoutPreset?: FigureLayoutPreset
+  widthMm?: number
+  alt?: string
+  caption?: string
+}
+
+export type QuestionFigureSlot =
+  | 'stem-start'
+  | 'stem-end'
+  | 'before-options'
+  | 'after-options'
+  | 'before-answer'
+  | 'after-answer'
+  | 'analysis-start'
+  | 'analysis-end'
+
+export interface QuestionFigurePlacement {
+  widthMm?: number
+  alignment?: FigureAlignment
+  layoutPreset?: FigureLayoutPreset
+  slot?: QuestionFigureSlot
+  order?: number
+}
+
+export interface QuestionInsertedFigure extends QuestionFigurePlacement {
+  id: string
+  asset: FigureAssetRef
+  slot: QuestionFigureSlot
+  order: number
+  caption?: string
+  alt?: string
 }
 
 export interface QuestionDisplayOptions {
@@ -111,16 +221,19 @@ export interface QuestionDisplayOptions {
   scoreOverride?: number
   /** 覆盖题号显示 */
   displayNumber?: string
+  /** 内部标记：编号由当前文档顺序自动生成，属性面板不显示为用户自定义值。 */
+  displayNumberAuto?: boolean
   /** 题目回答留空 */
   answerSpace?: {
     heightMm: number
     style: 'blank' | 'lines' | 'grid'
+    /** 超出当前页可用空间的部分不延续到下一页。 */
+    splitAcrossPages?: boolean
   }
   /** 题目级图片尺寸覆盖，key 为 figure id */
-  figureOverrides?: Record<string, {
-    widthMm: number
-    alignment?: 'left' | 'center' | 'right'
-  }>
+  figureOverrides?: Record<string, QuestionFigurePlacement>
+  /** 仅属于当前文档的题目插图，不写回题库。 */
+  insertedFigures?: QuestionInsertedFigure[]
 }
 
 /** 题目分页策略：默认自动流动；avoid 保持整题；force-before 从新页开始。 */
@@ -149,7 +262,7 @@ export interface BoxBlock {
   /** 语义图标标记，如 "lightbulb"、"alert" */
   icon?: string
   breakBehavior: BoxBreakBehavior
-  /** 盒子子内容：允许段落、公式、图片、题目，但不允许嵌套盒子 */
+  /** 盒子子内容：允许段落、公式、表格、图片、题目，但不允许嵌套盒子 */
   children: BoxChildBlock[]
 }
 
@@ -157,10 +270,13 @@ export interface BoxBlock {
 export type BoxChildBlock =
   | ParagraphBlock
   | BlockMathBlock
+  | TableBlock
   | FigureBlock
+  | TikzBlock
   | QuestionBlock
   | DividerBlock
   | SpacerBlock
+  | RawMarkdownBlock
   | UnknownBlock
 
 export interface DividerBlock {
@@ -206,7 +322,9 @@ export type TeachingBlock =
   | HeadingBlock
   | ParagraphBlock
   | BlockMathBlock
+  | TableBlock
   | FigureBlock
+  | TikzBlock
   | QuestionBlock
   | BoxBlock
   | DividerBlock
@@ -295,16 +413,29 @@ export interface TeachingDocumentPaperOptions {
   margins?: { topMm: number; rightMm: number; bottomMm: number; leftMm: number }
 }
 
+/** 文档级排版预设；未设置表示用户已手动调整为自定义排版。 */
+export type TeachingDocumentTypographyPreset = 'exam' | 'lecture'
+
 /**
  * 文档级打印样式：正文/标题字体与页边距的唯一数据源。
  * 编辑视图、A4 预览、PDF 导出均从此读取，保证“所见即所得”（预览与输出一致）。
  * 仅存受约束的 id / 枚举，不存任意 CSS。
  */
 export interface TeachingDocumentStyle {
+  /** 正式试卷 / 阅读讲义预设；手动调整排版字段后会清除为自定义。 */
+  typographyPreset?: TeachingDocumentTypographyPreset
   /** 正文字体 id（见 lectureFonts BODY_FONT_OPTIONS）；缺省 = 默认正文字体 */
   bodyFont?: string
+  /** 正文英文与数字字体 id；缺省时跟随 bodyFont，兼容旧文档。 */
+  bodyLatinFont?: string
+  /** 正文数字字体 id；缺省时跟随 bodyLatinFont。 */
+  bodyNumberFont?: string
   /** 标题字体 id（见 lectureFonts HEADING_FONT_OPTIONS）；缺省 = 默认标题字体 */
   headingFont?: string
+  /** 章节英文与数字字体 id；编号也使用此字体；缺省时跟随 headingFont。 */
+  headingLatinFont?: string
+  /** 章节数字字体 id；章节编号优先使用此字体；缺省时跟随 headingLatinFont。 */
+  headingNumberFont?: string
   /** 页边距预设（见 MARGIN_PRESETS）；缺省 = normal */
   marginPreset?: TeachingMarginPreset
   /** 题目间距；缺省 compact，适合试卷高密度排版。 */
@@ -321,6 +452,8 @@ export interface TeachingDocumentV1 {
   title: string
   metadata: Record<string, unknown>
   content: TeachingBlock[]
+  /** 章节结构与自动编号偏好；章节树本身始终由 content 派生。 */
+  outline?: TeachingDocumentOutlineOptions
   /** 文档级打印样式（字体、边距）；缺省 = 全部使用默认值 */
   style?: TeachingDocumentStyle
 }

@@ -56,4 +56,29 @@ describe('FormulaEditorDialog', () => {
     })
     expect(onApply).toHaveBeenCalledWith(String.raw`\frac{1}{2}`)
   })
+
+  it('previews and applies mixed Markdown + LaTeX source through the optional handler', async () => {
+    const onApplyMixedMarkdown = vi.fn()
+    await act(async () => {
+      root.render(<FormulaEditorDialog title="混合源码" onApply={() => undefined} onApplyMixedMarkdown={onApplyMixedMarkdown} onClose={() => undefined} />)
+    })
+
+    const mixedTab = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === '混合源码')
+    await act(async () => { mixedTab!.click() })
+
+    const source = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Markdown + LaTeX 源码"]')
+    expect(source).not.toBeNull()
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(source, '斜率为 $k=\\tan\\alpha$。')
+      source!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(document.body.textContent).toContain('斜率为')
+
+    const applyButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === '应用内容')
+    await act(async () => { applyButton!.click() })
+    expect(onApplyMixedMarkdown).toHaveBeenCalledWith('斜率为 $k=\\tan\\alpha$。')
+  })
 })

@@ -119,7 +119,10 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
         focusKind={ws.markdownPreviewTarget?.focusKind}
         title={ws.markdownPreviewTarget?.title}
         applying={ws.busy === `reclean-${ws.selectedDoc?.id || ''}`}
-        onApplyConfig={ws.selectedDoc && ws.canRecleanSelectedDoc ? ws.handleApplyPreviewParserConfig : undefined}
+        parserPresets={ws.parserPresets}
+        selectedParserPresetId={ws.selectedParserPresetId}
+        onSelectedParserPresetChange={ws.setSelectedParserPresetId}
+        onApplyParserRequest={ws.selectedDoc && ws.canRecleanSelectedDoc ? ws.handleApplyPreviewParserRequest : undefined}
         onClose={() => ws.setMarkdownPreviewTarget(null)}
       />
     </div>

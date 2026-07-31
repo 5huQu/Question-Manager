@@ -58,6 +58,7 @@ export type CandidateParsePreview = {
 }
 
 export type ParserPreviewRequest = {
+  presetId?: string
   config?: Partial<ImportFlowV2ParserConfig>
   focusQuestionNo?: string
   candidateId?: string

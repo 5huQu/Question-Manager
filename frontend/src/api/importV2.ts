@@ -126,6 +126,7 @@ export type ImportV2CandidateParseDiagnostic = {
 }
 
 export type SolutionBindingStrategy = 'heading_then_question' | 'question_then_heading' | 'auto'
+export type DocumentLayout = 'auto' | 'inline' | 'appendix' | 'questions_only' | 'solution_only'
 
 export type MetadataBlockPolicy = 'ignore' | 'append_to_analysis' | 'store_as_note'
 
@@ -146,6 +147,7 @@ export type ImportFlowV2ParserConfig = {
   allowParenthesizedNumberAsPrimary: boolean
   figureKeywords: string[]
   solutionBindingStrategy: SolutionBindingStrategy
+  documentLayout: DocumentLayout
   metadataBlockKeywords: string[]
   metadataBlockPolicy: MetadataBlockPolicy
   answerTablePolicy: AnswerTablePolicy
@@ -400,7 +402,7 @@ export const importV2Api = {
   getMarkdownPreview(ocrDocumentId: string) {
     return api<MarkdownPreviewResponse>('/api/import-flow-v2/ocr-documents/' + encodeURIComponent(ocrDocumentId) + '/markdown-preview')
   },
-  getParserPreview(ocrDocumentId: string, payload: { config?: Partial<ImportFlowV2ParserConfig>; focusQuestionNo?: string; candidateId?: string; candidateIds?: string[] } = {}) {
+  getParserPreview(ocrDocumentId: string, payload: { presetId?: string; config?: Partial<ImportFlowV2ParserConfig>; focusQuestionNo?: string; candidateId?: string; candidateIds?: string[] } = {}) {
     return api<ParserPreviewResponse>('/api/import-flow-v2/ocr-documents/' + encodeURIComponent(ocrDocumentId) + '/parser-preview', {
       method: 'POST',
       headers: jsonHeaders,

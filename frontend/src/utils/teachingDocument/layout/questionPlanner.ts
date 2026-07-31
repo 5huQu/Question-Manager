@@ -149,6 +149,24 @@ export function planQuestionFragments(input: {
     draft.contentHeight += measured.height
   }
 
+  const placeClippedAnswerSpace = (
+    region: Extract<QuestionRuntimeRegion, { kind: 'answer-space' }>,
+    measured: QuestionRegionMeasurement,
+  ) => {
+    const draft = ensureDraft(currentOffset)
+    const height = Math.min(measured.height, Math.max(0, capacity(draft)))
+    if (height <= 0.01) return
+    draft.regionItems.push({
+      kind: 'whole-question-region',
+      regionKey: region.key,
+      regionType: region.type,
+      regionIndex: region.index,
+      height,
+      answerSpaceSegment: height < measured.height ? 'start' : 'single',
+    })
+    draft.contentHeight += height
+  }
+
   const placeParagraph = (
     region: Extract<QuestionRuntimeRegion, { kind: 'paragraph' }>,
     measured: QuestionRegionMeasurement,
@@ -295,7 +313,9 @@ export function planQuestionFragments(input: {
       continue
     }
 
-    if (region.kind === 'paragraph' && measured.height > capacity(ensureDraft(currentOffset)) + 0.01) {
+    if (region.kind === 'answer-space' && region.splitAcrossPages && measured.height > capacity(ensureDraft(currentOffset)) + 0.01) {
+      placeClippedAnswerSpace(region, measured)
+    } else if (region.kind === 'paragraph' && measured.height > capacity(ensureDraft(currentOffset)) + 0.01) {
       placeParagraph(region, measured)
     } else {
       if (region.kind === 'options-row' && index + 1 < regions.length) {

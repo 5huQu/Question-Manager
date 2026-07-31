@@ -9,6 +9,7 @@ import {
   type QuestionMeasurement,
 } from './questionMeasurement'
 import { planQuestionFragments } from './questionPlanner'
+import { rawMarkdownMeasurementsVersion, type RawMarkdownMeasurement } from './rawMarkdownMeasurement'
 import { paperMetrics, validatePaperSpec } from './paper'
 import type {
   BlockMeasurement,
@@ -47,6 +48,10 @@ function questionMeasurementBySource(measurements: QuestionMeasurement[]) {
   return new Map(measurements.map((measurement) => [measurement.sourceIndex, measurement]))
 }
 
+function rawMarkdownMeasurementByPath(measurements: RawMarkdownMeasurement[]) {
+  return new Map(measurements.map((measurement) => [blockSourcePathKey(measurement.sourcePath), measurement]))
+}
+
 function duplicateDocumentIdDiagnostics(blocks: TeachingBlock[]): RenderDiagnostic[] {
   const counts = new Map<string, number>()
   for (const block of blocks) counts.set(block.id, (counts.get(block.id) || 0) + 1)
@@ -66,8 +71,10 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
   const boxMeasurements = input.boxMeasurements || []
   const questionMeasurements = input.questionMeasurements || []
   const boxChildQuestionMeasurements = [...(input.boxChildQuestionMeasurements?.values() || [])]
+  const boxChildRawMarkdownMeasurements = input.boxChildRawMarkdownMeasurements || []
   const paragraphVersion = paragraphMeasurementsVersion(paragraphMeasurements)
   const boxVersion = boxMeasurementsVersion(boxMeasurements)
+  const rawMarkdownVersion = rawMarkdownMeasurementsVersion(boxChildRawMarkdownMeasurements)
   const topLevelQuestionVersion = questionMeasurementsVersion(questionMeasurements)
   const boxChildQuestionVersion = questionMeasurementsVersion(boxChildQuestionMeasurements)
   // box 子题的 measurement version 与诊断必须进入最终 pagination 与 export readiness。
@@ -82,6 +89,7 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
     ...boxMeasurements.flatMap((measurement) => measurement.diagnostics),
     ...questionMeasurements.flatMap((measurement) => measurement.diagnostics),
     ...boxChildQuestionMeasurements.flatMap((measurement) => measurement.diagnostics),
+    ...boxChildRawMarkdownMeasurements.flatMap((measurement) => measurement.diagnostics),
     ...validatePaperSpec(paper),
     ...duplicateDocumentIdDiagnostics(document.content),
   ]
@@ -93,7 +101,7 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
       measurementVersion: measurements.measurementVersion,
       paragraphMeasurementVersion: paragraphVersion,
       boxMeasurementVersion: boxVersion,
-      questionMeasurementVersion: questionVersion,
+      questionMeasurementVersion: rawMarkdownVersion ? `${questionVersion}|raw:${rawMarkdownVersion}` : questionVersion,
     }
   }
 
@@ -101,6 +109,7 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
   const paragraphs = paragraphMeasurementBySource(paragraphMeasurements)
   const paragraphsByPath = paragraphMeasurementByPath(paragraphMeasurements)
   const boxes = boxMeasurementBySource(boxMeasurements)
+  const rawMarkdownsByPath = rawMarkdownMeasurementByPath(boxChildRawMarkdownMeasurements)
   const questions = questionMeasurementBySource(questionMeasurements)
   const pages: PaginatedPage[] = []
   let current: PaginatedPage = {
@@ -332,6 +341,7 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
         measurement: boxMeasurement,
         paragraphMeasurements: paragraphsByPath,
         questionMeasurements: input.boxChildQuestionMeasurements,
+        rawMarkdownMeasurements: rawMarkdownsByPath,
         firstPageAvailableHeight: available,
         pageContentHeight: metrics.contentHeightPx,
         paragraphSplitOptions: input.paragraphSplitOptions,
@@ -451,6 +461,6 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
     measurementVersion: measurements.measurementVersion,
     paragraphMeasurementVersion: paragraphVersion,
     boxMeasurementVersion: boxVersion,
-    questionMeasurementVersion: questionVersion,
+    questionMeasurementVersion: rawMarkdownVersion ? `${questionVersion}|raw:${rawMarkdownVersion}` : questionVersion,
   }
 }

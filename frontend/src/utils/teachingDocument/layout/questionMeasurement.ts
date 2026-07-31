@@ -1,5 +1,6 @@
 import type { QuestionItem } from '@/types'
 import type { BoxBlock, QuestionBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import { TEACHING_DOM, TEACHING_DOM_SELECTORS } from './domContract'
 import { blockSourcePathKey, type BlockSourcePath } from './fragment'
 import type { GeometryAdapter } from './measure'
@@ -83,6 +84,11 @@ function isQuestionItem(value: QuestionResolutionLike): value is QuestionItem {
   return Boolean(value && !('status' in value))
 }
 
+// Measurement must use the same document-local content that the renderer uses.
+function effectiveQuestionContent(block: QuestionBlock, question: QuestionItem): QuestionItem {
+  return block.localContent ? { ...question, ...block.localContent } : question
+}
+
 function versionForQuestion(input: Omit<QuestionMeasurement, 'measurementVersion'>) {
   const source = [
     input.blockId,
@@ -142,15 +148,16 @@ export interface MeasureQuestionCoreInput {
   shellHeight?: number
   /** 诊断消息前缀，例如 `题目 ${qid}` 或 `盒子内题目 ${qid}` */
   label: string
+  choiceLayoutOverrides?: ChoiceLayoutOverrides
 }
 
 export function measureQuestionCore(input: MeasureQuestionCoreInput): QuestionMeasurement {
   const {
     root, geometry, paragraphGeometry, chromeGeometry,
-    block, question, sourceIndex, sourcePath, questionRoot, shellHeight, label,
+    block, question, sourceIndex, sourcePath, questionRoot, shellHeight, label, choiceLayoutOverrides,
   } = input
   const diagnostics: RenderDiagnostic[] = []
-  const model = createQuestionRuntimeModel(block, question)
+  const model = createQuestionRuntimeModel(block, question, { choiceLayoutOverrides })
 
   const regionElements = new Map<string, HTMLElement[]>()
   questionRoot?.querySelectorAll<HTMLElement>(
@@ -360,6 +367,7 @@ export function measureTeachingDocumentQuestions(
   geometry: GeometryAdapter = browserGeometryAdapter,
   paragraphGeometry: ParagraphRangeGeometryAdapter = browserParagraphRangeGeometryAdapter,
   chromeGeometry: QuestionChromeGeometryAdapter = browserQuestionChromeGeometryAdapter,
+  choiceLayoutOverrides?: ChoiceLayoutOverrides,
 ) {
   const result: QuestionMeasurement[] = []
   const topElements = Array.from(
@@ -401,12 +409,13 @@ export function measureTeachingDocumentQuestions(
       paragraphGeometry,
       chromeGeometry,
       block,
-      question,
+      question: effectiveQuestionContent(block, question),
       sourceIndex,
       sourcePath: { sourceIndex, topLevelBlockId: block.id, childPath: [] },
       questionRoot,
       shellHeight: blockMeasurement?.height || 0,
       label: `题目 ${block.questionId}`,
+      choiceLayoutOverrides,
     })
     measurement.diagnostics.unshift(...shellDiagnostics)
     result.push(measurement)
@@ -442,6 +451,7 @@ export function measureBoxChildQuestions(
   geometry: GeometryAdapter = browserGeometryAdapter,
   paragraphGeometry: ParagraphRangeGeometryAdapter = browserParagraphRangeGeometryAdapter,
   chromeGeometry: QuestionChromeGeometryAdapter = browserQuestionChromeGeometryAdapter,
+  choiceLayoutOverrides?: ChoiceLayoutOverrides,
 ): Map<string, QuestionMeasurement> {
   const result = new Map<string, QuestionMeasurement>()
   const topElements = Array.from(
@@ -515,11 +525,12 @@ export function measureBoxChildQuestions(
         paragraphGeometry,
         chromeGeometry,
         block: questionChild,
-        question,
+        question: effectiveQuestionContent(questionChild, question),
         sourceIndex,
         sourcePath,
         questionRoot,
         label: `盒子内题目 ${questionChild.questionId}`,
+        choiceLayoutOverrides,
       })
       measurement.diagnostics.unshift(...diagnostics)
       result.set(blockSourcePathKey(sourcePath), measurement)

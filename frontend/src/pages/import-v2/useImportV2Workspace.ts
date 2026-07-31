@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { importV2Api, type ImportFlowV2ParserConfig, type ImportParserPreset, type ImportV2ImportJob, type ImportV2ImportJobDocumentDetail, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics, type ParseCandidatesRequest, type ParseCandidatesResult } from '@/api/importV2'
+import { importV2Api, type ImportParserPreset, type ImportV2ImportJob, type ImportV2ImportJobDocumentDetail, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics, type ParseCandidatesRequest, type ParseCandidatesResult } from '@/api/importV2'
 import { settingsApi } from '@/api/settings'
 import { type MarkdownPreviewDocumentOption } from '@/components/import-v2/MarkdownStructurePreviewDialog'
 import { useAsync } from '@/hooks/useAsync'
@@ -1098,12 +1098,17 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     await handleRecleanCandidates(selectedDoc, { presetId: preset.id }, { skipConfirm: true, label: `已使用预设「${preset.name}」重新生成待核对题目` })
   }
 
-  async function handleApplyPreviewParserConfig(config: ImportFlowV2ParserConfig) {
+  async function handleApplyPreviewParserRequest(payload: ParseCandidatesRequest) {
     if (!selectedDoc) { setError('请先选择要重解析的资料。'); return }
-    const ok = window.confirm('将使用预览窗口中的当前策略重新生成本批次未入库候选题。确定继续吗？')
+    const preset = payload.presetId ? parserPresets.find((item) => item.id === payload.presetId) : undefined
+    const settingLabel = preset ? `预设「${preset.name}」` : '预览窗口中的自定义设置'
+    const ok = window.confirm(`将使用${settingLabel}重新生成本批次未入库候选题。确定继续吗？`)
     if (!ok) return
     setMarkdownPreviewTarget(null)
-    await handleRecleanCandidates(selectedDoc, { configOverride: config }, { skipConfirm: true, label: '已使用预览策略重新生成待核对题目' })
+    await handleRecleanCandidates(selectedDoc, payload, {
+      skipConfirm: true,
+      label: preset ? `已使用预设「${preset.name}」重新生成待核对题目` : '已使用预览窗口中的自定义设置重新生成待核对题目',
+    })
   }
 
   async function openActiveQuestionMarkdownPreview(focusKind: 'stem' | 'answer' | 'analysis') {
@@ -1332,7 +1337,7 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     handleDeleteCandidate,
     openSelectedDocMarkdownPreview,
     handleApplySelectedParserPreset,
-    handleApplyPreviewParserConfig,
+    handleApplyPreviewParserRequest,
     openActiveQuestionMarkdownPreview,
     handleBulkConfirm,
     handleBulkSkip,

@@ -1,5 +1,6 @@
 import type { RenderDiagnostic, RenderReadinessResult } from './types'
 import type { PaginationResult, PaperSpec } from './types'
+import { TEACHING_DOM } from './domContract'
 import { paperSpecsEqual } from './paper'
 
 // ─── Export Readiness ─────────────────────────────────────────────────────────
@@ -38,6 +39,39 @@ export interface ExportReadinessInput {
    * 与 paper 不一致时产生降级 warning（不阻塞），提示输出可能与预览不一致。
    */
   expectedPaper?: PaperSpec | null
+}
+
+/**
+ * Validate the final rendered paper DOM before handing it to Chromium.
+ *
+ * Pagination is calculated from an off-screen measurement tree. This final
+ * check catches any later CSS/layout drift that makes a rendered page taller
+ * than its allocated content box, preventing silent clipping by the fixed
+ * paper container.
+ */
+export function inspectRenderedPaperOverflow(
+  root: ParentNode,
+  tolerancePx = 1,
+): RenderDiagnostic[] {
+  const diagnostics: RenderDiagnostic[] = []
+  const pageContents = Array.from(
+    root.querySelectorAll<HTMLElement>(`[${TEACHING_DOM.paperPage}] [${TEACHING_DOM.pageContent}]`),
+  )
+  pageContents.forEach((content, fallbackIndex) => {
+    const page = content.closest<HTMLElement>(`[${TEACHING_DOM.paperPage}]`)
+    const rawPageIndex = Number(page?.getAttribute(TEACHING_DOM.pageIndex))
+    const pageIndex = Number.isInteger(rawPageIndex) ? rawPageIndex : fallbackIndex
+    const overflowPx = content.scrollHeight - content.clientHeight
+    if (content.clientHeight > 0 && overflowPx > tolerancePx) {
+      diagnostics.push({
+        code: 'page-overflow',
+        severity: 'error',
+        pageIndex,
+        message: `第 ${pageIndex + 1} 页最终渲染内容超出页面内容区 ${Math.ceil(overflowPx)}px，已阻止导出以避免裁切。`,
+      })
+    }
+  })
+  return diagnostics
 }
 
 /** 阻止导出的诊断 code */

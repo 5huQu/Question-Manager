@@ -963,6 +963,12 @@ const questionThenHeadingPreview = buildParserPreview(questionThenHeadingSolutio
 })
 assert.match(questionThenHeadingPreview.candidatePreviews.find((preview) => preview.questionNo === '19')?.analysisPreview || '', /解：设函数/)
 assert.equal(questionThenHeadingPreview.diagnostics.some((diagnostic) => diagnostic.code === 'question_before_solution_heading'), false)
+const questionThenHeadingPresetPreview = buildParserPreview(questionThenHeadingSolutionDocument, {
+  presetId: 'question_then_heading',
+  focusQuestionNo: '19',
+})
+assert.equal(questionThenHeadingPresetPreview.config.solutionBindingStrategy, 'question_then_heading')
+assert.match(questionThenHeadingPresetPreview.candidatePreviews.find((preview) => preview.questionNo === '19')?.analysisPreview || '', /解：设函数/)
 const questionThenHeadingSolutions = parseSolutionDocument(questionThenHeadingSolutionDocument, {
   config: { ...defaultParserConfig, solutionBindingStrategy: 'question_then_heading' },
 })
@@ -1368,6 +1374,49 @@ assert.match(ocrSpacedFormulaCandidates[0].stemMarkdown, /x _ \{1\} \+ x _ \{2\}
   assert.deepEqual(appendixCandidates.map((candidate) => candidate.questionNo), ['1', '2'])
   assert.equal(appendixCandidates[0].answerText, 'B')
   assert.equal(appendixCandidates[1].answerText, 'C')
+}
+
+{
+  const inlineWithRepeatedTopicNumbers = {
+    ...ocrDocument,
+    id: 'ocr_inline_repeated_topic_numbers_test',
+    markdown: [
+      '## 题型一',
+      '1. 第一题题干',
+      '【答案】A',
+      '【解析】第一题解析',
+      '2. 第二题题干',
+      '【答案】答案见解析',
+      '【详解】第二题解析',
+      '3. 第三题题干',
+      '【答案】C',
+      '【解析】第三题解析',
+      '4. 第四题题干',
+      '【答案】D',
+      '【解析】第四题解析',
+      '',
+      '## 题型二',
+      '1. 题型二第一题',
+      '【答案】A',
+      '【解析】题型二第一题解析',
+      '2. 题型二第二题',
+      '【答案】B',
+      '【解析】题型二第二题解析',
+    ].join('\n'),
+    pages: [],
+    assets: [],
+  }
+  const inlineConfig = { ...defaultParserConfig, documentLayout: 'inline', answerTablePolicy: 'disabled' }
+  const inlineClassification = classifyQuestionDocumentLayout(inlineWithRepeatedTopicNumbers.markdown, inlineConfig)
+  assert.equal(inlineClassification.layout, 'inline_solution')
+  const inlineCandidates = parseQuestionCandidates(inlineWithRepeatedTopicNumbers, {
+    config: inlineConfig,
+    paperKind: 'lecture',
+    now: '2026-07-24T00:00:00.000Z',
+  })
+  assert.deepEqual(inlineCandidates.map((candidate) => candidate.questionNo), ['1', '2', '3', '4', '5', '6'])
+  assert.equal(inlineCandidates[1].answerText, '答案见解析')
+  assert.match(inlineCandidates[4].stemMarkdown, /题型二第一题/)
 }
 
 console.log('question parser ok')

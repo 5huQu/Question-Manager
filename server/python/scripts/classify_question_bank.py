@@ -379,6 +379,11 @@ def scoped_where(conn: sqlite3.Connection, scope_type: str, scope_id: str) -> tu
     raise RuntimeError(f"不支持的题目分类范围：{scope_type}")
 
 
+def emit_progress(**progress: object) -> None:
+    """Emit a machine-readable progress event without mixing it into the final report."""
+    print(f"CLASSIFICATION_PROGRESS {json.dumps(progress, ensure_ascii=False)}", file=sys.stderr, flush=True)
+
+
 def main() -> int:
     args = parse_args()
     conn = sqlite3.connect(DB_PATH)
@@ -415,7 +420,9 @@ def main() -> int:
     workers = max(1, min(args.concurrency, 10, len(rows) or 1))
     results: list[dict[str, object]] = []
     failures: list[dict[str, str]] = []
+    emit_progress(total=len(rows), completed=0, updated=0, failed=0)
     with ThreadPoolExecutor(max_workers=workers) as executor:
+        completed = 0
         futures = {executor.submit(classify, row, libraries, cfg, batch_context): row["id"] for row in rows}
         for future in as_completed(futures):
             qid = futures[future]
@@ -448,6 +455,15 @@ def main() -> int:
                 conn.commit()
             except Exception as exc:
                 failures.append({"id": qid, "error": str(exc)})
+            completed += 1
+            emit_progress(
+                total=len(rows),
+                completed=completed,
+                updated=len(results),
+                failed=len(failures),
+                id=qid,
+                error=failures[-1]["error"] if failures and failures[-1]["id"] == qid else "",
+            )
     report = {
         "scopeType": scope_type,
         "scopeId": scope_id,

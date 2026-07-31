@@ -18,6 +18,7 @@ import {
   measureTeachingDocument,
   paginateTeachingDocument,
   paperMetrics,
+  rawMarkdownSegments,
   splitPolicyForBlock,
   TEACHING_DOM,
   TEACHING_DOM_SELECTORS,
@@ -62,6 +63,25 @@ const PAGE_HEIGHT = paperMetrics(DEFAULT_A4_PAPER).contentHeightPx
 
 const TABLE_MD = '| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |'
 const LONG_MD = Array.from({ length: 60 }, (_, i) => `第 ${i + 1} 段内容。`).join('\n\n')
+
+describe('rawMarkdownSegments 有序列表编号', () => {
+  it('keeps list numbering continuous when blank lines split repeated 1. markers', () => {
+    expect(rawMarkdownSegments('1. 第一项\n\n1. 第二项\n\n1. 第三项')).toEqual([
+      '1. 第一项',
+      '2. 第二项',
+      '3. 第三项',
+    ])
+  })
+
+  it('does not rewrite an explicit list number or continue through plain text', () => {
+    expect(rawMarkdownSegments('1. 第一项\n\n2. 第二项\n\n说明文字\n\n1. 新列表')).toEqual([
+      '1. 第一项',
+      '2. 第二项',
+      '说明文字',
+      '1. 新列表',
+    ])
+  })
+})
 
 // ─── rawMarkdownContainsTable 静态检测 ───────────────────────────────────────
 

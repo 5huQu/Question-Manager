@@ -2,8 +2,8 @@ export const basketUpdatedEvent = 'question-basket-updated'
 /** 全应用唯一的试题篮（默认集合），所有"加入试题篮"操作的固定目标。 */
 export const DEFAULT_BASKET_ID = 'basket'
 
-export const basketCardOutlineButtonClass = 'inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-700 shadow-xs transition-all hover:bg-zinc-50 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950 disabled:opacity-30 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50'
-export const basketCardDangerButtonClass = 'inline-flex h-7 items-center gap-1.5 rounded-md border border-red-200 bg-red-50/20 px-2.5 text-xs font-medium text-red-700 shadow-xs transition-all hover:bg-red-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-950 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400 dark:hover:bg-red-950/30'
+export const basketCardOutlineButtonClass = questionCardOutlineButtonClass
+export const basketCardDangerButtonClass = questionCardDangerButtonClass
 
 export function notifyBasketUpdated() {
   window.dispatchEvent(new Event(basketUpdatedEvent))
@@ -32,3 +32,4 @@ export function getDefaultScore(questionType: string | null | undefined): number
   if (type.includes('解答') || type.includes('计算') || type.includes('证明') || type.includes('主观')) return 15
   return 5
 }
+import { questionCardDangerButtonClass, questionCardOutlineButtonClass } from '../questions/workbench/QuestionCard'

@@ -96,10 +96,24 @@ export interface QuestionBoxChildFragmentPaginationItem {
   height: number
 }
 
+export interface RawMarkdownBoxChildFragmentPaginationItem {
+  kind: 'raw-markdown-child-fragment'
+  sourcePath: BlockSourcePath
+  parentBlockId: string
+  childBlockId: string
+  childIndex: number
+  fragmentIndex: number
+  segmentStart: number
+  segmentEnd: number
+  continuation: FragmentContinuation
+  height: number
+}
+
 export type PaginatedBoxChildItem =
   | WholeBoxChildPaginationItem
   | ParagraphBoxChildFragmentPaginationItem
   | QuestionBoxChildFragmentPaginationItem
+  | RawMarkdownBoxChildFragmentPaginationItem
 
 export interface BoxFragmentPaginationItem {
   kind: 'fragment'
@@ -123,6 +137,7 @@ export interface WholeQuestionRegionPaginationItem {
   optionStart?: number
   optionEnd?: number
   rowIndex?: number
+  answerSpaceSegment?: 'single' | 'start' | 'middle' | 'end'
 }
 
 export interface QuestionParagraphFragmentPaginationItem {

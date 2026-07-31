@@ -17,7 +17,9 @@ import {
   type PaperSpec,
   type PrintLayoutSpec,
 } from '@/utils/teachingDocument'
+import { headingLabelByBlockId } from '@/utils/teachingDocument'
 import type { PrintChromeSlotPosition } from '@/types/teachingDocument'
+import type { ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import { PrintChrome, type PrintChromeSection } from './PrintChrome'
 import { TeachingDocumentFrame } from './TeachingDocumentRenderer'
 import {
@@ -36,6 +38,7 @@ export interface PaperPageViewProps {
   printLayout: PrintLayoutSpec
   totalPages: number
   resolvers: TeachingDocumentResolvers
+  choiceLayoutOverrides?: ChoiceLayoutOverrides
   selectedBlockId?: string
   /** 本页存在超页诊断的块 ID（由 pagination diagnostics 计算），用于渲染可识别占位警告。 */
   overflowBlockIds?: ReadonlySet<string>
@@ -60,6 +63,7 @@ export function PaperPageView({
   printLayout,
   totalPages,
   resolvers,
+  choiceLayoutOverrides,
   selectedBlockId,
   overflowBlockIds,
   className,
@@ -74,6 +78,8 @@ export function PaperPageView({
   const headerSlots = pageHeaderSlots(printLayout, page.index)
   const footerSlots = pageFooterSlots(printLayout)
   const headerReserved = printLayout.header.enabled
+  const headingLabels = headingLabelByBlockId(document)
+  const layoutResolvers: TeachingDocumentResolvers = { ...resolvers, choiceLayoutOverrides }
   const footerReserved = printLayout.footer.enabled
   // 页眉页脚仍占用原有的稳定分页高度；仅向纸张边缘移动到更自然的印刷位置。
   // 至少保留 8mm 物理留白，避免不同打印机的不可打印区裁切内容。
@@ -177,7 +183,7 @@ export function PaperPageView({
                   key={`box-fragment:${item.sourceIndex}:${item.fragmentIndex}`}
                   block={block}
                   item={item}
-                  resolvers={resolvers}
+                  resolvers={layoutResolvers}
                   selectedBlockId={selectedBlockId}
                 />
               )
@@ -212,6 +218,8 @@ export function PaperPageView({
                   question={resolution}
                   item={item}
                   selected={selectedBlockId === block.id}
+                  resolveFigure={resolvers.resolveFigure}
+                  choiceLayoutOverrides={choiceLayoutOverrides}
                 />
               )
             }
@@ -219,12 +227,13 @@ export function PaperPageView({
               <BlockRenderer
                 key={`whole:${item.sourceIndex}`}
                 block={block}
-                resolvers={resolvers}
+                resolvers={layoutResolvers}
                 sourceIndex={item.sourceIndex}
                 selectedBlockId={selectedBlockId}
                 rawMarkdownOverflowWarning={block.type === 'rawMarkdown' && overflowBlockIds?.has(block.id)
                   ? '内容超过单页内容区高度，无法安全分页，导出已阻止。'
                   : undefined}
+                headingLabel={headingLabels.get(block.id)}
               />
             )
           })}

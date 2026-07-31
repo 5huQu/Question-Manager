@@ -178,6 +178,33 @@ describe('TeachingDocumentEditorPage A4 分页 generation 稳定性', () => {
     }))
   })
 
+  it('defaults to 100% and keeps one zoom value across all canvas modes', async () => {
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <MemoryRouter initialEntries={['/teaching-documents/doc-1']}>
+          <Routes><Route path="/teaching-documents/:documentId" element={<TeachingDocumentEditorPage />} /></Routes>
+        </MemoryRouter>,
+      )
+    })
+
+    const zoomInput = container.querySelector<HTMLInputElement>('[aria-label="视图缩放比例"]')
+    expect(zoomInput?.value).toBe('100')
+    const zoomInButton = container.querySelector<HTMLButtonElement>('[aria-label="放大视图"]')
+    await act(async () => zoomInButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    const continuousButton = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('连续流'))
+    await act(async () => continuousButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(container.querySelector<HTMLInputElement>('[aria-label="视图缩放比例"]')?.value).toBe('105')
+    expect(Array.from(container.querySelectorAll<HTMLElement>('.td-paper-page')).some((node) => node.style.zoom === '1.05')).toBe(true)
+
+    const previewButton = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('打印预览'))
+    await act(async () => previewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(container.querySelector<HTMLInputElement>('[aria-label="视图缩放比例"]')?.value).toBe('105')
+  })
+
   it('父层 paginationState 回写不导致重复 generation/readiness 循环', async () => {
     root = createRoot(container)
     await act(async () => {
@@ -211,7 +238,7 @@ describe('TeachingDocumentEditorPage A4 分页 generation 稳定性', () => {
     expect(container.textContent).not.toContain('正在准备排版资源')
     expect(container.textContent).not.toContain('resource-timeout')
     expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent === '打印')).toBe(true)
-    expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent === '另存为 PDF')).toBe(true)
+    expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent === '另存为学生版 PDF')).toBe(true)
     expect(container.textContent).not.toContain('实验导出')
     // 题目经 questionBank API wrapper 真实装载（resolver 数据依赖未被掩盖）
     expect(mocks.getItem).toHaveBeenCalledWith('q1')

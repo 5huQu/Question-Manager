@@ -1,8 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { db } from '../../db/connection.js'
+import { dataDir } from '../../config.js'
 import * as sourceRepo from '../../repositories/source-documents.repo.js'
 import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
+import { deleteQuestionBankItemsForImportSources } from '../../repositories/question-bank/items.repo.js'
 import { RouteError } from '../../utils/http-error.js'
 import { assetPathFor } from '../../utils/paths.js'
 import { normalizeUploadName } from '../../utils/ocr-helpers.js'
@@ -165,9 +167,13 @@ export function deleteSourceDocument(id: string) {
   // 3. 删除数据库记录
   db.exec('BEGIN IMMEDIATE')
   try {
+    const deletedQuestionIds = deleteQuestionBankItemsForImportSources([id])
     // 删除源资料（通过级联删除级联删除 ocr_documents 和 question_candidates）
     db.prepare('DELETE FROM source_documents WHERE id = ?').run(id)
     db.exec('COMMIT')
+    for (const questionId of deletedQuestionIds) {
+      fs.rmSync(path.join(dataDir, 'question_figures', questionId), { recursive: true, force: true })
+    }
   } catch (error) {
     try {
       db.exec('ROLLBACK')

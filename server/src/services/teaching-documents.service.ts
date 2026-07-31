@@ -7,22 +7,27 @@ import { RouteError } from '../utils/http-error.js'
 import { createId, nowIso, safeName } from '../utils/ids.js'
 import { assetPathFor } from '../utils/paths.js'
 import { imageDimensions } from '../utils/image-operations.js'
+import { sanitizeSvg } from './teaching-documents/svg-sanitizer.js'
+import { compileTikz } from './teaching-documents/tikz-renderer.js'
 
 const DOCUMENT_TYPES = new Set(['worksheet', 'exam', 'lecture'])
 const KNOWN_BLOCK_TYPES = new Set([
   'heading', 'paragraph', 'blockMath', 'figure', 'question', 'box',
-  'divider', 'spacer', 'pageBreak', 'rawMarkdown', 'unknown',
+  'divider', 'spacer', 'pageBreak', 'rawMarkdown', 'table', 'unknown',
+  'tikz',
 ])
 const MAX_ASSET_PIXELS = 60_000_000
 const FATAL_ISSUE_CODES = new Set([
   'invalid-root', 'unsupported-version', 'invalid-document-type', 'invalid-title',
   'invalid-metadata', 'invalid-content', 'empty-id', 'duplicate-id', 'auto-id',
   'invalid-inline-content', 'invalid-box-children', 'absolute-legacy-path',
+  'invalid-outline', 'invalid-heading-numbering', 'invalid-table',
 ])
 const ALLOWED_IMAGE_TYPES = new Map([
   ['image/png', '.png'],
   ['image/jpeg', '.jpg'],
   ['image/webp', '.webp'],
+  ['image/svg+xml', '.svg'],
 ])
 
 type JsonObject = Record<string, unknown>
@@ -60,8 +65,16 @@ export type TeachingDocumentAsset = {
   createdAt: string
 }
 
+export type PrintTemplate = { id: string; name: string; options: JsonObject; createdAt: string; updatedAt: string }
+
 function isObject(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function printTemplateFromRow(row: repo.PrintTemplateRow): PrintTemplate {
+  let options: unknown
+  try { options = JSON.parse(row.options_json) } catch { options = {} }
+  return { id: row.id, name: row.name, options: isObject(options) ? options : {}, createdAt: row.created_at, updatedAt: row.updated_at }
 }
 
 function stableJson(value: unknown): string {
@@ -96,6 +109,22 @@ function validateInlines(value: unknown, blockId: string, issues: TeachingDocume
   }
 }
 
+function validateOutline(value: unknown, issues: TeachingDocumentIssue[]) {
+  if (value === undefined) return
+  if (!isObject(value)) { issues.push({ level: 'error', code: 'invalid-outline', message: '章节设置必须是对象。' }); return }
+  if (value.numberingEnabled !== undefined && typeof value.numberingEnabled !== 'boolean') issues.push({ level: 'error', code: 'invalid-outline', message: '章节编号开关必须是布尔值。' })
+  if (value.preset !== undefined && !['textbook', 'decimal', 'chinese', 'exam', 'chapter-chinese', 'chapter-decimal', 'chapter-section', 'roman', 'paren', 'none'].includes(String(value.preset))) issues.push({ level: 'error', code: 'invalid-outline', message: '章节编号方案无效。' })
+  if (value.levels !== undefined && !isObject(value.levels)) issues.push({ level: 'error', code: 'invalid-outline', message: '章节分级设置必须是对象。' })
+}
+
+function validateHeadingNumbering(value: unknown, blockId: string, issues: TeachingDocumentIssue[]) {
+  if (value === undefined) return
+  if (!isObject(value)) { issues.push({ level: 'error', code: 'invalid-heading-numbering', blockId, message: '标题编号设置必须是对象。' }); return }
+  if (value.mode !== undefined && !['inherit', 'none', 'manual'].includes(String(value.mode))) issues.push({ level: 'error', code: 'invalid-heading-numbering', blockId, message: '标题编号模式无效。' })
+  if (value.manualLabel !== undefined && (typeof value.manualLabel !== 'string' || value.manualLabel.length > 40)) issues.push({ level: 'error', code: 'invalid-heading-numbering', blockId, message: '手动标题编号必须是不超过 40 个字符的文本。' })
+  if (value.restartAt !== undefined && (typeof value.restartAt !== 'number' || !Number.isInteger(value.restartAt) || value.restartAt < 1 || value.restartAt > 999)) issues.push({ level: 'error', code: 'invalid-heading-numbering', blockId, message: '标题重新编号必须是 1 到 999 的整数。' })
+}
+
 export function inspectTeachingDocument(value: unknown) {
   const issues: TeachingDocumentIssue[] = []
   if (!isObject(value)) {
@@ -111,6 +140,7 @@ export function inspectTeachingDocument(value: unknown) {
     issues.push({ level: 'error', code: 'invalid-content', message: '文档 content 必须是数组。' })
     return { fatal: true, issues }
   }
+  validateOutline(value.outline, issues)
 
   const ids = new Set<string>()
   const visitBlock = (raw: unknown, insideBox: boolean) => {
@@ -131,10 +161,28 @@ export function inspectTeachingDocument(value: unknown) {
     if (type === 'unknown') {
       issues.push({ level: 'warning', code: 'unknown-block-type', blockId: id, message: `未知块 "${String(raw.originalType || '')}" 将保留。` })
     }
-    if (insideBox && ['box', 'heading', 'pageBreak', 'rawMarkdown'].includes(type)) {
+    if (insideBox && ['box', 'heading', 'pageBreak'].includes(type)) {
       issues.push({ level: 'warning', code: 'illegal-box-child', blockId: id, message: `盒子内非法块 "${type}" 将保留。` })
     }
     if (type === 'heading' || type === 'paragraph') validateInlines(raw.content, id, issues)
+    if (type === 'table') {
+      if (!Array.isArray(raw.rows) || raw.rows.length < 1 || raw.rows.length > 20) {
+        issues.push({ level: 'error', code: 'invalid-table', blockId: id, message: '表格必须包含 1 至 20 行。' })
+      } else {
+        const columnCount = Array.isArray(raw.rows[0]) ? raw.rows[0].length : 0
+        if (columnCount < 1 || columnCount > 12 || raw.rows.some((row) => !Array.isArray(row) || row.length !== columnCount)) {
+          issues.push({ level: 'error', code: 'invalid-table', blockId: id, message: '表格各行必须具有一致且合法的列数。' })
+        } else {
+          raw.rows.forEach((row: unknown, rowIndex: number) => {
+            if (!Array.isArray(row)) return
+            row.forEach((cell: unknown, cellIndex: number) => {
+              validateInlines(isObject(cell) ? cell.content : undefined, `${id}-${rowIndex}-${cellIndex}`, issues)
+            })
+          })
+        }
+      }
+    }
+    if (type === 'heading') validateHeadingNumbering(raw.numbering, id, issues)
     if (type === 'question' && (typeof raw.questionId !== 'string' || !raw.questionId.trim())) {
       issues.push({ level: 'error', code: 'invalid-question-ref', blockId: id, message: '题目引用必须是字符串。' })
     }
@@ -151,6 +199,33 @@ export function inspectTeachingDocument(value: unknown) {
       } else if (asset.type === 'questionFigure' && (!String(asset.questionId || '').trim() || !String(asset.figureId || '').trim())) {
         issues.push({ level: 'error', code: 'invalid-figure-ref', blockId: id, message: '题图引用必须包含 questionId 和 figureId。' })
       }
+      if (raw.groupItems !== undefined) {
+        if (!Array.isArray(raw.groupItems) || raw.groupItems.length < 1 || raw.groupItems.length > 12) {
+          issues.push({ level: 'error', code: 'invalid-figure-ref', blockId: id, message: '图片组必须包含 1 至 12 张图片。' })
+        } else {
+          raw.groupItems.forEach((entry: unknown) => {
+            const item = isObject(entry) ? entry : {}
+            const itemAsset = item.asset
+            if (!isObject(itemAsset) || !['questionFigure', 'documentAsset', 'legacyPath'].includes(String(itemAsset.type || ''))) {
+              issues.push({ level: 'error', code: 'invalid-figure-ref', blockId: id, message: '图片组包含无效资源引用。' })
+            } else if (itemAsset.type === 'legacyPath' && (/^(?:[a-zA-Z]:[\\/]|\/|file:\/\/)/.test(String(itemAsset.path || '').trim()) || !String(itemAsset.path || '').trim())) {
+              issues.push({ level: 'error', code: 'invalid-figure-ref', blockId: id, message: '图片组 legacyPath 引用无效。' })
+            } else if (itemAsset.type === 'documentAsset' && !String(itemAsset.assetId || '').trim()) {
+              issues.push({ level: 'error', code: 'invalid-figure-ref', blockId: id, message: '图片组 documentAsset 引用不能为空。' })
+            } else if (itemAsset.type === 'questionFigure' && (!String(itemAsset.questionId || '').trim() || !String(itemAsset.figureId || '').trim())) {
+              issues.push({ level: 'error', code: 'invalid-figure-ref', blockId: id, message: '图片组题图引用必须完整。' })
+            }
+          })
+        }
+        if (![1, 2, 3].includes(Number(raw.groupColumns))) {
+          issues.push({ level: 'error', code: 'invalid-figure-ref', blockId: id, message: '图片组列数只能为 1、2 或 3。' })
+        }
+      }
+    }
+    if (type === 'tikz') {
+      if (typeof raw.source !== 'string' || raw.source.length > 50_000) issues.push({ level: 'error', code: 'invalid-tikz-source', blockId: id, message: 'TikZ 源码无效或过长。' })
+      if (raw.svgAssetId !== undefined && typeof raw.svgAssetId !== 'string') issues.push({ level: 'error', code: 'invalid-tikz-asset', blockId: id, message: 'TikZ SVG 资源引用无效。' })
+      if (raw.alignment !== undefined && !['left', 'center', 'right'].includes(String(raw.alignment))) issues.push({ level: 'error', code: 'invalid-tikz-layout', blockId: id, message: 'TikZ 对齐方式无效。' })
     }
     if (type === 'box') {
       if (!Array.isArray(raw.children)) issues.push({ level: 'error', code: 'invalid-box-children', blockId: id, message: '盒子 children 必须是数组。' })
@@ -211,6 +286,7 @@ function referencedDocumentAssetIds(content: JsonObject) {
     if (raw.type === 'figure' && isObject(raw.asset) && raw.asset.type === 'documentAsset' && typeof raw.asset.assetId === 'string') {
       ids.add(raw.asset.assetId)
     }
+    if (raw.type === 'tikz' && typeof raw.svgAssetId === 'string') ids.add(raw.svgAssetId)
     if (raw.type === 'box' && Array.isArray(raw.children)) raw.children.forEach(visit)
   }
   if (Array.isArray(content.content)) content.content.forEach(visit)
@@ -259,8 +335,15 @@ function assertWritableDocument(content: unknown) {
   return content as JsonObject
 }
 
+function defaultTypographyStyle(documentType: TeachingDocumentRecord['documentType']) {
+  const preset = documentType === 'lecture' ? 'lecture' : 'exam'
+  return preset === 'lecture'
+    ? { typographyPreset: preset, bodyFont: 'songti', bodyLatinFont: 'georgia', bodyNumberFont: 'times', headingFont: 'heiti', headingLatinFont: 'arial', headingNumberFont: 'times', marginPreset: 'normal', questionSpacing: 'normal' }
+    : { typographyPreset: preset, bodyFont: 'songti', bodyLatinFont: 'times', bodyNumberFont: 'times', headingFont: 'heiti', headingLatinFont: 'arial', headingNumberFont: 'times', marginPreset: 'compact', questionSpacing: 'compact' }
+}
+
 function emptyDocument(title: string, documentType: TeachingDocumentRecord['documentType']): JsonObject {
-  return { version: 1, documentType, title, metadata: {}, content: [] }
+  return { version: 1, documentType, title, metadata: {}, content: [], style: defaultTypographyStyle(documentType) }
 }
 
 export function listTeachingDocuments() {
@@ -385,7 +468,9 @@ export function uploadTeachingDocumentAsset(documentId: string, file: Express.Mu
   fs.mkdirSync(path.dirname(target), { recursive: true })
   fs.writeFileSync(target, file.buffer)
   try {
-    const dimensions = imageDimensions(target)
+    const svg = extension === '.svg' ? sanitizeSvg(file.buffer) : undefined
+    if (svg) fs.writeFileSync(target, svg.content)
+    const dimensions = svg ? { width: svg.width, height: svg.height } : imageDimensions(target)
     if (
       !Number.isInteger(dimensions.width) || !Number.isInteger(dimensions.height)
       || dimensions.width < 1 || dimensions.height < 1
@@ -399,7 +484,7 @@ export function uploadTeachingDocumentAsset(documentId: string, file: Express.Mu
       document_id: documentId,
       original_name: path.basename(file.originalname || 'image'),
       mime_type: String(file.mimetype).toLowerCase(),
-      byte_size: file.size || file.buffer.byteLength,
+      byte_size: svg?.content.byteLength || file.size || file.buffer.byteLength,
       width: dimensions.width,
       height: dimensions.height,
       storage_path: assetPathFor(target),
@@ -414,8 +499,46 @@ export function uploadTeachingDocumentAsset(documentId: string, file: Express.Mu
   }
 }
 
+export async function renderTeachingDocumentTikz(documentId: string, source: unknown) {
+  requireDocument(documentId)
+  const result = await compileTikz(source)
+  const cached = repo.listTeachingDocumentAssets(documentId).find((asset) => asset.original_name === `tikz-${result.sourceHash.slice(7)}.svg`)
+  if (cached) return { asset: assetFromRow(cached), sourceHash: result.sourceHash, cached: true, warnings: [] as string[] }
+  const assetId = createId('tdasset')
+  const target = path.join(dataDir, 'teaching-documents', safeName(documentId), 'assets', `${safeName(assetId)}.svg`)
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  try {
+    fs.writeFileSync(target, result.content)
+    const row: repo.TeachingDocumentAssetRow = { id: assetId, document_id: documentId, original_name: `tikz-${result.sourceHash.slice(7)}.svg`, mime_type: 'image/svg+xml', byte_size: result.content.byteLength, width: result.width, height: result.height, storage_path: assetPathFor(target), created_at: nowIso() }
+    repo.insertTeachingDocumentAsset(row)
+    return { asset: assetFromRow(row), sourceHash: result.sourceHash, cached: false, warnings: [] as string[] }
+  } catch (error) { fs.rmSync(target, { force: true }); throw error }
+}
+
 export function getTeachingDocumentAsset(assetId: string) {
   const row = repo.getTeachingDocumentAsset(assetId)
   if (!row) throw new RouteError(404, '文档图片资源不存在。')
   return assetFromRow(row)
+}
+
+export function listPrintTemplates() { return { items: repo.listPrintTemplates().map(printTemplateFromRow) } }
+export function createPrintTemplate(body: Record<string, unknown>) {
+  const name = String(body.name || '').trim()
+  if (!name) throw new RouteError(400, '模板名称不能为空。')
+  if (name.length > 80) throw new RouteError(400, '模板名称不能超过 80 个字符。')
+  if (!isObject(body.options)) throw new RouteError(400, '模板配置无效。')
+  const now = nowIso(); const row = { id: createId('ptpl'), name, options_json: stableJson(body.options), created_at: now, updated_at: now }
+  repo.insertPrintTemplate(row); return printTemplateFromRow(row)
+}
+export function updatePrintTemplate(id: string, body: Record<string, unknown>) {
+  if (!repo.getPrintTemplate(id)) throw new RouteError(404, '模板不存在。')
+  const name = String(body.name || '').trim()
+  if (!name || name.length > 80) throw new RouteError(400, '模板名称无效。')
+  if (!isObject(body.options)) throw new RouteError(400, '模板配置无效。')
+  repo.updatePrintTemplate({ id, name, options_json: stableJson(body.options), updated_at: nowIso() })
+  return printTemplateFromRow(repo.getPrintTemplate(id)!)
+}
+export function deletePrintTemplate(id: string) {
+  if (!repo.getPrintTemplate(id)) throw new RouteError(404, '模板不存在。')
+  repo.deletePrintTemplate(id); return { deleted: true }
 }

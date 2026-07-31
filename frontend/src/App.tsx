@@ -1,8 +1,9 @@
 import { useEffect, useState, lazy, Suspense } from 'react'
-import { Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { FilterX, Tags } from 'lucide-react'
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { FilterX, LoaderCircle, Tags } from 'lucide-react'
 import { settingsApi } from '@/api/settings'
 import { importV2Api } from '@/api/importV2'
+import { questionBankApi } from '@/api/questionBank'
 import { UpdateCard } from '@/components/UpdateCard'
 import { AppPageHeader } from '@/components/layout/AppPageHeader'
 import { AppSidebar } from '@/components/layout/AppSidebar'
@@ -28,7 +29,6 @@ const ExportRecordsPage = lazy(() => import('@/pages/ExportRecordsPage'))
 const SetupPage = lazy(() => import('@/pages/SetupPage').then(module => ({ default: module.SetupPage })))
 const TeachingDocumentPrintPage = lazy(() => import('@/pages/print/TeachingDocumentPrintPage'))
 const QuestionBasket = lazy(() => import('@/components/QuestionBasket').then(module => ({ default: module.QuestionBasket })))
-const PaperCenterPage = lazy(() => import('@/pages/questions/PaperCenterPage'))
 const CandidateFixWorkbenchPage = lazy(() => import('@/pages/import-v2/CandidateFixWorkbenchPage'))
 const TeachingDocumentsPage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentsPage'))
 const TeachingDocumentEditorPage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentEditorPage'))
@@ -216,7 +216,7 @@ export default function App() {
                 <Route path="/questions" element={<QuestionBankPage />} />
                 <Route path="/questions/new" element={<QuestionCreatePage />} />
                 <Route path="/questions/basket" element={<QuestionBasket mode="page" />} />
-                <Route path="/questions/papers" element={<PaperCenterPage />} />
+                <Route path="/questions/papers" element={<Navigate to="/questions/basket?snapshots=1" replace />} />
                 <Route path="/questions/collections/:id/markdown-preview" element={<MarkdownPreviewPage />} />
                 <Route path="/questions/collections/:id/layout-drafts/:draftId" element={<LayoutWorkbenchPage />} />
                 <Route path="/questions/layout-drafts" element={<LayoutDraftsPage />} />
@@ -311,13 +311,44 @@ export function dispatchResetFilters() {
 }
 
 export function QuestionBankHeaderActions() {
+  const [hasRunningClassification, setHasRunningClassification] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const handleTaskUpdate = (event: Event) => {
+      const task = (event as CustomEvent<{ task?: { status?: string } }>).detail?.task
+      setHasRunningClassification(task?.status === 'queued' || task?.status === 'running')
+    }
+    window.addEventListener('question-bank-classification-task-updated', handleTaskUpdate)
+    void questionBankApi.getActiveClassificationTask()
+      .then(({ task }) => {
+        if (active) setHasRunningClassification(Boolean(task))
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+      window.removeEventListener('question-bank-classification-task-updated', handleTaskUpdate)
+    }
+  }, [])
+
   return (
-    <button
-      type="button"
-      onClick={() => window.dispatchEvent(new Event('question-bank-start-classification'))}
-      className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
-    >
-      <Tags className="size-3.5 text-zinc-500 dark:text-zinc-400" /> 开始分类
-    </button>
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new Event('question-bank-start-classification'))}
+        className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+      >
+        <Tags className="size-3.5 text-zinc-500 dark:text-zinc-400" /> 开始分类
+      </button>
+      {hasRunningClassification ? (
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event('question-bank-show-classification-progress'))}
+          className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+        >
+          <LoaderCircle className="size-3.5 animate-spin text-zinc-500 dark:text-zinc-400" /> 查看分类进度
+        </button>
+      ) : null}
+    </div>
   )
 }

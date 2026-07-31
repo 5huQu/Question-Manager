@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Node, Mark, mergeAttributes } from '@tiptap/core'
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import Paragraph from '@tiptap/extension-paragraph'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
@@ -75,6 +76,58 @@ export const FontFamilyMark = Mark.create({
     return {
       setFontFamily: (family) => ({ commands }) => commands.setMark('fontFamily', { family }),
       unsetFontFamily: () => ({ commands }) => commands.unsetMark('fontFamily'),
+    }
+  },
+})
+
+// ─── TextColorMark：受控行内文字颜色 ───────────────────────────────────
+
+/** 仅接受不含透明度/表达式的标准 RGB 色值，兼顾自定义取色与持久化安全。 */
+const TEXT_COLOR_HEX = /^#[0-9a-f]{6}$/i
+
+function normalizeTextColor(value: unknown) {
+  const color = String(value || '').trim().toLowerCase()
+  return TEXT_COLOR_HEX.test(color) ? color : null
+}
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    textColor: {
+      setTextColor: (color: string) => ReturnType
+      unsetTextColor: () => ReturnType
+    }
+  }
+}
+
+export const TextColorMark = Mark.create({
+  name: 'textColor',
+  addAttributes() {
+    return {
+      color: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('data-text-color') || null,
+        renderHTML: (attributes) => {
+          const color = normalizeTextColor(attributes.color)
+          return color
+            ? { 'data-text-color': color, style: `color: ${color}` }
+            : {}
+        },
+      },
+    }
+  },
+  parseHTML() {
+    return [{ tag: 'span[data-text-color]' }]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', mergeAttributes(HTMLAttributes), 0]
+  },
+  addCommands() {
+    return {
+      setTextColor: (color) => ({ commands }) => {
+        const normalized = normalizeTextColor(color)
+        return normalized ? commands.setMark('textColor', { color: normalized }) : false
+      },
+      unsetTextColor: () => ({ commands }) => commands.unsetMark('textColor'),
     }
   },
 })
@@ -186,6 +239,23 @@ export const InlineMathNode = Node.create({
   },
 })
 
+/**
+ * 连续卡片正文仍由多个 paragraph 组成。将业务 id 写入 ProseMirror 节点属性，
+ * 而非在 DOM 上事后打标，避免被 ProseMirror DOMObserver 当成外部改动。
+ */
+export const ParagraphWithBlockId = Paragraph.extend({
+  addAttributes() {
+    return {
+      ...(this.parent?.() || {}),
+      blockId: {
+        default: '',
+        parseHTML: (element) => element.getAttribute('data-block-id') || '',
+        renderHTML: (attributes) => attributes.blockId ? { 'data-block-id': String(attributes.blockId) } : {},
+      },
+    }
+  },
+})
+
 // ─── 扩展集工厂 ─────────────────────────────────────────────────────────────
 
 /**
@@ -199,6 +269,7 @@ export function createBlockEditorExtensions() {
   return [
     StarterKit.configure({
       // 块级节点全部禁用：单块编辑器只含一个 paragraph
+      paragraph: false,
       heading: false,
       blockquote: false,
       bulletList: false,
@@ -221,8 +292,10 @@ export function createBlockEditorExtensions() {
       gapcursor: false,
       trailingNode: false,
     }),
+    ParagraphWithBlockId,
     UnknownMark,
     FontFamilyMark,
+    TextColorMark,
     UnknownInlineNode,
     InlineMathNode,
   ]

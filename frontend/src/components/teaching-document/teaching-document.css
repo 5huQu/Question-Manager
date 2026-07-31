@@ -138,6 +138,40 @@
   box-shadow: 0 0 0 1px rgb(161 161 170 / 12%);
 }
 
+/* 正在拖拽的块保留原有尺寸，降低不透明度以明确排序目标。 */
+.td-document-editor .td-block-dragging,
+.td-paper-page .td-block-dragging {
+  opacity: 0.45;
+}
+
+/* 拖过时明确标出将要插入的位置，避免轻微拖动造成误判。 */
+.td-document-editor .td-block-drop-before,
+.td-paper-page .td-block-drop-before {
+  box-shadow: 0 -3px 0 -1px #18181b;
+  animation: td-block-drop-indicator 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.td-document-editor .td-block-drop-after,
+.td-paper-page .td-block-drop-after {
+  box-shadow: 0 3px 0 -1px #18181b;
+  animation: td-block-drop-indicator 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes td-block-drop-indicator {
+  from { opacity: 0.65; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.dark .td-document-editor .td-block-drop-before,
+.dark .td-paper-page .td-block-drop-before {
+  box-shadow: 0 -3px 0 -1px #fafafa;
+}
+
+.dark .td-document-editor .td-block-drop-after,
+.dark .td-paper-page .td-block-drop-after {
+  box-shadow: 0 3px 0 -1px #fafafa;
+}
+
 .dark .td-document-editor .td-node-selectable:not(.is-selected):hover,
 .dark .td-paper-page .td-block-shell:not(.td-block-selected):hover {
   background-color: rgb(39 39 42 / 35%);
@@ -167,6 +201,24 @@
 .td-paper-page .td-block-selected::after {
   border-color: #18181b;
   box-shadow: 0 0 0 1px rgb(24 24 27 / 8%);
+}
+
+/* 标题、段落属于可编辑文本节点，不会触发 atom NodeSelection。
+ * 光标落入时通过 decoration 给出与其他对象一致的可见选中边界。 */
+.td-document-editor .td-text-block-active {
+  border-radius: 6px;
+  background: rgb(37 99 235 / 7%);
+  box-shadow: inset 0 0 0 1.5px rgb(37 99 235 / 72%);
+}
+
+.td-document-editor ::selection {
+  background: rgb(37 99 235 / 32%);
+  color: inherit;
+}
+
+.dark .td-document-editor .td-text-block-active {
+  background: rgb(96 165 250 / 16%);
+  box-shadow: inset 0 0 0 1.5px rgb(147 197 253 / 76%);
 }
 
 .dark .td-document-editor .td-node-selectable.is-selected,
@@ -200,6 +252,36 @@
   visibility: hidden;
 }
 
+/* 页眉页脚设置浮层使用与编辑器一致的轻量进出场，不影响纸张布局。 */
+.td-chrome-settings-panel {
+  transform-origin: top right;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  transition: opacity 160ms ease, transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.td-chrome-settings-panel.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: td-chrome-panel-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.td-chrome-settings-panel.is-closing {
+  pointer-events: none;
+  animation: td-chrome-panel-out 180ms ease both;
+}
+
+@keyframes td-chrome-panel-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes td-chrome-panel-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-6px) scale(0.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .td-chrome-settings-panel { transition: none; animation: none; }
+}
+
 /*
  * Paginated canvas: the editor text must span exactly the paper content width
  * (contentWidthPx) so its line wrapping matches the hidden measurement tree
@@ -210,6 +292,21 @@
 .td-paginated-canvas .td-document-editor {
   padding-left: 0;
   padding-right: 0;
+}
+
+/*
+ * 长文档编辑：离开视口的顶层块不参与 paint/layout。
+ * ProseMirror 仍保留完整 DOM、选区与撤销历史；滚回或聚焦该块时浏览器会自动
+ * 恢复渲染。真实高度在首次可见后会被浏览器记住，避免影响编辑器分页装饰。
+ */
+.td-document-editor-virtualized > [data-block-id] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
+}
+
+.td-document-editor-virtualized > [data-block-id].is-selected,
+.td-document-editor-virtualized > .td-text-block-active {
+  content-visibility: visible;
 }
 
 /* ProseMirror 分页装饰会真实占据布局高度，正文不会绘制到页间隙下方。 */
@@ -451,6 +548,19 @@
   user-select: none;
 }
 
+/* 分页测量时读取真实续页栏/标签的高度。常规渲染不显示，也不占用布局空间。 */
+.td-box-continuation-probe {
+  display: none;
+}
+[data-teaching-measure-root] .td-box-continuation-probe {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  display: flex;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* ─── 续页栏（middle/end 弱化标题） ──────────────────────────────────── */
 
 .td-box-continuation-header {
@@ -522,6 +632,16 @@
 .td-document h4 {
   font-family: var(--td-heading-font, inherit);
   color: var(--td-heading-color, inherit);
+}
+
+.td-heading[data-number-label]::before {
+  content: attr(data-number-label) " ";
+  white-space: pre;
+  font-family: var(--td-heading-number-font, var(--td-heading-font, inherit));
+}
+
+.td-heading-number {
+  font-family: var(--td-heading-number-font, var(--td-heading-font, inherit));
 }
 
 /* ─── 编辑视图字体（与纸张预览/PDF 打印共用同一组 CSS 变量） ───────────── */
