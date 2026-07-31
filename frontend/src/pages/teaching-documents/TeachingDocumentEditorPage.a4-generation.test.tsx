@@ -238,7 +238,7 @@ describe('TeachingDocumentEditorPage A4 分页 generation 稳定性', () => {
     expect(container.textContent).not.toContain('正在准备排版资源')
     expect(container.textContent).not.toContain('resource-timeout')
     expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent === '打印')).toBe(true)
-    expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent === '另存为 PDF')).toBe(true)
+    expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent === '另存为学生版 PDF')).toBe(true)
     expect(container.textContent).not.toContain('实验导出')
     // 题目经 questionBank API wrapper 真实装载（resolver 数据依赖未被掩盖）
     expect(mocks.getItem).toHaveBeenCalledWith('q1')
