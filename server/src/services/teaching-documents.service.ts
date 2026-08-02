@@ -22,6 +22,7 @@ const FATAL_ISSUE_CODES = new Set([
   'invalid-metadata', 'invalid-content', 'empty-id', 'duplicate-id', 'auto-id',
   'invalid-inline-content', 'invalid-box-children', 'absolute-legacy-path',
   'invalid-outline', 'invalid-heading-numbering', 'invalid-table',
+  'invalid-inline-format', 'invalid-text-layout', 'invalid-box-appearance',
 ])
 const ALLOWED_IMAGE_TYPES = new Map([
   ['image/png', '.png'],
@@ -106,6 +107,58 @@ function validateInlines(value: unknown, blockId: string, issues: TeachingDocume
     if (inline.type === 'text' && Array.isArray(inline.unknownMarks) && inline.unknownMarks.length) {
       issues.push({ level: 'warning', code: 'unknown-inline-mark', blockId, message: '未知文字 mark 将保留。' })
     }
+    if (inline.type === 'text') {
+      if (inline.fontSize !== undefined && ![12, 14, 16, 18, 20, 24].includes(Number(inline.fontSize))) {
+        issues.push({ level: 'error', code: 'invalid-inline-format', blockId, message: '行内字号只能为 12、14、16、18、20 或 24。' })
+      }
+      if (inline.color !== undefined && (typeof inline.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(inline.color))) {
+        issues.push({ level: 'error', code: 'invalid-inline-format', blockId, message: '行内文字颜色必须是 #RRGGBB。' })
+      }
+    }
+  }
+}
+
+function validateTextLayout(raw: JsonObject, blockId: string, issues: TeachingDocumentIssue[], allowList = false) {
+  if (raw.alignment !== undefined && !['left', 'center', 'right', 'justify'].includes(String(raw.alignment))) {
+    issues.push({ level: 'error', code: 'invalid-text-layout', blockId, message: '文字对齐方式无效。' })
+  }
+  if (raw.indentLevel !== undefined && (![0, 1, 2, 3, 4].includes(Number(raw.indentLevel)) || !Number.isInteger(Number(raw.indentLevel)))) {
+    issues.push({ level: 'error', code: 'invalid-text-layout', blockId, message: '文字缩进只能为 0 至 4 级。' })
+  }
+  if (raw.listStyle !== undefined && (!allowList || !['bullet', 'ordered'].includes(String(raw.listStyle)))) {
+    issues.push({ level: 'error', code: 'invalid-text-layout', blockId, message: '列表样式无效。' })
+  }
+}
+
+function validateBoxAppearance(value: unknown, blockId: string, issues: TeachingDocumentIssue[]) {
+  if (value === undefined) return
+  if (!isObject(value)) {
+    issues.push({ level: 'error', code: 'invalid-box-appearance', blockId, message: '卡片样式必须是对象。' })
+    return
+  }
+  if (value.background !== undefined && !['template', 'white', 'blue', 'gray', 'amber', 'green'].includes(String(value.background))) {
+    issues.push({ level: 'error', code: 'invalid-box-appearance', blockId, message: '卡片背景色无效。' })
+  }
+  if (value.borderColor !== undefined && !['template', 'zinc', 'blue', 'amber', 'green'].includes(String(value.borderColor))) {
+    issues.push({ level: 'error', code: 'invalid-box-appearance', blockId, message: '卡片边框颜色无效。' })
+  }
+  if (value.borderWidth !== undefined && ![0, 1, 2].includes(Number(value.borderWidth))) {
+    issues.push({ level: 'error', code: 'invalid-box-appearance', blockId, message: '卡片边框宽度只能为 0、1 或 2。' })
+  }
+  if (value.cornerRadius !== undefined && ![0, 4, 8, 12].includes(Number(value.cornerRadius))) {
+    issues.push({ level: 'error', code: 'invalid-box-appearance', blockId, message: '卡片圆角无效。' })
+  }
+  if (value.padding !== undefined) {
+    if (!isObject(value.padding)) {
+      issues.push({ level: 'error', code: 'invalid-box-appearance', blockId, message: '卡片内距必须是对象。' })
+    } else {
+      for (const [side, padding] of Object.entries(value.padding)) {
+        if (!['top', 'right', 'bottom', 'left'].includes(side) || ![8, 12, 16, 20, 24].includes(Number(padding))) {
+          issues.push({ level: 'error', code: 'invalid-box-appearance', blockId, message: '卡片内距只能使用预设值。' })
+          break
+        }
+      }
+    }
   }
 }
 
@@ -164,7 +217,10 @@ export function inspectTeachingDocument(value: unknown) {
     if (insideBox && ['box', 'heading', 'pageBreak'].includes(type)) {
       issues.push({ level: 'warning', code: 'illegal-box-child', blockId: id, message: `盒子内非法块 "${type}" 将保留。` })
     }
-    if (type === 'heading' || type === 'paragraph') validateInlines(raw.content, id, issues)
+    if (type === 'heading' || type === 'paragraph') {
+      validateInlines(raw.content, id, issues)
+      validateTextLayout(raw, id, issues, type === 'paragraph')
+    }
     if (type === 'table') {
       if (!Array.isArray(raw.rows) || raw.rows.length < 1 || raw.rows.length > 20) {
         issues.push({ level: 'error', code: 'invalid-table', blockId: id, message: '表格必须包含 1 至 20 行。' })
@@ -228,6 +284,7 @@ export function inspectTeachingDocument(value: unknown) {
       if (raw.alignment !== undefined && !['left', 'center', 'right'].includes(String(raw.alignment))) issues.push({ level: 'error', code: 'invalid-tikz-layout', blockId: id, message: 'TikZ 对齐方式无效。' })
     }
     if (type === 'box') {
+      validateBoxAppearance(raw.appearance, id, issues)
       if (!Array.isArray(raw.children)) issues.push({ level: 'error', code: 'invalid-box-children', blockId: id, message: '盒子 children 必须是数组。' })
       else raw.children.forEach((child) => visitBlock(child, true))
     }

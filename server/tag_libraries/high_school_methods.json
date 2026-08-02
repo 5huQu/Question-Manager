@@ -277,6 +277,28 @@
             "函数的极值、最值及其应用"
           ],
           "sortOrder": 25
+        },
+        {
+          "code": "MT_25",
+          "name": "同构法：指对同构",
+          "tagType": "method",
+          "appliesTo": [
+            "利用导数研究函数单调性",
+            "函数的极值",
+            "最值及其应用"
+          ],
+          "sortOrder": 25
+        },
+        {
+          "code": "MT_26",
+          "name": "同构法：双变量同构",
+          "tagType": "method",
+          "appliesTo": [
+            "利用导数研究函数单调性",
+            "函数的极值",
+            "最值及其应用"
+          ],
+          "sortOrder": 26
         }
       ]
     },

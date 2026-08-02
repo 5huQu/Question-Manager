@@ -75,7 +75,7 @@ export const browserQuestionChromeGeometryAdapter: QuestionChromeGeometryAdapter
   },
 }
 
-type QuestionResolutionLike =
+export type QuestionResolutionLike =
   | QuestionItem
   | { status: 'loading' | 'error' | 'missing'; message?: string }
   | undefined
@@ -368,13 +368,15 @@ export function measureTeachingDocumentQuestions(
   paragraphGeometry: ParagraphRangeGeometryAdapter = browserParagraphRangeGeometryAdapter,
   chromeGeometry: QuestionChromeGeometryAdapter = browserQuestionChromeGeometryAdapter,
   choiceLayoutOverrides?: ChoiceLayoutOverrides,
+  /** 编排器传入已查询的顶层块元素，避免同轮重复 querySelectorAll。 */
+  topLevelElements?: HTMLElement[],
 ) {
   const result: QuestionMeasurement[] = []
-  const topElements = Array.from(
+  const topElementsResolved = topLevelElements ?? Array.from(
     root.querySelectorAll<HTMLElement>(TEACHING_DOM_SELECTORS.block),
   ).filter((element) => !element.parentElement?.closest(TEACHING_DOM_SELECTORS.block))
   const elementBySource = new Map<number, HTMLElement>()
-  topElements.forEach((element) => {
+  topElementsResolved.forEach((element) => {
     const sourceIndex = Number(element.getAttribute(TEACHING_DOM.sourceIndex))
     if (Number.isInteger(sourceIndex)) elementBySource.set(sourceIndex, element)
   })
@@ -452,13 +454,15 @@ export function measureBoxChildQuestions(
   paragraphGeometry: ParagraphRangeGeometryAdapter = browserParagraphRangeGeometryAdapter,
   chromeGeometry: QuestionChromeGeometryAdapter = browserQuestionChromeGeometryAdapter,
   choiceLayoutOverrides?: ChoiceLayoutOverrides,
+  /** 编排器传入已查询的顶层块元素，避免同轮重复 querySelectorAll。 */
+  topLevelElements?: HTMLElement[],
 ): Map<string, QuestionMeasurement> {
   const result = new Map<string, QuestionMeasurement>()
-  const topElements = Array.from(
+  const topElementsResolved = topLevelElements ?? Array.from(
     root.querySelectorAll<HTMLElement>(TEACHING_DOM_SELECTORS.block),
   ).filter((element) => !element.parentElement?.closest(TEACHING_DOM_SELECTORS.block))
   const elementBySource = new Map<number, HTMLElement>()
-  topElements.forEach((element) => {
+  topElementsResolved.forEach((element) => {
     const sourceIndex = Number(element.getAttribute(TEACHING_DOM.sourceIndex))
     if (Number.isInteger(sourceIndex)) elementBySource.set(sourceIndex, element)
   })

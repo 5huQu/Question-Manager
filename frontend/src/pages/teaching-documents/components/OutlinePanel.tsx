@@ -7,7 +7,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   AlertTriangle, Box, FileCode2, Heading, Image, Minus,
-  ChevronDown, ChevronRight, FileQuestion, PilcrowLeft, ScissorsLineDashed, TextCursorInput, X, ArrowDown, ArrowUp,
+  ChevronDown, ChevronRight, FileQuestion, PanelLeft, PilcrowLeft, ScissorsLineDashed, TextCursorInput, X, ArrowDown, ArrowUp,
 } from 'lucide-react'
 import type { DocumentValidationIssue, TeachingBlock, TeachingDocumentOutlineOptions, TeachingDocumentV1, TeachingInline } from '@/types/teachingDocument'
 import { buildDocumentOutline } from '@/utils/teachingDocument'
@@ -86,18 +86,29 @@ function documentTree(content: TeachingBlock[]): DocumentTreeItem[] {
 
 export function OutlinePanel(props: {
   open: boolean
+  variant?: 'overlay' | 'docked'
   document: TeachingDocumentV1
   selectedId: string
   /** 画布视口中心所在块；仅用于导航反馈，不改变编辑器选区。 */
   activeBlockId?: string
   issues: DocumentValidationIssue[]
   onClose: () => void
+  onOpen?: () => void
   onSelect: (blockId: string) => void
   onFixIds: () => void
   onOutlineChange?: (patch: Partial<TeachingDocumentOutlineOptions>) => void
   onMoveSection?: (headingId: string, direction: -1 | 1) => void
 }) {
   const reduced = useReducedMotion()
+  if (props.variant === 'docked') {
+    return props.open ? <OutlinePanelBody {...props} variant="docked" reduced={reduced} /> : (
+      <aside className="hidden h-full w-11 shrink-0 border-r border-zinc-200 bg-white lg:flex lg:flex-col dark:border-zinc-800 dark:bg-zinc-950">
+        <button type="button" title="展开大纲" aria-label="展开大纲" onClick={props.onOpen} className="mx-auto mt-3 flex size-8 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
+          <PanelLeft className="size-4" />
+        </button>
+      </aside>
+    )
+  }
   return (
     <AnimatePresence>
       {props.open ? <OutlinePanelBody key="outline-panel" {...props} reduced={reduced} /> : null}
@@ -106,6 +117,7 @@ export function OutlinePanel(props: {
 }
 
 function OutlinePanelBody(props: {
+  variant?: 'overlay' | 'docked'
   document: TeachingDocumentV1
   selectedId: string
   activeBlockId?: string
@@ -137,7 +149,7 @@ function OutlinePanelBody(props: {
     const label = isHeading ? outline.entryByBlockId.get(block.id)?.displayLabel : undefined
     return (
       <div key={block.id} data-outline-block-id={block.id}>
-        <div className={`group flex items-center gap-1 rounded-md pr-1 ${isSelected ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : isActive ? 'bg-zinc-200/80 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900'}`} style={{ paddingLeft: `${Math.min(depth, 4) * 10}px` }}>
+        <div className={`group flex items-center gap-1 rounded-md pr-1 ${isSelected ? 'bg-blue-50 text-blue-900 dark:bg-blue-950/30 dark:text-blue-200' : isActive ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900'}`} style={{ paddingLeft: `${Math.min(depth, 4) * 10}px` }}>
           {isHeading ? (
             <button type="button" className="flex size-5 shrink-0 items-center justify-center" aria-label={isExpanded ? '折叠章节' : '展开章节'} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(block.id)) next.delete(block.id); else next.add(block.id); return next })}>
               {hasChildren ? (isExpanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />) : null}
@@ -167,21 +179,23 @@ function OutlinePanelBody(props: {
   }
   return (
     <motion.aside
-      initial={props.reduced ? { opacity: 0 } : { x: -260, opacity: 0 }}
-      animate={props.reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
-      exit={props.reduced ? { opacity: 0 } : { x: -260, opacity: 0 }}
+      initial={props.variant === 'docked' || props.reduced ? { opacity: 0 } : { x: -260, opacity: 0 }}
+      animate={props.variant === 'docked' || props.reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
+      exit={props.variant === 'docked' || props.reduced ? { opacity: 0 } : { x: -260, opacity: 0 }}
       transition={springPanel}
-      className="absolute inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-zinc-300/40 bg-zinc-100/80 shadow-[6px_0_20px_-6px_rgba(0,0,0,0.06)] backdrop-blur-2xl backdrop-saturate-150 dark:border-zinc-700/40 dark:bg-zinc-900/80 dark:shadow-[6px_0_20px_-6px_rgba(0,0,0,0.4)]"
+      className={props.variant === 'docked'
+        ? 'hidden h-full w-64 shrink-0 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 lg:flex'
+        : 'absolute inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-zinc-300/40 bg-zinc-100/80 shadow-[6px_0_20px_-6px_rgba(0,0,0,0.06)] backdrop-blur-2xl backdrop-saturate-150 dark:border-zinc-700/40 dark:bg-zinc-900/80 dark:shadow-[6px_0_20px_-6px_rgba(0,0,0,0.4)]'}
     >
-      <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-2.5 dark:border-zinc-900">
-        <span className="text-[11px] font-semibold tracking-wide text-zinc-400">大纲</span>
-        <button type="button" onClick={props.onClose} className="rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-900 dark:hover:text-zinc-300" title="关闭大纲">
+      <div className="flex h-14 items-center justify-between border-b border-zinc-200 px-3 dark:border-zinc-800">
+        <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">文档大纲</span>
+        <button type="button" onClick={props.onClose} className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="收起大纲">
           <X className="size-3.5" />
         </button>
       </div>
 
-      <div className="space-y-2 border-b border-zinc-100 px-3 py-2.5 dark:border-zinc-900">
-        <label className="flex items-center justify-between gap-2 text-[11px] text-zinc-600 dark:text-zinc-300"><span>自动章节编号</span><input type="checkbox" checked={props.document.outline?.numberingEnabled === true} onChange={(event) => props.onOutlineChange?.({ numberingEnabled: event.target.checked })} /></label>
+      <div className="space-y-2 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
+        <label className="flex items-center justify-between gap-2 text-[11px] text-zinc-600 dark:text-zinc-300"><span>自动章节编号</span><input type="checkbox" className="size-4 accent-blue-600" checked={props.document.outline?.numberingEnabled === true} onChange={(event) => props.onOutlineChange?.({ numberingEnabled: event.target.checked })} /></label>
         <select aria-label="章节编号方案" value={props.document.outline?.preset || 'decimal'} disabled={props.document.outline?.numberingEnabled !== true} onChange={(event) => props.onOutlineChange?.({ preset: event.target.value as TeachingDocumentOutlineOptions['preset'] })} className="h-7 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] dark:border-zinc-700 dark:bg-zinc-950">
           <option value="decimal">1 / 1.1 / 1.1.1</option>
           <option value="chinese">一、/（一）/ 1.</option>

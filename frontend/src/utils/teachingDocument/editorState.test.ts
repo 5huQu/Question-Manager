@@ -53,6 +53,13 @@ describe('TeachingDocument editor state', () => {
     expect(document.content.some((block) => block.id === 'p2')).toBe(false)
   })
 
+  it('deletes multiple top-level blocks in one history action', () => {
+    const figure = newTeachingBlock('figure')
+    let document = applyTeachingDocumentCommand(baseDocument, { type: 'insertBlock', block: figure, afterBlockId: 'p1' })
+    document = applyTeachingDocumentCommand(document, { type: 'deleteBlocks', blockIds: ['p1', figure.id] })
+    expect(document.content.map((block) => block.id)).toEqual(['p2'])
+  })
+
   it('creates a section at the level explicitly chosen by the insert menu', () => {
     const firstLevel = newTeachingBlock('heading', { headingLevel: 1 })
     const childLevel = newTeachingBlock('heading', { headingLevel: 2 })

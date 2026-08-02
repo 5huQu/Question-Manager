@@ -20,6 +20,7 @@ export type TeachingDocumentCommand =
   | { type: 'replaceBoxChildWithBlocks'; boxId: string; childId: string; blocks: BoxChildBlock[] }
   | { type: 'updateBlock'; blockId: string; patch: Partial<TeachingBlock>; mergeKey?: string }
   | { type: 'deleteBlock'; blockId: string }
+  | { type: 'deleteBlocks'; blockIds: string[] }
   | { type: 'duplicateBlock'; blockId: string }
   | { type: 'moveBlock'; blockId: string; direction: -1 | 1 }
   | { type: 'moveSection'; headingId: string; targetHeadingId: string; position: 'before' | 'after'; mergeKey?: string }
@@ -41,6 +42,26 @@ export type TeachingDocumentHistory = {
   past: Array<{ document: TeachingDocumentV1; mergeKey?: string }>
   future: TeachingDocumentV1[]
   lastMergeKey?: string
+}
+
+/**
+ * 自动编号只依赖"题目的出现顺序 + 是否自动编号"：
+ * 返回该序列的廉价签名，用于在普通文本回显时短路重编号（避免每次键入都全量克隆题目块）。
+ */
+export function questionSequenceSignature(document: TeachingDocumentV1): string {
+  let signature = ''
+  const visit = (block: TeachingBlock) => {
+    if (block.type === 'question') {
+      const display = block.display || {}
+      signature += block.questionId.trim() ? (display.displayNumberAuto ? 'a' : 'c') : 'x'
+      return
+    }
+    if (block.type === 'box') {
+      for (const child of block.children) visit(child as TeachingBlock)
+    }
+  }
+  for (const block of document.content) visit(block)
+  return signature
 }
 
 /** 按文档中的题目出现顺序更新自动编号；用户自定义编号保持不变。 */
@@ -233,6 +254,10 @@ function applyTeachingDocumentCommandRaw(document: TeachingDocumentV1, command: 
     const remainingIds = new Set(content.filter((block) => block.id !== command.blockId).map((block) => block.id))
     if (replacementIds.some((id) => remainingIds.has(id))) return document
     return { ...document, content: [...content.slice(0, blockIndex), ...command.blocks, ...content.slice(blockIndex + 1)] }
+  }
+  if (command.type === 'deleteBlocks') {
+    const ids = new Set(command.blockIds)
+    return { ...document, content: content.filter((item) => !ids.has(item.id)) }
   }
   const targetId = 'blockId' in command ? command.blockId : command.boxId
   const blockIndex = content.findIndex((block) => block.id === targetId)

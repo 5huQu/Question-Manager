@@ -30,5 +30,5 @@ export {
   roundMm,
   type ResizeMergeState,
 } from './resizeLogic'
-export { PaginatedCanvas, type PaginatedCanvasProps } from './PaginatedCanvas'
+export { TeachingDocumentCanvas, type TeachingDocumentCanvasProps, type TeachingCanvasMode } from './TeachingDocumentCanvas'
 export { usePagination, type UsePaginationOptions, type UsePaginationResult } from './usePagination'

@@ -22,6 +22,7 @@ import {
   tiptapDocToTeachingInlines,
 } from '@/utils/teachingDocument/inlineAdapter'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
+import { FormulaKeyboardButton } from './FormulaKeyboard'
 import { TEXT_FONT_OPTIONS } from '@/utils/teachingDocument/lectureFonts'
 import { createBlockEditorExtensions } from './extensions'
 
@@ -349,6 +350,22 @@ export function InlineFormattingControls({
           <option key={option.value || 'default'} value={option.value}>{option.label}</option>
         ))}
       </select>
+      <select
+        aria-label="字号"
+        title="未选中文字时，应用到当前章节或段落的全部文字"
+        value={String(editor.getAttributes('fontSize').size || '')}
+        onChange={(event) => {
+          const size = Number(event.target.value)
+          applyTextFormat(editor, () => {
+            if (size) editor.chain().focus().setFontSize(size).run()
+            else editor.chain().focus().unsetFontSize().run()
+          })
+        }}
+        className="h-7 w-14 cursor-pointer rounded bg-transparent px-1 text-[11px] text-zinc-600 outline-none hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-300 dark:hover:bg-zinc-800"
+      >
+        <option value="">字号</option>
+        {[12, 14, 16, 18, 20, 24].map((size) => <option key={size} value={size}>{size}px</option>)}
+      </select>
       <input
         type="color"
         aria-label="自定义文字颜色"
@@ -363,11 +380,11 @@ export function InlineFormattingControls({
       <MarkButton label="下划线" active={editor.isActive('underline')} onClick={() => applyTextFormat(editor, () => editor.chain().focus().toggleUnderline().run())}><UnderlineIcon className="size-3.5" /></MarkButton>
       <MarkButton label="删除线" active={editor.isActive('strike')} onClick={() => applyTextFormat(editor, () => editor.chain().focus().toggleStrike().run())}><Strikethrough className="size-3.5" /></MarkButton>
       <MarkButton label="行内代码" active={editor.isActive('code')} onClick={() => applyTextFormat(editor, () => editor.chain().focus().toggleCode().run())}><Code className="size-3.5" /></MarkButton>
+      <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+      {/* 公式键盘：所有文本操作条都提供快速插入；Sigma 对话框仅在编辑器提供入口时显示 */}
+      <FormulaKeyboardButton editor={editor} />
       {onFormula ? (
-        <>
-          <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-          <MarkButton label="插入行内公式" onClick={onFormula}><Sigma className="size-3.5" /></MarkButton>
-        </>
+        <MarkButton label="插入行内公式" onClick={onFormula}><Sigma className="size-3.5" /></MarkButton>
       ) : null}
     </>
   )

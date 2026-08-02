@@ -119,12 +119,14 @@ export function measureTeachingDocumentBoxes(
   document: TeachingDocumentV1,
   documentMeasurement: TeachingDocumentMeasurement,
   adapter: BoxChromeGeometryAdapter = browserBoxChromeGeometryAdapter,
+  /** 编排器传入已查询的顶层块元素，避免同轮重复 querySelectorAll。 */
+  topLevelElements?: HTMLElement[],
 ): BoxMeasurement[] {
-  const topLevelElements = Array.from(
+  const topLevelElementsResolved = topLevelElements ?? Array.from(
     root.querySelectorAll<HTMLElement>(TEACHING_DOM_SELECTORS.block),
   ).filter((element) => !element.parentElement?.closest(TEACHING_DOM_SELECTORS.block))
   const elementsBySource = new Map<number, HTMLElement[]>()
-  topLevelElements.forEach((element) => {
+  topLevelElementsResolved.forEach((element) => {
     const sourceIndex = Number(element.getAttribute(TEACHING_DOM.sourceIndex))
     if (!Number.isInteger(sourceIndex)) return
     elementsBySource.set(sourceIndex, [...(elementsBySource.get(sourceIndex) || []), element])

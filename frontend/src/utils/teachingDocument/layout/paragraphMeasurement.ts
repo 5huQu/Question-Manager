@@ -278,12 +278,14 @@ export function measureTeachingDocumentParagraphs(
   root: HTMLElement,
   document: { content: import('@/types/teachingDocument').TeachingBlock[] },
   adapter: ParagraphRangeGeometryAdapter = browserParagraphRangeGeometryAdapter,
+  /** 编排器传入已查询的段落块元素，避免同轮重复 querySelectorAll。 */
+  paragraphElements?: HTMLElement[],
 ) {
-  const paragraphElements = Array.from(root.querySelectorAll<HTMLElement>(
+  const paragraphElementsResolved = paragraphElements ?? Array.from(root.querySelectorAll<HTMLElement>(
     `${TEACHING_DOM_SELECTORS.block}[${TEACHING_DOM.blockType}="paragraph"]`,
   ))
   const queues = new Map<string, HTMLElement[]>()
-  paragraphElements.forEach((element) => {
+  paragraphElementsResolved.forEach((element) => {
     const sourceIndex = Number(element.getAttribute(TEACHING_DOM.sourceIndex))
     const childIndexValue = element.getAttribute(TEACHING_DOM.childIndex)
     const childIndex = childIndexValue === null ? undefined : Number(childIndexValue)

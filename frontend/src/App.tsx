@@ -35,6 +35,7 @@ const TeachingDocumentEditorPage = lazy(() => import('@/pages/teaching-documents
 const QuestionEditorMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/QuestionEditorMockPage')) : null
 const TeachingDocumentMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/TeachingDocumentMockPage')) : null
 const EditorRedesignMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/editor-redesign/EditorRedesignMockPage')) : null
+const ReferenceDocumentEditorDemoPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/ReferenceDocumentEditorDemoPage')) : null
 
 function NavigateToWorkbench() {
   const navigate = useNavigate()
@@ -225,6 +226,7 @@ export default function App() {
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/exports" element={<ExportRecordsPage />} />
                 <Route path="/teaching-documents" element={<TeachingDocumentsPage />} />
+                {ReferenceDocumentEditorDemoPage ? <Route path="/teaching-documents/demo/reference" element={<ReferenceDocumentEditorDemoPage />} /> : null}
                 <Route path="/teaching-documents/:documentId" element={<TeachingDocumentEditorPage />} />
                 <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<LegacyPdfSlicerRunRedirect />} />
                 <Route path="/tools/pdf-slicer/*" element={<LegacyPdfSlicerGone />} />
@@ -238,9 +240,11 @@ export default function App() {
           </div>
         </div>
       </SidebarInset>
-      <Suspense fallback={null}>
-        <QuestionBasket mode="drawer" />
-      </Suspense>
+      {location.pathname !== '/teaching-documents/demo/reference' ? (
+        <Suspense fallback={null}>
+          <QuestionBasket mode="drawer" />
+        </Suspense>
+      ) : null}
       {availableUpdate && location.pathname !== '/settings' ? (
         <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-2xl border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
           <UpdateCard compact initialResult={availableUpdate} onUpdateAvailable={setAvailableUpdate} />

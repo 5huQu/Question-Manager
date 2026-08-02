@@ -13,11 +13,16 @@ import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import type { Transaction } from '@tiptap/pm/state'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import { createDocumentEditorExtensions } from './schema'
-import { teachingDocumentToEditorDoc, editorDocToTeachingDocument, type EditorDocMeta } from './serialization'
+import {
+  cachedJsonSignature,
+  teachingDocumentToEditorDoc,
+  editorDocToTeachingDocument,
+  type EditorDocMeta,
+} from './serialization'
 import { PaperProvider, PaginationProvider, ResolverProvider, type DocumentEditorResolvers } from './NodeViews'
 import { createDocumentPrintLayout, resolveDocumentPaper, type PaginationResult, type PrintLayoutSpec } from '@/utils/teachingDocument'
 import type { EditorPaginationLayout } from './paginationDecorations'
-import { DOCUMENT_EXTERNAL_SYNC_META, isExternalDocumentSync } from './selection'
+import { DOCUMENT_EXTERNAL_SYNC_META, isExternalDocumentSync, TopLevelMultiSelectDecoration } from './selection'
 
 /** 普通键入在编辑器内即时生效；整篇领域模型同步采用短暂合并，避免逐字序列化。 */
 export const DEFAULT_DOCUMENT_MODEL_SYNC_DELAY_MS = 350
@@ -130,7 +135,10 @@ export function DocumentEditor({
   const editor = useEditor({
     immediatelyRender: false,
     editable,
-    extensions: createDocumentEditorExtensions(),
+    extensions: [
+      ...createDocumentEditorExtensions(),
+      TopLevelMultiSelectDecoration,
+    ],
     content: initialDoc.current,
     editorProps: {
       attributes: {
@@ -176,7 +184,7 @@ export function DocumentEditor({
     if (!editor) return
     // 外部结构操作必须以前一次键入的最新快照为基础，避免覆盖合并窗口中的文字。
     flushPendingChanges()
-    const contentSig = JSON.stringify(document.content)
+    const contentSig = cachedJsonSignature(document.content)
     const outlineSig = JSON.stringify(document.outline ?? {})
     // 正常键入的回显已经来自当前 editor。此前这里仍会 getJSON + 反序列化整篇
     // 文档来二次确认，长文档会在停止输入后出现明显卡顿。签名相同即可安全跳过；

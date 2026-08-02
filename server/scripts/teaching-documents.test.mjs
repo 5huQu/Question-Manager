@@ -159,6 +159,24 @@ try {
   })
   assert.equal(absolutePath.response.status, 422)
 
+  const invalidFormatting = await json('/api/teaching-documents', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      title: '非法格式', documentType: 'lecture',
+      content: {
+        version: 1, documentType: 'lecture', title: '非法格式', metadata: {}, content: [
+          { type: 'paragraph', id: 'format-p1', alignment: 'diagonal', content: [{ type: 'text', text: '正文', fontSize: 99 }] },
+          { type: 'box', id: 'format-b1', templateId: 'concept', breakBehavior: 'auto', appearance: { background: '#ffffff', padding: { top: 9 } }, children: [] },
+        ],
+      },
+    }),
+  })
+  assert.equal(invalidFormatting.response.status, 422)
+  assert.equal(invalidFormatting.body.issues.some((issue) => issue.code === 'invalid-inline-format'), true)
+  assert.equal(invalidFormatting.body.issues.some((issue) => issue.code === 'invalid-text-layout'), true)
+  assert.equal(invalidFormatting.body.issues.some((issue) => issue.code === 'invalid-box-appearance'), true)
+
   const duplicated = await json(`/api/teaching-documents/${documentId}/duplicate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

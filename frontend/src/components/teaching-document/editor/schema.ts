@@ -17,6 +17,7 @@ import {
   UnknownInlineNode,
   FontFamilyMark,
   TextColorMark,
+  FontSizeMark,
   UnknownMark,
 } from '../BlockInlineEditor/extensions'
 import {
@@ -54,13 +55,24 @@ export const DocParagraph = Node.create({
   addAttributes() {
     return {
       blockId: { default: '', renderHTML: (attrs) => ({ 'data-block-id': attrs.blockId }) },
+      alignment: { default: 'left' },
+      listStyle: { default: '' },
+      indentLevel: { default: 0 },
     }
   },
   parseHTML() {
     return [{ tag: 'p[data-block-type="paragraph"]' }]
   },
-  renderHTML({ HTMLAttributes }) {
-    return ['p', mergeAttributes(HTMLAttributes, { class: 'td-paragraph', 'data-block-type': 'paragraph' }), 0]
+  renderHTML({ node, HTMLAttributes }) {
+    const alignment = ['left', 'center', 'right', 'justify'].includes(String(node.attrs.alignment)) ? String(node.attrs.alignment) : 'left'
+    const indentLevel = [0, 1, 2, 3, 4].includes(Number(node.attrs.indentLevel)) ? Number(node.attrs.indentLevel) : 0
+    return ['p', mergeAttributes(HTMLAttributes, {
+      class: 'td-paragraph',
+      'data-block-type': 'paragraph',
+      'data-list-style': node.attrs.listStyle || undefined,
+      'data-indent-level': indentLevel || undefined,
+      style: `text-align: ${alignment};${indentLevel ? ` margin-left: ${indentLevel * 1.5}em;` : ''}`,
+    }), 0]
   },
 })
 
@@ -82,6 +94,8 @@ export const DocHeading = Node.create({
         renderHTML: (attrs) => attrs.numberLabel ? { 'data-number-label': attrs.numberLabel } : {},
       },
       numbering: { default: '{}' },
+      alignment: { default: 'left' },
+      indentLevel: { default: 0 },
     }
   },
   parseHTML() {
@@ -94,7 +108,14 @@ export const DocHeading = Node.create({
   },
   renderHTML({ node, HTMLAttributes }) {
     const level = Math.min(4, Math.max(1, Number(node.attrs.level) || 3))
-    return [`h${level}`, mergeAttributes(HTMLAttributes, { class: 'td-heading', 'data-block-type': 'heading' }), 0]
+    const alignment = ['left', 'center', 'right', 'justify'].includes(String(node.attrs.alignment)) ? String(node.attrs.alignment) : 'left'
+    const indentLevel = [0, 1, 2, 3, 4].includes(Number(node.attrs.indentLevel)) ? Number(node.attrs.indentLevel) : 0
+    return [`h${level}`, mergeAttributes(HTMLAttributes, {
+      class: 'td-heading',
+      'data-block-type': 'heading',
+      'data-indent-level': indentLevel || undefined,
+      style: `text-align: ${alignment};${indentLevel ? ` margin-left: ${indentLevel * 1.5}em;` : ''}`,
+    }), 0]
   },
 })
 
@@ -106,7 +127,7 @@ export const DocBlockMath = Node.create({
   group: 'block',
   atom: true,
   selectable: true,
-  draggable: true,
+  draggable: false,
   addAttributes() {
     return {
       blockId: { default: '' },
@@ -131,7 +152,7 @@ export const DocTable = Node.create({
   group: 'block',
   atom: true,
   selectable: true,
-  draggable: true,
+  draggable: false,
   addAttributes() {
     return {
       blockId: { default: '' },
@@ -156,7 +177,7 @@ export const DocFigure = Node.create({
   group: 'block',
   atom: true,
   selectable: true,
-  draggable: true,
+  draggable: false,
   addAttributes() {
     return {
       blockId: { default: '' },
@@ -190,7 +211,7 @@ export const DocQuestion = Node.create({
   group: 'block',
   atom: true,
   selectable: true,
-  draggable: true,
+  draggable: false,
   addAttributes() {
     return {
       blockId: { default: '' },
@@ -217,13 +238,14 @@ export const DocBox = Node.create({
   group: 'block',
   atom: true,
   selectable: true,
-  draggable: true,
+  draggable: false,
   addAttributes() {
     return {
       blockId: { default: '' },
       templateId: { default: 'concept' },
       title: { default: '' },
       icon: { default: '' },
+      appearance: { default: '{}' },
       breakBehavior: { default: 'auto' },
       children: { default: '[]' },
     }
@@ -245,7 +267,7 @@ export const DocDivider = Node.create({
   group: 'block',
   atom: true,
   selectable: true,
-  draggable: true,
+  draggable: false,
   addAttributes() {
     return {
       blockId: { default: '' },
@@ -268,7 +290,7 @@ export const DocSpacer = Node.create({
   group: 'block',
   atom: true,
   selectable: true,
-  draggable: true,
+  draggable: false,
   addAttributes() {
     return {
       blockId: { default: '' },
@@ -293,7 +315,7 @@ export const DocPageBreak = Node.create({
   group: 'block',
   atom: true,
   selectable: true,
-  draggable: true,
+  draggable: false,
   addAttributes() {
     return {
       blockId: { default: '' },
@@ -324,7 +346,7 @@ export const DocRawMarkdown = Node.create({
   group: 'block',
   atom: true,
   selectable: true,
-  draggable: true,
+  draggable: false,
   addAttributes() {
     return {
       blockId: { default: '' },
@@ -357,7 +379,7 @@ export const DocUnknown = Node.create({
   group: 'block',
   atom: true,
   selectable: true,
-  draggable: true,
+  draggable: false,
   addAttributes() {
     return {
       blockId: { default: '' },
@@ -384,8 +406,11 @@ export const DocUnknown = Node.create({
  * - 禁用所有 StarterKit 块级节点（paragraph/heading/list/blockquote/codeBlock/hr）
  * - 自定义块节点覆盖所有 TeachingBlock 类型
  * - 行内扩展复用 BlockInlineEditor 的 InlineMathNode/UnknownInlineNode/FontFamilyMark/UnknownMark
+ * - textBlockSelectionRing=false：卡片流编辑器不画段落级选中环
+ *   （卡片是"一个文本框对象"，段落只是流里的行，不暴露对象粒度）
  */
-export function createDocumentEditorExtensions() {
+export function createDocumentEditorExtensions(options: { textBlockSelectionRing?: boolean } = {}) {
+  const { textBlockSelectionRing = true } = options
   return [
     StarterKit.configure({
       // 保留 document + text（StarterKit 内置）
@@ -435,11 +460,12 @@ export function createDocumentEditorExtensions() {
     UnknownInlineNode,
     FontFamilyMark,
     TextColorMark,
+    FontSizeMark,
     UnknownMark,
     // 尺寸调整 commands（setFigureWidth / setSpacerHeight + undo 合并）
     ResizeCommands,
     PaginationDecorations,
-    ActiveTextBlockDecoration,
+    ...(textBlockSelectionRing ? [ActiveTextBlockDecoration] : []),
     DocumentSelectionSafety,
   ]
 }

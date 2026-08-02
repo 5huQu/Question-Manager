@@ -202,6 +202,25 @@ describe('BlockInlineEditor: 基础编辑', () => {
       { type: 'inlineMath', latex: 'x^2' },
     ])
   })
+
+  it('公式键盘在当前光标处插入行内公式', async () => {
+    let editorRef: Editor | undefined
+    const changes: TeachingInline[][] = []
+    const host = await renderEditorCapture([{ type: 'text', text: '设' }], (inlines) => changes.push(inlines), (editor) => { editorRef = editor })
+    await act(async () => { editorRef!.commands.focus('end') })
+
+    const keyboard = host.querySelector<HTMLButtonElement>('button[aria-label="公式键盘"]')
+    expect(keyboard).toBeTruthy()
+    await act(async () => { keyboard!.click() })
+    const alpha = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.title === '\\alpha')
+    expect(alpha).toBeTruthy()
+    await act(async () => { alpha!.click() })
+
+    expect(changes.at(-1)).toEqual([
+      { type: 'text', text: '设' },
+      { type: 'inlineMath', latex: '\\alpha' },
+    ])
+  })
 })
 
 // ─── 外部同步与 undo/redo ────────────────────────────────────────────────────

@@ -4,13 +4,8 @@ import type { FigureAssetRef, TeachingDocumentV1 } from '@/types/teachingDocumen
 import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
   resolveDocumentPaper,
-  measureTeachingDocumentBoxes,
-  measureTeachingDocument,
-  measureTeachingDocumentParagraphs,
-  measureTeachingDocumentQuestions,
-  measureBoxChildQuestions,
-  measureBoxChildRawMarkdowns,
   measuredChoiceLayoutOverrides,
+  measureTeachingDocumentAll,
   paginateTeachingDocument,
   createDefaultPrintLayout,
   effectivePaperMetrics,
@@ -48,6 +43,18 @@ const PREPARING_READINESS: RenderReadinessResult = {
   diagnostics: [],
 }
 
+/** 资源签名未变化（如教师/学生版切换、页眉页脚调整）时直接使用的就绪态。 */
+const INSTANT_READINESS: RenderReadinessResult = {
+  ready: true,
+  timedOut: false,
+  pendingFonts: false,
+  pendingImages: [],
+  pendingQuestions: [],
+  pendingFigures: [],
+  failedImages: [],
+  diagnostics: [],
+}
+
 export interface A4PaginationState {
   pagination: PaginationResult | null
   readiness: RenderReadinessResult
@@ -68,6 +75,11 @@ export interface A4PaginationPreviewProps {
   zoom?: number
   selectedBlockId?: string
   renderVersion?: string
+  /**
+   * 是否处于激活状态（页面级：a4 预览可见时才测量）。
+   * 编辑器页常驻挂载本预览以保留分页缓存，隐藏期间不跑测量管线。
+   */
+  active?: boolean
   onBlockSelect?: (blockId: string, pageIndex: number) => void
   /** 诊断的明确修复入口；例如切回编辑模式并打开对应块的属性。 */
   onDiagnosticNavigate?: (blockId: string, pageIndex: number) => void
@@ -94,6 +106,7 @@ export function A4PaginationPreview({
   zoom = 1,
   selectedBlockId,
   renderVersion = '',
+  active = true,
   onBlockSelect,
   onDiagnosticNavigate,
   editingChromeSlot,
@@ -114,6 +127,10 @@ export function A4PaginationPreview({
   const sheetMetrics = useMemo(() => paperMetrics(sheetPaper), [sheetPaper])
   const measurementRootRef = useRef<HTMLDivElement>(null)
   const generationRef = useRef(0)
+  /** 可见页面的展示快照：重测期间保留上一对（文档，分页），避免白屏闪烁。 */
+  const displayDocumentRef = useRef(document)
+  /** 上一轮测量的资源签名；用于跳过与资源装载无关的重测等待。 */
+  const measurementSignatureRef = useRef('')
   const [readiness, setReadiness] = useState<RenderReadinessResult>(PREPARING_READINESS)
   const [pagination, setPagination] = useState<PaginationResult | null>(null)
   const [measurementGeneration, setMeasurementGeneration] = useState(0)
@@ -133,55 +150,47 @@ export function A4PaginationPreview({
 
   useEffect(() => {
     const root = measurementRootRef.current
-    if (!root) return
+    if (!active || !root) return
     const generation = generationRef.current + 1
     generationRef.current = generation
     const controller = new AbortController()
     setReadiness(PREPARING_READINESS)
-    setPagination(null)
     setMeasurementGeneration(generation)
     // 新 generation 开始即向父层发布 preparing/null，
     // 使导出 readiness 在重新测量期间被 stale generation 与空分页阻塞。
+    // 注意：内部渲染保留上一对（文档，分页）快照，避免切换教师/学生版白屏。
     onPaginationState?.({ pagination: null, readiness: PREPARING_READINESS, measurementGeneration: generation })
 
-    void readinessWait(root, { timeoutMs: 8_000, stableFrames: 2, signal: controller.signal })
-      .then((nextReadiness) => {
-        if (controller.signal.aborted || generation !== generationRef.current) return
-        setReadiness(nextReadiness)
+    // 资源签名（内容 + 字体变量 + 资源版本）未变化时跳过 waitForRenderReadiness：
+    // 字体、图片、题目的装载状态都没变，等待只会白白耗时（教师/学生版切换、页眉页脚调整即此类）。
+    const nextSignature = `${JSON.stringify(document.content)}|${JSON.stringify(fontVars || {})}|${renderVersion}`
+    const resourcesUnchanged = measurementSignatureRef.current === nextSignature
+    measurementSignatureRef.current = nextSignature
+    const wait = resourcesUnchanged
+      ? Promise.resolve(INSTANT_READINESS)
+      : readinessWait(root, { timeoutMs: 8_000, stableFrames: 2, signal: controller.signal })
+
+    void wait.then((nextReadiness) => {
+      if (controller.signal.aborted || generation !== generationRef.current) return
+      setReadiness(nextReadiness)
         const measuredLayouts = measuredChoiceLayoutOverrides(root, choiceLayoutOverrides)
         if (!choiceLayoutOverridesEqual(measuredLayouts, choiceLayoutOverrides)) {
           setChoiceLayoutOverrides(measuredLayouts)
           return
         }
-        const measurement = measureTeachingDocument(root, document, geometryAdapter)
-        const paragraphMeasurements = measureTeachingDocumentParagraphs(root, document, paragraphGeometryAdapter)
-        const boxMeasurements = measureTeachingDocumentBoxes(
+        const bundle = measureTeachingDocumentAll(
           root,
           document,
-          measurement,
-          boxGeometryAdapter,
-        )
-        const questionMeasurements = measureTeachingDocumentQuestions(
-          root,
-          document,
-          measurement,
+          {
+            geometry: geometryAdapter,
+            paragraphGeometry: paragraphGeometryAdapter,
+            boxGeometry: boxGeometryAdapter,
+            questionGeometry: questionGeometryAdapter,
+          },
           resolveQuestion,
-          geometryAdapter,
-          paragraphGeometryAdapter,
-          questionGeometryAdapter,
           choiceLayoutOverrides,
         )
-        const boxChildQuestionMeasurements = measureBoxChildQuestions(
-          root,
-          document,
-          measurement,
-          resolveQuestion,
-          geometryAdapter,
-          paragraphGeometryAdapter,
-          questionGeometryAdapter,
-          choiceLayoutOverrides,
-        )
-        const boxChildRawMarkdownMeasurements = measureBoxChildRawMarkdowns(root, document)
+        const { measurement, paragraphs: paragraphMeasurements, boxes: boxMeasurements, questions: questionMeasurements, boxChildQuestions: boxChildQuestionMeasurements, boxChildRawMarkdowns: boxChildRawMarkdownMeasurements } = bundle
         measurement.diagnostics.push(...nextReadiness.diagnostics)
         if (controller.signal.aborted || generation !== generationRef.current) return
         setParagraphLineCount(paragraphMeasurements.reduce((total, paragraph) => total + paragraph.lines.length, 0))
@@ -199,6 +208,8 @@ export function A4PaginationPreview({
           documentHeaderSpanColumns: spread ? 2 : 1,
         })
         setPagination(paginationResult)
+        // 展示快照与分页同步切换，保证可见页面永远渲染一致的一对。
+        displayDocumentRef.current = document
         onPaginationState?.({ pagination: paginationResult, readiness: nextReadiness, measurementGeneration: generation })
       })
       .catch((error) => {
@@ -220,7 +231,7 @@ export function A4PaginationPreview({
       })
 
     return () => controller.abort()
-  }, [boxGeometryAdapter, choiceLayoutOverrides, document, fontVars, geometryAdapter, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion, spread])
+  }, [active, boxGeometryAdapter, choiceLayoutOverrides, document, fontVars, geometryAdapter, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion, spread])
 
   const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure'> = {
     resolveQuestion,
@@ -255,7 +266,7 @@ export function A4PaginationPreview({
   ) || 0
   const diagnosticGuide = (diagnostic: import('@/utils/teachingDocument').RenderDiagnostic) => {
     if (diagnostic.code === 'box-overflow') {
-      const box = document.content.find((block) => block.id === diagnostic.blockId && block.type === 'box')
+      const box = displayDocumentRef.current.content.find((block) => block.id === diagnostic.blockId && block.type === 'box')
       if (box?.type === 'box' && box.breakBehavior === 'avoid') {
         return '该知识卡片被设置为“不拆开”，且自身高度已超过一页的可用内容区。定位后可在右侧「高级 → 跨页方式」改为“自动”或“允许拆散”；也可以精简或拆分卡片内容。'
       }
@@ -282,14 +293,16 @@ export function A4PaginationPreview({
         } as CSSProperties}
       >
         <div ref={measurementRootRef}>
-          <TeachingDocumentRenderer
-            document={document}
-            {...rendererProps}
-            eagerImages
-            surface="paper"
-            choiceLayoutOverrides={choiceLayoutOverrides}
-            probeChoiceLayouts
-          />
+          {active ? (
+            <TeachingDocumentRenderer
+              document={document}
+              {...rendererProps}
+              eagerImages
+              surface="paper"
+              choiceLayoutOverrides={choiceLayoutOverrides}
+              probeChoiceLayouts
+            />
+          ) : null}
         </div>
       </div>
 
@@ -362,7 +375,7 @@ export function A4PaginationPreview({
                 sheetIndex={sheetIndex}
                 sheetCount={Math.ceil(pagination!.pages.length / 2)}
                 logicalPageCount={pagination!.pages.length}
-                document={document}
+                document={displayDocumentRef.current}
                 sheetPaper={sheetPaper}
                 columnPaper={paper}
                 printLayout={printLayout}
@@ -379,6 +392,7 @@ export function A4PaginationPreview({
                 style={{
                   transform: `scale(${safeZoom})`,
                   transformOrigin: 'top left',
+                  contentVisibility: 'auto',
                 }}
               />
             </div>
@@ -391,7 +405,7 @@ export function A4PaginationPreview({
           >
             <PaperPageView
               page={page}
-              document={document}
+              document={displayDocumentRef.current}
               paper={paper}
               printLayout={printLayout}
               totalPages={pagination?.pages.length ?? 0}
@@ -406,6 +420,7 @@ export function A4PaginationPreview({
               style={{
                 transform: `scale(${safeZoom})`,
                 transformOrigin: 'top left',
+                contentVisibility: 'auto',
                 '--td-paper-content-height': `${metrics.contentHeightPx}px`,
               } as CSSProperties}
             />

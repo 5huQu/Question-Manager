@@ -132,6 +132,47 @@ export const TextColorMark = Mark.create({
   },
 })
 
+// ─── FontSizeMark：受控行内字号 ────────────────────────────────────────
+
+const INLINE_FONT_SIZES = new Set([12, 14, 16, 18, 20, 24])
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    fontSize: {
+      setFontSize: (size: number) => ReturnType
+      unsetFontSize: () => ReturnType
+    }
+  }
+}
+
+export const FontSizeMark = Mark.create({
+  name: 'fontSize',
+  addAttributes() {
+    return {
+      size: {
+        default: null,
+        parseHTML: (element) => Number(element.getAttribute('data-font-size')) || null,
+        renderHTML: (attributes) => {
+          const size = Number(attributes.size)
+          return INLINE_FONT_SIZES.has(size) ? { 'data-font-size': String(size), style: `font-size: ${size}px` } : {}
+        },
+      },
+    }
+  },
+  parseHTML() {
+    return [{ tag: 'span[data-font-size]' }]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', mergeAttributes(HTMLAttributes), 0]
+  },
+  addCommands() {
+    return {
+      setFontSize: (size) => ({ commands }) => INLINE_FONT_SIZES.has(size) ? commands.setMark('fontSize', { size }) : false,
+      unsetFontSize: () => ({ commands }) => commands.unsetMark('fontSize'),
+    }
+  },
+})
+
 // ─── UnknownInlineNode：原子保留未识别行内节点 ───────────────────────────────
 
 function UnknownInlineView({ node, selected }: NodeViewProps) {
@@ -296,6 +337,7 @@ export function createBlockEditorExtensions() {
     UnknownMark,
     FontFamilyMark,
     TextColorMark,
+    FontSizeMark,
     UnknownInlineNode,
     InlineMathNode,
   ]

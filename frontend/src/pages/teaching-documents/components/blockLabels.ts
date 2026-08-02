@@ -22,14 +22,14 @@ export const USER_BLOCK_LABEL: Record<TeachingBlock['type'], string> = {
   unknown: '未知内容',
 }
 
-/** 可插入的类型（用户视角排序：常用在前） */
+/** 可插入的类型（用户视角排序：常用在前；rawMarkdown 为迁移兜底，不在菜单暴露） */
 export const INSERTABLE_TYPES: TeachingBlock['type'][] = [
-  'paragraph', 'rawMarkdown', 'pageBreak', 'heading', 'blockMath', 'table', 'question', 'box',
+  'paragraph', 'pageBreak', 'heading', 'blockMath', 'table', 'question', 'box',
   'figure', 'divider', 'spacer',
   'tikz',
 ]
 
-/** 知识卡片内允许的子内容类型 */
+/** 知识卡片内允许的子内容类型（rawMarkdown 由“合并为混合内容”产生，不在菜单暴露） */
 export const CARD_CHILD_TYPES: TeachingBlock['type'][] = [
-  'paragraph', 'rawMarkdown', 'blockMath', 'table', 'question', 'figure', 'tikz', 'divider', 'spacer',
+  'paragraph', 'blockMath', 'table', 'question', 'figure', 'tikz', 'divider', 'spacer',
 ]

@@ -44,6 +44,31 @@ describe('parseTeachingDocument', () => {
     expect(document?.content[0]).toMatchObject({ rows: [[{ content: [{ text: '变量' }] }, { content: [{ latex: 'x^2' }] }]] })
   })
 
+  it('keeps only controlled text layout, font size, and card appearance tokens', () => {
+    const { document } = parseTeachingDocument({
+      version: 1,
+      documentType: 'lecture',
+      title: '格式测试',
+      metadata: {},
+      content: [
+        { type: 'heading', id: 'h1', level: 2, alignment: 'center', indentLevel: 1, content: [{ type: 'text', text: '章节', fontSize: 20 }] },
+        { type: 'paragraph', id: 'p1', alignment: 'justify', listStyle: 'bullet', indentLevel: 2, content: [{ type: 'text', text: '要点', fontSize: 18 }] },
+        { type: 'box', id: 'b1', templateId: 'concept', breakBehavior: 'auto', appearance: { background: 'blue', borderWidth: 2, padding: { top: 20, left: 8 } }, children: [] },
+      ],
+    })
+    expect(document?.content).toMatchObject([
+      { alignment: 'center', indentLevel: 1, content: [{ fontSize: 20 }] },
+      { alignment: 'justify', listStyle: 'bullet', indentLevel: 2, content: [{ fontSize: 18 }] },
+      { appearance: { background: 'blue', borderWidth: 2, padding: { top: 20, left: 8 } } },
+    ])
+
+    const invalid = parseTeachingDocument({
+      version: 1, documentType: 'lecture', title: '格式测试', metadata: {},
+      content: [{ type: 'paragraph', id: 'p2', alignment: 'diagonal', listStyle: 'roman', indentLevel: 8, content: [{ type: 'text', text: '正文', fontSize: 99 }] }],
+    })
+    expect(invalid.document?.content[0]).toEqual({ type: 'paragraph', id: 'p2', content: [{ type: 'text', text: '正文' }] })
+  })
+
   it('keeps a controlled TikZ layout preset and rejects invalid values', () => {
     const base = {
       version: 1,
