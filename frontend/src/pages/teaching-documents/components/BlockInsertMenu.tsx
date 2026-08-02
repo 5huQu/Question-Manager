@@ -30,6 +30,20 @@ export const TYPE_ICONS: Partial<Record<TeachingBlock['type'], typeof Plus>> = {
 
 export type HeadingLevel = 1 | 2 | 3 | 4
 
+/**
+ * 返回当前对象与下一对象之间的插入基线。
+ *
+ * 文本块的行盒在一些组合（如标题后紧接正文）会彼此贴合，甚至因为选择态
+ * 的视觉边框出现轻微重叠。此时不能继续向下偏移，否则虚线会压到下一行文字；
+ * 直接使用两块的结构分界线才是安全的插入位置。
+ */
+export function insertLineCenterY(currentBottom: number, nextTop?: number): number {
+  if (nextTop == null) return currentBottom + 12
+  return nextTop > currentBottom
+    ? currentBottom + (nextTop - currentBottom) / 2
+    : currentBottom
+}
+
 const HEADING_LEVELS: Array<{ level: HeadingLevel; label: string }> = [
   { level: 1, label: '一级' },
   { level: 2, label: '二级' },
@@ -109,7 +123,7 @@ export function BlockInsertPoint(props: {
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const reduced = useReducedMotion()
-  const [blockAnchor, setBlockAnchor] = useState<{ left: number; top: number; width: number } | null>(null)
+  const [blockAnchor, setBlockAnchor] = useState<{ left: number; centerY: number; width: number } | null>(null)
 
   // 以“+”按钮的视口坐标为锚点，供 portal 菜单 fixed 定位
   const reposition = useCallback(() => {
@@ -158,7 +172,17 @@ export function BlockInsertPoint(props: {
         return
       }
       const rect = block.getBoundingClientRect()
-      setBlockAnchor({ left: rect.left, top: rect.bottom + 3, width: rect.width })
+      // 将插入点放到当前块和下一块之间的视觉中点。卡片连续文本和文档正文
+      // 都由同一个 ProseMirror 根承载，因此只查该根的直属块，避免命中嵌套对象。
+      const flow = block.closest<HTMLElement>('.ProseMirror')
+      const siblings = flow
+        ? Array.from(flow.children).filter((element): element is HTMLElement => element instanceof HTMLElement && Boolean(element.dataset.blockId))
+        : []
+      const currentIndex = siblings.indexOf(block)
+      const next = currentIndex >= 0 ? siblings[currentIndex + 1] : undefined
+      const nextRect = next?.getBoundingClientRect()
+      const centerY = insertLineCenterY(rect.bottom, nextRect?.top)
+      setBlockAnchor({ left: rect.left, centerY, width: rect.width })
     }
     update()
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
@@ -221,7 +245,7 @@ export function BlockInsertPoint(props: {
           <div
             ref={anchorRef}
             className="group/anchored-insert fixed z-40 flex h-7 items-center justify-center"
-            style={{ left: blockAnchor.left, top: blockAnchor.top, width: blockAnchor.width }}
+            style={{ left: blockAnchor.left, top: blockAnchor.centerY - 14, width: blockAnchor.width }}
           >
             <span className="pointer-events-none absolute inset-x-2 top-1/2 border-t border-dashed border-zinc-300 transition-colors group-hover/anchored-insert:border-zinc-400 dark:border-zinc-700 dark:group-hover/anchored-insert:border-zinc-600" />
             <button

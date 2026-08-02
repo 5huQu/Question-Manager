@@ -13,10 +13,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type {
-  BoxChildBlock,
   FigureAssetRef,
-  QuestionBlock,
-  TeachingBlock,
   TeachingDocumentV1,
 } from '@/types/teachingDocument'
 import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
@@ -57,47 +54,17 @@ import {
 import { PaperPageView } from '@/components/teaching-document/PaperPageView'
 import { A3TwoColumnSheetView } from '@/components/teaching-document/A3TwoColumnSheetView'
 import { assetUrl } from '@/utils/questionDisplay'
+import { documentForPrintVariant, type TeachingDocumentPrintVariant } from '@/utils/teachingDocument/printVariant'
 import '@/components/teaching-document/teaching-document.css'
 import '@/components/teaching-document/print.css'
 
 type PageState = 'loading' | 'error' | 'measuring' | 'ready'
-type PrintVariant = 'student' | 'teacher'
-
-/**
- * 导出版本只影响打印态的答案/解析可见性，不回写文档内容。
- * 这样同一份教学文档可以按需生成学生版或教师版，编辑器中的原始配置保持不变。
- */
-function documentForPrintVariant(source: TeachingDocumentV1, variant: PrintVariant): TeachingDocumentV1 {
-  const showSolutions = variant === 'teacher'
-  const transformQuestion = (block: QuestionBlock): QuestionBlock => ({
-    ...block,
-    display: {
-      ...block.display,
-      showAnswer: showSolutions,
-      showAnalysis: showSolutions,
-    },
-  })
-  const transformChild = (block: BoxChildBlock): BoxChildBlock => {
-    if (block.type === 'question') return transformQuestion(block)
-    return block
-  }
-  const transformBlock = (block: TeachingBlock): TeachingBlock => {
-    if (block.type === 'question') return transformQuestion(block)
-    if (block.type === 'box') return { ...block, children: block.children.map(transformChild) }
-    return block
-  }
-  return {
-    ...source,
-    content: source.content.map(transformBlock),
-  }
-}
-
 export default function TeachingDocumentPrintPage() {
   const [searchParams] = useSearchParams()
   const docId = searchParams.get('docId') || ''
   const revisionParam = Number(searchParams.get('revision') || '0')
   const autoPrint = searchParams.get('autoPrint') === '1'
-  const printVariant: PrintVariant = searchParams.get('variant') === 'teacher' ? 'teacher' : 'student'
+  const printVariant: TeachingDocumentPrintVariant = searchParams.get('variant') === 'teacher' ? 'teacher' : 'student'
 
   const [state, setState] = useState<PageState>('loading')
   const [error, setError] = useState('')

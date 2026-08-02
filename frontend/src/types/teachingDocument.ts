@@ -30,6 +30,8 @@ export interface InlineText {
   font?: string
   /** 行内文字颜色，保存为受校验的 #RRGGBB；缺省 = 继承文档颜色。 */
   color?: string
+  /** 行内字号覆盖，缺省 = 继承文档正文/标题字号。 */
+  fontSize?: TeachingInlineFontSize
   /** 解析旧数据时保留暂不支持的 mark 原值。 */
   unknownMarks?: unknown[]
 }
@@ -44,6 +46,8 @@ export interface InlineHardBreak {
 }
 
 export type InlineMark = 'bold' | 'italic' | 'underline' | 'strikethrough' | 'code'
+/** 允许的局部字号，避免保存任意 CSS 数值。 */
+export type TeachingInlineFontSize = 12 | 14 | 16 | 18 | 20 | 24
 
 /** 未识别的行内节点：读取异常数据时保留完整原值。 */
 export interface UnknownInline {
@@ -63,6 +67,10 @@ export interface HeadingBlock {
   content: TeachingInline[]
   /** 单个标题对文档编号规则的受控覆盖。 */
   numbering?: HeadingNumberingOverride
+  /** 受控块对齐；缺省 = 左对齐。 */
+  alignment?: TeachingTextAlignment
+  /** 受控首行/段落缩进层级。 */
+  indentLevel?: TeachingIndentLevel
 }
 
 export type HeadingNumberingMode = 'inherit' | 'none' | 'manual'
@@ -105,7 +113,17 @@ export interface ParagraphBlock {
   type: 'paragraph'
   id: string
   content: TeachingInline[]
+  /** 受控块对齐；缺省 = 左对齐。 */
+  alignment?: TeachingTextAlignment
+  /** 项目符号或编号列表；缺省 = 普通段落。 */
+  listStyle?: TeachingListStyle
+  /** 受控首行/段落缩进层级。 */
+  indentLevel?: TeachingIndentLevel
 }
+
+export type TeachingTextAlignment = 'left' | 'center' | 'right' | 'justify'
+export type TeachingListStyle = 'bullet' | 'ordered'
+export type TeachingIndentLevel = 0 | 1 | 2 | 3 | 4
 
 export interface BlockMathBlock {
   type: 'blockMath'
@@ -253,6 +271,22 @@ export interface QuestionBlock {
 
 export type BoxBreakBehavior = 'auto' | 'avoid' | 'allow' | 'force-before'
 
+/** 卡片外观只保存受约束的设计 token，渲染时再映射为样式。 */
+export type BoxSurfaceColor = 'template' | 'white' | 'blue' | 'gray' | 'amber' | 'green'
+export type BoxBorderColor = 'template' | 'zinc' | 'blue' | 'amber' | 'green'
+export type BoxBorderWidth = 0 | 1 | 2
+export type BoxCornerRadius = 0 | 4 | 8 | 12
+export type BoxPadding = 8 | 12 | 16 | 20 | 24
+
+export interface BoxAppearance {
+  background?: BoxSurfaceColor
+  borderColor?: BoxBorderColor
+  borderWidth?: BoxBorderWidth
+  cornerRadius?: BoxCornerRadius
+  /** 四边可独立配置；缺省字段沿用原模板间距。 */
+  padding?: Partial<Record<'top' | 'right' | 'bottom' | 'left', BoxPadding>>
+}
+
 export interface BoxBlock {
   type: 'box'
   id: string
@@ -261,6 +295,8 @@ export interface BoxBlock {
   title?: string
   /** 语义图标标记，如 "lightbulb"、"alert" */
   icon?: string
+  /** 模板的单卡受约束覆盖；缺省时完整继承模板外观。 */
+  appearance?: BoxAppearance
   breakBehavior: BoxBreakBehavior
   /** 盒子子内容：允许段落、公式、表格、图片、题目，但不允许嵌套盒子 */
   children: BoxChildBlock[]

@@ -127,27 +127,25 @@ function gapDom(layout: EditorPaginationLayout, anchor: EditorPageGapAnchor): HT
   return root
 }
 
-function resolveAnchorPosition(doc: ProseMirrorNode, anchor: EditorPageGapAnchor): number | null {
-  let position: number | null = null
-  doc.descendants((node, pos) => {
-    if (position !== null) return false
-    if (String(node.attrs.blockId || '') !== anchor.blockId) return true
-    position = anchor.contentOffset === undefined
-      ? pos
-      : Math.min(pos + node.nodeSize - 1, pos + 1 + anchor.contentOffset)
-    return false
-  })
-  return position
-}
-
 function decorationSet(doc: ProseMirrorNode, layout: EditorPaginationLayout | null): DecorationSet {
   if (!layout) return DecorationSet.empty
-  return DecorationSet.create(doc, layout.anchors.flatMap((anchor) => {
-    const position = resolveAnchorPosition(doc, anchor)
-    return position === null
-      ? []
-      : [Decoration.widget(position, () => gapDom(layout, anchor), { side: -1, key: `page-${anchor.pageNumber}` })]
-  }))
+  // 单次 doc 遍历解析全部锚点位置；原来每个锚点各做一次全量 descendants，
+  // 多页文档会退化为 P 次全树遍历。
+  const remaining = new Map<string, EditorPageGapAnchor>()
+  for (const anchor of layout.anchors) remaining.set(anchor.blockId, anchor)
+  const widgets: Decoration[] = []
+  doc.descendants((node, pos) => {
+    if (!remaining.size) return false
+    const anchor = remaining.get(String(node.attrs.blockId || ''))
+    if (!anchor) return true
+    const position = anchor.contentOffset === undefined
+      ? pos
+      : Math.min(pos + node.nodeSize - 1, pos + 1 + anchor.contentOffset)
+    widgets.push(Decoration.widget(position, () => gapDom(layout, anchor), { side: -1, key: `page-${anchor.pageNumber}` }))
+    remaining.delete(anchor.blockId)
+    return true
+  })
+  return DecorationSet.create(doc, widgets)
 }
 
 export const PaginationDecorations = Extension.create({

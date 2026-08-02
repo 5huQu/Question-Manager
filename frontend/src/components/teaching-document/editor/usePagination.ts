@@ -19,13 +19,8 @@ import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
   effectivePaperMetrics,
-  measureBoxChildQuestions,
-  measureBoxChildRawMarkdowns,
   measuredChoiceLayoutOverrides,
-  measureTeachingDocument,
-  measureTeachingDocumentBoxes,
-  measureTeachingDocumentParagraphs,
-  measureTeachingDocumentQuestions,
+  measureTeachingDocumentAll,
   paginateTeachingDocument,
   waitForRenderReadiness,
   type BoxChromeGeometryAdapter,
@@ -144,39 +139,19 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
             return
           }
 
-          const measurement = measureTeachingDocument(measureRoot, document, geometryAdapter)
-          const paragraphMeasurements = measureTeachingDocumentParagraphs(
+          const bundle = measureTeachingDocumentAll(
             measureRoot,
             document,
-            paragraphGeometryAdapter,
-          )
-          const boxMeasurements = measureTeachingDocumentBoxes(
-            measureRoot,
-            document,
-            measurement,
-            boxGeometryAdapter,
-          )
-          const questionMeasurements = measureTeachingDocumentQuestions(
-            measureRoot,
-            document,
-            measurement,
+            {
+              geometry: geometryAdapter,
+              paragraphGeometry: paragraphGeometryAdapter,
+              boxGeometry: boxGeometryAdapter,
+              questionGeometry: questionGeometryAdapter,
+            },
             resolveQuestion,
-            geometryAdapter,
-            paragraphGeometryAdapter,
-            questionGeometryAdapter,
             choiceLayoutOverrides,
           )
-          const boxChildQuestionMeasurements = measureBoxChildQuestions(
-            measureRoot,
-            document,
-            measurement,
-            resolveQuestion,
-            geometryAdapter,
-            paragraphGeometryAdapter,
-            questionGeometryAdapter,
-            choiceLayoutOverrides,
-          )
-          const boxChildRawMarkdownMeasurements = measureBoxChildRawMarkdowns(measureRoot, document)
+          const { measurement, paragraphs: paragraphMeasurements, boxes: boxMeasurements, questions: questionMeasurements, boxChildQuestions: boxChildQuestionMeasurements, boxChildRawMarkdowns: boxChildRawMarkdownMeasurements } = bundle
           measurement.diagnostics.push(...nextReadiness.diagnostics)
           if (controller.signal.aborted || currentGeneration !== generationRef.current) return
 

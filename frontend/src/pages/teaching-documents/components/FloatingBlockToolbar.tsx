@@ -3,13 +3,14 @@
  * 选中内容块时紧贴其上方出现，提供常用操作
  */
 
-import { useLayoutEffect, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
-import { ArrowDown, ArrowUp, Copy, Pencil, Settings2, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Copy, Pencil, Settings2, Sigma, Trash2 } from 'lucide-react'
 import type { Editor } from '@tiptap/react'
 import { springQuick } from '@/components/teaching-document/motion'
 import { InlineFormattingControls } from '@/components/teaching-document/BlockInlineEditor/BlockInlineEditor'
+import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
 
 export function FloatingBlockToolbar(props: {
   visible: boolean
@@ -21,6 +22,8 @@ export function FloatingBlockToolbar(props: {
   /** 标题/段落对象使用同一组行内格式能力；其他原子对象保留操作按钮。 */
   textEditor?: Editor | null
   showTextFormatting?: boolean
+  /** 卡片内文本格式由编辑器上方工具栏处理；这里保留项目的可视化公式键盘入口。 */
+  showFormulaKeyboard?: boolean
   onMove: (direction: -1 | 1) => void
   onDuplicate: () => void
   onDelete: () => void
@@ -29,6 +32,27 @@ export function FloatingBlockToolbar(props: {
 }) {
   const reduced = useReducedMotion()
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
+  const [formulaDialogOpen, setFormulaDialogOpen] = useState(false)
+  const formulaSelectionRef = useRef<{ from: number; to: number } | null>(null)
+
+  const openFormulaKeyboard = () => {
+    const selection = props.textEditor?.state.selection
+    formulaSelectionRef.current = selection ? { from: selection.from, to: selection.to } : null
+    setFormulaDialogOpen(true)
+  }
+
+  const insertFormulaAtSavedSelection = (latex: string) => {
+    const editor = props.textEditor
+    if (!editor) return
+    const selection = formulaSelectionRef.current ?? editor.state.selection
+    editor.chain()
+      .focus()
+      .setTextSelection({ from: selection.from, to: selection.to })
+      .insertContent({ type: 'inlineMath', attrs: { latex } })
+      .run()
+    formulaSelectionRef.current = null
+    setFormulaDialogOpen(false)
+  }
 
   useLayoutEffect(() => {
     if (!props.visible || !props.anchorBlockId || !props.anchorRoot) {
@@ -62,43 +86,75 @@ export function FloatingBlockToolbar(props: {
 
   if (typeof document === 'undefined') return null
 
-  return createPortal(
-    <AnimatePresence>
-      {props.visible && position ? (
-        <motion.div
-          initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: 4 }}
-          animate={reduced ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
-          exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 2 }}
-          transition={springQuick}
-          className="fixed z-50 flex -translate-x-1/2 -translate-y-full items-center gap-0.5 rounded-lg border border-zinc-200 bg-white px-1 py-0.5 shadow-md dark:border-zinc-700 dark:bg-zinc-900"
-          style={position}
-          onClick={(event) => event.stopPropagation()}
-        >
-          {props.showTextFormatting && props.textEditor ? (
-            <>
-              <BlockStyleControl editor={props.textEditor} />
-              <InlineFormattingControls
-                editor={props.textEditor}
-                inheritedFontLabel={selectedTextBlockFontLabel(props.textEditor)}
-              />
+  return (
+    <>
+      {createPortal(
+        <AnimatePresence>
+          {props.visible && position ? (
+            <motion.div
+              initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: 4 }}
+              animate={reduced ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 2 }}
+              transition={springQuick}
+              className="fixed z-50 flex -translate-x-1/2 -translate-y-full items-center gap-0.5 rounded-lg border border-zinc-200 bg-white px-1 py-0.5 shadow-md dark:border-zinc-700 dark:bg-zinc-900"
+              style={position}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {props.showTextFormatting && props.textEditor ? (
+                <>
+                  {/* 卡片内文字是文本框的流，没有章节概念，不提供“段落层级” */}
+                  {!props.isBoxChild ? <BlockStyleControl editor={props.textEditor} /> : null}
+                  <InlineFormattingControls
+                    editor={props.textEditor}
+                    inheritedFontLabel={selectedTextBlockFontLabel(props.textEditor)}
+                  />
+                  <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+                </>
+              ) : null}
+              {props.showFormulaKeyboard && props.textEditor ? (
+                <>
+                  <button
+                    type="button"
+                    aria-label="打开公式键盘"
+                    title="打开公式键盘"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={openFormulaKeyboard}
+                    className="flex size-7 items-center justify-center rounded text-zinc-500 outline-none hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                  >
+                    <Sigma className="size-3.5" />
+                  </button>
+                  <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+                </>
+              ) : null}
+              <ToolButton label="上移" onClick={() => props.onMove(-1)}><ArrowUp className="size-3.5" /></ToolButton>
+              <ToolButton label="下移" onClick={() => props.onMove(1)}><ArrowDown className="size-3.5" /></ToolButton>
+              {!props.isBoxChild ? (
+                <ToolButton label="复制" onClick={props.onDuplicate}><Copy className="size-3.5" /></ToolButton>
+              ) : null}
+              <ToolButton label="删除" danger onClick={props.onDelete}><Trash2 className="size-3.5" /></ToolButton>
+              {props.onEditQuestion ? (
+                <ToolButton label="编辑题目" onClick={props.onEditQuestion}><Pencil className="size-3.5" /></ToolButton>
+              ) : null}
               <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-            </>
+              <ToolButton label="属性" onClick={props.onOpenProperties}><Settings2 className="size-3.5" /></ToolButton>
+            </motion.div>
           ) : null}
-          <ToolButton label="上移" onClick={() => props.onMove(-1)}><ArrowUp className="size-3.5" /></ToolButton>
-          <ToolButton label="下移" onClick={() => props.onMove(1)}><ArrowDown className="size-3.5" /></ToolButton>
-          {!props.isBoxChild ? (
-            <ToolButton label="复制" onClick={props.onDuplicate}><Copy className="size-3.5" /></ToolButton>
-          ) : null}
-          <ToolButton label="删除" danger onClick={props.onDelete}><Trash2 className="size-3.5" /></ToolButton>
-          {props.onEditQuestion ? (
-            <ToolButton label="编辑题目" onClick={props.onEditQuestion}><Pencil className="size-3.5" /></ToolButton>
-          ) : null}
-          <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-          <ToolButton label="属性" onClick={props.onOpenProperties}><Settings2 className="size-3.5" /></ToolButton>
-        </motion.div>
+        </AnimatePresence>,
+        document.body,
+      )}
+      {formulaDialogOpen && props.textEditor ? (
+        <FormulaEditorDialog
+          title="插入行内公式"
+          displayMode={false}
+          onApply={insertFormulaAtSavedSelection}
+          onClose={() => {
+            formulaSelectionRef.current = null
+            setFormulaDialogOpen(false)
+            props.textEditor?.chain().focus().run()
+          }}
+        />
       ) : null}
-    </AnimatePresence>,
-    document.body,
+    </>
   )
 }
 

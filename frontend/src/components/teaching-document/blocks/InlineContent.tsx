@@ -72,11 +72,11 @@ function wrapWithMarks(text: string, marks?: InlineMark[]): ReactNode {
   return result
 }
 
-function TextSpan({ text, marks, font, unknownMarks }: { text: string; marks?: InlineMark[]; font?: string; unknownMarks?: unknown[] }) {
+function TextSpan({ text, marks, font, fontSize, unknownMarks }: { text: string; marks?: InlineMark[]; font?: string; fontSize?: Extract<TeachingInline, { type: 'text' }>['fontSize']; unknownMarks?: unknown[] }) {
   const content = wrapWithMarks(text, marks)
   // 行内字体覆盖：fontStackById 对未知 id 返回 undefined → 不加样式、继承默认字体
   const stack = fontStackById(font)
-  const fontStyle = stack ? { fontFamily: stack } : undefined
+  const fontStyle = (stack || fontSize) ? { ...(stack ? { fontFamily: stack } : {}), ...(fontSize ? { fontSize: `${fontSize}px` } : {}) } : undefined
   if (!unknownMarks?.length) return <span style={fontStyle} {...{ [TEACHING_DOM.inlineContent]: '' }}>{content}</span>
   return (
     <span
@@ -112,7 +112,7 @@ export function InlineContent({ inlines, range }: { inlines: TeachingInline[]; r
           case 'text':
             return (
               <span key={key} {...contract}>
-                <TextSpan text={inline.text} marks={inline.marks} font={inline.font} unknownMarks={inline.unknownMarks} />
+                <TextSpan text={inline.text} marks={inline.marks} font={inline.font} fontSize={inline.fontSize} unknownMarks={inline.unknownMarks} />
               </span>
             )
           case 'inlineMath':

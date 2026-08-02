@@ -47,6 +47,7 @@ import type {
 import { getBoxTemplate } from './boxTemplates'
 import { TEXT_FONT_OPTIONS } from './lectureFonts'
 import { isFigureLayoutPreset } from './figureLayoutPresets'
+import { parseBoxAppearance } from './boxAppearance'
 
 // ─── 常量 ────────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,10 @@ const BOX_CHILD_TYPES = new Set([
 ])
 
 const VALID_MARKS = new Set<string>(['bold', 'italic', 'underline', 'strikethrough', 'code'])
+const VALID_INLINE_FONT_SIZES = new Set([12, 14, 16, 18, 20, 24])
+const VALID_TEXT_ALIGNMENTS = new Set(['left', 'center', 'right', 'justify'])
+const VALID_LIST_STYLES = new Set(['bullet', 'ordered'])
+const VALID_INDENT_LEVELS = new Set([0, 1, 2, 3, 4])
 
 const VALID_MARGIN_PRESETS = new Set<string>(['compact', 'normal', 'relaxed'])
 const VALID_QUESTION_SPACING = new Set<string>(['compact', 'normal', 'relaxed'])
@@ -139,11 +144,17 @@ function parseInlineArray(
       }
       // 行内字体覆盖：仅接受非空字符串 id；渲染端对未知 id 会回退默认字体
       const font = typeof node.font === 'string' && node.font ? node.font : undefined
+      const color = typeof node.color === 'string' && /^#[0-9a-f]{6}$/i.test(node.color) ? node.color : undefined
+      const fontSize = VALID_INLINE_FONT_SIZES.has(Number(node.fontSize))
+        ? Number(node.fontSize) as 12 | 14 | 16 | 18 | 20 | 24
+        : undefined
       return {
         type: 'text',
         text: node.text,
         marks: marks?.length ? marks : undefined,
         font,
+        color,
+        fontSize,
         unknownMarks: unknownMarks?.length ? unknownMarks : undefined,
       }
     }
@@ -314,6 +325,8 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
         level: ([1, 2, 3, 4].includes(level) ? level : 3) as 1 | 2 | 3 | 4,
         content: parseInlineArray(node.content, issues, id),
         ...(numbering ? { numbering } : {}),
+        ...(VALID_TEXT_ALIGNMENTS.has(String(node.alignment)) && node.alignment !== 'left' ? { alignment: node.alignment as 'left' | 'center' | 'right' | 'justify' } : {}),
+        ...(VALID_INDENT_LEVELS.has(Number(node.indentLevel)) && Number(node.indentLevel) ? { indentLevel: Number(node.indentLevel) as 1 | 2 | 3 | 4 } : {}),
       }
     }
     case 'paragraph': {
@@ -322,6 +335,9 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
         type: 'paragraph',
         id,
         content: parseInlineArray(node.content, issues, id),
+        ...(VALID_TEXT_ALIGNMENTS.has(String(node.alignment)) && node.alignment !== 'left' ? { alignment: node.alignment as 'left' | 'center' | 'right' | 'justify' } : {}),
+        ...(VALID_LIST_STYLES.has(String(node.listStyle)) ? { listStyle: node.listStyle as 'bullet' | 'ordered' } : {}),
+        ...(VALID_INDENT_LEVELS.has(Number(node.indentLevel)) && Number(node.indentLevel) ? { indentLevel: Number(node.indentLevel) as 1 | 2 | 3 | 4 } : {}),
       }
     }
     case 'blockMath':
@@ -426,6 +442,7 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
     }
     case 'box': {
       const breakBehavior = String(node.breakBehavior || 'auto')
+      const appearance = parseBoxAppearance(node.appearance)
       const rawChildren = Array.isArray(node.children) ? node.children : []
       const children: BoxChildBlock[] = []
       for (let ci = 0; ci < rawChildren.length; ci++) {
@@ -460,6 +477,7 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
         templateId: typeof node.templateId === 'string' ? node.templateId : 'concept',
         title: typeof node.title === 'string' ? node.title : undefined,
         icon: typeof node.icon === 'string' ? node.icon : undefined,
+        ...(appearance ? { appearance } : {}),
         breakBehavior: (['auto', 'avoid', 'allow', 'force-before'].includes(breakBehavior) ? breakBehavior : 'auto') as BoxBlock['breakBehavior'],
         children,
       }
@@ -712,6 +730,42 @@ function parsePageNumberOptions(raw: unknown): TeachingDocumentPrintOptions['pag
  * 验证已解析文档的结构完整性。只检查，不修改。
  * 检查：空 ID、重复 ID、空题目引用、无效模板、非法盒子子节点等。
  */
+/**
+ * 结构签名：校验问题几乎全部由结构字段产生（块类型/id/题目引用/图片引用/数值选项），
+ * 正文文本不影响校验结果。用"剔除正文的逐块签名 + WeakMap 缓存"判断是否需要重跑
+ * 全量校验——同一块引用只签名一次，普通文本回显只产生新的段落块，O(变更块)。
+ */
+const blockSignatureCache = new WeakMap<object, string>()
+
+function inlineTextLength(inlines: TeachingInline[]): number {
+  let total = 0
+  for (const inline of inlines) total += inline.type === 'text' ? inline.text.length : 1
+  return total
+}
+
+function structuralBlockSignature(block: TeachingBlock): string {
+  const cached = blockSignatureCache.get(block)
+  if (cached !== undefined) return cached
+  let value: string
+  switch (block.type) {
+    case 'paragraph':
+    case 'heading':
+      value = `${block.type}:${block.id}:${block.type === 'heading' ? block.level : ''}:${inlineTextLength(block.content)}`
+      break
+    case 'box':
+      value = `box:${block.id}:${block.templateId}:${block.breakBehavior}:${JSON.stringify(block.appearance || {})}:${block.children.map((child) => structuralBlockSignature(child as TeachingBlock)).join('|')}`
+      break
+    default:
+      value = `${block.type}:${block.id}:${JSON.stringify(block)}`
+  }
+  blockSignatureCache.set(block, value)
+  return value
+}
+
+export function structuralDocumentSignature(document: TeachingDocument): string {
+  return document.content.map(structuralBlockSignature).join('|')
+}
+
 export function validateTeachingDocument(document: TeachingDocument): DocumentValidationResult {
   const issues: DocumentValidationIssue[] = []
   const seenIds = new Set<string>()

@@ -13,6 +13,7 @@ import {
   createTeachingDocumentHistory,
   executeTeachingDocumentCommand,
   hasFatalTeachingDocumentIssues,
+  questionSequenceSignature,
   renumberAutomaticQuestionNumbers,
   redoTeachingDocument,
   undoTeachingDocument,
@@ -20,6 +21,8 @@ import {
   type AutosaveState,
 } from '@/utils/teachingDocument'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { DocumentValidationResult } from '@/types/teachingDocument'
+import { structuralDocumentSignature } from '@/utils/teachingDocument/validate'
 
 export function useTeachingDocumentEditor(documentId: string) {
   const [record, setRecord] = useState<TeachingDocumentRecord | null>(null)
@@ -34,10 +37,17 @@ export function useTeachingDocumentEditor(documentId: string) {
   const autosaveRef = useRef<TeachingDocumentAutosave<TeachingDocumentV1> | null>(null)
   /** 文档级编辑器实例（T3：undo/redo 由编辑器管理） */
   const editorInstanceRef = useRef<Editor | null>(null)
+  const [activeEditor, setActiveEditor] = useState<Editor | null>(null)
   /** 由 DocumentEditor 注册；结构操作和保存前用于冲刷尚在合并窗口中的文字。 */
   const editorFlushRef = useRef<(() => void) | null>(null)
   const [editorHistoryState, setEditorHistoryState] = useState({ canUndo: false, canRedo: false })
   const editorHistoryListenerRef = useRef<((payload?: unknown) => void) | null>(null)
+  /**
+   * 校验结果按结构签名延迟计算：普通文本回显不产生结构变化，不再每次键入停顿
+   * 都跑全量 validateTeachingDocument（长文档可省下每次几毫秒到几十毫秒）。
+   */
+  const [validation, setValidation] = useState<DocumentValidationResult>({ valid: true, issues: [] })
+  const lastValidationSignatureRef = useRef('')
 
   const configureAutosave = useCallback((loaded: TeachingDocumentRecord) => {
     autosaveRef.current?.dispose()
@@ -172,9 +182,18 @@ export function useTeachingDocumentEditor(documentId: string) {
     })
   }, [])
 
+  /** 最近一次重编号前的题序签名；签名未变说明编号无需更新。 */
+  const questionSequenceSignatureRef = useRef('')
+
   /** 编辑器内容变化回调（由 DocumentEditor onChange 调用） */
   const handleEditorChange = useCallback((doc: TeachingDocumentV1) => {
-    const normalized = renumberAutomaticQuestionNumbers(doc)
+    // 普通文本回显不改变题序：题序签名未变时跳过全量重编号（长文档每次键入的
+    // 停顿期都会走到这里，重编号会克隆全部题目块）。
+    const nextSignature = questionSequenceSignature(doc)
+    const normalized = nextSignature === questionSequenceSignatureRef.current
+      ? doc
+      : renumberAutomaticQuestionNumbers(doc)
+    questionSequenceSignatureRef.current = questionSequenceSignature(normalized)
     documentRef.current = normalized
     setHistory((current) => {
       if (!current) return current
@@ -196,6 +215,7 @@ export function useTeachingDocumentEditor(documentId: string) {
     }
     editorHistoryListenerRef.current = null
     editorInstanceRef.current = editor
+    setActiveEditor(editor)
     if (!editor) {
       setEditorHistoryState({ canUndo: false, canRedo: false })
       return
@@ -254,10 +274,15 @@ export function useTeachingDocumentEditor(documentId: string) {
     return result
   }, [documentId])
 
-  const validation = useMemo(
-    () => history ? validateTeachingDocument(history.document) : { valid: true, issues: [] },
-    [history],
-  )
+  // 结构签名未变化时不重跑全量校验（文本回显跳过）。
+  useEffect(() => {
+    const doc = history?.document
+    if (!doc) return
+    const signature = structuralDocumentSignature(doc)
+    if (signature === lastValidationSignatureRef.current) return
+    lastValidationSignatureRef.current = signature
+    setValidation(validateTeachingDocument(doc))
+  }, [history])
 
   return {
     record,
@@ -284,6 +309,8 @@ export function useTeachingDocumentEditor(documentId: string) {
     markEditorDirty,
     /** T3：注册编辑器实例 */
     registerEditor,
+    /** 当前文档级编辑器，供页面级格式工具栏驱动。 */
+    activeEditor,
     registerEditorFlush,
     activeTopLevelBlockId,
     canUndo: editorHistoryState.canUndo || Boolean(history?.past.length),

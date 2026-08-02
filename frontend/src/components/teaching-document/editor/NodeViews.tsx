@@ -8,15 +8,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react'
 import 'katex/dist/katex.min.css'
-import { CornerDownRight, ImageOff, ArrowDown, ArrowUp, Copy, Trash2, Columns3, Plus, Minus } from 'lucide-react'
-import type { FigureAssetRef, FigureBlock, SpacerBlock, TeachingBlock, BoxBlock, BoxChildBlock, QuestionBlock, QuestionDisplayOptions, TeachingDocumentV1, TeachingInline, ParagraphBlock, TableBlock, TableCell } from '@/types/teachingDocument'
+import { CornerDownRight, ImageOff, ArrowDown, ArrowUp, Trash2, Columns3, Plus, Minus } from 'lucide-react'
+import type { FigureAssetRef, FigureBlock, SpacerBlock, TeachingBlock, BoxBlock, BoxChildBlock, QuestionBlock, QuestionDisplayOptions, TeachingDocumentV1, TeachingInline, ParagraphBlock, TableCell } from '@/types/teachingDocument'
 import type { QuestionResolution, FigureResolution, QuestionLayoutEditor } from '../blocks/BlockRenderer'
 import { getBoxTemplateOrFallback } from '@/utils/teachingDocument/boxTemplates'
+import { boxBodyStyle, boxFrameStyle, parseBoxAppearance } from '@/utils/teachingDocument/boxAppearance'
 import { createQuestionRuntimeModel } from '@/utils/teachingDocument/layout/questionRegions'
 import { BoxFragmentRenderer, QuestionRuntimeContent, QuestionPlaceholder } from '../blocks/BlockRenderer'
-import { BlockRenderer } from '../blocks/BlockRenderer'
 import { BlockInlineEditor } from '../BlockInlineEditor/BlockInlineEditor'
-import { BoxTextEditor } from './BoxTextEditor'
+import { BoxFlowEditor } from './BoxFlowEditor'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { DEFAULT_A4_PAPER, newTeachingBlock, sliceTeachingInlines, type PaperSpec, type PaginationResult, type PrintLayoutSpec, type BoxFragmentPaginationItem, type QuestionFragmentPaginationItem, type ParagraphBoxChildFragmentPaginationItem, type InlineRange } from '@/utils/teachingDocument'
 import { BlockInsertPoint } from '@/pages/teaching-documents/components/BlockInsertMenu'
@@ -25,7 +25,7 @@ import { PrintChrome } from '../PrintChrome'
 import { effectiveSpacerHeightMm } from '@/utils/teachingDocument/layoutCompat'
 import { renderTeachingDocumentKatex } from '@/utils/teachingDocument/katexCache'
 import { clampFigureWidthMm } from './resizeLogic'
-import { resolveFigureLayout, type FigureLayoutPreset } from '@/utils/teachingDocument/figureLayoutPresets'
+import { resolveFigureLayout, FIGURE_LAYOUT_PRESETS, type FigureLayoutPreset } from '@/utils/teachingDocument/figureLayoutPresets'
 import {
   ImageResizeOverlay,
   SpacerResizeHandle,
@@ -390,7 +390,15 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
               key={preset}
               type="button"
               className={`rounded border px-2 py-1 text-[11px] ${layoutPreset === preset ? 'border-zinc-900 bg-zinc-100 text-zinc-900' : 'border-zinc-200 text-zinc-500 hover:bg-zinc-50'}`}
-              onClick={() => editor.commands.updateAttributes('docFigure', { layoutPreset: preset })}
+              onClick={() => {
+                // 排版预设与 alignment 必须同步：resolveFigureLayout 以 preset 优先，
+                // 只写 preset 会让属性面板的“对齐”显示过期值。
+                const definition = FIGURE_LAYOUT_PRESETS.find((item) => item.id === preset)
+                editor.commands.updateAttributes('docFigure', {
+                  layoutPreset: preset,
+                  ...(definition ? { alignment: definition.alignment } : {}),
+                })
+              }}
             >
               {label}
             </button>
@@ -755,6 +763,13 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
   const templateId = String(node.attrs.templateId || 'concept')
   const title = String(node.attrs.title || '')
   const icon = String(node.attrs.icon || '')
+  const appearance = useMemo(() => {
+    try {
+      return parseBoxAppearance(JSON.parse(String(node.attrs.appearance || '{}')))
+    } catch {
+      return undefined
+    }
+  }, [node.attrs.appearance])
   const breakBehavior = String(node.attrs.breakBehavior || 'auto')
   const children = useMemo<BoxChildBlock[]>(() => {
     try {
@@ -763,7 +778,6 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
       return []
     }
   }, [node.attrs.children])
-  const [selectedChildId, setSelectedChildId] = useState<string | null>(null)
   const [focusChildId, setFocusChildId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
 
@@ -774,6 +788,7 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
     templateId,
     ...(title ? { title } : {}),
     ...(icon ? { icon } : {}),
+    ...(appearance ? { appearance } : {}),
     breakBehavior: breakBehavior as BoxBlock['breakBehavior'],
     children,
   }
@@ -786,16 +801,6 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
     updateAttributes({ children: JSON.stringify(nextChildren) })
   }, [updateAttributes])
 
-  const moveChild = useCallback((childId: string, delta: -1 | 1) => {
-    const index = children.findIndex((child) => child.id === childId)
-    const nextIndex = index + delta
-    if (index < 0 || nextIndex < 0 || nextIndex >= children.length) return
-    const next = [...children]
-    const [item] = next.splice(index, 1)
-    next.splice(nextIndex, 0, item)
-    updateChildren(next)
-  }, [children, updateChildren])
-
   const insertChildAfter = useCallback((afterId: string | undefined, type: TeachingBlock['type']) => {
     if (!BOX_INSERTABLE_TYPES.includes(type)) return
     const child = newTeachingBlock(type) as BoxChildBlock
@@ -803,190 +808,10 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
     const next = [...children]
     next.splice(index + 1, 0, child)
     updateChildren(next)
-    setSelectedChildId(child.id)
     setFocusChildId(child.type === 'paragraph' ? child.id : null)
     // 属性面板依赖外层文档状态；下一帧再发出选中事件，确保新子块已进入该状态。
     window.requestAnimationFrame(() => emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id }))
   }, [boxBlock.id, children, updateChildren])
-
-  const mergeParagraphIntoPrevious = useCallback((childId: string) => {
-    const index = children.findIndex((child) => child.id === childId)
-    const current = children[index]
-    if (index <= 0 || current?.type !== 'paragraph') return
-    const previous = children[index - 1]
-    const currentHasContent = current.content.some((inline) => inline.type !== 'text' || inline.text.length > 0)
-    if (previous.type !== 'paragraph' && currentHasContent) return
-
-    const nextChildren = previous.type === 'paragraph'
-      ? children.flatMap((child, childIndex) => {
-          if (childIndex === index - 1) return [{ ...previous, content: [...previous.content, ...current.content] }]
-          if (childIndex === index) return []
-          return [child]
-        })
-      : children.filter((_, childIndex) => childIndex !== index)
-    updateChildren(nextChildren)
-    setSelectedChildId(previous.id)
-    setFocusChildId(previous.type === 'paragraph' ? previous.id : null)
-    window.requestAnimationFrame(() => emitBoxChildSelect({ blockId: previous.id, parentBlockId: boxBlock.id }))
-  }, [boxBlock.id, children, updateChildren])
-
-  const replaceParagraphGroup = useCallback((groupIds: string[], paragraphs: ParagraphBlock[]) => {
-    if (!groupIds.length || !paragraphs.length) return
-    const first = children.findIndex((child) => child.id === groupIds[0])
-    if (first < 0 || !groupIds.every((id, index) => children[first + index]?.id === id && children[first + index]?.type === 'paragraph')) return
-    updateChildren([
-      ...children.slice(0, first),
-      ...paragraphs,
-      ...children.slice(first + groupIds.length),
-    ])
-  }, [children, updateChildren])
-
-  const renderChild = (child: BoxChildBlock, index: number) => {
-    if (child.type === 'table') {
-      return (
-        <div
-          key={`${child.id}:${index}`}
-          className="td-box-child-editor relative"
-          data-block-id={child.id}
-          data-block-type={child.type}
-          onMouseDownCapture={(event) => event.stopPropagation()}
-          onPointerDownCapture={(event) => {
-            event.stopPropagation()
-            setSelectedChildId(child.id)
-            emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
-          }}
-          onClickCapture={(event) => {
-            event.stopPropagation()
-            setSelectedChildId(child.id)
-            emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
-          }}
-        >
-          <EditableTable
-            blockId={child.id}
-            rows={child.rows}
-            hasHeader={child.hasHeader !== false}
-            selected={selectedChildId === child.id}
-            onRowsChange={(rows) => updateChildren(children.map((item) => item.id === child.id ? { ...item, rows } as TableBlock : item))}
-            onHeaderChange={(hasHeader) => updateChildren(children.map((item) => item.id === child.id ? { ...item, hasHeader } as TableBlock : item))}
-          />
-        </div>
-      )
-    }
-    if (child.type !== 'paragraph') {
-      return (
-        <div
-          key={`${child.id}:${index}`}
-          className="td-box-child-editor relative"
-          data-block-id={child.id}
-          data-block-type={child.type}
-          onMouseDownCapture={(event) => event.stopPropagation()}
-          onPointerDownCapture={(event) => {
-            event.stopPropagation()
-            setSelectedChildId(child.id)
-            emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
-          }}
-          onClickCapture={(event) => {
-            event.stopPropagation()
-            setSelectedChildId(child.id)
-            emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
-          }}
-        >
-          {selectedChildId === child.id && child.type === 'figure' ? (
-            <div className="mb-1 flex items-center gap-1" data-print-hide="">
-              {([
-                ['block-center', '居中插图'], ['block-left', '左对齐'], ['block-right', '右对齐'], ['full-width', '通栏'],
-              ] as const).map(([preset, label]) => (
-                <button key={preset} type="button" className="rounded border border-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-50" title={label} onClick={() => updateChildren(children.map((item) => item.id === child.id ? { ...item, layoutPreset: preset } : item))}>{label}</button>
-              ))}
-              <button type="button" className="rounded border border-zinc-200 p-1 text-zinc-500 hover:bg-zinc-50" title="上移" onClick={() => moveChild(child.id, -1)}><ArrowUp className="size-3" /></button>
-              <button type="button" className="rounded border border-zinc-200 p-1 text-zinc-500 hover:bg-zinc-50" title="下移" onClick={() => moveChild(child.id, 1)}><ArrowDown className="size-3" /></button>
-              <button type="button" className="rounded border border-zinc-200 p-1 text-zinc-500 hover:bg-zinc-50" title="复制" onClick={() => updateChildren([...children.slice(0, index + 1), { ...child, id: `${child.id}-copy-${Date.now().toString(36)}` }, ...children.slice(index + 1)])}><Copy className="size-3" /></button>
-              <button type="button" className="rounded border border-red-200 p-1 text-red-600 hover:bg-red-50" title="删除" onClick={() => updateChildren(children.filter((item) => item.id !== child.id))}><Trash2 className="size-3" /></button>
-            </div>
-          ) : null}
-          <BlockRenderer
-            block={child as TeachingBlock}
-            resolvers={{ resolveQuestion, resolveFigure }}
-          />
-        </div>
-      )
-    }
-    return (
-      <div
-        key={`${child.id}:${index}`}
-        className="td-box-child-editor relative"
-        data-block-id={child.id}
-        data-block-type={child.type}
-        onMouseDownCapture={(event) => event.stopPropagation()}
-        onPointerDownCapture={(event) => {
-          event.stopPropagation()
-          setSelectedChildId(child.id)
-          emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
-        }}
-        onClickCapture={(event) => {
-          event.stopPropagation()
-          emitBoxChildSelect({ blockId: child.id, parentBlockId: boxBlock.id })
-        }}
-      >
-        <BlockInlineEditor
-          inlines={child.content}
-          variant="embedded"
-          toolbar="floating"
-          ariaLabel={`盒子内段落 ${index + 1}`}
-          autoFocus={focusChildId === child.id}
-          onCreateSiblingParagraph={() => insertChildAfter(child.id, 'paragraph')}
-          onBackspaceAtStart={() => mergeParagraphIntoPrevious(child.id)}
-          onChange={(content) => {
-            updateChildren(children.map((item) => item.id === child.id ? { ...item, content } : item))
-          }}
-        />
-      </div>
-    )
-  }
-
-  const renderedContinuousChildren = useMemo(() => {
-    const slots: React.ReactNode[] = []
-    for (let index = 0; index < children.length;) {
-      const child = children[index]
-      if (child.type === 'paragraph') {
-        const group: ParagraphBlock[] = []
-        let end = index
-        while (children[end]?.type === 'paragraph') {
-          group.push(children[end] as ParagraphBlock)
-          end += 1
-        }
-        const groupIds = group.map((paragraph) => paragraph.id)
-        slots.push(
-          <div
-            key={`box-text-group:${groupIds[0]}`}
-            className="td-box-text-group relative"
-            data-box-text-group={groupIds.join(',')}
-            onMouseDownCapture={(event) => event.stopPropagation()}
-          >
-            <BoxTextEditor
-              paragraphs={group}
-              onChange={(paragraphs) => replaceParagraphGroup(groupIds, paragraphs)}
-              onActiveParagraphChange={(blockId) => {
-                setSelectedChildId(blockId)
-                emitBoxChildSelect({ blockId, parentBlockId: boxBlock.id })
-              }}
-            />
-          </div>,
-        )
-        slots.push(<BlockInsertPoint key={`box-insert:${groupIds.at(-1)}`} types={BOX_INSERTABLE_TYPES} onInsert={(type) => insertChildAfter(groupIds.at(-1), type)} />)
-        index = end
-        continue
-      }
-      slots.push(
-        <div key={`box-child-slot:${child.id}`}>
-          {renderChild(child, index)}
-          <BlockInsertPoint types={BOX_INSERTABLE_TYPES} onInsert={(type) => insertChildAfter(child.id, type)} />
-        </div>,
-      )
-      index += 1
-    }
-    return slots
-  }, [children, insertChildAfter, replaceParagraphGroup])
 
   const renderFragmentParagraph = useCallback((child: ParagraphBlock, item: ParagraphBoxChildFragmentPaginationItem) => {
     const fragmentInlines = sliceTeachingInlines(child.content, item.range).map((entry) => entry.inline)
@@ -1053,7 +878,7 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
             </div>
           ))
       ) : (
-        <div className="overflow-hidden rounded-lg border" style={{ borderColor: `var(--box-${template.tone}-border)` }}>
+        <div className="overflow-hidden border" style={boxFrameStyle(appearance, template)}>
           {(template.showHeader || title) ? (
             <div className="flex min-w-0 items-center gap-2 px-4 py-2.5" style={{ background: `var(--box-${template.tone}-header)` }} onPointerDown={selectBox}>
               {editingTitle && selected ? (
@@ -1074,8 +899,16 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
               )}
             </div>
           ) : null}
-          <div className="px-4 py-3" style={{ background: `var(--box-${template.tone}-body)` }}>
-            {children.length ? renderedContinuousChildren : (
+          <div className="px-4 py-3" style={boxBodyStyle(appearance, template)}>
+            {children.length ? (
+              <BoxFlowEditor
+                children={children}
+                boxId={boxBlock.id}
+                autoFocusChildId={focusChildId}
+                onChange={updateChildren}
+                onActiveChildChange={(childId) => emitBoxChildSelect({ blockId: childId, parentBlockId: boxBlock.id })}
+              />
+            ) : (
               <BlockInsertPoint
                 empty
                 emptySize="box"
@@ -1213,8 +1046,15 @@ export function TikzNodeView({ node, selected }: NodeViewProps) {
   })
   const alignClass = { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[layout.alignment]
   const caption = String(node.attrs.caption || '')
-  return <NodeViewWrapper className={`td-figure my-4 ${alignClass} ${selectionRing(selected)}`} data-block-id={String(node.attrs.blockId || '')} style={{ width: `${layout.widthMm}mm`, maxWidth: '100%' }}>
-    {url ? <figure><img src={url} alt={String(node.attrs.alt || caption || 'TikZ 绘图')} className="block h-auto w-full rounded border border-zinc-200" />{caption ? <figcaption className="mt-1.5 text-center text-xs text-zinc-500">{caption}</figcaption> : null}</figure> : <div className="rounded border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">TikZ 源码尚未生成预览。</div>}
+  // 对齐放在内部 figure 上：NodeViewWrapper 的选中态会附加负边距，
+  // 若与 mx-auto / mr-auto / ml-auto 共用同一个元素，会覆盖图片对齐。
+  return <NodeViewWrapper className={`td-figure my-4 ${selectionRing(selected)}`} data-block-id={String(node.attrs.blockId || '')}>
+    {url ? (
+      <figure className={alignClass} style={{ width: `${layout.widthMm}mm`, maxWidth: '100%' }}>
+        <img src={url} alt={String(node.attrs.alt || caption || 'TikZ 绘图')} className="block h-auto w-full rounded border border-zinc-200" />
+        {caption ? <figcaption className="mt-1.5 text-center text-xs text-zinc-500">{caption}</figcaption> : null}
+      </figure>
+    ) : <div className="rounded border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">TikZ 源码尚未生成预览。</div>}
     {stale ? <p className="mt-1 text-xs text-amber-700">预览已过期，请在属性面板重新生成。</p> : null}
   </NodeViewWrapper>
 }

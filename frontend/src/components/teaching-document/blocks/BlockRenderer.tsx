@@ -3,7 +3,7 @@
  * 每个块渲染器添加 data-block-id / data-block-type 属性供未来分页引擎识别
  */
 
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { AlertTriangle, BookOpen, Box, CornerDownRight, HelpCircle, ImageOff, Lightbulb, ListChecks, PenLine, Pencil } from 'lucide-react'
 import type {
   BlockMathBlock,
@@ -25,6 +25,7 @@ import type {
 } from '@/types/teachingDocument'
 import type { QuestionItem } from '@/types'
 import { getBoxTemplateOrFallback } from '@/utils/teachingDocument/boxTemplates'
+import { boxBodyStyle, boxFrameStyle } from '@/utils/teachingDocument/boxAppearance'
 import { renderTeachingDocumentKatex } from '@/utils/teachingDocument/katexCache'
 import {
   blockDomAttributes,
@@ -125,6 +126,7 @@ function HeadingBlockView({ block, numberLabel }: { block: HeadingBlock; numberL
   return (
     <Tag
       className={`td-heading ${sizeClass} text-zinc-900 dark:text-zinc-50`}
+      style={textBlockStyle(block)}
       data-block-id={block.id}
       data-block-type="heading"
     >
@@ -142,9 +144,11 @@ function ParagraphBlockView({ block }: { block: ParagraphBlock }) {
   return (
     <p
       className="td-paragraph my-2.5 leading-7 text-zinc-800 dark:text-zinc-200"
+      style={textBlockStyle(block)}
       data-block-id={block.id}
       data-block-type="paragraph"
     >
+      {block.listStyle ? <span className="mr-2 inline-block select-none" aria-hidden="true">{block.listStyle === 'ordered' ? '1.' : '•'}</span> : null}
       <ParagraphBlockContent block={block} />
     </p>
   )
@@ -182,11 +186,19 @@ export function ParagraphFragmentRenderer({
       data-fragment-start={inlineCursorLabel(item.range.start)}
       data-fragment-end={inlineCursorLabel(item.range.end)}
     >
-      <p className={`td-paragraph ${marginClass} leading-7 text-zinc-800 dark:text-zinc-200`}>
+      <p className={`td-paragraph ${marginClass} leading-7 text-zinc-800 dark:text-zinc-200`} style={textBlockStyle(block)}>
+        {block.listStyle ? <span className="mr-2 inline-block select-none" aria-hidden="true">{block.listStyle === 'ordered' ? '1.' : '•'}</span> : null}
         <ParagraphBlockContent block={block} range={item.range} />
       </p>
     </div>
   )
+}
+
+function textBlockStyle(block: Pick<HeadingBlock | ParagraphBlock, 'alignment' | 'indentLevel'>): CSSProperties {
+  return {
+    textAlign: block.alignment || 'left',
+    ...(block.indentLevel ? { marginLeft: `${block.indentLevel * 1.5}em` } : {}),
+  }
 }
 
 function BlockMathBlockView({ block }: { block: BlockMathBlock }) {
@@ -821,9 +833,7 @@ function BoxFrame({
       data-tone={template.tone}
       data-break-behavior={block.breakBehavior}
       data-continuation={continuation}
-      style={{
-        borderColor: `var(--box-${template.tone}-border)`,
-      }}
+      style={boxFrameStyle(block.appearance, template)}
     >
       {isContinuationHeader ? (
         /* 续页栏：弱化标题，无图标、无 accent 线、无底色 */
@@ -866,7 +876,7 @@ function BoxFrame({
       <div
         className="td-box-body px-4 py-3"
         {...{ [TEACHING_DOM.boxBody]: '' }}
-        style={{ background: `var(--box-${template.tone}-body)` }}
+        style={boxBodyStyle(block.appearance, template)}
       >
         {children}
         <div

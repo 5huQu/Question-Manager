@@ -1,7 +1,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { InsertMenuPanel } from './BlockInsertMenu'
+import { insertLineCenterY, InsertMenuPanel } from './BlockInsertMenu'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -31,5 +31,20 @@ describe('InsertMenuPanel', () => {
     expect(thirdLevel).not.toBeNull()
     await act(async () => thirdLevel?.click())
     expect(onPick).toHaveBeenCalledWith('heading', 3)
+  })
+})
+
+describe('insertLineCenterY', () => {
+  it('centers the insert line in the actual gap between two objects', () => {
+    expect(insertLineCenterY(120, 160)).toBe(140)
+  })
+
+  it('uses the structural boundary when adjacent objects touch or overlap', () => {
+    expect(insertLineCenterY(120, 120)).toBe(120)
+    expect(insertLineCenterY(120, 116)).toBe(120)
+  })
+
+  it('keeps an end-of-document insert line below the final object', () => {
+    expect(insertLineCenterY(120)).toBe(132)
   })
 })

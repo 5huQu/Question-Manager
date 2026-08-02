@@ -3,9 +3,9 @@
  * 状态协调 + 布局骨架；具体 UI 委托给 components/ 子组件
  */
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { AlertTriangle, Bold, Check, ChevronLeft, ChevronRight, Download, FileUp, Italic, LoaderCircle, PanelLeft, RefreshCcw, Settings2 } from 'lucide-react'
+import { AlertTriangle, Bold, Check, ChevronLeft, ChevronRight, Download, FileUp, Italic, LoaderCircle, RefreshCcw, Settings2, X } from 'lucide-react'
 import type { QuestionItem } from '@/types'
 import type {
   BoxBlock,
@@ -24,9 +24,9 @@ import type {
 } from '@/types/teachingDocument'
 import { questionBankApi } from '@/api/questionBank'
 import { teachingDocumentsApi } from '@/api/teachingDocuments'
-import { ApiError } from '@/api/client'
+import { ApiError, type PdfExportVariant } from '@/api/client'
 import { A4PaginationPreview, type A4PaginationState } from '@/components/teaching-document/A4PaginationPreview'
-import { PaginatedCanvas } from '@/components/teaching-document/editor'
+import { TeachingDocumentCanvas } from '@/components/teaching-document/editor'
 import { ExportPdfPanel } from '@/components/teaching-document/ExportPdfPanel'
 import { PrintChrome, type PrintChromeSection } from '@/components/teaching-document/PrintChrome'
 import { type QuestionResolution } from '@/components/teaching-document/blocks/BlockRenderer'
@@ -52,17 +52,26 @@ import {
   typographyStyleForPreset,
 } from '@/utils/teachingDocument/lectureFonts'
 import { assetUrl } from '@/utils/questionDisplay'
+import { documentForPrintVariant } from '@/utils/teachingDocument/printVariant'
 import type { PrintChromeTemplate } from '@/api/teachingDocuments'
 import { useTeachingDocumentEditor } from './useTeachingDocumentEditor'
+import { getFocusedCardEditor, insertCardBlockAtCaret, subscribeFocusedCardEditor } from '@/components/teaching-document/editor/cardEditorRegistry'
+import {
+  BOX_CHILD_MULTI_SELECT_EVENT,
+  TOP_LEVEL_MULTI_SELECT_EVENT,
+  setTopLevelMultiSelectIds,
+  type BoxChildMultiSelectDetail,
+  type TopLevelMultiSelectDetail,
+} from '@/components/teaching-document/editor/selection'
 import { EditorTopBar, type TeachingCanvasMode } from './components/EditorTopBar'
-import { EditorCanvas } from './components/EditorCanvas'
 import type { HeadingLevel } from './components/BlockInsertMenu'
 import { OutlinePanel } from './components/OutlinePanel'
 import { PropertiesSheet, type SelectedLocation } from './components/PropertiesSheet'
+import { DocumentFormattingToolbar } from './components/DocumentFormattingToolbar'
 import { QuestionEditDialog } from './components/QuestionEditDialog'
 import { QuestionPickerDrawer } from './components/QuestionPickerDrawer'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
-import { USER_BLOCK_LABEL } from './components/blockLabels'
+import { USER_BLOCK_LABEL, CARD_CHILD_TYPES } from './components/blockLabels'
 import '@/components/teaching-document/teaching-document.css'
 
 const CHROME_CONTENT_OPTIONS: Array<{ value: PrintChromeContentType; label: string }> = [
@@ -89,15 +98,18 @@ const CHROME_FONT_OPTIONS = [
 
 const CHROME_FONT_SIZE_OPTIONS = [8, 9, 10, 11, 12, 14] as const
 
-function findSelected(document: TeachingDocumentV1, id: string): SelectedLocation | null {
+/** id → 选中位置的缓存索引，避免每次选择/定位都线性扫描整篇文档。 */
+function buildSelectedLocationIndex(document: TeachingDocumentV1): Map<string, SelectedLocation> {
+  const map = new Map<string, SelectedLocation>()
   for (const block of document.content) {
-    if (block.id === id) return { block, topLevel: block }
+    map.set(block.id, { block, topLevel: block })
     if (block.type === 'box') {
-      const child = block.children.find((item) => item.id === id)
-      if (child) return { block: child as TeachingBlock, topLevel: block, boxId: block.id }
+      for (const child of block.children) {
+        map.set(child.id, { block: child as TeachingBlock, topLevel: block, boxId: block.id })
+      }
     }
   }
-  return null
+  return map
 }
 
 function PageSettingsDrawer(props: {
@@ -401,6 +413,8 @@ export default function TeachingDocumentEditorPage() {
   const [questionMap, setQuestionMap] = useState<Record<string, QuestionResolution>>({})
   // 连续流是正文撰写面：卡片正文以一个连续文本区编辑；页面编辑保留给版式核对。
   const [canvasMode, setCanvasMode] = useState<TeachingCanvasMode>('continuous')
+  // 编辑画布实际模式：a4 打印预览期间画布保持挂载（隐藏）以保留编辑器与撤销历史。
+  const [editCanvasMode, setEditCanvasMode] = useState<'continuous' | 'paginated'>('continuous')
   const sheetPaper = useMemo<PaperSpec>(
     () => resolveDocumentPaper(editor.document?.style),
     [editor.document?.style],
@@ -408,6 +422,7 @@ export default function TeachingDocumentEditorPage() {
   const paper = useMemo<PaperSpec>(() => logicalPagePaper(sheetPaper), [sheetPaper])
   const [viewZoom, setViewZoom] = useState(1)
   const [paginationState, setPaginationState] = useState<A4PaginationState | null>(null)
+  const [printVariant, setPrintVariant] = useState<PdfExportVariant>('student')
   const [paginatedPageCount, setPaginatedPageCount] = useState(1)
   const [currentPage, setCurrentPage] = useState(1)
   useEffect(() => {
@@ -430,11 +445,64 @@ export default function TeachingDocumentEditorPage() {
   const printLayout = useMemo<PrintLayoutSpec>(() => {
     return createDocumentPrintLayout(paper, editor.document?.style?.print)
   }, [paper, editor.document?.style?.print])
-  const [outlineOpen, setOutlineOpen] = useState(false)
+  const [outlineOpen, setOutlineOpen] = useState(true)
   const [propertiesOpen, setPropertiesOpen] = useState(false)
+  const [focusedCardEditor, setFocusedCardEditor] = useState<import('@tiptap/react').Editor | null>(null)
+  const [lastFocusedCardEditor, setLastFocusedCardEditor] = useState<import('@tiptap/react').Editor | null>(null)
   const [editingQuestionBlockId, setEditingQuestionBlockId] = useState('')
   const [pickerTarget, setPickerTarget] = useState<{ blockId: string; boxId?: string } | null>(null)
   const [formulaBlockId, setFormulaBlockId] = useState('')
+  useEffect(() => subscribeFocusedCardEditor((current) => {
+    setFocusedCardEditor(current)
+    if (current) setLastFocusedCardEditor(current)
+  }), [])
+  // 卡片内多选集合（Shift+点击对象累积）；批量操作条据此显示。
+  const [multiSelect, setMultiSelect] = useState<{ boxId: string; childIds: string[] } | null>(null)
+  useEffect(() => {
+    const handleMultiSelect = (event: Event) => {
+      const detail = (event as CustomEvent<BoxChildMultiSelectDetail>).detail
+      if (!detail) return
+      if (!detail.shift) {
+        setMultiSelect(null)
+        return
+      }
+      setMultiSelect((current) => {
+        const base = current?.boxId === detail.parentBlockId ? current.childIds : []
+        const next = base.includes(detail.blockId)
+          ? base.filter((id) => id !== detail.blockId)
+          : [...base, detail.blockId]
+        return next.length ? { boxId: detail.parentBlockId, childIds: next } : null
+      })
+    }
+    window.addEventListener(BOX_CHILD_MULTI_SELECT_EVENT, handleMultiSelect)
+    return () => window.removeEventListener(BOX_CHILD_MULTI_SELECT_EVENT, handleMultiSelect)
+  }, [])
+
+  // 顶层对象多选集合（Ctrl/Cmd+点击顶层对象累积）；集合写入模块存储供
+  // 文档级编辑器的多选环 decoration 读取。
+  const [topLevelMultiSelect, setTopLevelMultiSelect] = useState<string[]>([])
+  const topLevelMultiSelectRef = useRef<string[]>([])
+  useEffect(() => {
+    const handleTopLevelMultiSelect = (event: Event) => {
+      const detail = (event as CustomEvent<TopLevelMultiSelectDetail>).detail
+      if (!detail) return
+      if (!detail.modifier) {
+        topLevelMultiSelectRef.current = []
+        setTopLevelMultiSelectIds([])
+        setTopLevelMultiSelect([])
+        return
+      }
+      const current = topLevelMultiSelectRef.current
+      const next = current.includes(detail.blockId)
+        ? current.filter((id) => id !== detail.blockId)
+        : [...current, detail.blockId]
+      topLevelMultiSelectRef.current = next
+      setTopLevelMultiSelectIds(next)
+      setTopLevelMultiSelect(next)
+    }
+    window.addEventListener(TOP_LEVEL_MULTI_SELECT_EVENT, handleTopLevelMultiSelect)
+    return () => window.removeEventListener(TOP_LEVEL_MULTI_SELECT_EVENT, handleTopLevelMultiSelect)
+  }, [])
   const [batchBlankEnabled, setBatchBlankEnabled] = useState(false)
   const [batchBlankHeightMm, setBatchBlankHeightMm] = useState(30)
   const [batchBlankSplitAcrossPages, setBatchBlankSplitAcrossPages] = useState(false)
@@ -453,14 +521,23 @@ export default function TeachingDocumentEditorPage() {
     [documentFonts],
   )
 
-  const questionIds = useMemo(() => {
-    const ids = new Set<string>()
+  const questionIds = useMemo(() => {    const ids = new Set<string>()
     for (const block of editor.document?.content || []) {
       if (block.type === 'question' && block.questionId) ids.add(block.questionId)
       if (block.type === 'box') for (const child of block.children) if (child.type === 'question' && child.questionId) ids.add(child.questionId)
     }
     return [...ids]
   }, [editor.document])
+
+  /** 选中位置索引：id → { block, topLevel, boxId }，随文档变化重建。 */
+  const selectedLocationIndex = useMemo(
+    () => editor.document ? buildSelectedLocationIndex(editor.document) : new Map<string, SelectedLocation>(),
+    [editor.document],
+  )
+  const findSelected = useCallback(
+    (id: string) => selectedLocationIndex.get(id) ?? null,
+    [selectedLocationIndex],
+  )
 
   useEffect(() => {
     const missing = questionIds.filter((id) => !questionMap[id])
@@ -519,6 +596,22 @@ export default function TeachingDocumentEditorPage() {
     return () => window.document.removeEventListener('keydown', handleKey)
   }, [])
 
+  // Esc：选中卡片内子块时上浮到父卡片（层级导航）；对话框打开时不劫持。
+  const escapeToParentRef = useRef<(() => void) | null>(null)
+  escapeToParentRef.current = () => {
+    if (pickerTarget || formulaBlockId || editingQuestionBlockId) return
+    if (selected?.boxId) selectAndShow(selected.topLevel.id)
+  }
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return
+      escapeToParentRef.current?.()
+    }
+    window.document.addEventListener('keydown', handleEscape)
+    return () => window.document.removeEventListener('keydown', handleEscape)
+  }, [])
+
   // 中间画布的视口中心就是阅读位置。只更新大纲导航态，不修改编辑器选区，
   // 因而滚动阅读不会打断正在编辑的文字或弹出右侧属性面板。
   useEffect(() => {
@@ -531,7 +624,8 @@ export default function TeachingDocumentEditorPage() {
       const candidates = Array.from(canvasScrollRoot.querySelectorAll<HTMLElement>('[data-block-id]'))
         .filter((node) => !node.closest('[data-teaching-measure-root]'))
         .map((node) => ({ node, rect: node.getBoundingClientRect() }))
-        .filter(({ rect }) => rect.bottom >= viewport.top && rect.top <= viewport.bottom)
+        // 隐藏画布（a4 预览期间）与测量树内的块高度为 0，不参与视口判定
+        .filter(({ rect }) => rect.height > 0 && rect.bottom >= viewport.top && rect.top <= viewport.bottom)
       if (!candidates.length) return
       const ranked = candidates
         .map(({ node, rect }) => ({
@@ -560,6 +654,12 @@ export default function TeachingDocumentEditorPage() {
     }
   }, [canvasScrollRoot, editor.document])
 
+  // 变体文档只服务于 a4 打印预览；连续流/页面编辑直接使用原始文档，避免无谓的整篇变换。
+  const previewDocument = useMemo(
+    () => canvasMode === 'a4' && editor.document ? documentForPrintVariant(editor.document, printVariant) : null,
+    [canvasMode, editor.document, printVariant],
+  )
+
   if (editor.loading) {
     return <div className="flex h-[60vh] items-center justify-center text-sm text-zinc-500"><LoaderCircle className="mr-2 size-4 animate-spin" />正在读取文档…</div>
   }
@@ -568,8 +668,9 @@ export default function TeachingDocumentEditorPage() {
   }
 
   const document = editor.document
+  const resolvedPreviewDocument = previewDocument ?? document
   const marginPreset = document.style?.marginPreset ?? 'normal'
-  const selected = findSelected(document, selectedId)
+  const selected = findSelected(selectedId)
   const renderResourceVersion = questionIds
     .map((id) => {
       const resolution = questionMap[id]
@@ -579,9 +680,13 @@ export default function TeachingDocumentEditorPage() {
 
   function selectAndShow(blockId: string) {
     setSelectedId(blockId)
+    // 任何普通单选变化都会清空顶层多选集合（Ctrl+点击不经过这里）
+    topLevelMultiSelectRef.current = []
+    setTopLevelMultiSelectIds([])
+    setTopLevelMultiSelect([])
     // 顶层文本块点击即进入画布行内编辑，不自动弹出属性面板遮挡画布；
     // 其他类型保持自动弹出；浮动工具栏"属性"按钮与大纲点击仍显式打开。
-    const target = findSelected(document, blockId)
+    const target = findSelected(blockId)
     const isTopLevelText = Boolean(target && !target.boxId && (target.block.type === 'heading' || target.block.type === 'paragraph'))
     if (!isTopLevelText) setPropertiesOpen(true)
   }
@@ -600,6 +705,11 @@ export default function TeachingDocumentEditorPage() {
     if (!selected) return
     if (selected.boxId) editor.dispatch({ type: 'updateBoxChild', boxId: selected.boxId, childId: selected.block.id, patch: patch as Partial<BoxChildBlock>, mergeKey })
     else editor.dispatch({ type: 'updateBlock', blockId: selected.block.id, patch, mergeKey })
+  }
+
+  function updateSelectedTopLevel(patch: Partial<TeachingBlock>, mergeKey?: string) {
+    if (!selected) return
+    editor.dispatch({ type: 'updateBlock', blockId: selected.topLevel.id, patch, mergeKey })
   }
 
   async function insertImageInRawMarkdown(
@@ -714,6 +824,19 @@ export default function TeachingDocumentEditorPage() {
   }
 
   function insertBlock(type: TeachingBlock['type'], afterBlockId?: string, headingLevel?: HeadingLevel) {
+    // 卡片流编辑器聚焦时，插入落在光标处（段落内自动拆段，文字环绕对象，
+    // 与 Word 文本框一致）；章节/换页/嵌套卡片等非卡片类型仍走顶层插入。
+    const cardEditor = afterBlockId ? null : getFocusedCardEditor()
+    if (cardEditor && CARD_CHILD_TYPES.includes(type)) {
+      const child = insertCardBlockAtCaret(cardEditor, type)
+      if (!child) return
+      selectAndShow(child.id)
+      // 新建对象后立即给出可见的编辑入口
+      setPropertiesOpen(true)
+      if (type === 'blockMath') setFormulaBlockId(child.id)
+      if (type === 'question') setPickerTarget({ blockId: child.id })
+      return
+    }
     const insertionAnchor = afterBlockId
       ?? editor.activeTopLevelBlockId()
       ?? selected?.topLevel.id
@@ -744,20 +867,24 @@ export default function TeachingDocumentEditorPage() {
   function handlePickerPick(question: QuestionItem) {
     if (!pickerTarget) return
     const target = pickerTarget
-    if (target.boxId) {
+    // 光标处插入的题目在挑选时可能尚未回写到 children；按选中时刻解析归属，
+    // 避免 updateBlock 误伤卡片内题目。
+    const location = findSelected(target.blockId)
+    const mergeKey = `question-picker:${target.blockId}`
+    if (location?.boxId) {
       editor.dispatch({
         type: 'updateBoxChild',
-        boxId: target.boxId,
+        boxId: location.boxId,
         childId: target.blockId,
         patch: { questionId: question.id },
-        mergeKey: `question-picker:${target.blockId}`,
+        mergeKey,
       })
     } else {
       editor.dispatch({
         type: 'updateBlock',
         blockId: target.blockId,
         patch: { questionId: question.id },
-        mergeKey: `question-picker:${target.blockId}`,
+        mergeKey,
       })
     }
     setQuestionMap((current) => ({ ...current, [question.id]: question }))
@@ -787,19 +914,19 @@ export default function TeachingDocumentEditorPage() {
   }
 
   function openQuestionEditor(blockId: string) {
-    const location = findSelected(document, blockId)
+    const location = findSelected(blockId)
     if (!location || location.block.type !== 'question') return
     const resolution = questionMap[location.block.questionId]
     if (!resolution || 'status' in resolution) return
     setEditingQuestionBlockId(blockId)
   }
 
-  const editingLocation = editingQuestionBlockId ? findSelected(document, editingQuestionBlockId) : null
+  const editingLocation = editingQuestionBlockId ? findSelected(editingQuestionBlockId) : null
   const editingBlock = editingLocation && editingLocation.block.type === 'question' ? editingLocation.block : null
   const editingResolution = editingBlock ? questionMap[editingBlock.questionId] : undefined
   const editingQuestion = editingResolution && !('status' in editingResolution) ? editingResolution : undefined
 
-  const formulaLocation = formulaBlockId ? findSelected(document, formulaBlockId) : null
+  const formulaLocation = formulaBlockId ? findSelected(formulaBlockId) : null
   const formulaBlock = formulaLocation && formulaLocation.block.type === 'blockMath' ? formulaLocation.block : null
 
   const selectedQuestionResolution = selected && selected.block.type === 'question' ? questionMap[selected.block.questionId] : undefined
@@ -884,62 +1011,139 @@ export default function TeachingDocumentEditorPage() {
         : window.document.querySelector<HTMLElement>(`[data-page-number="${targetPage}"]`)
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
-  const quickControls = (
-    <div className="pointer-events-none sticky bottom-4 z-20 flex justify-center pb-1"><div className="pointer-events-auto flex items-center gap-1 rounded-full border border-zinc-200/80 bg-white/90 p-1.5 shadow-lg shadow-zinc-900/5 backdrop-blur-md dark:border-zinc-700/80 dark:bg-zinc-900/90 dark:shadow-black/20">
-      <button type="button" onClick={() => applyBatchAnswerSpace(!batchBlankEnabled)} className={`inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[11px] transition-colors ${batchBlankEnabled ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'}`} title="对全部解答题批量设置或取消留空">{batchBlankEnabled ? <Check className="size-3.5" /> : null}解答题批量留空</button>
-      <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-      <div className="flex items-center gap-0.5"><button type="button" aria-label="上一页" disabled={canvasMode === 'continuous' || currentPage <= 1} onClick={() => jumpToPage(currentPage - 1)} className="rounded-full p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"><ChevronLeft className="size-3.5" /></button><button type="button" onClick={() => jumpToPage(currentPage)} title={canvasMode === 'continuous' ? '连续流模式不分页' : '显示当前页'} className="min-w-16 rounded-full px-1.5 py-1 text-[11px] tabular-nums text-zinc-600 dark:text-zinc-300">{currentPage} / {pageCount} 页</button><button type="button" aria-label="下一页" disabled={canvasMode === 'continuous' || currentPage >= pageCount} onClick={() => jumpToPage(currentPage + 1)} className="rounded-full p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"><ChevronRight className="size-3.5" /></button></div>
-      <span className="mx-0.5 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-      <button type="button" onClick={() => setChromePanelOpen(true)} className="inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[11px] text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"><Settings2 className="size-3.5" />页面设置</button>
-    </div></div>
-  )
+  const selectPrintVariant = (variant: PdfExportVariant) => {
+    setPrintVariant(variant)
+    if (canvasMode !== 'a4') setCanvasMode('a4')
+  }
+  function deleteTopLevelMulti() {
+    if (!topLevelMultiSelect.length) return
+    if (!window.confirm(`确定删除所选的 ${topLevelMultiSelect.length} 个对象？`)) return
+    editor.dispatch({ type: 'deleteBlocks', blockIds: topLevelMultiSelect })
+    topLevelMultiSelectRef.current = []
+    setTopLevelMultiSelectIds([])
+    setTopLevelMultiSelect([])
+  }
 
-  return (
-    <main className="-m-4 flex h-screen flex-col overflow-hidden border-t border-zinc-200 bg-zinc-50/30 md:-m-6 dark:border-zinc-800 dark:bg-zinc-950">
-      {fontFaceCss ? <style>{fontFaceCss}</style> : null}
-      {/* 顶栏弹出控件（纸张设置、插入菜单）必须覆盖下方状态条与画布。 */}
-      <div className="relative z-[60] flex items-center">
-        <button
-          type="button"
-          onClick={() => setOutlineOpen((value) => !value)}
-          className={`ml-2 rounded-md p-2 transition-colors ${outlineOpen ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
-          title="大纲"
-        >
-          <PanelLeft className="size-4" />
-        </button>
-        <div className="min-w-0 flex-1">
-          <EditorTopBar
-            documentTitle={document.title}
-            saveState={editor.saveState}
-            canUndo={editor.canUndo}
-            canRedo={editor.canRedo}
-            canvasMode={canvasMode}
-            zoom={viewZoom}
-            onBack={() => {
-              if (['dirty', 'saving', 'failed', 'conflict'].includes(editor.saveState) && !window.confirm('当前文档仍有未保存内容，确定离开吗？')) return
-              navigate('/teaching-documents')
-            }}
-            onTitleChange={(title) => editor.dispatch({ type: 'setTitle', title, mergeKey: 'document-title' })}
-            onUndo={editor.undo}
-            onRedo={editor.redo}
-            onCanvasModeChange={setCanvasMode}
-            onZoomChange={setViewZoom}
-            onInsert={(type, headingLevel) => insertBlock(type, undefined, headingLevel)}
-            paperActions={undefined}
-            printActions={canvasMode === 'a4' ? (
-              <ExportPdfPanel
-                documentId={editor.record.id}
-                documentTitle={document.title}
-                revision={editor.record.revision}
-                saveState={editor.saveState}
-                hasRevisionConflict={Boolean(editor.conflict)}
-                paginationState={paginationState}
-                paper={sheetPaper}
-              />
-            ) : undefined}
-          />
+  // 顶层对象多选批量操作条（Ctrl/Cmd+点击对象累积集合）
+  const topLevelMultiBar = topLevelMultiSelect.length ? (() => {
+    const selected = topLevelMultiSelect
+      .map((id) => document.content.find((block) => block.id === id))
+      .filter((block): block is TeachingBlock => Boolean(block))
+    if (!selected.length) return null
+    const labels = selected.map((block) => USER_BLOCK_LABEL[block.type])
+    return (
+      <div className="pointer-events-none sticky bottom-20 z-20 flex justify-center pb-1">
+        <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-sky-300/80 bg-white/95 py-1.5 pl-3.5 pr-1.5 text-[11px] shadow-lg shadow-sky-900/5 backdrop-blur-md dark:border-sky-800 dark:bg-zinc-900/95">
+          <span className="text-zinc-700 dark:text-zinc-200">已选 {selected.length} 项{labels.length ? <span className="text-zinc-400 dark:text-zinc-400">（{labels.join('、')}）</span> : null}</span>
+          <button
+            type="button"
+            onClick={deleteTopLevelMulti}
+            className="h-7 rounded-full bg-red-600/10 px-2.5 font-medium text-red-700 transition-colors hover:bg-red-600/20 dark:bg-red-500/15 dark:text-red-400 dark:hover:bg-red-500/25"
+          >
+            删除
+          </button>
+          <button type="button" onClick={() => { topLevelMultiSelectRef.current = []; setTopLevelMultiSelectIds([]); setTopLevelMultiSelect([]) }} className="rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" title="取消多选">
+            <X className="size-3.5" />
+          </button>
         </div>
       </div>
+    )
+  })() : null
+
+  const quickControls = (
+    <footer data-teaching-editor-quick-controls className="pointer-events-none absolute bottom-0 inset-x-0 z-20 shrink-0" aria-label="文档快捷操作">
+      <div className="pointer-events-auto relative h-10 border-t border-zinc-200/50 bg-white/45 px-3 text-[11px] text-zinc-600 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur-md backdrop-saturate-180 dark:border-zinc-800/50 dark:bg-zinc-900/50 dark:text-zinc-300 dark:shadow-[0_-4px_16px_rgba(0,0,0,0.3)]">
+        <div data-quick-controls-side="left" className="absolute inset-y-0 left-3 flex max-w-[calc(50%-5.5rem)] min-w-0 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex min-w-max items-center gap-1.5 pr-2">
+            <span className="shrink-0 font-medium text-zinc-600 dark:text-zinc-300">{canvasMode === 'continuous' ? '连续流' : 'A4'}</span>
+            <span className={`inline-flex shrink-0 items-center gap-1 font-medium ${editor.saveState === 'saved' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}><span className={`size-1.5 rounded-full ${editor.saveState === 'saved' ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]' : 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]'}`} />{editor.saveState === 'saved' ? '已保存' : '待保存'}</span>
+            <span className="mx-0.5 h-3 w-px shrink-0 bg-zinc-300/70 dark:bg-zinc-700/70" />
+            <button type="button" onClick={() => applyBatchAnswerSpace(!batchBlankEnabled)} className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-all ${batchBlankEnabled ? 'bg-zinc-900 text-white shadow-xs dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-600 hover:bg-zinc-200/50 dark:text-zinc-300 dark:hover:bg-zinc-800/50'}`} title="对全部解答题批量设置或取消留空">{batchBlankEnabled ? <Check className="size-3.5" /> : null}解答题留空</button>
+          </div>
+        </div>
+
+        <nav data-quick-controls-page-nav aria-label="页码导航" className="absolute left-1/2 top-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-0.5 rounded-lg border border-zinc-200/60 bg-white/50 p-0.5 shadow-xs backdrop-blur-md dark:border-zinc-700/60 dark:bg-zinc-800/60">
+          <button type="button" aria-label="上一页" disabled={canvasMode === 'continuous' || currentPage <= 1} onClick={() => jumpToPage(currentPage - 1)} className="flex size-6 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-200/60 disabled:opacity-30 dark:text-zinc-300 dark:hover:bg-zinc-700/60"><ChevronLeft className="size-3.5" /></button>
+          <button type="button" onClick={() => jumpToPage(currentPage)} title={canvasMode === 'continuous' ? '连续流模式不分页' : '显示当前页'} className="min-w-14 rounded-md px-1.5 py-0.5 text-center text-[11px] font-medium tabular-nums text-zinc-700 transition-colors hover:bg-zinc-200/60 dark:text-zinc-200 dark:hover:bg-zinc-700/60">{currentPage} / {pageCount} 页</button>
+          <button type="button" aria-label="下一页" disabled={canvasMode === 'continuous' || currentPage >= pageCount} onClick={() => jumpToPage(currentPage + 1)} className="flex size-6 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-200/60 disabled:opacity-30 dark:text-zinc-300 dark:hover:bg-zinc-700/60"><ChevronRight className="size-3.5" /></button>
+        </nav>
+
+        <div data-quick-controls-side="right" className="absolute inset-y-0 right-3 flex max-w-[calc(50%-5.5rem)] min-w-0 items-center justify-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex min-w-max items-center justify-end gap-1.5 pl-2">
+            <button type="button" onClick={() => setChromePanelOpen(true)} className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-200/50 dark:text-zinc-300 dark:hover:bg-zinc-800/50"><Settings2 className="size-3.5" />页面设置</button>
+            <span className="mx-0.5 h-3 w-px shrink-0 bg-zinc-300/70 dark:bg-zinc-700/70" />
+            <div role="group" aria-label="打印版本" className="flex shrink-0 items-center gap-0.5 rounded-lg border border-zinc-200/50 bg-zinc-100/40 p-0.5 backdrop-blur-sm dark:border-zinc-700/40 dark:bg-zinc-800/40"><button type="button" aria-pressed={printVariant === 'student'} onClick={() => selectPrintVariant('student')} className={`h-5 rounded px-2 text-[10px] font-medium transition-all ${printVariant === 'student' ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>学生版</button><button type="button" aria-pressed={printVariant === 'teacher'} onClick={() => selectPrintVariant('teacher')} className={`h-5 rounded px-2 text-[10px] font-medium transition-all ${printVariant === 'teacher' ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>教师版</button></div>
+            <ExportPdfPanel documentId={editor.record.id} revision={editor.record.revision} saveState={editor.saveState} hasRevisionConflict={Boolean(editor.conflict)} paginationState={paginationState} variant={printVariant} paper={sheetPaper} />
+          </div>
+        </div>
+      </div>
+    </footer>
+  )
+
+  // 卡片内多选批量操作条（Shift+点击对象累积集合）
+  const multiSelectBar = multiSelect ? (() => {
+    const box = document.content.find((block) => block.id === multiSelect.boxId && block.type === 'box') as BoxBlock | undefined
+    if (!box) return null
+    const labels = multiSelect.childIds
+      .map((id) => {
+        const child = box.children.find((item) => item.id === id)
+        return child ? USER_BLOCK_LABEL[child.type] : ''
+      })
+      .filter(Boolean)
+    return (
+      <div className="pointer-events-none sticky bottom-20 z-20 flex justify-center pb-1">
+        <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-sky-300/80 bg-white/95 py-1.5 pl-3.5 pr-1.5 text-[11px] shadow-lg shadow-sky-900/5 backdrop-blur-md dark:border-sky-800 dark:bg-zinc-900/95">
+          <span className="text-zinc-700 dark:text-zinc-200">已选 {multiSelect.childIds.length} 项{labels.length ? <span className="text-zinc-400 dark:text-zinc-400">（{labels.join('、')}）</span> : null}</span>
+          <button
+            type="button"
+            onClick={() => { if (deleteBoxChildren(multiSelect.boxId, multiSelect.childIds)) setMultiSelect(null) }}
+            className="h-7 rounded-full bg-red-600/10 px-2.5 font-medium text-red-700 transition-colors hover:bg-red-600/20 dark:bg-red-500/15 dark:text-red-400 dark:hover:bg-red-500/25"
+          >
+            删除
+          </button>
+          <button
+            type="button"
+            onClick={() => { if (mergeBoxParagraphs(multiSelect.boxId, multiSelect.childIds)) setMultiSelect(null) }}
+            className="h-7 rounded-full bg-zinc-100 px-2.5 font-medium text-zinc-700 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+          >
+            合并为混合内容
+          </button>
+          <button type="button" onClick={() => setMultiSelect(null)} className="rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" title="取消多选">
+            <X className="size-3.5" />
+          </button>
+        </div>
+      </div>
+    )
+  })() : null
+
+  return (
+    <main className="-m-4 flex h-screen min-h-0 flex-col overflow-hidden border-t border-zinc-200 bg-white md:-m-6 dark:border-zinc-800 dark:bg-zinc-950">
+      {fontFaceCss ? <style>{fontFaceCss}</style> : null}
+      <EditorTopBar
+        documentTitle={document.title}
+        saveState={editor.saveState}
+        canUndo={editor.canUndo}
+        canRedo={editor.canRedo}
+        canvasMode={canvasMode}
+        zoom={viewZoom}
+        onBack={() => {
+          if (['dirty', 'saving', 'failed', 'conflict'].includes(editor.saveState) && !window.confirm('当前文档仍有未保存内容，确定离开吗？')) return
+          navigate('/teaching-documents')
+        }}
+        onTitleChange={(title) => editor.dispatch({ type: 'setTitle', title, mergeKey: 'document-title' })}
+        onUndo={editor.undo}
+        onRedo={editor.redo}
+        onCanvasModeChange={(mode) => {
+          setCanvasMode(mode)
+          // a4 预览是叠加层：编辑画布保持原模式挂载（隐藏），不销毁编辑器。
+          if (mode !== 'a4') setEditCanvasMode(mode)
+        }}
+        onZoomChange={setViewZoom}
+        onInsert={(type, headingLevel) => insertBlock(type, undefined, headingLevel)}
+        paperActions={undefined}
+      />
+
+      <DocumentFormattingToolbar editor={focusedCardEditor ?? (selected?.boxId ? lastFocusedCardEditor : editor.activeEditor)} />
 
       {editor.conflict ? (
         <div className="flex items-center justify-between gap-3 border-b border-red-200 bg-red-50/60 px-4 py-2 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">
@@ -952,107 +1156,89 @@ export default function TeachingDocumentEditorPage() {
         <div className="border-b border-red-200 bg-red-50/50 px-4 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">{editor.saveError}</div>
       ) : null}
 
-      <div className="relative min-h-0 flex-1">
-        <section ref={setCanvasScrollRoot} className="h-full overflow-auto">
-          {canvasMode === 'a4' ? (
-            <div className="p-5">
-              <A4PaginationPreview
-                document={document}
-                resolveQuestion={resolveQuestion}
-                resolveFigure={resolveFigure}
-                paper={paper}
-                sheetPaper={sheetPaper}
-                printLayout={printLayout}
-                fontVars={fontVars}
-                zoom={viewZoom}
-                selectedBlockId={selectedId}
-                renderVersion={renderResourceVersion}
-                onBlockSelect={selectBlock}
-                onDiagnosticNavigate={(blockId) => {
-                  // 预览本身只读；修复需回到连续编辑并打开对应卡片的跨页设置。
-                  setCanvasMode('continuous')
-                  window.requestAnimationFrame(() => selectFromOutline(blockId))
-                }}
-                editingChromeSlot={editingChromeSlot}
-                onChromeSlotEdit={openChromeSlot}
-                onPaginationState={setPaginationState}
-              />
-              {quickControls}
-            </div>
-          ) : canvasMode === 'paginated' ? (
-            <div className="p-5">
-              <PaginatedCanvas
-                document={document}
-                paper={paper}
-                printLayout={printLayout}
-                fontVars={fontVars}
-                zoom={viewZoom}
-                renderVersion={renderResourceVersion}
-                resolveQuestion={resolveQuestion}
-                resolveFigure={resolveFigure}
-                selectedId={selectedId}
-                selectedTopLevelId={selected?.topLevel.id || ''}
-                selectedIsBoxChild={Boolean(selected?.boxId)}
-                onSelect={selectAndShow}
-                onInsertAfter={(type, afterBlockId, headingLevel) => insertBlock(type, afterBlockId, headingLevel)}
-                onInsertBoxChild={insertBoxChild}
-                onMove={moveSelected}
-                onDuplicate={() => { if (selected && !selected.boxId) editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id }) }}
-                onDelete={deleteSelected}
-                onOpenProperties={() => setPropertiesOpen(true)}
-                onReorder={(order, mergeKey) => editor.dispatch({ type: 'reorderBlocks', order, mergeKey })}
-                onMoveSection={(headingId, targetHeadingId, position, mergeKey) => editor.dispatch({ type: 'moveSection', headingId, targetHeadingId, position, mergeKey })}
-                onEditQuestion={editQuestionTargetId ? () => setEditingQuestionBlockId(editQuestionTargetId) : undefined}
-                onEditorChange={editor.handleEditorChange}
-                onEditorDirty={editor.markEditorDirty}
-                onEditorFlushReady={editor.registerEditorFlush}
-                onEditorReady={editor.registerEditor}
-                onPageCountChange={setPaginatedPageCount}
-                editingChromeSlot={editingChromeSlot}
-                onChromeSlotEdit={openChromeSlot}
-              />
-              {quickControls}
-            </div>
-          ) : (
-            <>
-            <div
-              className="td-editor-fonts td-paper-page td-editor-chrome rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950 mx-auto my-5 max-w-3xl lg:max-w-4xl"
-              style={{ ...fontVars, zoom: viewZoom } as CSSProperties}
-            >
-              {printLayout.header.enabled ? <PrintChrome section="header" slots={printLayout.header.slots} documentTitle={document.title} documentType={document.documentType} pageNumber={1} totalPages={paginationState?.pagination?.pages.length || 1} printLayout={printLayout} activeSlot={editingChromeSlot?.section === 'header' ? editingChromeSlot.slot : undefined} onSlotEdit={openChromeSlot} /> : null}
-              <div data-teaching-page-content="">
-                <EditorCanvas
-                  document={document}
-                  selectedId={selectedId}
-                  selectedTopLevelId={selected?.topLevel.id || ''}
-                  selectedIsBoxChild={Boolean(selected?.boxId)}
-                  resolveQuestion={resolveQuestion}
-                  resolveFigure={resolveFigure}
-                  onSelect={selectAndShow}
-                  onEditContent={(blockId, content) => editor.dispatch({ type: 'updateBlock', blockId, patch: { content }, mergeKey: `text:${blockId}` })}
-                  onEditBoxTitle={(boxId, title) => editor.dispatch({ type: 'updateBlock', blockId: boxId, patch: { title }, mergeKey: `box-title:${boxId}` })}
-                  onInsertAfter={(type, afterBlockId, headingLevel) => insertBlock(type, afterBlockId, headingLevel)}
-                  onInsertBoxChild={insertBoxChild}
-                  onMove={moveSelected}
-                  onDuplicate={() => selected && !selected.boxId && editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id })}
-                  onDelete={deleteSelected}
-                  onOpenProperties={() => setPropertiesOpen(true)}
-                  onReorder={(order, mergeKey) => editor.dispatch({ type: 'reorderBlocks', order, mergeKey })}
-                  onMoveSection={(headingId, targetHeadingId, position, mergeKey) => editor.dispatch({ type: 'moveSection', headingId, targetHeadingId, position, mergeKey })}
-                  onEditQuestion={editQuestionTargetId ? () => setEditingQuestionBlockId(editQuestionTargetId) : undefined}
-                  onEditorChange={editor.handleEditorChange}
-                  onEditorDirty={editor.markEditorDirty}
-                  onEditorFlushReady={editor.registerEditorFlush}
-                  onEditorReady={editor.registerEditor}
-                />
-              </div>
-              {printLayout.footer.enabled ? <PrintChrome section="footer" slots={printLayout.footer.slots} documentTitle={document.title} documentType={document.documentType} pageNumber={1} totalPages={paginationState?.pagination?.pages.length || 1} printLayout={printLayout} activeSlot={editingChromeSlot?.section === 'footer' ? editingChromeSlot.slot : undefined} onSlotEdit={openChromeSlot} /> : null}
-            </div>
-            {/* 编辑视图独占：正文/标题字体（存入文档 style，与打印共享） */}
-            {quickControls}
-            </>
-          )}
+      <div className="min-h-0 flex flex-1 overflow-hidden bg-zinc-50/80 dark:bg-zinc-950">
+        <OutlinePanel
+          variant="docked"
+          open={outlineOpen}
+          document={document}
+          selectedId={selectedId}
+          activeBlockId={viewportBlockId}
+          issues={editor.validation.issues}
+          onClose={() => setOutlineOpen(false)}
+          onOpen={() => setOutlineOpen(true)}
+          onSelect={selectFromOutline}
+          onFixIds={() => editor.dispatch({ type: 'replaceDocument', document: migrateDocumentIds(document) })}
+          onOutlineChange={(patch) => editor.dispatch({ type: 'setOutline', patch, mergeKey: 'outline-settings' })}
+          onMoveSection={(headingId, direction) => editor.dispatch({ type: 'moveSectionByStep', headingId, direction })}
+        />
+
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+          <section ref={setCanvasScrollRoot} className="min-h-0 flex-1 overflow-auto px-3 pb-16 pt-4 sm:px-5 sm:pb-16 sm:pt-7 md:px-9">
+          {/* a4 打印预览（只读叠加层）；编辑画布在预览期间保持挂载（隐藏），
+              编辑器与撤销历史不因预览被销毁。 */}
+          <div className={canvasMode === 'a4' ? 'p-5' : 'hidden'}>
+            <A4PaginationPreview
+              document={resolvedPreviewDocument}
+              resolveQuestion={resolveQuestion}
+              resolveFigure={resolveFigure}
+              paper={paper}
+              sheetPaper={sheetPaper}
+              printLayout={printLayout}
+              fontVars={fontVars}
+              zoom={viewZoom}
+              selectedBlockId={selectedId}
+              renderVersion={renderResourceVersion}
+              active={canvasMode === 'a4'}
+              onBlockSelect={selectBlock}
+              onDiagnosticNavigate={(blockId) => {
+                // 预览本身只读；修复需回到连续编辑并打开对应卡片的跨页设置。
+                setCanvasMode('continuous')
+                setEditCanvasMode('continuous')
+                window.requestAnimationFrame(() => selectFromOutline(blockId))
+              }}
+              editingChromeSlot={editingChromeSlot}
+              onChromeSlotEdit={openChromeSlot}
+              onPaginationState={setPaginationState}
+            />
+          </div>
+          <div className={canvasMode === 'a4' ? 'hidden' : ''} data-editing-canvas="">
+            <TeachingDocumentCanvas
+              document={document}
+              paper={paper}
+              printLayout={printLayout}
+              fontVars={fontVars}
+              zoom={viewZoom}
+              renderVersion={renderResourceVersion}
+              resolveQuestion={resolveQuestion}
+              resolveFigure={resolveFigure}
+              selectedId={selectedId}
+              selectedTopLevelId={selected?.topLevel.id || ''}
+              selectedIsBoxChild={Boolean(selected?.boxId)}
+              onSelect={selectAndShow}
+              onInsertAfter={(type, afterBlockId, headingLevel) => insertBlock(type, afterBlockId, headingLevel)}
+              onInsertBoxChild={insertBoxChild}
+              onMove={moveSelected}
+              onDuplicate={() => { if (selected && !selected.boxId) editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id }) }}
+              onDelete={deleteSelected}
+              onOpenProperties={() => setPropertiesOpen(true)}
+              onReorder={(order, mergeKey) => editor.dispatch({ type: 'reorderBlocks', order, mergeKey })}
+              onMoveSection={(headingId, targetHeadingId, position, mergeKey) => editor.dispatch({ type: 'moveSection', headingId, targetHeadingId, position, mergeKey })}
+              onEditQuestion={editQuestionTargetId ? () => setEditingQuestionBlockId(editQuestionTargetId) : undefined}
+              onEditorChange={editor.handleEditorChange}
+              onEditorDirty={editor.markEditorDirty}
+              onEditorFlushReady={editor.registerEditorFlush}
+              onEditorReady={editor.registerEditor}
+              mode={editCanvasMode}
+              totalPages={paginationState?.pagination?.pages.length || 1}
+              onPageCountChange={setPaginatedPageCount}
+              editingChromeSlot={editingChromeSlot}
+              onChromeSlotEdit={openChromeSlot}
+            />
+          </div>
+          {topLevelMultiBar ?? multiSelectBar}
         </section>
+
+        {quickControls}
 
         {chromePanelMounted ? (
           <PageSettingsDrawer
@@ -1063,43 +1249,6 @@ export default function TeachingDocumentEditorPage() {
             answerSettings={answerSettings}
           />
         ) : null}
-
-        <OutlinePanel
-          open={outlineOpen}
-          document={document}
-          selectedId={selectedId}
-          activeBlockId={viewportBlockId}
-          issues={editor.validation.issues}
-          onClose={() => setOutlineOpen(false)}
-          onSelect={selectFromOutline}
-          onFixIds={() => editor.dispatch({ type: 'replaceDocument', document: migrateDocumentIds(document) })}
-          onOutlineChange={(patch) => editor.dispatch({ type: 'setOutline', patch, mergeKey: 'outline-settings' })}
-          onMoveSection={(headingId, direction) => editor.dispatch({ type: 'moveSectionByStep', headingId, direction })}
-        />
-
-        <PropertiesSheet
-          open={propertiesOpen && Boolean(selected)}
-          selected={selected}
-          onClose={() => setPropertiesOpen(false)}
-          onUpdate={updateSelected}
-          onDelete={deleteSelected}
-          onDuplicate={() => selected && !selected.boxId && editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id })}
-          onMove={moveSelected}
-          onInsertChild={(box, type) => {
-            insertBoxChild(type as BoxChildBlock['type'], box.id)
-          }}
-          onDeleteBoxChildren={deleteBoxChildren}
-          onMergeBoxParagraphs={mergeBoxParagraphs}
-          onSelect={setSelectedId}
-          onUpload={editor.uploadAsset}
-          onInsertImageInRawMarkdown={insertImageInRawMarkdown}
-          onRenderTikz={editor.renderTikz}
-          question={selectedQuestionResolution && !('status' in selectedQuestionResolution) ? selectedQuestionResolution : undefined}
-          onQuestionLoaded={(question: QuestionItem) => setQuestionMap((current) => ({ ...current, [question.id]: question }))}
-          onEditQuestion={openQuestionEditor}
-          onOpenFormula={(blockId) => setFormulaBlockId(blockId)}
-          onOpenQuestionPicker={(blockId, boxId) => setPickerTarget({ blockId, boxId })}
-        />
 
         {editingBlock && editingLocation && editingQuestion ? (
           <QuestionEditDialog
@@ -1156,6 +1305,35 @@ export default function TeachingDocumentEditorPage() {
           onPick={handlePickerPick}
           excludeIds={questionIds}
         />
+      </div>
+
+        <aside data-teaching-properties-dock className={`h-full shrink-0 border-l border-zinc-200 bg-white transition-[width] dark:border-zinc-800 dark:bg-zinc-950 ${propertiesOpen ? 'w-[300px]' : 'w-0 overflow-hidden'}`}>
+          {selected ? <PropertiesSheet
+            variant="docked"
+            open={propertiesOpen}
+            selected={selected}
+            onClose={() => setPropertiesOpen(false)}
+            onUpdate={updateSelected}
+            onUpdateTopLevel={updateSelectedTopLevel}
+            onDelete={deleteSelected}
+            onDuplicate={() => selected && !selected.boxId && editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id })}
+            onMove={moveSelected}
+            onInsertChild={(box, type) => {
+              insertBoxChild(type as BoxChildBlock['type'], box.id)
+            }}
+            onDeleteBoxChildren={deleteBoxChildren}
+            onMergeBoxParagraphs={mergeBoxParagraphs}
+            onSelect={setSelectedId}
+            onUpload={editor.uploadAsset}
+            onInsertImageInRawMarkdown={insertImageInRawMarkdown}
+            onRenderTikz={editor.renderTikz}
+            question={selectedQuestionResolution && !('status' in selectedQuestionResolution) ? selectedQuestionResolution : undefined}
+            onQuestionLoaded={(question: QuestionItem) => setQuestionMap((current) => ({ ...current, [question.id]: question }))}
+            onEditQuestion={openQuestionEditor}
+            onOpenFormula={(blockId) => setFormulaBlockId(blockId)}
+            onOpenQuestionPicker={(blockId, boxId) => setPickerTarget({ blockId, boxId })}
+          /> : <div className="flex flex-1 items-center justify-center px-6 text-center text-xs text-zinc-400">未选中内容</div>}
+        </aside>
       </div>
     </main>
   )

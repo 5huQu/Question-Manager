@@ -23,21 +23,35 @@ import {
 } from '@/utils/teachingDocument/inlineAdapter'
 import { headingLabelByBlockId } from '@/utils/teachingDocument/outline'
 import { isFigureLayoutPreset } from '@/utils/teachingDocument/figureLayoutPresets'
+import { parseBoxAppearance } from '@/utils/teachingDocument/boxAppearance'
 
 // ─── TeachingBlock → Tiptap JSONContent ─────────────────────────────────────
 
-function blockToEditorNode(block: TeachingBlock, labels: ReadonlyMap<string, string>): JSONContent {
+/** 供文档编辑器与卡片连续编辑流共用：块 → Tiptap 节点。 */
+export function blockToEditorNode(block: TeachingBlock, labels: ReadonlyMap<string, string> = new Map()): JSONContent {
   switch (block.type) {
     case 'heading':
       return {
         type: 'docHeading',
-        attrs: { blockId: block.id, level: block.level, numberLabel: labels.get(block.id) || '', numbering: JSON.stringify(block.numbering || {}) },
+        attrs: {
+          blockId: block.id,
+          level: block.level,
+          numberLabel: labels.get(block.id) || '',
+          numbering: JSON.stringify(block.numbering || {}),
+          alignment: block.alignment || 'left',
+          indentLevel: block.indentLevel || 0,
+        },
         content: inlinesToEditorContent(block.content),
       }
     case 'paragraph':
       return {
         type: 'docParagraph',
-        attrs: { blockId: block.id },
+        attrs: {
+          blockId: block.id,
+          alignment: block.alignment || 'left',
+          listStyle: block.listStyle || '',
+          indentLevel: block.indentLevel || 0,
+        },
         content: inlinesToEditorContent(block.content),
       }
     case 'blockMath':
@@ -86,6 +100,7 @@ function blockToEditorNode(block: TeachingBlock, labels: ReadonlyMap<string, str
           templateId: block.templateId,
           title: block.title || '',
           icon: block.icon || '',
+          appearance: JSON.stringify(block.appearance || {}),
           breakBehavior: block.breakBehavior,
           children: JSON.stringify(block.children),
         },
@@ -140,7 +155,8 @@ function inlinesToEditorContent(inlines: TeachingInline[]): JSONContent[] | unde
 
 // ─── Tiptap JSONContent → TeachingBlock ─────────────────────────────────────
 
-function editorNodeToBlock(node: JSONContent): TeachingBlock | null {
+/** 供文档编辑器与卡片连续编辑流共用：Tiptap 节点 → 块（无 blockId 返回 null）。 */
+export function editorNodeToBlock(node: JSONContent): TeachingBlock | null {
   const attrs = node.attrs || {}
   const blockId = String(attrs.blockId || '')
   if (!blockId) return null
@@ -150,20 +166,41 @@ function editorNodeToBlock(node: JSONContent): TeachingBlock | null {
       const level = Math.min(4, Math.max(1, Number(attrs.level) || 3)) as 1 | 2 | 3 | 4
       let numbering: unknown
       try { numbering = attrs.numbering ? JSON.parse(String(attrs.numbering)) : undefined } catch { numbering = undefined }
+      const alignment = ['left', 'center', 'right', 'justify'].includes(String(attrs.alignment))
+        ? String(attrs.alignment) as 'left' | 'center' | 'right' | 'justify'
+        : 'left'
+      const indentLevel = [0, 1, 2, 3, 4].includes(Number(attrs.indentLevel))
+        ? Number(attrs.indentLevel) as 0 | 1 | 2 | 3 | 4
+        : 0
       return {
         type: 'heading',
         id: blockId,
         level,
         content: editorContentToInlines(node.content),
         ...(numbering && typeof numbering === 'object' && Object.keys(numbering).length ? { numbering } : {}),
+        ...(alignment !== 'left' ? { alignment } : {}),
+        ...(indentLevel ? { indentLevel } : {}),
       }
     }
-    case 'docParagraph':
+    case 'docParagraph': {
+      const alignment = ['left', 'center', 'right', 'justify'].includes(String(attrs.alignment))
+        ? String(attrs.alignment) as 'left' | 'center' | 'right' | 'justify'
+        : 'left'
+      const listStyle = ['bullet', 'ordered'].includes(String(attrs.listStyle))
+        ? String(attrs.listStyle) as 'bullet' | 'ordered'
+        : undefined
+      const indentLevel = [0, 1, 2, 3, 4].includes(Number(attrs.indentLevel))
+        ? Number(attrs.indentLevel) as 0 | 1 | 2 | 3 | 4
+        : 0
       return {
         type: 'paragraph',
         id: blockId,
         content: editorContentToInlines(node.content),
+        ...(alignment !== 'left' ? { alignment } : {}),
+        ...(listStyle ? { listStyle } : {}),
+        ...(indentLevel ? { indentLevel } : {}),
       }
+    }
     case 'docBlockMath':
       return {
         type: 'blockMath',
@@ -230,15 +267,21 @@ function editorNodeToBlock(node: JSONContent): TeachingBlock | null {
     }
     case 'docBox': {
       let children: BoxChildBlock[] = []
+      let appearance: unknown
       try {
         children = JSON.parse(String(attrs.children || '[]'))
       } catch { /* keep empty */ }
+      try {
+        appearance = JSON.parse(String(attrs.appearance || '{}'))
+      } catch { /* keep default */ }
+      const parsedAppearance = parseBoxAppearance(appearance)
       return {
         type: 'box',
         id: blockId,
         templateId: String(attrs.templateId || 'concept'),
         ...(attrs.title ? { title: String(attrs.title) } : {}),
         ...(attrs.icon ? { icon: String(attrs.icon) } : {}),
+        ...(parsedAppearance ? { appearance: parsedAppearance } : {}),
         breakBehavior: (attrs.breakBehavior as 'auto' | 'avoid' | 'allow' | 'force-before') || 'auto',
         children,
       }
@@ -288,6 +331,22 @@ function editorContentToInlines(content: JSONContent[] | undefined) {
 }
 
 // ─── 公开 API ────────────────────────────────────────────────────────────────
+
+const jsonSignatureCache = new WeakMap<readonly unknown[], string>()
+
+/**
+ * JSON.stringify 的 WeakMap 缓存：同一数组引用被反复序列化时只计算一次。
+ * 文档回显路径里 document.content / children 数组引用在两次渲染间通常不变，
+ * 用它替代每次 `JSON.stringify(document.content)` 的全量序列化。
+ */
+export function cachedJsonSignature(value: readonly unknown[]): string {
+  let signature = jsonSignatureCache.get(value)
+  if (signature === undefined) {
+    signature = JSON.stringify(value)
+    jsonSignatureCache.set(value, signature)
+  }
+  return signature
+}
 
 /** 将 TeachingDocumentV1 转为可载入文档级编辑器的 Tiptap doc JSON */
 export function teachingDocumentToEditorDoc(doc: TeachingDocumentV1): JSONContent {
