@@ -196,7 +196,7 @@ try {
   assert.equal(asset.documentId, documentId)
   assert.equal(asset.width, 1)
   assert.equal(asset.height, 1)
-  assert.match(asset.url, /^\/assets\/data\/teaching-documents\//)
+  assert.match(asset.url, /^\/files\/data\/teaching-documents\//)
   assert.equal(asset.url.includes(tempRoot), false)
   const imageResponse = await fetch(`${baseUrl}${asset.url}`)
   assert.equal(imageResponse.status, 200)

@@ -36,7 +36,7 @@ export function mapExportRecord(row: ExportRecordRow) {
 }
 
 export function exportRecordFileSize(recordPath = '', recordUrl = '') {
-  const urlPath = String(recordUrl || '').replace(/^\/assets\//, '')
+  const urlPath = String(recordUrl || '').replace(/^\/(?:assets|files)\//, '')
   const rawPath = String(recordPath || urlPath || '').trim()
   if (!rawPath) return 0
   try {

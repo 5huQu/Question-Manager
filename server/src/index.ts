@@ -10,8 +10,8 @@ import { uploadTempDir } from './config.js'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { cleanupStaleUploads } from './utils/upload-files.js'
-import { resolvePublicAssetPath } from './utils/paths.js'
 import { sendFrontendIndex, mountFrontendStatic } from './middleware/frontend-index.js'
+import { mountPrivateFilesRoutes, mountLegacyAssetsBridge } from './routes/files.js'
 
 // Route mounters
 import { mountLivenessRoutes, mountHealthRoutes } from './routes/health.js'
@@ -77,26 +77,9 @@ app.use('/api', (req, res) => {
 })
 
 // Phase 8 — private files and legacy /assets bridge. Legacy /assets/data/...
-// entries are redirected to /files after the /files namespace is introduced.
-app.use('/assets', (req, res, next) => {
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    next()
-    return
-  }
-  let decoded: string
-  try {
-    decoded = decodeURIComponent(req.path || '')
-  } catch {
-    next()
-    return
-  }
-  const target = resolvePublicAssetPath(decoded)
-  if (!target) {
-    next()
-    return
-  }
-  res.sendFile(target)
-})
+// entries are redirected to /files; only allowlisted directories are served.
+mountLegacyAssetsBridge(app)
+mountPrivateFilesRoutes(app)
 
 // Phase 9 — public frontend static assets (JS/CSS/fonts), so the login page
 // can load without a session. index.html itself is handled by later phases.

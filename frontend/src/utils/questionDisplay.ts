@@ -188,7 +188,7 @@ export function splitTags(value: string) {
 
 export function assetUrl(value: string) {
   if (/^(?:https?:)?\/\//i.test(value) || /^data:image\//i.test(value)) return value
-  return `/assets/${value.replace(/^question_assets\//, '').replace(/^\/+/, '')}`
+  return `/files/${value.replace(/^question_assets\//, '').replace(/^\/+/, '')}`
 }
 
 export function figuresByUsage(figures: QuestionFigure[], target: string) {

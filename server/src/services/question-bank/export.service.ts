@@ -26,13 +26,13 @@ export function exportCollection(collection: NonNullable<ReturnType<typeof impor
           variant: 'error-notebook',
           filename: path.basename(pdfPath),
           path: relativePath,
-          url: `/assets/${relativePath}`,
+          url: `/files/${relativePath}`,
           items: collectionExportItems(collection),
           snapshot: body?.reproducibleSnapshot,
           contentLength: exportRecordFileSize(relativePath),
           questionCount: collection.questionCount,
         })
-        return { filename: path.basename(pdfPath), format: 'pdf', url: `/assets/${relativePath}`, path: relativePath, exportRecord: mapExportRecord(record) }
+        return { filename: path.basename(pdfPath), format: 'pdf', url: `/files/${relativePath}`, path: relativePath, exportRecord: mapExportRecord(record) }
       }
       const template = body?.template === 'exam' ? 'exam' : 'worksheet'
       const pdfPath = exportCollectionWorksheetPdf(collection, variant, template === 'exam' ? 'qbank-exam' : 'qbank-worksheet', layoutDraft)
@@ -45,13 +45,13 @@ export function exportCollection(collection: NonNullable<ReturnType<typeof impor
         variant: `${template}-${variant}`,
         filename: path.basename(pdfPath),
         path: relativePath,
-        url: `/assets/${relativePath}`,
+        url: `/files/${relativePath}`,
         items: collectionExportItems(collection),
         snapshot: body?.reproducibleSnapshot,
         contentLength: exportRecordFileSize(relativePath),
         questionCount: collection.questionCount,
       })
-      return { filename: path.basename(pdfPath), format: 'pdf', url: `/assets/${relativePath}`, path: relativePath, exportRecord: mapExportRecord(record) }
+      return { filename: path.basename(pdfPath), format: 'pdf', url: `/files/${relativePath}`, path: relativePath, exportRecord: mapExportRecord(record) }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       throw new RouteError(500, `练习单 PDF 导出失败：${message}`)
