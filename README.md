@@ -185,22 +185,23 @@ build-and-install-windows.cmd
 | `PUBLIC_ORIGIN` | 云端部署的固定站点 Origin，用于 CSRF 校验；缺失时仅接受本机回环地址。 |
 | `AUTH_COOKIE_SECURE` | 强制 `Secure` 会话 Cookie；`PUBLIC_ORIGIN` 为 https 时自动开启。 |
 | `AUTH_SESSION_DAYS` | 会话有效期（天），默认 `7`。 |
-| `ADMIN_BOOTSTRAP_TOKEN` | 可选：允许通过 `/admin-setup` 网页初始化管理员的令牌。 |
+| `ADMIN_BOOTSTRAP_TOKEN` | 可选：要求管理员安装向导提供该令牌，防止公开部署时被抢先初始化。 |
 
 ## 单管理员认证
 
 默认采用 `QUESTION_AUTH_MODE=single-admin`：所有业务 API、私有文件、打印页与普通页面都必须登录后才能访问，未登录的 API/文件请求返回 401 JSON，页面请求跳转 `/login`。桌面打包版使用 `trusted-desktop` 模式，在本机自动认证，不需要登录。
 
-首次部署（云端）需要先初始化管理员：
+首次部署（云端）需要先初始化管理员，两种方式任选：
 
 ```sh
+# 方式一：命令行（服务器本机）
 npm run build:server
 npm run admin:init        # 交互式创建唯一管理员
 npm run admin:reset-password     # 重置密码并注销全部会话
 npm run admin:revoke-sessions    # 注销全部登录会话
 ```
 
-也可以设置 `ADMIN_BOOTSTRAP_TOKEN` 后通过网页 `/admin-setup` 初始化；管理员一旦创建，该入口永久失效。
+方式二：直接访问站点，未初始化时会显示管理员安装向导，在网页上创建第一个管理员；创建后该入口永久失效。公开部署建议同时设置 `ADMIN_BOOTSTRAP_TOKEN`，安装向导会要求填写该令牌，防止他人抢先初始化。
 
 云端至少配置：
 

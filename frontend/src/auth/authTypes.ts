@@ -4,6 +4,8 @@ export type AuthStatus = {
   admin?: { username: string }
   csrfToken?: string
   bootstrapEnabled?: boolean
+  /** True when the deployment configured ADMIN_BOOTSTRAP_TOKEN and the install form must ask for it. */
+  bootstrapRequiresToken?: boolean
 }
 
 export type AuthSessionInfo = {

@@ -14,7 +14,7 @@ import { sendFrontendIndex, mountFrontendStatic } from './middleware/frontend-in
 import { mountPrivateFilesRoutes, mountLegacyAssetsBridge } from './routes/files.js'
 import { mountPublicAuthRoutes, mountProtectedAuthRoutes } from './auth/routes.js'
 import { attachSession, requireApiAuth, requireFileAuth, requirePageAuth } from './auth/middleware.js'
-import { authMode, adminBootstrapToken } from './auth/config.js'
+import { authMode } from './auth/config.js'
 import { adminExists } from './auth/admin.repo.js'
 
 // Route mounters
@@ -44,14 +44,12 @@ recoverInterruptedLayoutPreviews()
 recoverInterruptedSourceDocumentOcrTasks()
 
 if (authMode === 'single-admin') {
-  if (!adminExists() && !adminBootstrapToken) {
-    console.error('')
-    console.error('尚未初始化管理员账号。请先在本机运行：')
-    console.error('  npm run admin:init')
-    console.error('或配置 ADMIN_BOOTSTRAP_TOKEN 环境变量后通过网页初始化。')
-    console.error('（仅本地开发可设置 QUESTION_AUTH_MODE=disabled 跳过认证。）')
-    console.error('')
-    process.exit(1)
+  if (!adminExists()) {
+    console.warn('')
+    console.warn('[auth] 尚未初始化管理员账号。首次访问站点时会进入管理员安装界面；')
+    console.warn('[auth] 也可以在本机运行 npm run admin:init 初始化。')
+    console.warn('[auth] 公开部署建议配置 ADMIN_BOOTSTRAP_TOKEN，防止他人抢先创建管理员。')
+    console.warn('')
   }
   if (!process.env.PUBLIC_ORIGIN) {
     console.warn('[auth] 警告：未配置 PUBLIC_ORIGIN，CSRF 来源校验将只接受本机回环地址。云端部署请设置 PUBLIC_ORIGIN=https://你的域名')

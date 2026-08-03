@@ -50,7 +50,7 @@ export const authEnforced = authMode === 'single-admin'
 
 export const scryptMaxConcurrent = Math.max(1, Math.min(2, boundedPositiveInt(process.env.AUTH_SCRYPT_CONCURRENCY, 2, 1, 4)))
 
-export const passwordMinLength = 12
+export const passwordMinLength = 8
 export const passwordMaxLength = 128
 export const usernameMaxLength = 64
 

@@ -55,9 +55,9 @@ try {
   assert.equal(livez.status, 200)
   assert.deepEqual(await livez.json(), { ok: true })
 
-  let response = await fetch(`${baseUrl}/api/auth/state`)
+  let   response = await fetch(`${baseUrl}/api/auth/state`)
   assert.equal(response.status, 200)
-  assert.deepEqual(await response.json(), { initialized: false, authenticated: false, bootstrapEnabled: true })
+  assert.deepEqual(await response.json(), { initialized: false, authenticated: false, bootstrapEnabled: true, bootstrapRequiresToken: true })
 
   response = await fetch(`${baseUrl}/api/health`)
   assert.equal(response.status, 401, '匿名访问 /api/health 必须被拒绝')

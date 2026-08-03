@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { changePassword } from '@/auth/authApi'
 import { ApiError } from '@/api/client'
 
-const MIN_LENGTH = 12
+const MIN_LENGTH = 8
 const MAX_LENGTH = 128
 
 export function ChangePasswordPage() {

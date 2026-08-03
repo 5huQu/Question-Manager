@@ -100,25 +100,24 @@ export function mountPublicAuthRoutes(app: Express) {
     }
   })
 
-  // Optional web bootstrap: only when no admin exists AND ADMIN_BOOTSTRAP_TOKEN
-  // is configured AND the request carries the matching token. Once an admin is
-  // created this endpoint is permanently gone (409).
+  // Web bootstrap / install wizard: when no admin exists, anyone with site
+  // access can create the first administrator. If ADMIN_BOOTSTRAP_TOKEN is
+  // configured it must be supplied as well (optional hardening for public
+  // deployments). Once an admin is created this endpoint is permanently gone.
   app.post('/api/auth/bootstrap', checkOrigin, async (req, res, next) => {
     try {
       if (getAdmin()) {
         res.status(409).json({ error: '管理员已存在。', code: 'ALREADY_INITIALIZED' })
         return
       }
-      if (!adminBootstrapToken) {
-        res.status(404).json({ error: '接口不存在。', code: 'NOT_FOUND' })
-        return
-      }
-      const supplied = typeof req.body?.bootstrapToken === 'string' ? req.body.bootstrapToken : ''
-      const expected = Buffer.from(adminBootstrapToken)
-      const actual = Buffer.from(supplied)
-      if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
-        res.status(403).json({ error: '初始化令牌不正确。', code: 'BOOTSTRAP_TOKEN_INVALID' })
-        return
+      if (adminBootstrapToken) {
+        const supplied = typeof req.body?.bootstrapToken === 'string' ? req.body.bootstrapToken : ''
+        const expected = Buffer.from(adminBootstrapToken)
+        const actual = Buffer.from(supplied)
+        if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+          res.status(403).json({ error: '初始化令牌不正确。', code: 'BOOTSTRAP_TOKEN_INVALID' })
+          return
+        }
       }
       const credentials = validateCredentials(req.body)
       if (!credentials) {
@@ -143,7 +142,7 @@ export function mountPublicAuthRoutes(app: Express) {
     }
     const admin = getAdmin()
     if (!admin) {
-      res.json({ initialized: false, authenticated: false, bootstrapEnabled: Boolean(adminBootstrapToken) })
+      res.json({ initialized: false, authenticated: false, bootstrapEnabled: true, bootstrapRequiresToken: Boolean(adminBootstrapToken) })
       return
     }
     if (req.authSession) {
