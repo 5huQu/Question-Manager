@@ -14,6 +14,7 @@ import { importProvenanceArchiveMigration } from './migrations/import-provenance
 import { teachingDocumentsMigration } from './migrations/teaching-documents.js'
 import { printTemplatesMigration } from './migrations/print-templates.js'
 import { authDomainMigration } from './migrations/auth-domain.js'
+import { authSessionsCsrfTokenMigration } from './migrations/auth-sessions-csrf-token.js'
 import path from 'node:path'
 import { dataDir } from '../config.js'
 
@@ -586,6 +587,7 @@ export const applicationMigrations: DatabaseMigration[] = [
   teachingDocumentsMigration,
   printTemplatesMigration,
   authDomainMigration,
+  authSessionsCsrfTokenMigration,
 ]
 
 /** Run the ordered, checksummed database migrations. */
