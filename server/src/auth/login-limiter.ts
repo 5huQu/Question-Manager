@@ -12,14 +12,43 @@ const MAX_ATTEMPTS_PER_WINDOW = 10
 const BASE_LOCK_MS = 60_000
 
 export function clientIp(req: Request) {
-  const forwarded = req.headers['x-forwarded-for']
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    const first = forwarded.split(',')[0].trim()
-    if (first && (first === '127.0.0.1' || first === '::1' || /^10\./.test(first) || /^192\.168\./.test(first) || /^172\.(1[6-9]|2\d|3[01])\./.test(first))) {
-      return first
-    }
+  const value = req.ip || req.socket.remoteAddress || 'unknown'
+  return value.toLowerCase().startsWith('::ffff:') && value.slice(7).includes('.') ? value.slice(7) : value
+}
+
+type BootstrapBucket = {
+  attempts: number[]
+  lockedUntil: number
+}
+
+const bootstrapBuckets = new Map<string, BootstrapBucket>()
+const BOOTSTRAP_WINDOW_MS = 15 * 60_000
+const BOOTSTRAP_MAX_ATTEMPTS = 5
+
+function pruneBootstrapBuckets() {
+  const now = Date.now()
+  for (const [key, bucket] of bootstrapBuckets) {
+    if (bucket.lockedUntil > now) continue
+    bucket.attempts = bucket.attempts.filter((timestamp) => now - timestamp < BOOTSTRAP_WINDOW_MS)
+    if (bucket.attempts.length === 0) bootstrapBuckets.delete(key)
   }
-  return req.socket.remoteAddress || 'unknown'
+}
+
+export function isBootstrapRateLimited(key: string): { limited: boolean; retryAfterSeconds: number } {
+  pruneBootstrapBuckets()
+  const bucket = bootstrapBuckets.get(key)
+  if (!bucket || bucket.lockedUntil <= Date.now()) return { limited: false, retryAfterSeconds: 0 }
+  return { limited: true, retryAfterSeconds: Math.ceil((bucket.lockedUntil - Date.now()) / 1000) }
+}
+
+export function recordBootstrapAttempt(key: string) {
+  pruneBootstrapBuckets()
+  const now = Date.now()
+  const bucket = bootstrapBuckets.get(key) || { attempts: [], lockedUntil: 0 }
+  bucket.attempts.push(now)
+  bucket.attempts = bucket.attempts.filter((timestamp) => now - timestamp < BOOTSTRAP_WINDOW_MS)
+  if (bucket.attempts.length >= BOOTSTRAP_MAX_ATTEMPTS) bucket.lockedUntil = now + BOOTSTRAP_WINDOW_MS
+  bootstrapBuckets.set(key, bucket)
 }
 
 function prune() {

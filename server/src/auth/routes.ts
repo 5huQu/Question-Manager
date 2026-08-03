@@ -20,9 +20,11 @@ import {
   logAuthEvent,
   requireApiAuth,
   setSessionCookie,
+  ScryptBusyError,
+  withBootstrapScryptSlot,
   withScryptSlot,
 } from './middleware.js'
-import { clientIp, isLoginLocked, recordLoginFailure, recordLoginSuccess } from './login-limiter.js'
+import { clientIp, isBootstrapRateLimited, isLoginLocked, recordBootstrapAttempt, recordLoginFailure, recordLoginSuccess } from './login-limiter.js'
 
 function refererOrigin(req: Request) {
   const referer = req.headers.referer
@@ -83,6 +85,7 @@ export function mountPublicAuthRoutes(app: Express) {
             return false
           }
         })
+        ok = ok && credentials.username === admin.username
       }
       if (ok) {
         recordLoginSuccess(ip)
@@ -124,9 +127,26 @@ export function mountPublicAuthRoutes(app: Express) {
         res.status(400).json({ error: '用户名或密码不符合要求。', code: 'VALIDATION_ERROR', details: { passwordMinLength, passwordMaxLength } })
         return
       }
-      const stored = await hashPassword(credentials.password)
+      const ip = clientIp(req)
+      const rateLimit = isBootstrapRateLimited(ip)
+      if (rateLimit.limited) {
+        res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds))
+        res.status(429).json({ error: '初始化尝试次数过多，请稍后再试。', code: 'BOOTSTRAP_RATE_LIMITED' })
+        return
+      }
+      recordBootstrapAttempt(ip)
+      let stored: Awaited<ReturnType<typeof hashPassword>>
+      try {
+        stored = await withBootstrapScryptSlot(() => hashPassword(credentials.password))
+      } catch (error) {
+        if (error instanceof ScryptBusyError) {
+          res.status(429).json({ error: '初始化正在进行，请稍后再试。', code: 'BOOTSTRAP_BUSY' })
+          return
+        }
+        throw error
+      }
       createAdmin(credentials.username, stored)
-      logAuthEvent('bootstrap', { ip: clientIp(req), result: 'success' })
+      logAuthEvent('bootstrap', { ip, result: 'success' })
       res.status(201).json({ ok: true })
     } catch (error) {
       next(error)
@@ -137,12 +157,12 @@ export function mountPublicAuthRoutes(app: Express) {
   // local session so the frontend never shows the login screen.
   app.get('/api/auth/state', attachSession, (req, res) => {
     if (authMode !== 'single-admin') {
-      res.json({ initialized: true, authenticated: true, admin: { username: 'local' }, csrfToken: '' })
+      res.json({ initialized: true, authenticated: true, admin: { username: 'local' }, csrfToken: '', accountManagementAvailable: false })
       return
     }
     const admin = getAdmin()
     if (!admin) {
-      res.json({ initialized: false, authenticated: false, bootstrapEnabled: true, bootstrapRequiresToken: Boolean(adminBootstrapToken) })
+      res.json({ initialized: false, authenticated: false, bootstrapEnabled: true, bootstrapRequiresToken: Boolean(adminBootstrapToken), accountManagementAvailable: true })
       return
     }
     if (req.authSession) {
@@ -152,10 +172,11 @@ export function mountPublicAuthRoutes(app: Express) {
         authenticated: true,
         admin: { username: admin.username },
         csrfToken: current?.csrf_token || '',
+        accountManagementAvailable: true,
       })
       return
     }
-    res.json({ initialized: true, authenticated: false })
+    res.json({ initialized: true, authenticated: false, accountManagementAvailable: true })
   })
 }
 
@@ -203,7 +224,7 @@ export function mountProtectedAuthRoutes(app: Express) {
         }
       })
       if (!valid) throw new RouteError(401, '当前密码不正确。')
-      const stored = await hashPassword(newPassword)
+      const stored = await withScryptSlot(() => hashPassword(newPassword))
       updateAdminPassword(admin.username, stored)
       revokeAllSessionsExcept(sessionId)
       logAuthEvent('change-password', { ip: clientIp(req) })

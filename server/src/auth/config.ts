@@ -1,3 +1,5 @@
+import net from 'node:net'
+
 /**
  * Single-admin authentication configuration.
  *
@@ -49,6 +51,48 @@ export const adminBootstrapToken = process.env.ADMIN_BOOTSTRAP_TOKEN || ''
 export const authEnforced = authMode === 'single-admin'
 
 export const scryptMaxConcurrent = Math.max(1, Math.min(2, boundedPositiveInt(process.env.AUTH_SCRYPT_CONCURRENCY, 2, 1, 4)))
+
+/**
+ * Only trust forwarded client addresses when the operator explicitly opts in.
+ * Arbitrary environment text is parsed and rejected before it reaches Express.
+ */
+export type TrustedProxySetting = false | 'loopback' | string[]
+
+function normalizeIp(value: string) {
+  const trimmed = value.trim().toLowerCase()
+  return trimmed.startsWith('::ffff:') && trimmed.slice(7).includes('.') ? trimmed.slice(7) : trimmed
+}
+
+function validIpOrCidr(value: string) {
+  const [address, prefix] = value.split('/')
+  const normalizedAddress = normalizeIp(address)
+  const ipVersion = net.isIP(normalizedAddress)
+  if (!ipVersion) return false
+  if (prefix === undefined) return true
+  const numericPrefix = Number(prefix)
+  const maxPrefix = ipVersion === 4 ? 32 : 128
+  return /^\d+$/.test(prefix) && Number.isInteger(numericPrefix) && numericPrefix >= 0 && numericPrefix <= maxPrefix
+}
+
+export function parseTrustedProxy(value: string | undefined): TrustedProxySetting {
+  const raw = String(value || '').trim()
+  if (!raw || raw.toLowerCase() === 'off') return false
+  if (raw.toLowerCase() === 'loopback') return 'loopback'
+
+  const entries = raw.split(',').map((item) => item.trim()).filter(Boolean)
+  if (entries.length > 0 && entries.every(validIpOrCidr)) {
+    return entries.map((item) => {
+      const [address, prefix] = item.split('/')
+      const normalizedAddress = normalizeIp(address)
+      return prefix === undefined ? normalizedAddress : `${normalizedAddress}/${prefix}`
+    })
+  }
+
+  console.warn('[auth] 警告：AUTH_TRUSTED_PROXY 配置无效，已按 off 处理。')
+  return false
+}
+
+export const trustedProxy = parseTrustedProxy(process.env.AUTH_TRUSTED_PROXY)
 
 export const passwordMinLength = 8
 export const passwordMaxLength = 128

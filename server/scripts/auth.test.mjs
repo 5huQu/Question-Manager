@@ -57,7 +57,7 @@ try {
 
   let   response = await fetch(`${baseUrl}/api/auth/state`)
   assert.equal(response.status, 200)
-  assert.deepEqual(await response.json(), { initialized: false, authenticated: false, bootstrapEnabled: true, bootstrapRequiresToken: true })
+  assert.deepEqual(await response.json(), { initialized: false, authenticated: false, bootstrapEnabled: true, bootstrapRequiresToken: true, accountManagementAvailable: true })
 
   response = await fetch(`${baseUrl}/api/health`)
   assert.equal(response.status, 401, '匿名访问 /api/health 必须被拒绝')
@@ -68,12 +68,15 @@ try {
   assert.deepEqual((await response.json()).code, 'UNAUTHENTICATED')
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
-  response = await request('/api/auth/bootstrap', {
+  const bootstrapRequest = () => request('/api/auth/bootstrap', {
     method: 'POST',
     headers: jsonBody({ origin: GOOD_ORIGIN }),
     body: JSON.stringify({ username: 'admin', password: ADMIN_PASSWORD, bootstrapToken: 'bootstrap-secret-token' }),
   })
-  assert.equal(response.status, 201)
+  const bootstrapResponses = await Promise.all([bootstrapRequest(), bootstrapRequest()])
+  const bootstrapStatuses = bootstrapResponses.map((item) => item.status).sort((left, right) => left - right)
+  assert.equal(bootstrapStatuses.filter((status) => status === 201).length, 1, '并发 bootstrap 最多只能成功创建一个管理员')
+  assert.ok(bootstrapStatuses.includes(429), `并发 bootstrap 的额外请求必须快速返回 429，实际状态：${bootstrapStatuses.join(',')}`)
 
   response = await request('/api/auth/bootstrap', {
     method: 'POST',
@@ -83,7 +86,7 @@ try {
   assert.equal(response.status, 409, '管理员创建后 bootstrap 必须永久失效')
 
   response = await fetch(`${baseUrl}/api/auth/state`)
-  assert.deepEqual(await response.json(), { initialized: true, authenticated: false })
+  assert.deepEqual(await response.json(), { initialized: true, authenticated: false, accountManagementAvailable: true })
 
   // ── Login ──────────────────────────────────────────────────────────────
   response = await request('/api/auth/login', {
@@ -93,6 +96,15 @@ try {
   })
   assert.equal(response.status, 401)
   assert.deepEqual((await response.json()).error, '用户名或密码错误')
+
+  response = await request('/api/auth/login', {
+    method: 'POST',
+    headers: jsonBody({ origin: GOOD_ORIGIN }),
+    body: JSON.stringify({ username: 'another-admin', password: ADMIN_PASSWORD }),
+  })
+  assert.equal(response.status, 401, '正确密码但错误用户名必须被拒绝')
+  assert.deepEqual((await response.json()).code, 'INVALID_CREDENTIALS')
+  assert.equal(jar.size, 0, '错误用户名不得创建会话')
 
   response = await request('/api/auth/login', {
     method: 'POST',
@@ -252,17 +264,17 @@ try {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     response = await request('/api/auth/login', {
       method: 'POST',
-      headers: jsonBody({ origin: GOOD_ORIGIN }),
+      headers: jsonBody({ origin: GOOD_ORIGIN, 'x-forwarded-for': `10.0.0.${attempt + 1}` }),
       body: JSON.stringify({ username: 'admin', password: 'wrong password here' }),
     })
     assert.equal(response.status, 401)
   }
   response = await request('/api/auth/login', {
     method: 'POST',
-    headers: jsonBody({ origin: GOOD_ORIGIN }),
+    headers: jsonBody({ origin: GOOD_ORIGIN, 'x-forwarded-for': '192.168.20.20, 10.0.0.200' }),
     body: JSON.stringify({ username: 'admin', password: NEW_PASSWORD }),
   })
-  assert.equal(response.status, 429, '连续失败后必须限流')
+  assert.equal(response.status, 429, '未配置可信代理时伪造的多个 XFF 必须仍命中同一限流桶')
 
   console.log('auth acceptance tests passed')
 } finally {

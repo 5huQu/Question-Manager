@@ -157,6 +157,13 @@ export function requirePageAuth(req: Request, res: Response, next: NextFunction)
 let activeScrypt = 0
 const scryptWaiters: Array<() => void> = []
 
+export class ScryptBusyError extends Error {
+  constructor() {
+    super('scrypt capacity is busy')
+    this.name = 'ScryptBusyError'
+  }
+}
+
 export async function withScryptSlot<T>(work: () => Promise<T>): Promise<T> {
   if (activeScrypt < scryptMaxConcurrent) {
     activeScrypt += 1
@@ -170,6 +177,19 @@ export async function withScryptSlot<T>(work: () => Promise<T>): Promise<T> {
   }
   await new Promise<void>((resolve) => scryptWaiters.push(resolve))
   return withScryptSlot(work)
+}
+
+let activeBootstrapScrypt = false
+
+/** Bootstrap never queues behind another bootstrap request. */
+export async function withBootstrapScryptSlot<T>(work: () => Promise<T>): Promise<T> {
+  if (activeBootstrapScrypt) throw new ScryptBusyError()
+  activeBootstrapScrypt = true
+  try {
+    return await withScryptSlot(work)
+  } finally {
+    activeBootstrapScrypt = false
+  }
 }
 
 export function logAuthEvent(kind: string, details: Record<string, string | number | boolean>) {

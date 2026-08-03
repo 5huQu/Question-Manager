@@ -8,6 +8,7 @@ type AuthContextValue = {
   phase: AuthPhase
   admin: { username: string } | null
   csrfToken: string
+  accountManagementAvailable: boolean
   refresh: () => Promise<void>
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -21,8 +22,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<AuthPhase>('loading')
   const [admin, setAdmin] = useState<{ username: string } | null>(null)
   const [csrfToken, setToken] = useState('')
+  const [accountManagementAvailable, setAccountManagementAvailable] = useState(false)
 
   const applyStatus = useCallback((status: Awaited<ReturnType<typeof authApi.getAuthState>>) => {
+    if (typeof status.accountManagementAvailable === 'boolean') {
+      setAccountManagementAvailable(status.accountManagementAvailable)
+    }
     if (!status.initialized) {
       setPhase('uninitialized')
       setAdmin(null)
@@ -50,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPhase('unauthenticated')
       setAdmin(null)
       setToken('')
+      setAccountManagementAvailable(false)
       setCsrfToken(null)
     }
   }, [applyStatus])
@@ -78,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applyStatus])
 
   const logout = useCallback(async () => {
+    if (!accountManagementAvailable) return
     try {
       await authApi.logout()
     } catch {
@@ -87,13 +94,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAdmin(null)
     setToken('')
     setCsrfToken(null)
-  }, [])
+  }, [accountManagementAvailable])
 
   const bootstrap = useCallback(async (username: string, password: string, bootstrapToken: string) => {
     await authApi.bootstrapAdmin(username, password, bootstrapToken)
   }, [])
 
-  const value = useMemo(() => ({ phase, admin, csrfToken, refresh, login, logout, bootstrap }), [phase, admin, csrfToken, refresh, login, logout, bootstrap])
+  const value = useMemo(() => ({ phase, admin, csrfToken, accountManagementAvailable, refresh, login, logout, bootstrap }), [phase, admin, csrfToken, accountManagementAvailable, refresh, login, logout, bootstrap])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

@@ -10,6 +10,7 @@ import { AppSidebar } from '@/components/layout/AppSidebar'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import type { OcrSettings } from '@/types'
 import type { UpdateCheckResult } from '@/api/client'
+import { AccountManagementGuard } from '@/auth/AccountManagementGuard'
 
 const TraditionalWorkbenchPage = lazy(() => import('@/pages/workbench/TraditionalWorkbenchPage'))
 const ImportDocumentReviewPage = lazy(() => import('@/pages/import-v2/ImportDocumentReviewPage'))
@@ -226,8 +227,8 @@ export default function App() {
                 <Route path="/questions/layout-drafts/:draftId/preview" element={<LayoutDraftPreviewPage />} />
                 <Route path="/learning-tags" element={<LearningTagsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/settings/change-password" element={<ChangePasswordPage />} />
-                <Route path="/settings/sessions" element={<SessionsPage />} />
+                <Route path="/settings/change-password" element={<AccountManagementGuard><ChangePasswordPage /></AccountManagementGuard>} />
+                <Route path="/settings/sessions" element={<AccountManagementGuard><SessionsPage /></AccountManagementGuard>} />
                 <Route path="/exports" element={<ExportRecordsPage />} />
                 <Route path="/teaching-documents" element={<TeachingDocumentsPage />} />
                 {ReferenceDocumentEditorDemoPage ? <Route path="/teaching-documents/demo/reference" element={<ReferenceDocumentEditorDemoPage />} /> : null}

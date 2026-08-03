@@ -183,6 +183,7 @@ build-and-install-windows.cmd
 | `OCR_CLEANUP_*` | 可选的文本清理与分类模型配置。 |
 | `QUESTION_AUTH_MODE` | `single-admin`（默认，强制登录）、`trusted-desktop`（桌面版自动认证）或 `disabled`（仅本地开发）。 |
 | `PUBLIC_ORIGIN` | 云端部署的固定站点 Origin，用于 CSRF 校验；缺失时仅接受本机回环地址。 |
+| `AUTH_TRUSTED_PROXY` | 可选的可信反向代理策略：`off`（默认）、`loopback` 或逗号分隔的 IP/CIDR 白名单；未显式配置时忽略 `X-Forwarded-For`。 |
 | `AUTH_COOKIE_SECURE` | 强制 `Secure` 会话 Cookie；`PUBLIC_ORIGIN` 为 https 时自动开启。 |
 | `AUTH_SESSION_DAYS` | 会话有效期（天），默认 `7`。 |
 | `ADMIN_BOOTSTRAP_TOKEN` | 可选：要求管理员安装向导提供该令牌，防止公开部署时被抢先初始化。 |

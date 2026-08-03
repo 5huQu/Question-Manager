@@ -6,6 +6,8 @@ export type AuthStatus = {
   bootstrapEnabled?: boolean
   /** True when the deployment configured ADMIN_BOOTSTRAP_TOKEN and the install form must ask for it. */
   bootstrapRequiresToken?: boolean
+  /** Whether password, session, and logout management are meaningful in this deployment. */
+  accountManagementAvailable?: boolean
 }
 
 export type AuthSessionInfo = {

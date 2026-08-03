@@ -5,12 +5,13 @@ import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { TextDecoder } from 'node:util'
 import * as unzipper from 'unzipper'
+import { db } from '../../db/connection.js'
 import * as sourceRepo from '../../repositories/source-documents.repo.js'
 import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
 import type { OCRAsset, OCRBlock, OCRPage } from '../../types/ocr-document.js'
 import { RouteError } from '../../utils/http-error.js'
 import { createId, nowIso } from '../../utils/ids.js'
-import { assetPathFor } from '../../utils/paths.js'
+import { assetPathFor, resolveStoragePath } from '../../utils/paths.js'
 import { moveFileAtomic, readFileHeader } from '../../utils/upload-files.js'
 import {
   normalizeHtmlImageTags,
@@ -29,6 +30,10 @@ type UploadedDoc2xPackage = {
   mimetype: string
   path: string
   size: number
+}
+
+export type Doc2xPackageTestHooks = {
+  beforeOcrFiles?: (paths: { rawPath: string; markdownPath: string; pagesPath: string; assetsPath: string }) => void
 }
 
 type ArchiveEntry = unzipper.File
@@ -287,6 +292,7 @@ export async function inspectDoc2xMarkdownPackage(file: UploadedDoc2xPackage | u
 export async function importDoc2xMarkdownPackage(
   file: UploadedDoc2xPackage | undefined,
   body: Record<string, unknown> = {},
+  testHooks: Doc2xPackageTestHooks = {},
 ) {
   const inspected = await inspectDoc2xMarkdownPackage(file)
   const metadataBody = parseMetadataBody(body)
@@ -295,9 +301,12 @@ export async function importDoc2xMarkdownPackage(
   const title = String(metadataBody.paperTitle || metadataBody.title || headingTitle || markdownBaseName || 'Doc2X 导入资料')
   const sourceId = createId('docimport', title)
   const sourceDir = sourceDocumentDir(sourceId)
+  const ocrDocumentId = createId('ocrdoc', title)
+  const ocrDir = storedOcrDocumentDir(ocrDocumentId)
   const originalZipPath = path.join(sourceDir, 'doc2x-export.zip')
   const originalMarkdownPath = path.join(sourceDir, 'doc2x-original.md')
   const assetDir = path.join(sourceDir, 'assets')
+  let transactionCommitted = false
   try {
     ensureDir(assetDir)
     writeText(originalMarkdownPath, inspected.markdown)
@@ -336,8 +345,6 @@ export async function importDoc2xMarkdownPackage(
     )
     const pages = buildPages(normalizedMarkdown, assets)
     const createdAt = nowIso()
-    const ocrDocumentId = createId('ocrdoc', title)
-    const ocrDir = storedOcrDocumentDir(ocrDocumentId)
     const rawPath = path.join(ocrDir, 'manual-package.json')
     const markdownPath = path.join(ocrDir, 'markdown.md')
     const pagesPath = path.join(ocrDir, 'pages.json')
@@ -360,6 +367,7 @@ export async function importDoc2xMarkdownPackage(
         imageHosting: 'local',
       },
     }
+    testHooks.beforeOcrFiles?.({ rawPath, markdownPath, pagesPath, assetsPath })
     writeJson(rawPath, {
       ...packageMetadata,
       archivePath: assetPathFor(originalZipPath),
@@ -375,6 +383,7 @@ export async function importDoc2xMarkdownPackage(
         : {}),
       doc2xManualPackage: packageMetadata,
     }
+    db.exec('BEGIN IMMEDIATE')
     const source = sourceRepo.createSourceDocument({
       id: sourceId,
       title,
@@ -408,9 +417,18 @@ export async function importDoc2xMarkdownPackage(
       createdAt,
     })
     if (!ocrDocument) throw new RouteError(500, 'Doc2X 导出包 OCRDocument 创建失败。')
+
+    const storedSource = sourceRepo.getSourceDocument(sourceId)
+    const storedOcrDocument = ocrRepo.getOcrDocument(ocrDocumentId)
+    const requiredFiles = [originalZipPath, originalMarkdownPath, rawPath, markdownPath, pagesPath, assetsPath, ...assets.map((asset) => resolveStoragePath(asset.path))]
+    if (!storedSource || !storedOcrDocument || requiredFiles.some((filePath) => !fs.existsSync(filePath))) {
+      throw new RouteError(500, 'Doc2X 导入结果不完整。')
+    }
+    db.exec('COMMIT')
+    transactionCommitted = true
     return {
-      sourceDocument: sourceRepo.getSourceDocument(sourceId),
-      ocrDocument,
+      sourceDocument: storedSource,
+      ocrDocument: storedOcrDocument,
       package: {
         markdownFileName: inspected.markdownFileName,
         imageCount: assets.length,
@@ -419,7 +437,22 @@ export async function importDoc2xMarkdownPackage(
       },
     }
   } catch (error) {
-    fs.rmSync(sourceDir, { recursive: true, force: true })
+    if (!transactionCommitted && db.isTransaction) {
+      try {
+        db.exec('ROLLBACK')
+      } catch (rollbackError) {
+        console.error('[import-flow-v2] Doc2X rollback failed:', rollbackError)
+      }
+    }
+    if (!transactionCommitted) {
+      for (const directory of [sourceDir, ocrDir]) {
+        try {
+          fs.rmSync(directory, { recursive: true, force: true })
+        } catch (cleanupError) {
+          console.error(`[import-flow-v2] Doc2X cleanup failed for ${directory}:`, cleanupError)
+        }
+      }
+    }
     throw error
   }
 }
