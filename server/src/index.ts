@@ -13,7 +13,7 @@ import { cleanupStaleUploads } from './utils/upload-files.js'
 import { sendFrontendIndex, mountFrontendStatic } from './middleware/frontend-index.js'
 import { mountPrivateFilesRoutes, mountLegacyAssetsBridge } from './routes/files.js'
 import { mountPublicAuthRoutes, mountProtectedAuthRoutes } from './auth/routes.js'
-import { attachSession, requireApiAuth } from './auth/middleware.js'
+import { attachSession, requireApiAuth, requireFileAuth, requirePageAuth } from './auth/middleware.js'
 import { authMode, adminBootstrapToken } from './auth/config.js'
 import { adminExists } from './auth/admin.repo.js'
 
@@ -96,6 +96,7 @@ app.use('/api', (req, res) => {
 // Phase 8 — private files and legacy /assets bridge. Legacy /assets/data/...
 // entries are redirected to /files; only allowlisted directories are served.
 mountLegacyAssetsBridge(app)
+app.use('/files', requireFileAuth)
 mountPrivateFilesRoutes(app)
 
 // Phase 9 — public frontend static assets (JS/CSS/fonts), so the login page
@@ -103,11 +104,18 @@ mountPrivateFilesRoutes(app)
 mountFrontendStatic(app)
 
 // Phase 10 — public pages. /login and /admin-setup are served anonymously.
-// app.get('/login', sendFrontendIndex)
-// app.get('/admin-setup', sendFrontendIndex)
+app.get('/login', sendFrontendIndex)
+app.get('/admin-setup', sendFrontendIndex)
 
-// Phase 11 — print pages must authenticate before rendering.
-// app.use('/print', requirePageAuth, (req, res) => sendFrontendIndex(req, res))
+// Phase 11 — print pages must authenticate before rendering. A hidden print
+// window must never receive the login page silently.
+app.use('/print', (req, res, next) => {
+  if (req.method !== 'GET') {
+    next()
+    return
+  }
+  requirePageAuth(req, res, () => sendFrontendIndex(req, res))
+})
 
 // Phase 12 — every other page requires authentication before the SPA loads.
 app.use((req, res, next) => {
@@ -128,7 +136,7 @@ app.use((req, res, next) => {
     next()
     return
   }
-  sendFrontendIndex(req, res)
+  requirePageAuth(req, res, () => sendFrontendIndex(req, res))
 })
 
 mountErrorMiddleware(app)

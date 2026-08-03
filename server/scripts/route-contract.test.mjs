@@ -11,6 +11,8 @@ const { app, closeDatabase } = await import('../dist/index.js')
 
 const expectedRoutes = new Set([
   'GET /livez',
+  'GET /login',
+  'GET /admin-setup',
   'POST /api/auth/login',
   'POST /api/auth/bootstrap',
   'GET /api/auth/state',
