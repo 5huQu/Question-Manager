@@ -1,16 +1,13 @@
+import { useEffect, useState } from 'react'
 import {
-  AlertCircle,
-  Check,
-  ExternalLink,
   Plus,
   Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { UpdateCard } from '@/components/UpdateCard'
-import { Modal } from '@/components/dialogs/Modal'
+import { useAuth } from '@/auth/AuthProvider'
 import type { AnswerTablePolicy, DocumentLayout, MetadataBlockPolicy, SolutionBindingStrategy } from '@/api/importV2'
 import { teachingStageOptions } from '@/utils/stages'
-import { libreOfficeDownloadUrl } from '@/utils/wordFiles'
 import {
   Field,
   ParserRuleRow,
@@ -18,7 +15,6 @@ import {
   SegmentButton,
   SettingsCard,
   SectionTitle,
-  SmallStatus,
   StatusBanner,
   StatusLine,
   TextArea,
@@ -27,6 +23,27 @@ import {
 } from './components'
 import { PARSER_RULE_CATEGORIES } from './types'
 import { useSettingsState } from './useSettingsState'
+
+function AccountLogoutButton() {
+  const { logout, admin } = useAuth()
+  const [loggingOut, setLoggingOut] = useState(false)
+  return (
+    <button
+      type="button"
+      disabled={loggingOut}
+      onClick={() => {
+        setLoggingOut(true)
+        void logout().finally(() => {
+          window.location.assign('/login')
+        })
+      }}
+      className="inline-flex items-center justify-between rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs font-semibold text-zinc-700 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-red-800 dark:hover:bg-red-950 dark:hover:text-red-300"
+    >
+      <span>{loggingOut ? '退出中...' : `退出登录（${admin?.username || '管理员'}）`}</span>
+      <span className="text-zinc-400">→</span>
+    </button>
+  )
+}
 
 export function SettingsPage() {
   const {
@@ -37,8 +54,6 @@ export function SettingsPage() {
     setDraft,
     isSaving,
     saveStatus,
-    showLibreOfficeAlert,
-    setShowLibreOfficeAlert,
     parserConfigApi,
     parserConfig,
     setParserConfig,
@@ -78,7 +93,7 @@ export function SettingsPage() {
       <div className="flex flex-col gap-1 border-b border-zinc-200 pb-4 text-left dark:border-zinc-800">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">系统设置</h1>
         <p className="text-[13px] text-zinc-500 dark:text-zinc-400">
-          配置系统的基础名称、外部转换工具、OCR 识别引擎密钥、V2 导入识别规则以及 AI 助手模型参数。
+          配置系统基础信息、OCR 识别引擎密钥、V2 导入识别规则以及 AI 助手模型参数。
         </p>
       </div>
 
@@ -160,29 +175,6 @@ export function SettingsPage() {
               <Field label="讲义模板水印">
                 <TextInput value={draft.lectureWatermark ?? ''} onChange={(value) => setDraft({ ...draft, lectureWatermark: value })} />
               </Field>
-            </div>
-          </SettingsCard>
-
-          <SettingsCard
-            title="外部集成工具"
-            desc="用于 DOC/DOCX 上传后的 Word 转 PDF。应用会自动查找默认安装目录，也可以手动指定 soffice.exe。"
-            footer={<SaveButton label="保存路径设置" loading={isSaving} onClick={() => save('外部集成工具')} />}
-          >
-            <Field label="soffice.exe 路径">
-              <TextInput mono value={draft.sofficePath ?? ''} onChange={(value) => setDraft({ ...draft, sofficePath: value })} />
-              <p className="text-[11px] leading-normal text-zinc-400 dark:text-zinc-500">
-                默认安装通常无需填写。当前检测路径：{data?.sofficeDetectedPath || '未检测到'}
-              </p>
-            </Field>
-            <div className="flex items-center gap-3 pt-2">
-              {data?.sofficeAvailable ? (
-                <span className="inline-flex h-8 items-center gap-1.5 rounded border border-zinc-200 bg-zinc-50 px-2.5 text-xs font-semibold text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-                  <Check className="size-3.5" />
-                  已检测到 LibreOffice 环境
-                </span>
-              ) : (
-                <Button size="sm" variant="outline" icon={AlertCircle} onClick={() => setShowLibreOfficeAlert(true)}>查看 LibreOffice 提醒</Button>
-              )}
             </div>
           </SettingsCard>
 
@@ -461,18 +453,31 @@ export function SettingsPage() {
         </div>
 
         <div className="space-y-6">
+          <SettingsCard title="账号与安全" desc="管理管理员密码与登录设备。">
+            <div className="flex flex-col gap-2">
+              <a
+                href="/settings/change-password"
+                className="inline-flex items-center justify-between rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              >
+                <span>修改密码</span>
+                <span className="text-zinc-400">→</span>
+              </a>
+              <a
+                href="/settings/sessions"
+                className="inline-flex items-center justify-between rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-xs font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              >
+                <span>登录设备管理</span>
+                <span className="text-zinc-400">→</span>
+              </a>
+              <AccountLogoutButton />
+            </div>
+          </SettingsCard>
+
           <SettingsCard title="系统运行状态" desc="诊断本地运行环境服务及相关编译器套件路径。">
             <StatusLine label="本地服务端引擎" status="运行中" ready />
             <StatusLine label="KaTeX 数学渲染" status="正常" ready />
             <StatusLine label="Python 脚本切片 service" status="就绪" ready />
             <StatusLine label="XeLaTeX 编译器" status="就绪" ready />
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5 text-left">
-                <span className="block text-zinc-500 dark:text-zinc-400">LibreOffice 服务</span>
-                <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">用于转换上传的 Word 格式文件</span>
-              </div>
-              <SmallStatus ready={Boolean(data?.sofficeAvailable)}>{data?.sofficeAvailable ? '就绪' : '未检测到'}</SmallStatus>
-            </div>
           </SettingsCard>
 
           <SettingsCard title="应用版本更新" desc="检查最新客户端版本与开源社区发布记录。">
@@ -482,26 +487,6 @@ export function SettingsPage() {
       </div>
 
       {saveStatus ? <Toast status={saveStatus} /> : null}
-
-      {showLibreOfficeAlert && !data?.sofficeAvailable ? (
-        <Modal
-          title="未检测到 LibreOffice"
-          desc="DOC/DOCX 转 PDF 需要本机安装 LibreOffice。"
-          onClose={() => setShowLibreOfficeAlert(false)}
-        >
-          <div className="space-y-4 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-            <p>当前没有找到 LibreOffice 的 soffice.exe。PDF 文件仍可上传；DOC/DOCX 文件会被拦截，避免进入无法处理的切题队列。</p>
-            <p>安装 LibreOffice 后重启应用即可自动检测。若安装在非默认目录，请在“系统设置”中填写 soffice.exe 的完整路径。</p>
-            <div className="flex flex-wrap gap-2 pt-1">
-              <a href={libreOfficeDownloadUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-3 text-xs font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white">
-                下载 LibreOffice
-                <ExternalLink className="size-3.5" />
-              </a>
-              <Button size="sm" variant="outline" onClick={() => setShowLibreOfficeAlert(false)}>知道了</Button>
-            </div>
-          </div>
-        </Modal>
-      ) : null}
     </div>
   )
 }
