@@ -9,6 +9,7 @@ process.env.QUESTION_DATA_DIR = tempRoot
 const { app, closeDatabase } = await import('../dist/index.js')
 
 const expectedRoutes = new Set([
+  'GET /livez',
   'GET /api/teaching-document-templates',
   'POST /api/teaching-document-templates',
   'PATCH /api/teaching-document-templates/:id',
