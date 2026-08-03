@@ -5,6 +5,7 @@ import { once } from 'node:events'
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'question-manager-'))
 process.env.QUESTION_DATA_DIR = tempRoot
+process.env.QUESTION_AUTH_MODE = 'disabled'
 process.env.PORT = '0'
 
 const { closeDatabase, startServer } = await import('../dist/index.js')

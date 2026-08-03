@@ -5,6 +5,7 @@ import path from 'node:path'
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'import-job-service-test-'))
 process.env.QUESTION_DATA_DIR = tempRoot
+process.env.QUESTION_AUTH_MODE = 'disabled'
 
 const { closeDatabase } = await import('../dist/index.js')
 const { createSourceDocument } = await import('../dist/repositories/source-documents.repo.js')

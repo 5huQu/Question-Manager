@@ -1,3 +1,4 @@
+process.env.QUESTION_AUTH_MODE = 'disabled'
 import { closeDatabase } from '../dist/index.js'
 import { db } from '../dist/db/connection.js'
 

@@ -12,6 +12,10 @@ import path from 'node:path'
 import { cleanupStaleUploads } from './utils/upload-files.js'
 import { sendFrontendIndex, mountFrontendStatic } from './middleware/frontend-index.js'
 import { mountPrivateFilesRoutes, mountLegacyAssetsBridge } from './routes/files.js'
+import { mountPublicAuthRoutes, mountProtectedAuthRoutes } from './auth/routes.js'
+import { attachSession, requireApiAuth } from './auth/middleware.js'
+import { authMode, adminBootstrapToken } from './auth/config.js'
+import { adminExists } from './auth/admin.repo.js'
 
 // Route mounters
 import { mountLivenessRoutes, mountHealthRoutes } from './routes/health.js'
@@ -39,23 +43,36 @@ ensureSchema()
 recoverInterruptedLayoutPreviews()
 recoverInterruptedSourceDocumentOcrTasks()
 
+if (authMode === 'single-admin') {
+  if (!adminExists() && !adminBootstrapToken) {
+    console.error('')
+    console.error('尚未初始化管理员账号。请先在本机运行：')
+    console.error('  npm run admin:init')
+    console.error('或配置 ADMIN_BOOTSTRAP_TOKEN 环境变量后通过网页初始化。')
+    console.error('（仅本地开发可设置 QUESTION_AUTH_MODE=disabled 跳过认证。）')
+    console.error('')
+    process.exit(1)
+  }
+  if (!process.env.PUBLIC_ORIGIN) {
+    console.warn('[auth] 警告：未配置 PUBLIC_ORIGIN，CSRF 来源校验将只接受本机回环地址。云端部署请设置 PUBLIC_ORIGIN=https://你的域名')
+  }
+}
+
 // Phase 1 — public liveness check. Only reports process aliveness.
 mountLivenessRoutes(app)
 
-// Phase 2 — public auth endpoints (state/login/bootstrap). Added with the
-// single-admin authentication feature.
-// mountPublicAuthRoutes(app)
+// Phase 2 — public auth endpoints (state/login/bootstrap).
+mountPublicAuthRoutes(app)
 
 // Phase 3 — attach the session to every request without forcing login.
-// app.use(attachSession)
+app.use(attachSession)
 
 // Phase 4 — authenticated-only auth endpoints (logout, change-password, sessions).
-// mountProtectedAuthRoutes(app)
+mountProtectedAuthRoutes(app)
 
 // Phase 5 — unified auth gate for every business API. New /api routes mounted
 // after this point are protected by default.
-// app.use('/api', requireApiAuth)
-app.use('/api', (req, res, next) => next())
+app.use('/api', requireApiAuth)
 
 // Phase 6 — business routes
 mountHealthRoutes(app)

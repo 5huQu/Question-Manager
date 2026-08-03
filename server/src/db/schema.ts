@@ -13,6 +13,7 @@ import { v1ImportMappingMigration } from './migrations/v1-import-mapping.js'
 import { importProvenanceArchiveMigration } from './migrations/import-provenance-archive.js'
 import { teachingDocumentsMigration } from './migrations/teaching-documents.js'
 import { printTemplatesMigration } from './migrations/print-templates.js'
+import { authDomainMigration } from './migrations/auth-domain.js'
 import path from 'node:path'
 import { dataDir } from '../config.js'
 
@@ -584,6 +585,7 @@ export const applicationMigrations: DatabaseMigration[] = [
   importProvenanceArchiveMigration,
   teachingDocumentsMigration,
   printTemplatesMigration,
+  authDomainMigration,
 ]
 
 /** Run the ordered, checksummed database migrations. */

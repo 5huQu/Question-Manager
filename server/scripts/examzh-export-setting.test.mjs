@@ -5,6 +5,7 @@ import path from 'node:path'
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'question-manager-examzh-setting-'))
 process.env.QUESTION_DATA_DIR = tempRoot
+process.env.QUESTION_AUTH_MODE = 'disabled'
 
 const configDir = path.join(tempRoot, 'config')
 fs.mkdirSync(configDir, { recursive: true })
