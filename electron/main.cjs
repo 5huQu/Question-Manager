@@ -60,6 +60,7 @@ async function startServer(port) {
       NODE_ENV: 'production',
       PORT: String(port),
       QUESTION_DATA_DIR: app.getPath('userData'),
+      QUESTION_AUTH_MODE: 'trusted-desktop',
       PYTHON_PATH: pythonPath,
       QUESTION_PYTHON_RUNTIME: 'bundled',
       PYTHONNOUSERSITE: '1',
@@ -87,9 +88,11 @@ function waitForServer(port, timeoutMs = 15000) {
         return
       }
 
-      const request = http.get(`http://127.0.0.1:${port}/api/health`, (response) => {
+      const request = http.get(`http://127.0.0.1:${port}/livez`, (response) => {
+        // Any HTTP response (200 or 401) means the server is accepting
+        // requests; the auth gate is handled by the renderer flow.
         response.resume()
-        if (response.statusCode === 200) {
+        if (response.statusCode >= 200 && response.statusCode < 500) {
           resolve()
           return
         }
