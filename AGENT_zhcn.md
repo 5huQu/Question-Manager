@@ -64,7 +64,7 @@ Question Manager 是一个本地优先的数学题库桌面工具，覆盖资料
 
 - Node.js 24 或更高。
 - 源码开发需要 Python 3.11 或更高。
-- 可选：XeLaTeX、LibreOffice。
+- 可选：XeLaTeX、dvisvgm。
 
 常用命令：
 
@@ -229,7 +229,7 @@ V1 生产 routes、services、repositories、Python runners 和前端页面均�
 - 后端在 `server/src/services/question-bank/export*.ts`。
 - 导出记录在 `question_bank_export_records`，需要保存 items 快照，以便历史记录恢复到试题篮。
 - 模板在 `templates/latex/`。
-- 导出 PDF 可能依赖 XeLaTeX，DOCX/PDF 转换可能依赖 LibreOffice。
+- 导出 PDF 可能依赖 XeLaTeX，TikZ SVG 生成可能依赖 dvisvgm。
 
 标签：
 

@@ -4,7 +4,7 @@ import { dataDir, pythonDataRoot } from '../config.js'
 import { resolveStoragePath } from '../utils/paths.js'
 import { nowIso } from '../utils/ids.js'
 import { parseJson } from '../utils/json.js'
-import { buildDocumentDiagnosticMessage } from '../utils/document-conversion.js'
+import { buildDocumentDiagnosticMessage } from '../utils/legacy-document-diagnostics.js'
 import {
   cleanSourceTitle,
   normalizeMaterialType,

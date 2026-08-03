@@ -18,7 +18,3 @@ export function createId(prefix: string, name = '') {
   const safe = name ? `_${safeName(name)}` : ''
   return `${prefix}_${stamp}_${suffix}${safe}`
 }
-
-export function isWordUploadKind(kind: string) {
-  return kind === 'doc' || kind === 'docx'
-}

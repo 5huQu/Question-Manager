@@ -1,14 +1,17 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { TextDecoder } from 'node:util'
 import * as unzipper from 'unzipper'
 import * as sourceRepo from '../../repositories/source-documents.repo.js'
 import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
-import type { OCRAsset, OCRBlock, OCRDocument, OCRPage } from '../../types/ocr-document.js'
+import type { OCRAsset, OCRBlock, OCRPage } from '../../types/ocr-document.js'
 import { RouteError } from '../../utils/http-error.js'
 import { createId, nowIso } from '../../utils/ids.js'
 import { assetPathFor } from '../../utils/paths.js'
+import { moveFileAtomic, readFileHeader } from '../../utils/upload-files.js'
 import {
   normalizeHtmlImageTags,
   stableNormalizerId,
@@ -24,7 +27,7 @@ import {
 type UploadedDoc2xPackage = {
   originalname: string
   mimetype: string
-  buffer: Buffer
+  path: string
   size: number
 }
 
@@ -33,7 +36,6 @@ type ArchiveEntry = unzipper.File
 type ArchiveImage = {
   archivePath: string
   entry: ArchiveEntry
-  buffer: Buffer
 }
 
 export type InspectedDoc2xPackage = {
@@ -52,6 +54,7 @@ export type InspectedDoc2xPackage = {
 const MAX_ZIP_BYTES = 200 * 1024 * 1024
 const MAX_UNCOMPRESSED_BYTES = 600 * 1024 * 1024
 const MAX_MARKDOWN_BYTES = 30 * 1024 * 1024
+const MAX_IMAGE_BYTES = 30 * 1024 * 1024
 const MAX_ENTRIES = 3000
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'])
 const DOC2X_MEANLESS_COMMENT_RE = /<!--\s*Meanless\s*:[\s\S]*?-->/gi
@@ -158,17 +161,62 @@ function buildPages(markdown: string, assets: OCRAsset[]) {
     .map(([pageNo, blocks]) => ({ pageNo, width: 0, height: 0, blocks })) satisfies OCRPage[]
 }
 
+async function writeArchiveEntry(
+  entry: ArchiveEntry,
+  temporaryPath: string,
+  maxBytes: number,
+) {
+  const hash = createHash('sha256')
+  let bytes = 0
+  const meter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      bytes += chunk.length
+      if (bytes > maxBytes) {
+        callback(new RouteError(413, 'ZIP 内图片解压后尺寸过大。'))
+        return
+      }
+      hash.update(chunk)
+      callback(null, chunk)
+    },
+  })
+
+  try {
+    await pipeline(
+      entry.stream(),
+      meter,
+      fs.createWriteStream(temporaryPath, { flags: 'wx', mode: 0o600 }),
+    )
+    return { byteSize: bytes, contentHash: hash.digest('hex') }
+  } catch (error) {
+    fs.rmSync(temporaryPath, { force: true })
+    throw error
+  }
+}
+
 export async function inspectDoc2xMarkdownPackage(file: UploadedDoc2xPackage | undefined): Promise<InspectedDoc2xPackage> {
-  if (!file?.buffer?.length) throw new RouteError(400, '请选择 Doc2X 导出的 ZIP 文件。')
+  if (
+    !file?.path
+    || !Number.isFinite(file.size)
+    || file.size <= 0
+    || !fs.existsSync(file.path)
+    || !fs.statSync(file.path).isFile()
+  ) {
+    throw new RouteError(400, '请选择 Doc2X 导出的 ZIP 文件。')
+  }
   const archiveName = path.basename(String(file.originalname || 'doc2x-export.zip'))
   if (path.extname(archiveName).toLowerCase() !== '.zip') {
     throw new RouteError(400, '请上传 Doc2X 导出的 ZIP 文件。')
   }
-  if (file.buffer.length > MAX_ZIP_BYTES) throw new RouteError(413, 'Doc2X 导出包超过 200 MB。')
+  if (file.size > MAX_ZIP_BYTES) throw new RouteError(413, 'Doc2X 导出包超过 200 MB。')
+
+  const header = readFileHeader(file.path, 4)
+  if (header.length < 2 || header[0] !== 0x50 || header[1] !== 0x4b) {
+    throw new RouteError(400, 'ZIP 文件损坏或无法读取。')
+  }
 
   let directory: unzipper.CentralDirectory
   try {
-    directory = await unzipper.Open.buffer(file.buffer)
+    directory = await unzipper.Open.file(file.path)
   } catch {
     throw new RouteError(400, 'ZIP 文件损坏或无法读取。')
   }
@@ -217,7 +265,7 @@ export async function inspectDoc2xMarkdownPackage(file: UploadedDoc2xPackage | u
     if (!IMAGE_EXTENSIONS.has(extension)) {
       throw new RouteError(400, `Markdown 引用了不支持的图片格式：${archivePath}`)
     }
-    images.push({ archivePath, entry, buffer: await entry.buffer() })
+    images.push({ archivePath, entry })
   }
 
   const archiveImageCount = Array.from(entriesByPath.keys())
@@ -250,126 +298,128 @@ export async function importDoc2xMarkdownPackage(
   const originalZipPath = path.join(sourceDir, 'doc2x-export.zip')
   const originalMarkdownPath = path.join(sourceDir, 'doc2x-original.md')
   const assetDir = path.join(sourceDir, 'assets')
-  ensureDir(assetDir)
-  fs.writeFileSync(originalZipPath, file!.buffer)
-  writeText(originalMarkdownPath, inspected.markdown)
+  try {
+    ensureDir(assetDir)
+    writeText(originalMarkdownPath, inspected.markdown)
 
-  const assets: OCRAsset[] = []
-  const assetsByArchivePath = new Map<string, OCRAsset>()
-  for (const image of inspected.images) {
-    const extension = path.posix.extname(image.archivePath).toLowerCase()
-    const contentHash = createHash('sha256').update(image.buffer).digest('hex')
-    const fileName = `${contentHash.slice(0, 20)}${extension}`
-    const targetPath = path.join(assetDir, fileName)
-    if (!fs.existsSync(targetPath)) fs.writeFileSync(targetPath, image.buffer)
-    const asset: OCRAsset = {
-      id: stableNormalizerId('doc2x_manual_asset', [sourceId, image.archivePath, contentHash]),
-      type: 'image',
-      path: assetPathFor(targetPath),
-      pageNo: inferredPageNo(image.archivePath),
+    const assets: OCRAsset[] = []
+    const assetsByArchivePath = new Map<string, OCRAsset>()
+    for (const image of inspected.images) {
+      const extension = path.posix.extname(image.archivePath).toLowerCase()
+      const temporaryPath = path.join(assetDir, `.import-${randomUUID()}.tmp`)
+      const { contentHash } = await writeArchiveEntry(image.entry, temporaryPath, MAX_IMAGE_BYTES)
+      const fileName = `${contentHash.slice(0, 20)}${extension}`
+      const targetPath = path.join(assetDir, fileName)
+      if (fs.existsSync(targetPath)) {
+        fs.rmSync(temporaryPath, { force: true })
+      } else {
+        fs.renameSync(temporaryPath, targetPath)
+      }
+      const asset: OCRAsset = {
+        id: stableNormalizerId('doc2x_manual_asset', [sourceId, image.archivePath, contentHash]),
+        type: 'image',
+        path: assetPathFor(targetPath),
+        pageNo: inferredPageNo(image.archivePath),
+      }
+      assets.push(asset)
+      assetsByArchivePath.set(image.archivePath, asset)
     }
-    assets.push(asset)
-    assetsByArchivePath.set(image.archivePath, asset)
-  }
 
-  const normalizedMarkdown = replaceLocalImagesWithMarkers(
-    inspected.markdown,
-    inspected.markdownArchivePath,
-    assetsByArchivePath,
-  )
-  const pages = buildPages(normalizedMarkdown, assets)
-  const createdAt = nowIso()
-  const ocrDocumentId = createId('ocrdoc', title)
-  const ocrDir = storedOcrDocumentDir(ocrDocumentId)
-  const rawPath = path.join(ocrDir, 'manual-package.json')
-  const markdownPath = path.join(ocrDir, 'markdown.md')
-  const pagesPath = path.join(ocrDir, 'pages.json')
-  const assetsPath = path.join(ocrDir, 'assets.json')
-  const packageMetadata = {
-    source: 'doc2x_manual_markdown_zip',
-    manualImport: true,
-    archiveName: inspected.archiveName,
-    markdownArchivePath: inspected.markdownArchivePath,
-    entryCount: inspected.entryCount,
-    uncompressedBytes: inspected.uncompressedBytes,
-    referencedImageCount: assets.length,
-    unreferencedImageCount: inspected.unreferencedImageCount,
-    boilerplateCleanup: { meanlessCommentCount: inspected.meanlessCommentCount },
-    layoutAvailable: false,
-    recommendedExportSettings: {
-      format: 'markdown',
-      formulaMode: 'normal',
-      formulaLevel: 'normal',
-      imageHosting: 'local',
-    },
-  }
-  const document: OCRDocument = {
-    id: ocrDocumentId,
-    sourceDocumentId: sourceId,
-    provider: 'doc2x',
-    rawResultPath: assetPathFor(rawPath),
-    markdown: normalizedMarkdown,
-    pages,
-    assets,
-    metadata: packageMetadata,
-    createdAt,
-  }
-  writeJson(rawPath, {
-    ...packageMetadata,
-    archivePath: assetPathFor(originalZipPath),
-    originalMarkdownPath: assetPathFor(originalMarkdownPath),
-  })
-  writeText(markdownPath, normalizedMarkdown)
-  writeJson(pagesPath, pages)
-  writeJson(assetsPath, assets)
+    // Keep the original ZIP only after validation and all referenced images
+    // have been read from the upload file.
+    moveFileAtomic(file!.path, originalZipPath)
 
-  const sourceMetadata = {
-    ...(metadataBody.metadata && typeof metadataBody.metadata === 'object' && !Array.isArray(metadataBody.metadata)
-      ? metadataBody.metadata as Record<string, unknown>
-      : {}),
-    doc2xManualPackage: packageMetadata,
-  }
-  const source = sourceRepo.createSourceDocument({
-    id: sourceId,
-    title,
-    originalFileName: inspected.archiveName,
-    filePath: assetPathFor(originalMarkdownPath),
-    fileType: 'markdown',
-    pageCount: Math.max(1, ...pages.map((page) => page.pageNo)),
-    provider: 'doc2x',
-    status: 'ocr_succeeded',
-    metadata: sourceMetadata,
-    province: String(metadataBody.province || ''),
-    city: String(metadataBody.city || ''),
-    paperTitle: String(metadataBody.paperTitle || title),
-    batchName: String(metadataBody.batchName || metadataBody.paperTitle || title),
-    stage: String(metadataBody.stage || '高三'),
-    subject: String(metadataBody.subject || '数学'),
-    paperKind: String(metadataBody.paperKind || 'unknown') as any,
-    examYear: Number(metadataBody.examYear || 0),
-    sourceOrg: String(metadataBody.sourceOrg || ''),
-  })
-  if (!source) throw new RouteError(500, 'Doc2X 导出包资料创建失败。')
-  const ocrDocument = ocrRepo.createOcrDocument({
-    id: ocrDocumentId,
-    sourceDocumentId: sourceId,
-    provider: 'doc2x',
-    rawResultPath: assetPathFor(rawPath),
-    markdownPath: assetPathFor(markdownPath),
-    blocksJsonPath: assetPathFor(pagesPath),
-    assetsJsonPath: assetPathFor(assetsPath),
-    metadata: packageMetadata,
-    createdAt,
-  })
-  if (!ocrDocument) throw new RouteError(500, 'Doc2X 导出包 OCRDocument 创建失败。')
-  return {
-    sourceDocument: sourceRepo.getSourceDocument(sourceId),
-    ocrDocument,
-    package: {
-      markdownFileName: inspected.markdownFileName,
-      imageCount: assets.length,
-      meanlessCommentCount: inspected.meanlessCommentCount,
+    const normalizedMarkdown = replaceLocalImagesWithMarkers(
+      inspected.markdown,
+      inspected.markdownArchivePath,
+      assetsByArchivePath,
+    )
+    const pages = buildPages(normalizedMarkdown, assets)
+    const createdAt = nowIso()
+    const ocrDocumentId = createId('ocrdoc', title)
+    const ocrDir = storedOcrDocumentDir(ocrDocumentId)
+    const rawPath = path.join(ocrDir, 'manual-package.json')
+    const markdownPath = path.join(ocrDir, 'markdown.md')
+    const pagesPath = path.join(ocrDir, 'pages.json')
+    const assetsPath = path.join(ocrDir, 'assets.json')
+    const packageMetadata = {
+      source: 'doc2x_manual_markdown_zip',
+      manualImport: true,
+      archiveName: inspected.archiveName,
+      markdownArchivePath: inspected.markdownArchivePath,
+      entryCount: inspected.entryCount,
+      uncompressedBytes: inspected.uncompressedBytes,
+      referencedImageCount: assets.length,
       unreferencedImageCount: inspected.unreferencedImageCount,
-    },
+      boilerplateCleanup: { meanlessCommentCount: inspected.meanlessCommentCount },
+      layoutAvailable: false,
+      recommendedExportSettings: {
+        format: 'markdown',
+        formulaMode: 'normal',
+        formulaLevel: 'normal',
+        imageHosting: 'local',
+      },
+    }
+    writeJson(rawPath, {
+      ...packageMetadata,
+      archivePath: assetPathFor(originalZipPath),
+      originalMarkdownPath: assetPathFor(originalMarkdownPath),
+    })
+    writeText(markdownPath, normalizedMarkdown)
+    writeJson(pagesPath, pages)
+    writeJson(assetsPath, assets)
+
+    const sourceMetadata = {
+      ...(metadataBody.metadata && typeof metadataBody.metadata === 'object' && !Array.isArray(metadataBody.metadata)
+        ? metadataBody.metadata as Record<string, unknown>
+        : {}),
+      doc2xManualPackage: packageMetadata,
+    }
+    const source = sourceRepo.createSourceDocument({
+      id: sourceId,
+      title,
+      originalFileName: inspected.archiveName,
+      filePath: assetPathFor(originalMarkdownPath),
+      fileType: 'markdown',
+      pageCount: Math.max(1, ...pages.map((page) => page.pageNo)),
+      provider: 'doc2x',
+      status: 'ocr_succeeded',
+      metadata: sourceMetadata,
+      province: String(metadataBody.province || ''),
+      city: String(metadataBody.city || ''),
+      paperTitle: String(metadataBody.paperTitle || title),
+      batchName: String(metadataBody.batchName || metadataBody.paperTitle || title),
+      stage: String(metadataBody.stage || '高三'),
+      subject: String(metadataBody.subject || '数学'),
+      paperKind: String(metadataBody.paperKind || 'unknown') as any,
+      examYear: Number(metadataBody.examYear || 0),
+      sourceOrg: String(metadataBody.sourceOrg || ''),
+    })
+    if (!source) throw new RouteError(500, 'Doc2X 导出包资料创建失败。')
+    const ocrDocument = ocrRepo.createOcrDocument({
+      id: ocrDocumentId,
+      sourceDocumentId: sourceId,
+      provider: 'doc2x',
+      rawResultPath: assetPathFor(rawPath),
+      markdownPath: assetPathFor(markdownPath),
+      blocksJsonPath: assetPathFor(pagesPath),
+      assetsJsonPath: assetPathFor(assetsPath),
+      metadata: packageMetadata,
+      createdAt,
+    })
+    if (!ocrDocument) throw new RouteError(500, 'Doc2X 导出包 OCRDocument 创建失败。')
+    return {
+      sourceDocument: sourceRepo.getSourceDocument(sourceId),
+      ocrDocument,
+      package: {
+        markdownFileName: inspected.markdownFileName,
+        imageCount: assets.length,
+        meanlessCommentCount: inspected.meanlessCommentCount,
+        unreferencedImageCount: inspected.unreferencedImageCount,
+      },
+    }
+  } catch (error) {
+    fs.rmSync(sourceDir, { recursive: true, force: true })
+    throw error
   }
 }

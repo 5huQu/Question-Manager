@@ -13,7 +13,7 @@ assert.equal(isSameAppOrigin('http://127.0.0.1:8797/assets/report.pdf', appUrl),
 assert.equal(isSameAppOrigin('http://127.0.0.1:5174/', appUrl), false)
 assert.equal(isSameAppOrigin('https://chatgpt.com/', appUrl), false)
 assert.equal(isAllowedExternalUrl('https://chatgpt.com/'), true)
-assert.equal(isAllowedExternalUrl('https://www.libreoffice.org/download/'), true)
+assert.equal(isAllowedExternalUrl('https://www.libreoffice.org/download/'), false)
 assert.equal(isAllowedExternalUrl('http://chatgpt.com/'), false)
 assert.equal(isAllowedExternalUrl('https://chatgpt.com.evil.example/'), false)
 assert.equal(isAllowedExternalUrl('javascript:alert(1)'), false)

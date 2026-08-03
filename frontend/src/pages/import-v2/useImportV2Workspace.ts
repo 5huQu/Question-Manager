@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { importV2Api, type ImportParserPreset, type ImportV2ImportJob, type ImportV2ImportJobDocumentDetail, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics, type ParseCandidatesRequest, type ParseCandidatesResult } from '@/api/importV2'
 import { settingsApi } from '@/api/settings'
+import { unsupportedImportReason } from '@/utils/importFiles'
 import { type MarkdownPreviewDocumentOption } from '@/components/import-v2/MarkdownStructurePreviewDialog'
 import { useAsync } from '@/hooks/useAsync'
 import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling'
@@ -493,6 +494,13 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
   function handleUploadFileSelection(files: FileList | null) {
     if (!files || files.length === 0) return
     const file = files[0]
+    const unsupportedReason = unsupportedImportReason(file.name, { allowJson: true })
+    if (unsupportedReason) {
+      setPendingUploadFile(null)
+      setError(unsupportedReason)
+      setNotice('')
+      return
+    }
     setPendingUploadFile(file)
     setError(''); setNotice(''); setQuestions([]); setActiveQuestionId(null); setSelectedIds(new Set())
     const titleFromFile = file.name.replace(/\.[^.]+$/i, '')
@@ -503,8 +511,11 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
   function handleSeparatedFileSelection(role: 'questions' | 'solutions', files: FileList | null) {
     if (!files || files.length === 0) return
     const file = files[0]
-    if (file.name.endsWith('.json')) {
-      setError('双文档导入请上传 PDF 或 PNG/JPG 文件。JSON 模拟导入仍使用单文档模式。')
+    const unsupportedReason = unsupportedImportReason(file.name)
+    if (unsupportedReason) {
+      if (role === 'questions') setQuestionUploadFile(null)
+      else setSolutionUploadFile(null)
+      setError(unsupportedReason)
       return
     }
     if (role === 'questions') setQuestionUploadFile(file)
@@ -517,7 +528,7 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
   async function handleStartUpload() {
     const file = pendingUploadFile
     if (!file) { setError('请先选择要上传的资料文件。'); return }
-    if (file.name.endsWith('.json')) { await handleJsonFile(file); setPendingUploadFile(null); return }
+    if (file.name.toLowerCase().endsWith('.json')) { await handleJsonFile(file); setPendingUploadFile(null); return }
 
     setUploading(true); setError(''); setNotice(''); setQuestions([]); setActiveQuestionId(null); setSelectedIds(new Set())
     try {

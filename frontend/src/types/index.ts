@@ -310,9 +310,6 @@ export type OcrSettings = {
   lectureWatermark: string
   lectureFontScheme: 'screen' | 'print'
   teachingStages: string[]
-  sofficePath: string
-  sofficeAvailable: boolean
-  sofficeDetectedPath: string
   ocrProvider: 'legacy' | 'doc2x' | 'glm'
   apiBaseUrl: string
   apiKeyConfigured: boolean

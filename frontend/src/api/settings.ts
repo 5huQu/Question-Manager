@@ -5,8 +5,9 @@ export type HealthResponse = {
   serverTime?: string
   serverYear?: number
   tools?: {
-    soffice?: boolean
-    sofficePath?: string
+    python?: Record<string, unknown>
+    xelatex?: boolean
+    dvisvgm?: boolean
   }
 }
 

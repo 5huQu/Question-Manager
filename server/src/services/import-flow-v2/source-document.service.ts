@@ -6,15 +6,17 @@ import * as sourceRepo from '../../repositories/source-documents.repo.js'
 import * as ocrRepo from '../../repositories/ocr-documents.repo.js'
 import { deleteQuestionBankItemsForImportSources } from '../../repositories/question-bank/items.repo.js'
 import { RouteError } from '../../utils/http-error.js'
+import { createId } from '../../utils/ids.js'
 import { assetPathFor } from '../../utils/paths.js'
 import { normalizeUploadName } from '../../utils/ocr-helpers.js'
+import { moveFileAtomic, readFileHeader, removeFileQuietly } from '../../utils/upload-files.js'
 import { hasActiveSourceDocumentOcrTask } from './ocr-task.service.js'
-import { ensureDir, importDataDir, sourceDocumentDir, storedOcrDocumentDir } from './import-flow-v2.paths.js'
+import { importDataDir, sourceDocumentDir, storedOcrDocumentDir } from './import-flow-v2.paths.js'
 
 type UploadedSourceDocumentFile = {
   originalname: string
   mimetype: string
-  buffer: Buffer
+  path: string
   size: number
 }
 
@@ -22,6 +24,9 @@ function uploadedSourceDocumentDetails(file: UploadedSourceDocumentFile) {
   const originalFileName = normalizeUploadName(path.basename(String(file.originalname || '')))
   const extension = path.extname(originalFileName).toLowerCase()
   const mimeType = String(file.mimetype || '').toLowerCase()
+  if (extension === '.doc' || extension === '.docx') {
+    throw new RouteError(400, '暂不支持 Word 文件。请先将 DOC/DOCX 另存为 PDF 后上传。')
+  }
   const supported = {
     '.pdf': { fileType: 'pdf' as const, mimeTypes: ['application/pdf'] },
     '.jpg': { fileType: 'image' as const, mimeTypes: ['image/jpeg', 'image/jpg'] },
@@ -29,12 +34,30 @@ function uploadedSourceDocumentDetails(file: UploadedSourceDocumentFile) {
     '.png': { fileType: 'image' as const, mimeTypes: ['image/png'] },
   }[extension]
 
-  if (!originalFileName || !supported || !file.buffer?.length) {
-    throw new RouteError(400, '请选择 PDF、JPG 或 PNG 文件。')
+  if (
+    !originalFileName
+    || !supported
+    || !file.path
+    || !Number.isFinite(file.size)
+    || file.size <= 0
+    || !fs.existsSync(file.path)
+    || !fs.statSync(file.path).isFile()
+  ) {
+    throw new RouteError(400, '请选择 PDF、JPG、JPEG 或 PNG 文件。')
   }
   if (mimeType && mimeType !== 'application/octet-stream' && !supported.mimeTypes.includes(mimeType)) {
-    throw new RouteError(400, '文件类型与扩展名不匹配，请上传 PDF、JPG 或 PNG 文件。')
+    throw new RouteError(400, '文件类型与扩展名不匹配，请上传 PDF、JPG、JPEG 或 PNG 文件。')
   }
+
+  const header = readFileHeader(file.path)
+  const isPdf = header.subarray(0, 5).equals(Buffer.from('%PDF-'))
+  const isPng = header.subarray(0, 8).equals(Buffer.from([
+    0x89, 0x50, 0x4e, 0x47,
+    0x0d, 0x0a, 0x1a, 0x0a,
+  ]))
+  const isJpeg = header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff
+  const validHeader = supported.fileType === 'pdf' ? isPdf : isPng || isJpeg
+  if (!validHeader) throw new RouteError(400, '文件内容与扩展名不匹配，请上传有效的 PDF、JPG、JPEG 或 PNG 文件。')
 
   return { originalFileName, extension, fileType: supported.fileType }
 }
@@ -43,23 +66,23 @@ export function uploadSourceDocument(file: UploadedSourceDocumentFile | undefine
   if (!file) throw new RouteError(400, '请选择要上传的文件。')
   const { originalFileName, extension, fileType } = uploadedSourceDocumentDetails(file)
   const title = path.basename(originalFileName, extension) || originalFileName
-  const sourceDocument = sourceRepo.createSourceDocument({
-    title,
-    originalFileName,
-    fileType,
-    status: 'uploaded',
-    ...(body.metadata && typeof body.metadata === 'string' ? { metadata: JSON.parse(body.metadata) } : body),
-  })
-  if (!sourceDocument) throw new RouteError(500, '资料创建失败。')
-
-  const targetPath = path.join(importDataDir(), 'source-documents', sourceDocument.id, `original${extension}`)
+  const sourceId = createId('docimport', title)
+  const targetPath = path.join(importDataDir(), 'source-documents', sourceId, `original${extension}`)
   try {
-    ensureDir(path.dirname(targetPath))
-    fs.writeFileSync(targetPath, file.buffer)
-    const saved = sourceRepo.updateSourceDocument(sourceDocument.id, { filePath: assetPathFor(targetPath) })
-    if (!saved) throw new Error('资料文件保存后未能读取记录。')
-    return { sourceDocument: saved }
+    moveFileAtomic(file.path, targetPath)
+    const sourceDocument = sourceRepo.createSourceDocument({
+      id: sourceId,
+      title,
+      originalFileName,
+      fileType,
+      filePath: assetPathFor(targetPath),
+      status: 'uploaded',
+      ...(body.metadata && typeof body.metadata === 'string' ? { metadata: JSON.parse(body.metadata) } : body),
+    })
+    if (!sourceDocument) throw new Error('资料创建失败。')
+    return { sourceDocument }
   } catch (error) {
+    removeFileQuietly(targetPath)
     throw new RouteError(500, `资料文件保存失败：${error instanceof Error ? error.message : String(error)}`)
   }
 }

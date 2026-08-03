@@ -12,7 +12,6 @@ export function useSettingsState() {
   const [draft, setDraft] = useState<SettingsDraft>({})
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
-  const [showLibreOfficeAlert, setShowLibreOfficeAlert] = useState(false)
 
   const parserConfigApi = useQuery<{ config: ImportFlowV2ParserConfig }>({
     key: importV2QueryKeys.parserConfig,
@@ -33,7 +32,6 @@ export function useSettingsState() {
   useEffect(() => {
     if (data) {
       setDraft(data)
-      if (!data.sofficeAvailable) setShowLibreOfficeAlert(true)
     }
   }, [data])
 
@@ -198,8 +196,6 @@ export function useSettingsState() {
     setDraft,
     isSaving,
     saveStatus,
-    showLibreOfficeAlert,
-    setShowLibreOfficeAlert,
     parserConfigApi,
     parserPresetsApi,
     parserConfig,
