@@ -6,6 +6,7 @@ import path from 'node:path'
 // Set temporary question data directory for testing
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'import-flow-v2-stats-test-'))
 process.env.QUESTION_DATA_DIR = tempRoot
+process.env.QUESTION_AUTH_MODE = 'disabled'
 
 const { closeDatabase } = await import('../dist/index.js')
 const { db } = await import('../dist/db/connection.js')

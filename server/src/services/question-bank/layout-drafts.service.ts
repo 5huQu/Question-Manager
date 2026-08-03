@@ -130,8 +130,8 @@ function previewRevisionDirs(id:string){
 }
 function previewVariantAt(dir:string,variant:'student'|'teacher'){
   const pdf=path.join(dir,`${variant}.pdf`)
-  const pages=fs.existsSync(dir)?fs.readdirSync(dir).filter((name)=>new RegExp(`^${variant}-page-\\d+\\.png$`).test(name)).sort((a,b)=>Number(a.match(/\d+/)?.[0]||0)-Number(b.match(/\d+/)?.[0]||0)).map((name)=>`/assets/${assetPathFor(path.join(dir,name))}`):[]
-  return {pdfUrl:fs.existsSync(pdf)?`/assets/${assetPathFor(pdf)}`:'',pages,pageImages:pages,pageCount:pages.length}
+  const pages=fs.existsSync(dir)?fs.readdirSync(dir).filter((name)=>new RegExp(`^${variant}-page-\\d+\\.png$`).test(name)).sort((a,b)=>Number(a.match(/\d+/)?.[0]||0)-Number(b.match(/\d+/)?.[0]||0)).map((name)=>`/files/${assetPathFor(path.join(dir,name))}`):[]
+  return {pdfUrl:fs.existsSync(pdf)?`/files/${assetPathFor(pdf)}`:'',pages,pageImages:pages,pageCount:pages.length}
 }
 type PreviewCacheMetadata={warnings:any[];questionPages:Record<string,any>}
 function previewCacheDir(inputHash:string){return path.join(dataDir,'layout-preview-cache',inputHash)}
@@ -146,7 +146,7 @@ function restorePreviewCache(row:repo.LayoutDraftRow,revision:number,inputHash:s
   fs.rmSync(target,{recursive:true,force:true});fs.mkdirSync(path.dirname(target),{recursive:true});fs.cpSync(source,target,{recursive:true})
   const metadata=parseJson(cached.metadata_json,{warnings:[],questionPages:{}}) as PreviewCacheMetadata
   const primary=previewVariantAt(target,row.variant==='teacher'?'teacher':'student')
-  repo.setPreviewState(row.id,revision,'ready',assetPathFor(path.join(target,`${row.variant==='teacher'?'teacher':'student'}.pdf`)),primary.pages.map((url)=>url.replace(/^\/assets\//,'')),metadata.warnings||[],'',metadata.questionPages||{})
+  repo.setPreviewState(row.id,revision,'ready',assetPathFor(path.join(target,`${row.variant==='teacher'?'teacher':'student'}.pdf`)),primary.pages.map((url)=>url.replace(/^\/(?:assets|files)\//,'')),metadata.warnings||[],'',metadata.questionPages||{})
   repo.touchPreviewCache(inputHash);cleanupPreviewRevisions(row.id,revision)
   return true
 }
@@ -166,7 +166,7 @@ function cleanupPreviewRevisions(id:string,keepRevision:number){
   previewRevisionDirs(id).filter((entry)=>entry.revision!==keepRevision).forEach((entry)=>fs.rmSync(entry.dir,{recursive:true,force:true}))
 }
 function publicDraft(row: repo.LayoutDraftRow) {
-  const pages=parseJson(row.preview_pages_json, []).map((p: string) => `/assets/${p}`)
+  const pages=parseJson(row.preview_pages_json, []).map((p: string) => `/files/${p}`)
   const revisions=previewRevisionDirs(row.id)
   const requested=revisions.find((entry)=>entry.revision===Number(row.preview_revision))
   const requestedVariants=requested?{student:previewVariantAt(requested.dir,'student'),teacher:previewVariantAt(requested.dir,'teacher')}:undefined
@@ -176,7 +176,7 @@ function publicDraft(row: repo.LayoutDraftRow) {
   const variants=displayed?{student:previewVariantAt(displayed.dir,'student'),teacher:previewVariantAt(displayed.dir,'teacher')}:{student:{pdfUrl:'',pages:[],pageImages:[],pageCount:0},teacher:{pdfUrl:'',pages:[],pageImages:[],pageCount:0}}
   const contentSnapshot=parseJson(row.content_snapshot_json,{})
   const contentOverrides=parseJson(row.content_overrides_json,{}) as ContentOverrides
-  return { id: row.id, collectionId: row.collection_id, name: row.name, template: row.template_id, templateId: row.template_id, templateVersion: row.template_version, templateSpec:templateRenderSpec(row.template_id), templateSpecVersion:templateRenderSpecVersion, variant: row.variant, contentSnapshot, contentOverrides, effectiveContentSnapshot:effectiveSnapshot(contentSnapshot,contentOverrides), layout: normalizePaperLayoutDraft(parseJson(row.layout_json, {})), layoutVersion: row.layout_version, revision: row.revision, preview: { revision: row.preview_revision, displayRevision:displayed?.revision||0, status: row.preview_status, pdfUrl: row.preview_path ? `/assets/${row.preview_path}` : '', pages, pageImages:pages, pageCount:pages.length, variants, questionPages:parseJson(row.preview_question_pages_json, {}), warnings:parseJson(row.preview_warnings_json, []), error: row.preview_error }, createdAt: row.created_at, updatedAt: row.updated_at }
+  return { id: row.id, collectionId: row.collection_id, name: row.name, template: row.template_id, templateId: row.template_id, templateVersion: row.template_version, templateSpec:templateRenderSpec(row.template_id), templateSpecVersion:templateRenderSpecVersion, variant: row.variant, contentSnapshot, contentOverrides, effectiveContentSnapshot:effectiveSnapshot(contentSnapshot,contentOverrides), layout: normalizePaperLayoutDraft(parseJson(row.layout_json, {})), layoutVersion: row.layout_version, revision: row.revision, preview: { revision: row.preview_revision, displayRevision:displayed?.revision||0, status: row.preview_status, pdfUrl: row.preview_path ? `/files/${row.preview_path}` : '', pages, pageImages:pages, pageCount:pages.length, variants, questionPages:parseJson(row.preview_question_pages_json, {}), warnings:parseJson(row.preview_warnings_json, []), error: row.preview_error }, createdAt: row.created_at, updatedAt: row.updated_at }
 }
 export function createLayoutDraft(collectionId: string, body: Record<string, any>) {
   const collection = getCollection(collectionId); const now = nowIso(); const id = createId('layout')

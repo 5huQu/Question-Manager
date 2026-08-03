@@ -6,6 +6,7 @@ import { performance } from 'node:perf_hooks'
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'import-job-list-performance-test-'))
 process.env.QUESTION_DATA_DIR = tempRoot
+process.env.QUESTION_AUTH_MODE = 'disabled'
 
 const { closeDatabase } = await import('../dist/index.js')
 const { db } = await import('../dist/db/connection.js')

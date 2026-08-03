@@ -64,7 +64,7 @@ Environment requirements:
 
 - Node.js 24 or newer.
 - Python 3.11 or newer for source development.
-- Optional: XeLaTeX and LibreOffice.
+- Optional: XeLaTeX and dvisvgm.
 
 Common commands:
 
@@ -115,7 +115,7 @@ Security rules:
 - `.env.example` is only a field reference. Real secrets should come from the settings UI or local environment.
 - The frontend should only show whether a key is configured; never return the full key.
 - Store file URLs with `assetPathFor()` as portable paths, and read them with `resolveStoragePath()`. Do not pass arbitrary absolute paths directly to `/assets`.
-- `/assets` in `server/src/server.ts` only allows files inside `storageRoot` or `sourceRoot`; keep the same constraint for any new file-serving code.
+- `/assets` in `server/src/server.ts` uses an explicit allowlist for question/document images, PDF exports, and layout preview artifacts. It must not expose arbitrary files inside `storageRoot` or `sourceRoot`; keep the allowlist and final `realpath` containment check for any new file-serving code.
 
 ## Backend Implementation
 
@@ -229,7 +229,7 @@ Export:
 - Backend code lives in `server/src/services/question-bank/export*.ts`.
 - Export records live in `question_bank_export_records` and must store item snapshots so history can be restored to the basket.
 - Templates live in `templates/latex/`.
-- PDF export may depend on XeLaTeX. DOCX/PDF conversion may depend on LibreOffice.
+- PDF export may depend on XeLaTeX; TikZ SVG rendering may depend on dvisvgm.
 
 Tags:
 

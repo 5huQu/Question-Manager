@@ -23,6 +23,7 @@ export default defineConfig({
     proxy: {
       '/api': apiTarget,
       '/assets': apiTarget,
+      '/files': apiTarget,
     },
   },
 })

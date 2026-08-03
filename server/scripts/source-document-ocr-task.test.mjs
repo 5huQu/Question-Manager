@@ -5,6 +5,7 @@ import path from 'node:path'
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'source-document-ocr-task-test-'))
 process.env.QUESTION_DATA_DIR = tempRoot
+process.env.QUESTION_AUTH_MODE = 'disabled'
 process.env.DOC2X_API_KEY = 'test-doc2x-key'
 process.env.DOC2X_API_BASE_URL = 'https://doc2x.example.test'
 process.env.DOC2X_MODEL = 'v3-2026'

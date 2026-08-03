@@ -302,7 +302,7 @@ function assetFromRow(row: repo.TeachingDocumentAssetRow): TeachingDocumentAsset
     byteSize: Number(row.byte_size),
     width: Number(row.width),
     height: Number(row.height),
-    url: `/assets/${row.storage_path.replace(/^\/+/, '')}`,
+    url: `/files/${row.storage_path.replace(/^\/+/, '')}`,
     createdAt: row.created_at,
   }
 }

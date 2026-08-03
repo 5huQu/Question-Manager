@@ -5,6 +5,7 @@ import path from 'node:path'
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'question-manager-layout-drafts-'))
 process.env.QUESTION_DATA_DIR = tempRoot
+process.env.QUESTION_AUTH_MODE = 'disabled'
 
 const { app, closeDatabase } = await import('../dist/index.js')
 const { db } = await import('../dist/db/connection.js')

@@ -108,10 +108,42 @@ function apiUrl(url: string) {
   return `${baseUrl}${url.startsWith('/') ? url : `/${url}`}`
 }
 
+/**
+ * Session-bound CSRF token supplied by the auth state. The client attaches it
+ * to every state-changing request so pages never handle it themselves.
+ */
+let csrfToken: string | null = null
+
+export function setCsrfToken(token: string | null) {
+  csrfToken = token
+}
+
+export function getCsrfToken() {
+  return csrfToken
+}
+
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+/** Fired when a normal business request returns 401 (expired session). */
+export const AUTH_EXPIRED_EVENT = 'qm-auth-expired'
+
+function isAuthEndpoint(url: string) {
+  return url.includes('/api/auth/login') || url.includes('/api/auth/state')
+}
+
 export async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(apiUrl(url), init)
+  const headers = new Headers(init?.headers || {})
+  if (csrfToken && WRITE_METHODS.has((init?.method || 'GET').toUpperCase())) {
+    headers.set('X-QM-CSRF', csrfToken)
+  }
+  const response = await fetch(apiUrl(url), { ...init, headers })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
+    if (response.status === 401 && !isAuthEndpoint(url)) {
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT, {
+        detail: { next: window.location.pathname + window.location.search },
+      }))
+    }
     throw new ApiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload)
   }
   return payload as T

@@ -5,6 +5,7 @@ import path from 'node:path'
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'question-manager-teaching-documents-'))
 process.env.QUESTION_DATA_DIR = tempRoot
+process.env.QUESTION_AUTH_MODE = 'disabled'
 
 const { app, closeDatabase } = await import('../dist/index.js')
 const { inspectTeachingDocumentAssetReferences } = await import('../dist/services/teaching-documents.service.js')
@@ -196,7 +197,7 @@ try {
   assert.equal(asset.documentId, documentId)
   assert.equal(asset.width, 1)
   assert.equal(asset.height, 1)
-  assert.match(asset.url, /^\/assets\/data\/teaching-documents\//)
+  assert.match(asset.url, /^\/files\/data\/teaching-documents\//)
   assert.equal(asset.url.includes(tempRoot), false)
   const imageResponse = await fetch(`${baseUrl}${asset.url}`)
   assert.equal(imageResponse.status, 200)

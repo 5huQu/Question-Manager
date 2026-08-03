@@ -1,35 +1,17 @@
 import express from 'express'
-import fs from 'node:fs'
 import http from 'node:http'
-import path from 'node:path'
-import { frontendDist, storageRoot, sourceRoot } from './config.js'
-import { resolveStoragePath, isInside } from './utils/paths.js'
+import { trustedProxy } from './auth/config.js'
 
 export const app = express()
-app.use(express.json({ limit: '20mb' }))
-app.use('/assets', (req, res, next) => {
-  const decoded = decodeURIComponent(req.path || '')
-  const target = resolveStoragePath(decoded)
-  const allowed = target && (isInside(storageRoot, target) || isInside(sourceRoot, target))
-  if (!allowed || !fs.existsSync(target) || !fs.statSync(target).isFile()) {
-    next()
-    return
-  }
-  res.sendFile(target)
-})
-if (fs.existsSync(frontendDist)) {
-  app.use(express.static(frontendDist))
+
+// Phase 0: base middleware. Route mounting happens in index.ts so that the
+// authentication gates can wrap every business route from a single place.
+export function configureBaseMiddleware(expressApp = app) {
+  expressApp.set('trust proxy', trustedProxy)
+  expressApp.use(express.json({ limit: '20mb' }))
 }
 
-if (fs.existsSync(frontendDist)) {
-  app.use((req, res, next) => {
-    if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/assets')) {
-      next()
-      return
-    }
-    res.sendFile(path.join(frontendDist, 'index.html'))
-  })
-}
+configureBaseMiddleware()
 
 export function startServer(port = Number(process.env.PORT || 8797), host = process.env.HOST || '127.0.0.1') {
   const server = http.createServer(app)

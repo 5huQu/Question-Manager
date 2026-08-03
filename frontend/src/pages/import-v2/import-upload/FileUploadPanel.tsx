@@ -133,7 +133,7 @@ export function FileUploadPanel({ state }: FileUploadPanelProps) {
                 {uploading ? '文件上传并处理中...' : pendingUploadFile ? pendingUploadFile.name : '点击选择或拖拽资料至此处'}
               </p>
               <p className="text-[11px] text-zinc-400 mt-1">
-                {pendingUploadFile ? '已选择文件，提交后直接开始导入' : '支持 PDF、PNG/JPG 或 JSON 格式'}
+                {pendingUploadFile ? '已选择文件，提交后直接开始导入' : '支持 PDF、PNG/JPG 或本地 OCRDocument JSON'}
               </p>
               {pendingUploadFile && (
                 <button

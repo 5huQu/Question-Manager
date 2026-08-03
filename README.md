@@ -16,6 +16,7 @@ Question Manager 是一个本地优先的数学题库桌面工具，覆盖从整
 下面列出当前实现的主要能力和已知限制；更具体的行为以代码、测试和导入 V2 文档为准。
 
 - **V2 整卷导入**：统一处理 PDF 与图片资料，持久化 OCR 任务，并从 `OCRDocument` 生成候选题。
+- **导入格式边界**：正式资料导入接受 PDF、JPG、JPEG、PNG；Doc2X 手动导入接受 Markdown ZIP。Word 文件请先在 Word、WPS 或其他工具中另存为 PDF。
 - **异常题手动修正**：在候选题修正工作台调整来源区域、正文和题图，不再创建旧切题 run。
 - **GLM-OCR 区域归属**：GLM-OCR 可识别整份 PDF；系统根据已复核的题干/解析区域回收文本，避免相邻题或解析内容串入当前题。
 - **题图管理**：可在题干切片、解析裁图或 OCR 分块中框图、上传、调整和删除。已匹配的 GLM 图仅作识别诊断，不会重复显示为第二张题图。
@@ -88,9 +89,8 @@ OCR 失败时，优先检查：API Key、模型名称、原始资料是否仍存
 ### 可选外部工具
 
 - **XeLaTeX**：导出 LaTeX/PDF 时需要。
-- **LibreOffice**：部分 DOCX 转 PDF 流程需要。
 
-应用会自动探测常见路径，也可通过 `XELATEX_PATH` 与 `SOFFICE_PATH` 指定。系统健康状态会显示探测结果。
+应用会自动探测 XeLaTeX、dvisvgm 等外部工具，也可通过对应环境变量指定路径。正式资料导入支持 PDF、JPG、JPEG、PNG；Word 文件请先另存为 PDF。
 
 ## 从源码运行
 
@@ -98,7 +98,7 @@ OCR 失败时，优先检查：API Key、模型名称、原始资料是否仍存
 
 - Node.js 24 或更高版本
 - Python 3.11 或更高版本（仅源码开发需要）
-- 可选：XeLaTeX、LibreOffice
+- 可选：XeLaTeX、dvisvgm
 
 安装依赖：
 
@@ -117,9 +117,10 @@ npm run dev
 
 [`.env.example`](.env.example) 仅列出字段参考；开发服务器不会自动加载 `.env.local`。不要提交任何含真实密钥的环境文件。
 
-启动开发环境：
+启动开发环境（首次运行需先初始化管理员，或在仅本机调试时设置 `QUESTION_AUTH_MODE=disabled` 跳过登录）：
 
 ```sh
+npm run admin:init
 npm run dev
 ```
 
@@ -166,23 +167,61 @@ build-and-install-windows.cmd
 | --- | --- |
 | `QUESTION_DATA_DIR` | SQLite、上传文件、题图、OCR 草稿和导出文件的根目录。 |
 | `PYTHON_PATH` | 源码开发使用的 Python 可执行文件。 |
-| `XELATEX_PATH` / `SOFFICE_PATH` | 外部导出工具路径。 |
+| `XELATEX_PATH` | XeLaTeX 外部编译器路径。 |
+| `DVISVGM_PATH` | dvisvgm 外部 SVG 渲染器路径。 |
 | `LAYOUT_PREVIEW_CONCURRENCY` | PDF 预览全局最大并发数，默认 `1`。共享同一 SQLite 的服务实例会通过租约共同遵守该上限。 |
 | `LAYOUT_PREVIEW_POLL_MS` | 持久化预览队列轮询间隔，默认 `750` 毫秒。 |
 | `LAYOUT_PREVIEW_LEASE_MS` | worker 编译租约时长，默认 `600000` 毫秒；实例异常退出后任务可被其他实例恢复。 |
 | `LAYOUT_PREVIEW_CACHE_MAX_ENTRIES` | 按内容哈希保留的 PDF 预览缓存数量，默认 `50`。 |
 | `SOURCE_DOCUMENT_UPLOAD_MAX_BYTES` | V2 PDF/图片资料单文件上限，默认 `104857600`（100 MiB）。 |
-| `CANDIDATE_FIGURE_UPLOAD_MAX_BYTES` | 候选题题图单文件上限，默认 `20971520`（20 MiB）。 |
+| `CANDIDATE_FIGURE_UPLOAD_MAX_BYTES` | 候选题题图单文件上限，默认 `10485760`（10 MiB）。 |
 | `DOC2X_PACKAGE_UPLOAD_MAX_BYTES` | Doc2X 导出包单文件上限，默认 `209715200`（200 MiB）。 |
 | `UPLOAD_MAX_FIELDS` | multipart 表单字段数上限，默认 `32`。 |
 | `OCR_PROVIDER` | `glm` 或 `doc2x`。 |
 | `GLM_OCR_API_BASE_URL` / `GLM_OCR_API_KEY` / `GLM_OCR_MODEL` | GLM-OCR 配置。 |
 | `DOC2X_API_BASE_URL` / `DOC2X_API_KEY` / `DOC2X_MODEL` | Doc2X 配置。 |
 | `OCR_CLEANUP_*` | 可选的文本清理与分类模型配置。 |
+| `QUESTION_AUTH_MODE` | `single-admin`（默认，强制登录）、`trusted-desktop`（桌面版自动认证）或 `disabled`（仅本地开发）。 |
+| `PUBLIC_ORIGIN` | 云端部署的固定站点 Origin，用于 CSRF 校验；缺失时仅接受本机回环地址。 |
+| `AUTH_TRUSTED_PROXY` | 可选的可信反向代理策略：`off`（默认）、`loopback` 或逗号分隔的 IP/CIDR 白名单；未显式配置时忽略 `X-Forwarded-For`。 |
+| `AUTH_COOKIE_SECURE` | 强制 `Secure` 会话 Cookie；`PUBLIC_ORIGIN` 为 https 时自动开启。 |
+| `AUTH_SESSION_DAYS` | 会话有效期（天），默认 `7`。 |
+| `ADMIN_BOOTSTRAP_TOKEN` | 可选：要求管理员安装向导提供该令牌，防止公开部署时被抢先初始化。 |
+
+## 单管理员认证
+
+默认采用 `QUESTION_AUTH_MODE=single-admin`：所有业务 API、私有文件、打印页与普通页面都必须登录后才能访问，未登录的 API/文件请求返回 401 JSON，页面请求跳转 `/login`。桌面打包版使用 `trusted-desktop` 模式，在本机自动认证，不需要登录。
+
+首次部署（云端）需要先初始化管理员，两种方式任选：
+
+```sh
+# 方式一：命令行（服务器本机）
+npm run build:server
+npm run admin:init        # 交互式创建唯一管理员
+npm run admin:reset-password     # 重置密码并注销全部会话
+npm run admin:revoke-sessions    # 注销全部登录会话
+```
+
+方式二：直接访问站点，未初始化时会显示管理员安装向导，在网页上创建第一个管理员；创建后该入口永久失效。公开部署建议同时设置 `ADMIN_BOOTSTRAP_TOKEN`，安装向导会要求填写该令牌，防止他人抢先初始化。
+
+云端至少配置：
+
+```ini
+QUESTION_AUTH_MODE=single-admin
+PUBLIC_ORIGIN=https://question.example.com
+AUTH_COOKIE_SECURE=true
+AUTH_SESSION_DAYS=7
+HOST=127.0.0.1
+PORT=8797
+```
+
+认证使用 SQLite 持久化的 Cookie Session（`HttpOnly`、`SameSite=Lax`，https 下使用 `__Host-qm_session`），密码用异步 `crypto.scrypt`（N=2^16, r=8, p=2）哈希；写请求同时校验 `X-QM-CSRF` 头与 `Origin`。登录限流：同一 IP 连续失败 5 次锁定 1 分钟，15 分钟窗口内最多 10 次尝试。
 
 PDF 精确预览使用 SQLite 持久化队列。草稿内容、布局、模板文件或题图字节变化会生成新的 SHA-256；相同输入直接复用学生版/教师版 PDF 与页面图。草稿 revision 更新时，旧的排队或编译任务会被标记为取消。多进程部署必须让各实例共享同一 `QUESTION_DATA_DIR`，才能共享 SQLite 队列、缓存目录与预览制品。
 
 请勿提交 `config/`、`data/`、`python/ocr_drafts/`、`experiments/`、上传的 PDF、导出文件或任何密钥。
+
+服务器的 `/files` 只公开题图、文档图片、PDF 导出和排版预览缓存目录中的允许文件；配置文件、SQLite、日志、源码、临时文件、点文件以及软链接越界目标均不会通过该路径返回。旧版 `/assets/data/...` 地址会自动 301 跳转到 `/files/...`。前端构建产物（JS/CSS/字体）仍由 `/assets` 公开提供，匿名用户可加载登录页。
 
 ## 开发验证
 

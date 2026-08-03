@@ -10,6 +10,7 @@ import {
 } from '../../services/import-flow-v2/import-flow-v2.service.js'
 import { sendRouteError } from '../errors.js'
 import { API_BASE, routeId } from './common.js'
+import { removeFileQuietly } from '../../utils/upload-files.js'
 
 export function mountSourceDocumentRoutes(app: Express) {
   app.get(`${API_BASE}/source-documents`, (req, res) => {
@@ -19,16 +20,18 @@ export function mountSourceDocumentRoutes(app: Express) {
     try { res.status(201).json(createSourceDocument(parseOptionalObject(req.body, {}))) } catch (error) { sendRouteError(res, error) }
   })
   app.post(`${API_BASE}/source-documents/upload`, sourceDocumentUpload.single('file'), (req, res) => {
+    const temporaryPath = req.file?.path
     try {
       const body = validateJsonObjectField(parseOptionalObject(req.body, contracts.sourceUpload), 'metadata')
       res.status(201).json(uploadSourceDocument(req.file, body))
-    } catch (error) { sendRouteError(res, error) }
+    } catch (error) { sendRouteError(res, error) } finally { removeFileQuietly(temporaryPath) }
   })
   app.post(`${API_BASE}/source-documents/import-doc2x-package`, doc2xPackageUpload.single('file'), async (req, res) => {
+    const temporaryPath = req.file?.path
     try {
       const body = validateJsonObjectField(parseOptionalObject(req.body, contracts.sourceUpload), 'metadata')
       res.status(201).json(await importDoc2xMarkdownPackage(req.file, body))
-    } catch (error) { sendRouteError(res, error) }
+    } catch (error) { sendRouteError(res, error) } finally { removeFileQuietly(temporaryPath) }
   })
   app.get(`${API_BASE}/source-documents/:id`, (req, res) => {
     try { res.json(getSourceDocument(routeId(req))) } catch (error) { sendRouteError(res, error) }

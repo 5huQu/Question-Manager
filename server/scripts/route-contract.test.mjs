@@ -5,10 +5,21 @@ import path from 'node:path'
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'question-manager-routes-'))
 process.env.QUESTION_DATA_DIR = tempRoot
+process.env.QUESTION_AUTH_MODE = 'disabled'
 
 const { app, closeDatabase } = await import('../dist/index.js')
 
 const expectedRoutes = new Set([
+  'GET /livez',
+  'GET /login',
+  'GET /admin-setup',
+  'POST /api/auth/login',
+  'POST /api/auth/bootstrap',
+  'GET /api/auth/state',
+  'POST /api/auth/logout',
+  'POST /api/auth/change-password',
+  'GET /api/auth/sessions',
+  'DELETE /api/auth/sessions/:id',
   'GET /api/teaching-document-templates',
   'POST /api/teaching-document-templates',
   'PATCH /api/teaching-document-templates/:id',

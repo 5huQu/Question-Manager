@@ -5,7 +5,6 @@ import { storageRoot, pythonRoot } from '../../config.js'
 import { parseJson } from '../../utils/json.js'
 import { pythonCommand, pythonEnv } from './python.js'
 import { readAppSettings, writeAppSettings } from './app-settings.js'
-import { sofficePath } from './tools.js'
 
 type OcrProvider = 'legacy' | 'doc2x' | 'glm'
 
@@ -230,8 +229,6 @@ export function readOcrSettings() {
   const values = readOcrEnvValues()
   return {
     ...readAppSettings(),
-    sofficeAvailable: Boolean(sofficePath()),
-    sofficeDetectedPath: sofficePath(),
     ocrProvider: normalizeOcrProvider(values.OCR_PROVIDER) === 'glm' ? 'glm' : 'doc2x',
     apiBaseUrl: values.OCR_API_BASE_URL || '',
     apiKeyConfigured: Boolean(values.OCR_API_KEY || process.env.OCR_API_KEY),
@@ -302,7 +299,7 @@ export function writeOcrSettings(input: Record<string, unknown>) {
     OCR_CLEANUP_CONCURRENCY: clampWorkerCount(input.cleanupConcurrency ?? values.OCR_CLEANUP_CONCURRENCY ?? values.OCR_CONCURRENCY ?? '20'),
     OCR_CLASSIFICATION_ENABLED: String(input.classificationEnabled ?? values.OCR_CLASSIFICATION_ENABLED ?? 'true'),
   }
-  const passthroughKeys = Object.keys(values).filter((key) => !(key in map))
+  const passthroughKeys = Object.keys(values).filter((key) => !(key in map) && key !== 'SOFFICE_PATH')
   const lines = [...Object.entries(map), ...passthroughKeys.map((key) => [key, values[key]] as [string, string])]
     .map(([key, value]) => `${key}=${value}`)
   fs.writeFileSync(envPath, `${lines.join('\n')}\n`, { mode: 0o600 })

@@ -26,7 +26,6 @@ export const defaultAppSettings = {
   lectureWatermark: '教师姓名 · 工作室',
   lectureFontScheme: 'print' as LectureFontScheme,
   teachingStages: ['高中'],
-  sofficePath: '',
 }
 
 export const teachingStageValues = ['小学', '初中', '高中', '其他']
@@ -63,7 +62,6 @@ export function readAppSettings() {
     lectureWatermark: String(payload.lectureWatermark ?? defaultAppSettings.lectureWatermark),
     lectureFontScheme: normalizeLectureFontScheme(payload.lectureFontScheme ?? defaultAppSettings.lectureFontScheme),
     teachingStages: normalizeTeachingStages(payload.teachingStages),
-    sofficePath: String(payload.sofficePath ?? defaultAppSettings.sofficePath).trim(),
   }
 }
 
@@ -80,7 +78,6 @@ export function writeAppSettings(input: Record<string, unknown>) {
     lectureWatermark: String(input.lectureWatermark ?? existing.lectureWatermark).trim() || defaultAppSettings.lectureWatermark,
     lectureFontScheme: normalizeLectureFontScheme(input.lectureFontScheme ?? existing.lectureFontScheme),
     teachingStages: normalizeTeachingStages(input.teachingStages ?? existing.teachingStages),
-    sofficePath: String(input.sofficePath ?? existing.sofficePath ?? '').trim(),
   }
   fs.writeFileSync(appSettingsPath(), `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
   return readAppSettings()

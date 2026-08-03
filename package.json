@@ -42,7 +42,7 @@
     "pack:desktop": "npm run build && npm run prepare:python-runtime && electron-builder --dir && npm run verify:packaged-python",
     "pack:windows-installer": "npm run pack:desktop && electron-builder --win nsis --x64 --publish never",
     "test:math-render": "node server/scripts/validate_math_render.test.mjs",
-    "test:routes:built": "node server/scripts/database-migrator.test.mjs && node server/scripts/v1-import-migration.test.mjs && node server/scripts/route-contract.test.mjs && node server/scripts/teaching-documents.test.mjs && node server/scripts/import-v2-runtime-schema.test.mjs && node server/scripts/import-job.service.test.mjs && node server/scripts/import-job-deletion.test.mjs && node server/scripts/import-job-list-performance.test.mjs && node server/scripts/upload-limits.test.mjs && node server/scripts/source-document-ocr-task.test.mjs && node server/scripts/quick-actions.test.mjs && node server/scripts/ai-cleaner.service.test.mjs && node server/scripts/candidate-manual-fix.test.mjs && node server/scripts/candidate-figure-move.test.mjs",
+    "test:routes:built": "node server/scripts/database-migrator.test.mjs && node server/scripts/v1-import-migration.test.mjs && node server/scripts/route-contract.test.mjs && node server/scripts/libreoffice-retirement.test.mjs && node server/scripts/assets-security.test.mjs && node server/scripts/teaching-documents.test.mjs && node server/scripts/import-v2-runtime-schema.test.mjs && node server/scripts/import-job.service.test.mjs && node server/scripts/import-job-deletion.test.mjs && node server/scripts/import-job-list-performance.test.mjs && node server/scripts/upload-limits.test.mjs && node server/scripts/source-document-ocr-task.test.mjs && node server/scripts/quick-actions.test.mjs && node server/scripts/ai-cleaner.service.test.mjs && node server/scripts/candidate-manual-fix.test.mjs && node server/scripts/candidate-figure-move.test.mjs",
     "test:routes": "npm run build:server && npm run test:routes:built",
     "test:smoke": "node server/scripts/smoke.test.mjs",
     "test:unit": "npm run test:frontend && npm run test:math-render && npm run test:electron-security",
@@ -50,7 +50,14 @@
     "test:python": "PYTHONPATH=server/python python3 -m unittest discover -s server/python/tests -p 'test_*.py' -v",
     "test:all": "npm run test:unit && npm run test:integration && npm run test:python",
     "check": "npm run typecheck && npm run test:all",
-    "start": "node server/dist/index.js"
+    "start": "node server/dist/index.js",
+    "admin:init": "npm run build:server && node server/scripts/admin-cli.mjs init",
+    "admin:reset-password": "npm run build:server && node server/scripts/admin-cli.mjs reset-password",
+    "admin:revoke-sessions": "npm run build:server && node server/scripts/admin-cli.mjs revoke-sessions",
+    "test:auth:built": "node server/scripts/auth.test.mjs",
+    "test:auth": "npm run build:server && npm run test:auth:built && node server/scripts/auth-state-modes.test.mjs",
+    "test:doc2x-package:built": "node server/scripts/doc2x-package.service.test.mjs",
+    "test:doc2x-package": "npm run build:server && npm run test:doc2x-package:built"
   },
   "build": {
     "appId": "dev.question-manager.app",

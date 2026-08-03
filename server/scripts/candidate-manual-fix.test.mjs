@@ -6,6 +6,7 @@ import cp from 'node:child_process'
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'candidate-manual-fix-test-'))
 process.env.QUESTION_DATA_DIR = tempRoot
+process.env.QUESTION_AUTH_MODE = 'disabled'
 
 // Mock Python crop child process execution to avoid real PDF rendering/cropping dependencies
 const originalExecFileSync = cp.execFileSync

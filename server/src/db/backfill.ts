@@ -83,7 +83,7 @@ export function backfillDoc2xInlineFigures() {
  * Checks the record path or URL, resolving through storage paths.
  */
 function exportRecordFileSize(recordPath = '', recordUrl = '') {
-  const urlPath = String(recordUrl || '').replace(/^\/assets\//, '')
+  const urlPath = String(recordUrl || '').replace(/^\/(?:assets|files)\//, '')
   const rawPath = String(recordPath || urlPath || '').trim()
   if (!rawPath) return 0
   try {

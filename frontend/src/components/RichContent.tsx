@@ -3,6 +3,7 @@ import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import type { QuestionFigure, RichBlock, RichInline } from '../types'
 import { choiceLayoutForTexts } from '../utils/choiceLayout'
+import { assetUrl } from '../utils/questionDisplay'
 
 export function normalizeRichBlocks(value: unknown): RichBlock[] {
   if (!Array.isArray(value)) return []
@@ -150,7 +151,7 @@ export const RichContent = memo(function RichContent({
       {visibleFigures.length ? (
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {visibleFigures.map((figure, index) => (
-            <img key={figure.id || `${figure.path}-${index}`} src={`/assets/${figure.path}`} alt={`题图 ${index + 1}`} className="max-h-64 rounded-lg border bg-white object-contain" loading="lazy" />
+            <img key={figure.id || `${figure.path}-${index}`} src={assetUrl(String(figure.path || ''))} alt={`题图 ${index + 1}`} className="max-h-64 rounded-lg border bg-white object-contain" loading="lazy" />
           ))}
         </div>
       ) : null}

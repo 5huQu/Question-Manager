@@ -360,7 +360,7 @@ export function exportImportJob(jobId: string, body: Record<string, unknown> = {
     variant: `${template}-${variant}`,
     filename: path.basename(result.path),
     path: rel,
-    url: `/assets/${rel}`,
+    url: `/files/${rel}`,
     items: rows.map((row, index) => ({ questionId: row.id, exportOrder: index + 1 })),
     contentLength: exportRecordFileSize(rel),
     questionCount: rows.length,
@@ -368,7 +368,7 @@ export function exportImportJob(jobId: string, body: Record<string, unknown> = {
   return {
     filename: path.basename(result.path),
     format: result.format,
-    url: `/assets/${rel}`,
+    url: `/files/${rel}`,
     path: rel,
     exportRecord: mapExportRecord(record),
   }

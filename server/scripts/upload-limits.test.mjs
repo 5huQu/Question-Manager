@@ -5,6 +5,7 @@ import path from 'node:path'
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'upload-limits-test-'))
 process.env.QUESTION_DATA_DIR = tempRoot
+process.env.QUESTION_AUTH_MODE = 'disabled'
 process.env.CANDIDATE_FIGURE_UPLOAD_MAX_BYTES = String(1024 * 1024)
 
 const { app, closeDatabase } = await import('../dist/index.js')

@@ -4,9 +4,7 @@ const EXTERNAL_HOSTS = new Set([
   'chatgpt.com',
   'claude.ai',
   'gemini.google.com',
-  'libreoffice.org',
   'www.doubao.com',
-  'www.libreoffice.org',
 ])
 
 function parsedUrl(value) {

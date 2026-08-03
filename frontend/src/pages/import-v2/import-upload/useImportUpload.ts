@@ -5,6 +5,7 @@ import { settingsApi } from '@/api/settings'
 import { useAsync } from '@/hooks/useAsync'
 import { cityOptionsForProvince, provinceForCity, yearOptionsFromServerYear } from '@/utils/metadataOptions'
 import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
+import { unsupportedImportReason } from '@/utils/importFiles'
 import { importJobDocumentPath } from '../importV2Routes'
 import { type UploadDocumentMode, type Doc2xPackageDocumentMode, isGaokaoRegion, initialMetadata, subjectOptions } from './constants'
 
@@ -69,6 +70,13 @@ export function useImportUpload() {
   function handleUploadFileSelection(files: FileList | null) {
     if (!files || files.length === 0) return
     const file = files[0]
+    const unsupportedReason = unsupportedImportReason(file.name, { allowJson: true })
+    if (unsupportedReason) {
+      setPendingUploadFile(null)
+      setError(unsupportedReason)
+      setNotice('')
+      return
+    }
     setPendingUploadFile(file)
     setError('')
     setNotice('')
@@ -82,8 +90,11 @@ export function useImportUpload() {
   function handleSeparatedFileSelection(role: 'questions' | 'solutions', files: FileList | null) {
     if (!files || files.length === 0) return
     const file = files[0]
-    if (file.name.endsWith('.json')) {
-      setError('双文档导入请上传 PDF 或图片。JSON 模拟导入仍使用单文档模式。')
+    const unsupportedReason = unsupportedImportReason(file.name)
+    if (unsupportedReason) {
+      if (role === 'questions') setQuestionUploadFile(null)
+      else setSolutionUploadFile(null)
+      setError(unsupportedReason)
       return
     }
     if (role === 'questions') setQuestionUploadFile(file)
