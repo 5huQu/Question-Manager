@@ -31,6 +31,7 @@ import {
 } from './blocks/BlockRenderer'
 import { PaperPageView } from './PaperPageView'
 import { A3TwoColumnSheetView } from './A3TwoColumnSheetView'
+import { createLayoutPerformanceProfiler } from '@/utils/teachingDocument/layout/performance'
 
 const PREPARING_READINESS: RenderReadinessResult = {
   ready: false,
@@ -154,6 +155,14 @@ export function A4PaginationPreview({
     const generation = generationRef.current + 1
     generationRef.current = generation
     const controller = new AbortController()
+    const profiler = createLayoutPerformanceProfiler({
+      pipeline: 'preview',
+      generation,
+      metadata: {
+        blockCount: document.content.length,
+        spread,
+      },
+    })
     setReadiness(PREPARING_READINESS)
     setMeasurementGeneration(generation)
     // 新 generation 开始即向父层发布 preparing/null，
@@ -170,15 +179,20 @@ export function A4PaginationPreview({
       ? Promise.resolve(INSTANT_READINESS)
       : readinessWait(root, { timeoutMs: 8_000, stableFrames: 2, signal: controller.signal })
 
+    const endResourceWait = profiler.startPhase('resource-wait')
     void wait.then((nextReadiness) => {
+      endResourceWait()
       if (controller.signal.aborted || generation !== generationRef.current) return
       setReadiness(nextReadiness)
-        const measuredLayouts = measuredChoiceLayoutOverrides(root, choiceLayoutOverrides)
+        const measuredLayouts = profiler.measure('choice-layout', () => (
+          measuredChoiceLayoutOverrides(root, choiceLayoutOverrides)
+        ))
         if (!choiceLayoutOverridesEqual(measuredLayouts, choiceLayoutOverrides)) {
           setChoiceLayoutOverrides(measuredLayouts)
+          profiler.finish('retry')
           return
         }
-        const bundle = measureTeachingDocumentAll(
+        const bundle = profiler.measure('dom-measurement', () => measureTeachingDocumentAll(
           root,
           document,
           {
@@ -189,13 +203,13 @@ export function A4PaginationPreview({
           },
           resolveQuestion,
           choiceLayoutOverrides,
-        )
+        ))
         const { measurement, paragraphs: paragraphMeasurements, boxes: boxMeasurements, questions: questionMeasurements, boxChildQuestions: boxChildQuestionMeasurements, boxChildRawMarkdowns: boxChildRawMarkdownMeasurements } = bundle
         measurement.diagnostics.push(...nextReadiness.diagnostics)
         if (controller.signal.aborted || generation !== generationRef.current) return
         setParagraphLineCount(paragraphMeasurements.reduce((total, paragraph) => total + paragraph.lines.length, 0))
         setMeasurementGeneration(generation)
-        const paginationResult = paginateTeachingDocument({
+        const paginationResult = profiler.measure('pagination', () => paginateTeachingDocument({
           document,
           measurements: measurement,
           paragraphMeasurements,
@@ -206,13 +220,15 @@ export function A4PaginationPreview({
           paper,
           metrics,
           documentHeaderSpanColumns: spread ? 2 : 1,
-        })
+        }))
         setPagination(paginationResult)
         // 展示快照与分页同步切换，保证可见页面永远渲染一致的一对。
         displayDocumentRef.current = document
         onPaginationState?.({ pagination: paginationResult, readiness: nextReadiness, measurementGeneration: generation })
+        profiler.finish('settled')
       })
       .catch((error) => {
+        endResourceWait()
         // readiness 等待被拒绝（非中断/非过期 generation）时发布稳定失败态：
         // 清空分页并标记 timedOut，使导出 readiness 被阻塞，避免悬挂的未处理 rejection。
         if (controller.signal.aborted || generation !== generationRef.current) return
@@ -228,9 +244,13 @@ export function A4PaginationPreview({
         setReadiness(failedReadiness)
         setPagination(null)
         onPaginationState?.({ pagination: null, readiness: failedReadiness, measurementGeneration: generation })
+        profiler.finish('failed')
       })
 
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      profiler.finish('aborted')
+    }
   }, [active, boxGeometryAdapter, choiceLayoutOverrides, document, fontVars, geometryAdapter, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion, spread])
 
   const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure'> = {

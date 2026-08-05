@@ -36,7 +36,9 @@ const CandidateFixWorkbenchPage = lazy(() => import('@/pages/import-v2/Candidate
 const TeachingDocumentsPage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentsPage'))
 const TeachingDocumentEditorPage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentEditorPage'))
 const QuestionEditorMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/QuestionEditorMockPage')) : null
-const TeachingDocumentMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/TeachingDocumentMockPage')) : null
+const TeachingDocumentMockPage = import.meta.env.DEV || import.meta.env.VITE_TEACHING_DOCUMENT_PERF === '1'
+  ? lazy(() => import('@/pages/mock/TeachingDocumentMockPage'))
+  : null
 const EditorRedesignMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/editor-redesign/EditorRedesignMockPage')) : null
 const ReferenceDocumentEditorDemoPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/ReferenceDocumentEditorDemoPage')) : null
 

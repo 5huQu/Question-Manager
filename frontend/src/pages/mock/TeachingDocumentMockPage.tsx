@@ -3,7 +3,7 @@
  * 路由：/mock/teaching-document（仅 DEV 环境）
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Database, LoaderCircle, Moon, Sun } from 'lucide-react'
 import wideFixtureUrl from '@/assets/teaching-document/quadratic-tangent.png'
 import tallFixtureUrl from '@/assets/teaching-document/geometry-tall.png'
@@ -27,6 +27,7 @@ import {
   TEACHING_DOCUMENT_QUESTION_PAGINATION_BOUNDARY_FIXTURE,
   TEACHING_DOCUMENT_QUESTION_PAGINATION_NORMAL_FIXTURE,
 } from '@/fixtures/teachingDocumentPaginationFixtures'
+import { TEACHING_DOCUMENT_PERFORMANCE_FIXTURES } from '@/fixtures/teachingDocumentPerformanceFixtures'
 import type { QuestionItem } from '@/types'
 import type { FigureAssetRef, QuestionBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
 import { assetUrl } from '@/utils/questionDisplay'
@@ -36,6 +37,12 @@ import {
   validateTeachingDocument,
   type PaperSpec,
 } from '@/utils/teachingDocument'
+import {
+  clearTeachingDocumentLayoutPerformance,
+  LAYOUT_PERFORMANCE_EVENT,
+  teachingDocumentLayoutProfilingEnabled,
+  type LayoutPerformanceTrace,
+} from '@/utils/teachingDocument/layout/performance'
 import '@/components/teaching-document/teaching-document.css'
 
 type RealQuestionState =
@@ -55,6 +62,9 @@ type FixtureKind =
   | 'question-normal'
   | 'question-boundary'
   | 'question-abnormal'
+  | 'performance-small'
+  | 'performance-medium'
+  | 'performance-large'
 
 const FIXTURE_OPTIONS: Array<{ kind: FixtureKind; label: string }> = [
   { kind: 'normal', label: '渲染正常' },
@@ -67,6 +77,9 @@ const FIXTURE_OPTIONS: Array<{ kind: FixtureKind; label: string }> = [
   { kind: 'question-normal', label: '题目正常' },
   { kind: 'question-boundary', label: '题目边界' },
   { kind: 'question-abnormal', label: '题目异常' },
+  { kind: 'performance-small', label: '性能 S' },
+  { kind: 'performance-medium', label: '性能 M' },
+  { kind: 'performance-large', label: '性能 L' },
 ]
 
 export default function TeachingDocumentMockPage() {
@@ -77,6 +90,21 @@ export default function TeachingDocumentMockPage() {
   const [paperZoom, setPaperZoom] = useState(0.75)
   const [questionIdInput, setQuestionIdInput] = useState(() => new URLSearchParams(window.location.search).get('questionId') || '')
   const [realQuestion, setRealQuestion] = useState<RealQuestionState>({ status: 'idle', id: '' })
+  const [performanceTraces, setPerformanceTraces] = useState<LayoutPerformanceTrace[]>(() => (
+    teachingDocumentLayoutProfilingEnabled()
+      ? window.__QUESTION_MANAGER_LAYOUT_TRACES__ ?? []
+      : []
+  ))
+
+  useEffect(() => {
+    if (!teachingDocumentLayoutProfilingEnabled()) return
+    const handleTrace = (event: Event) => {
+      const trace = (event as CustomEvent<LayoutPerformanceTrace>).detail
+      setPerformanceTraces((current) => [...current, trace].slice(-100))
+    }
+    window.addEventListener(LAYOUT_PERFORMANCE_EVENT, handleTrace)
+    return () => window.removeEventListener(LAYOUT_PERFORMANCE_EVENT, handleTrace)
+  }, [])
 
   const abnormal = useMemo(() => parseTeachingDocument(TEACHING_DOCUMENT_ABNORMAL_INPUT), [])
   const baseDocument = {
@@ -90,6 +118,9 @@ export default function TeachingDocumentMockPage() {
     'question-normal': TEACHING_DOCUMENT_QUESTION_PAGINATION_NORMAL_FIXTURE,
     'question-boundary': TEACHING_DOCUMENT_QUESTION_PAGINATION_BOUNDARY_FIXTURE,
     'question-abnormal': TEACHING_DOCUMENT_QUESTION_PAGINATION_ABNORMAL_FIXTURE,
+    'performance-small': TEACHING_DOCUMENT_PERFORMANCE_FIXTURES.small,
+    'performance-medium': TEACHING_DOCUMENT_PERFORMANCE_FIXTURES.medium,
+    'performance-large': TEACHING_DOCUMENT_PERFORMANCE_FIXTURES.large,
   }[fixtureKind]
   const renderedDocument = useMemo(() => appendRealQuestion(baseDocument, realQuestion), [baseDocument, realQuestion])
   const validation = useMemo(() => renderedDocument ? validateTeachingDocument(renderedDocument) : null, [renderedDocument])
@@ -274,6 +305,30 @@ export default function TeachingDocumentMockPage() {
               </>
             ) : null}
           </div>
+          {teachingDocumentLayoutProfilingEnabled() ? (
+            <details open className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] dark:border-zinc-700 dark:bg-zinc-950">
+              <summary className="cursor-pointer font-medium text-zinc-700 dark:text-zinc-200">
+                性能追踪（{performanceTraces.length}）
+              </summary>
+              <div className="mt-2 flex items-start gap-2">
+                <button
+                  type="button"
+                  className="shrink-0 rounded border border-zinc-300 bg-white px-2 py-1 font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                  onClick={() => {
+                    clearTeachingDocumentLayoutPerformance()
+                    setPerformanceTraces([])
+                  }}
+                >
+                  清空性能追踪
+                </button>
+                <output aria-label="性能追踪数据" className="min-w-0 flex-1 overflow-auto">
+                  <pre className="max-h-32 whitespace-pre-wrap break-all text-zinc-500">
+                    {JSON.stringify(performanceTraces, null, 2)}
+                  </pre>
+                </output>
+              </div>
+            </details>
+          ) : null}
         </div>
       </div>
 

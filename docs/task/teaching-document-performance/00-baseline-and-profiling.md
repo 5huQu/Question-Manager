@@ -50,6 +50,8 @@
 - 确认 T1～T7 的优先级是否需要调整。
 - 可自动运行的性能 fixture 或基准脚本。
 
+本轮基线结果见 [T0-baseline-report.md](./T0-baseline-report.md)。
+
 ## 验收
 
 - 连续三轮测量结果波动范围可解释。

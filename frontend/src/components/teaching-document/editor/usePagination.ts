@@ -33,6 +33,7 @@ import {
   type RenderReadinessResult,
 } from '@/utils/teachingDocument'
 import type { QuestionResolution } from '../blocks/BlockRenderer'
+import { createLayoutPerformanceProfiler } from '@/utils/teachingDocument/layout/performance'
 
 const PREPARING_READINESS: RenderReadinessResult = {
   ready: false,
@@ -116,6 +117,14 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     const currentGeneration = generationRef.current + 1
     generationRef.current = currentGeneration
     const controller = new AbortController()
+    const profiler = createLayoutPerformanceProfiler({
+      pipeline: 'editor',
+      generation: currentGeneration,
+      metadata: {
+        blockCount: document.content.length,
+        debounceMs,
+      },
+    })
 
     // 新一轮开始：重置 readiness（阻塞导出）、标记未 settled，
     // 但保留上一份 pagination 供平滑渲染。
@@ -123,23 +132,30 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     setSettled(false)
     setGeneration(currentGeneration)
 
+    const endScheduleWait = profiler.startPhase('schedule-wait')
     const timer = window.setTimeout(() => {
+      endScheduleWait()
+      const endResourceWait = profiler.startPhase('resource-wait')
       void readinessWait(measureRoot, {
         timeoutMs: 8_000,
         stableFrames: 2,
         signal: controller.signal,
-      })
+        })
         .then((nextReadiness) => {
+          endResourceWait()
           if (controller.signal.aborted || currentGeneration !== generationRef.current) return
           setReadiness(nextReadiness)
 
-          const measuredLayouts = measuredChoiceLayoutOverrides(measureRoot, choiceLayoutOverrides)
+          const measuredLayouts = profiler.measure('choice-layout', () => (
+            measuredChoiceLayoutOverrides(measureRoot, choiceLayoutOverrides)
+          ))
           if (!choiceLayoutOverridesEqual(measuredLayouts, choiceLayoutOverrides)) {
             setChoiceLayoutOverrides(measuredLayouts)
+            profiler.finish('retry')
             return
           }
 
-          const bundle = measureTeachingDocumentAll(
+          const bundle = profiler.measure('dom-measurement', () => measureTeachingDocumentAll(
             measureRoot,
             document,
             {
@@ -150,7 +166,7 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
             },
             resolveQuestion,
             choiceLayoutOverrides,
-          )
+          ))
           const { measurement, paragraphs: paragraphMeasurements, boxes: boxMeasurements, questions: questionMeasurements, boxChildQuestions: boxChildQuestionMeasurements, boxChildRawMarkdowns: boxChildRawMarkdownMeasurements } = bundle
           measurement.diagnostics.push(...nextReadiness.diagnostics)
           if (controller.signal.aborted || currentGeneration !== generationRef.current) return
@@ -158,7 +174,7 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
           setParagraphLineCount(
             paragraphMeasurements.reduce((total, item) => total + item.lines.length, 0),
           )
-          const result = paginateTeachingDocument({
+          const result = profiler.measure('pagination', () => paginateTeachingDocument({
             document,
             measurements: measurement,
             paragraphMeasurements,
@@ -168,11 +184,13 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
             boxChildRawMarkdownMeasurements,
             paper,
             metrics,
-          })
+          }))
           setPagination(result)
           setSettled(true)
+          profiler.finish('settled')
         })
         .catch((error) => {
+          endResourceWait()
           // readiness 等待被拒绝（非中断/非过期 generation）时发布稳定失败态：
           // 标记 timedOut 使导出 readiness 被阻塞，避免悬挂的未处理 rejection。
           if (controller.signal.aborted || currentGeneration !== generationRef.current) return
@@ -190,12 +208,14 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
           setReadiness(failedReadiness)
           setPagination(null)
           setSettled(false)
+          profiler.finish('failed')
         })
     }, Math.max(0, debounceMs))
 
     return () => {
       window.clearTimeout(timer)
       controller.abort()
+      profiler.finish('aborted')
     }
   }, [
     measureRoot,
