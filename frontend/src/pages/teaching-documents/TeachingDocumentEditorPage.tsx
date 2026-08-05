@@ -689,9 +689,9 @@ export default function TeachingDocumentEditorPage() {
       let nextPage = 1
 
       if (canvasMode === 'a4') {
-        const pageRects = Array.from(canvasScrollRoot.querySelectorAll<HTMLElement>('[data-teaching-page-index]'))
+        const pageRects = Array.from(canvasScrollRoot.querySelectorAll<HTMLElement>('[data-teaching-page-anchor]'))
           .map((node) => ({
-            page: Number(node.dataset.teachingPageIndex) + 1,
+            page: Number(node.dataset.teachingPageAnchor) + 1,
             rect: node.getBoundingClientRect(),
           }))
           .filter(({ page, rect }) => Number.isFinite(page) && rect.height > 0)
@@ -1163,7 +1163,7 @@ export default function TeachingDocumentEditorPage() {
     setCurrentPage(targetPage)
     if (canvasMode === 'continuous') return
     const target = canvasMode === 'a4'
-      ? window.document.querySelector<HTMLElement>(`[data-teaching-page-index="${targetPage - 1}"]`)
+      ? window.document.querySelector<HTMLElement>(`[data-teaching-page-anchor="${targetPage - 1}"]`)
       : targetPage === 1
         ? window.document.querySelector<HTMLElement>('[data-teaching-page-content]')
         : window.document.querySelector<HTMLElement>(`[data-page-number="${targetPage}"]`)
@@ -1361,6 +1361,7 @@ export default function TeachingDocumentEditorPage() {
               fontVars={fontVars}
               zoom={viewZoom}
               selectedBlockId={selectedId}
+              targetPageIndex={currentPage - 1}
               renderVersion={renderResourceVersion}
               layoutRequest={editor.layoutRequest}
               active={canvasMode === 'a4'}

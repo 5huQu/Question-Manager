@@ -47,6 +47,7 @@ import {
   TeachingDocumentLayoutCoordinator,
   type LayoutCoordinatorSnapshot,
 } from './editor/layoutCoordinator'
+import { usePreviewPageWindow } from './usePreviewPageWindow'
 
 const PREPARING_READINESS: RenderReadinessResult = {
   ready: false,
@@ -78,6 +79,8 @@ export interface A4PaginationPreviewProps {
   fontVars?: Record<string, string>
   zoom?: number
   selectedBlockId?: string
+  /** 页码导航的显式目标；窗口化时保证该逻辑页及缓冲页已挂载。 */
+  targetPageIndex?: number
   renderVersion?: string
   /**
    * 是否处于激活状态（页面级：a4 预览可见时才测量）。
@@ -114,6 +117,7 @@ export function A4PaginationPreview({
   fontVars,
   zoom = 1,
   selectedBlockId,
+  targetPageIndex,
   renderVersion = '',
   active = true,
   onBlockSelect,
@@ -181,6 +185,7 @@ export function A4PaginationPreview({
     geometryDependencies,
   )
   const safeZoom = Math.min(1.5, Math.max(0.35, zoom))
+  const [diagnosticTargetPageIndex, setDiagnosticTargetPageIndex] = useState<number | null>(null)
 
   useEffect(() => {
     if (coordinator.getSnapshot(coordinatorKey)) return
@@ -435,6 +440,36 @@ export function A4PaginationPreview({
     }, 0),
     0,
   ) || 0
+  const selectedTopLevelBlockId = useMemo(() => {
+    if (!selectedBlockId) return null
+    for (const block of displayDocumentRef.current.content) {
+      if (block.id === selectedBlockId) return block.id
+      if (block.type === 'box' && block.children.some((child) => child.id === selectedBlockId)) return block.id
+    }
+    return null
+  }, [pagination, selectedBlockId])
+  const selectedPageIndex = useMemo(() => {
+    if (!selectedTopLevelBlockId) return null
+    return pagination?.pages.find((page) => (
+      page.items.some((item) => item.blockId === selectedTopLevelBlockId)
+    ))?.index ?? null
+  }, [pagination, selectedTopLevelBlockId])
+  const previewUnitCount = spread
+    ? Math.ceil((pagination?.pages.length || 0) / 2)
+    : pagination?.pages.length || 0
+  const pageToUnit = (pageIndex: number | null | undefined) => (
+    pageIndex == null ? null : spread ? Math.floor(pageIndex / 2) : pageIndex
+  )
+  const previewWindowTargets = useMemo(() => [
+    pageToUnit(targetPageIndex),
+    pageToUnit(selectedPageIndex),
+    pageToUnit(diagnosticTargetPageIndex),
+  ], [diagnosticTargetPageIndex, selectedPageIndex, spread, targetPageIndex])
+  const previewWindow = usePreviewPageWindow({
+    unitCount: previewUnitCount,
+    active,
+    targetUnitIndexes: previewWindowTargets,
+  })
   const diagnosticGuide = (diagnostic: import('@/utils/teachingDocument').RenderDiagnostic) => {
     if (diagnostic.code === 'box-overflow') {
       const box = displayDocumentRef.current.content.find((block) => block.id === diagnostic.blockId && block.type === 'box')
@@ -531,7 +566,11 @@ export function A4PaginationPreview({
               {diagnostic.blockId ? (
                 <button
                   type="button"
-                  onClick={() => (onDiagnosticNavigate || onBlockSelect)?.(diagnostic.blockId!, diagnostic.pageIndex ?? 0)}
+                  onClick={() => {
+                    const pageIndex = diagnostic.pageIndex ?? 0
+                    setDiagnosticTargetPageIndex(pageIndex)
+                    ;(onDiagnosticNavigate || onBlockSelect)?.(diagnostic.blockId!, pageIndex)
+                  }}
                   className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-300 bg-white px-2 py-1 text-[11px] font-medium text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/60"
                 >
                   <MapPin className="size-3" />定位并修复
@@ -549,10 +588,15 @@ export function A4PaginationPreview({
           return (
             <div
               key={`sheet:${sheetIndex}`}
+              ref={previewWindow.refForUnit(sheetIndex)}
+              data-teaching-preview-unit-index={sheetIndex}
+              data-teaching-preview-unit-mounted={previewWindow.mountedUnitIndexes.has(sheetIndex) ? 'true' : 'false'}
               className="relative mx-auto"
               style={{ width: sheetMetrics.pageWidthPx * safeZoom, height: sheetMetrics.pageHeightPx * safeZoom }}
             >
-              <A3TwoColumnSheetView
+              <span data-teaching-page-anchor={leftPage.index} className="pointer-events-none absolute inset-y-0 left-0 w-1/2" />
+              {rightPage ? <span data-teaching-page-anchor={rightPage.index} className="pointer-events-none absolute inset-y-0 right-0 w-1/2" /> : null}
+              {previewWindow.mountedUnitIndexes.has(sheetIndex) ? <A3TwoColumnSheetView
                 pages={[leftPage, rightPage]}
                 sheetIndex={sheetIndex}
                 sheetCount={Math.ceil(pagination!.pages.length / 2)}
@@ -576,16 +620,20 @@ export function A4PaginationPreview({
                   transformOrigin: 'top left',
                   contentVisibility: 'auto',
                 }}
-              />
+              /> : null}
             </div>
           )
         }) : (pagination?.pages || []).map((page) => (
           <div
             key={page.index}
+            ref={previewWindow.refForUnit(page.index)}
+            data-teaching-preview-unit-index={page.index}
+            data-teaching-preview-unit-mounted={previewWindow.mountedUnitIndexes.has(page.index) ? 'true' : 'false'}
+            data-teaching-page-anchor={page.index}
             className="relative mx-auto"
             style={{ width: metrics.pageWidthPx * safeZoom, height: metrics.pageHeightPx * safeZoom }}
           >
-            <PaperPageView
+            {previewWindow.mountedUnitIndexes.has(page.index) ? <PaperPageView
               page={page}
               document={displayDocumentRef.current}
               paper={paper}
@@ -605,7 +653,7 @@ export function A4PaginationPreview({
                 contentVisibility: 'auto',
                 '--td-paper-content-height': `${metrics.contentHeightPx}px`,
               } as CSSProperties}
-            />
+            /> : null}
           </div>
         ))}
       </div>
