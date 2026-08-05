@@ -187,6 +187,7 @@ function attachParserDiagnostics(
   }
   return candidates.map((candidate) => {
     const diagnostics = [
+      ...(candidate.parseDiagnostics || []),
       ...(diagnosticsByQuestion.get(candidate.questionNo) || []),
       ...validationIssueDiagnostics(candidate, candidate.issues),
     ]

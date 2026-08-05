@@ -109,6 +109,7 @@ function emptyBreakdown(): ActivityBreakdownCounts & { questionsBanked: number }
     questionsBanked: 0,
     exportsCreated: 0,
     ocrCompleted: 0,
+    documentsCreated: 0,
   }
 }
 

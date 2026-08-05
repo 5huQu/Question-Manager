@@ -200,12 +200,14 @@ function markerDrivenAppendixStart(
 function restartedQuestionAppendixStart(
   source: string,
   questionMatches: QuestionNumberMatch[],
+  options: { allowEarlyStart?: boolean } = {},
 ): { start: number; repeatedQuestionNos: string[]; firstQuestionNoAfterHeading?: string } | undefined {
   if (questionMatches.length < 6) return undefined
 
   for (let index = 1; index <= questionMatches.length - 3; index += 1) {
     const first = questionMatches[index]
-    if (numberValue(first.questionNo) !== 1 || first.start < source.length * 0.35) continue
+    if (numberValue(first.questionNo) !== 1) continue
+    if (!options.allowEarlyStart && first.start < source.length * 0.35) continue
 
     const beforeNumbers = new Set(questionMatches.slice(0, index).map((item) => numberValue(item.questionNo)).filter((item): item is number => item !== undefined))
     if (!beforeNumbers.has(1) || !beforeNumbers.has(2) || !beforeNumbers.has(3)) continue
@@ -249,7 +251,7 @@ export function classifyQuestionDocumentLayout(
   )
   const restartedAppendix = globalSection || markerAppendix
     ? undefined
-    : restartedQuestionAppendixStart(source, questionMatches)
+    : restartedQuestionAppendixStart(source, questionMatches, { allowEarlyStart: config.documentLayout === 'appendix' })
   const firstAnswerOffset = answerMarkers[0]
   const firstAnalysisOffset = analysisMarkers[0]
   const evidence: QuestionDocumentLayoutEvidence = {

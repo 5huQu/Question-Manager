@@ -18,6 +18,8 @@ import { attachImageBlocks, reassignStandaloneFigureBlocks } from './figure-extr
 import { cleanQuestionMatchesForLayout, extractAppendixSolutionMatches } from './solution-extraction.js'
 import type { SolutionMatch } from './solution-matcher.js'
 import { candidateFromChunk, fallbackCandidate, fillDoc2xFigures, removeDoc2xFigureMarkers } from './candidate-builder.js'
+import { appendixSplitLeavesQuestionContent } from './appendix-safety.js'
+import { pairLectureQuestionSolutionRuns } from './lecture-variant-pairing.js'
 
 export type ParseQuestionCandidatesOptions = {
   now?: string
@@ -74,7 +76,13 @@ export function parseQuestionCandidates(document: OCRDocument, options: ParseQue
   const maskedMarkdown = maskStructuralMarkdown(lectureAwareMarkdown, config)
   const classification = classifyQuestionDocumentLayout(markdown, config, { detectionMarkdown: maskedMarkdown })
   const solutionSections = findSolutionSections(markdown, config)
-  const useAppendixSolutions = classification.cleaningRule === 'same_document_appendix' && classification.solutionStart !== undefined
+  const proposedAppendix = classification.cleaningRule === 'same_document_appendix' && classification.solutionStart !== undefined
+  const unsafeAppendix = proposedAppendix
+    && appendixSplitLeavesQuestionContent(maskedMarkdown, classification.solutionStart!, config)
+  // Lecture packages often repeat a question-only run followed by an answered
+  // run several times. Parse the complete document first and pair local runs;
+  // a single global appendix split cannot represent that structure safely.
+  const useAppendixSolutions = proposedAppendix && paperKind !== 'lecture' && !unsafeAppendix
   const questionMarkdown = classification.cleaningRule === 'solution_document_only'
     ? ''
     : useAppendixSolutions
@@ -97,6 +105,7 @@ export function parseQuestionCandidates(document: OCRDocument, options: ParseQue
     candidates = chunks.map((chunk) => candidateFromChunk(alignedDocument, chunk, solutions.get(chunk.questionNo), duplicateNos, timestamp, config, paperKind))
     attachImageBlocks(alignedDocument, chunks, candidates, config)
     reassignStandaloneFigureBlocks(alignedDocument, candidates)
+    if (paperKind === 'lecture') candidates = pairLectureQuestionSolutionRuns(chunks, candidates)
   }
 
   if (paperKind === 'lecture') {

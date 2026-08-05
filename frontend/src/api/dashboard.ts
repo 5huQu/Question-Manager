@@ -25,6 +25,7 @@ export type ActivityHeatmapDay = {
     questionsBanked: number
     exportsCreated: number
     ocrCompleted: number
+    documentsCreated: number
   }
 }
 

@@ -81,6 +81,7 @@ export function attachImageBlocks(document: OCRDocument, chunks: QuestionMarkdow
   const imageBlocks = document.pages.flatMap((page) => page.blocks)
     .filter((block) => block.type === 'image' || block.assetId)
   const attached = new Set(candidates.flatMap((candidate) => candidate.figures.map((figure) => figure.sourceBlockId).filter(Boolean)))
+  const unplaced: Array<{ blockId: string; figure?: CandidateFigure }> = []
   for (const block of imageBlocks) {
     if (!isLikelyStandaloneFigureBlock(document, block)) continue
     if (attached.has(block.id)) continue
@@ -105,16 +106,8 @@ export function attachImageBlocks(document: OCRDocument, chunks: QuestionMarkdow
       if (likelyFigureCandidates.length) index = likelyFigureCandidates[likelyFigureCandidates.length - 1].candidateIndex
     }
     if (index < 0) {
-      const fallback = candidates[candidates.length - 1]
       const relatedFigure = figureForBlock(document, block, 'unknown')
-      fallback.issues.push({
-        code: 'unplaced_figure',
-        severity: 'warning',
-        message: `有一张图片（${block.id}）未能可靠归属到题目，请核对。`,
-        relatedBlockIds: [block.id],
-        relatedFigures: relatedFigure ? [relatedFigure] : [],
-      })
-      fallback.status = statusForIssues(fallback.issues)
+      unplaced.push({ blockId: block.id, figure: relatedFigure || undefined })
       continue
     }
     const figure = figureForBlock(document, block, 'stem')
@@ -129,6 +122,32 @@ export function attachImageBlocks(document: OCRDocument, chunks: QuestionMarkdow
     }])
     attached.add(block.id)
   }
+
+  if (!unplaced.length || !candidates.length) return
+  const fallback = candidates[candidates.length - 1]
+  const figures = unplaced.flatMap((item) => item.figure ? [item.figure] : [])
+  const pages = figures.map((figure) => figure.pageNo).filter((pageNo): pageNo is number => pageNo !== undefined)
+  const firstPage = pages.length ? Math.min(...pages) : undefined
+  const lastPage = pages.length ? Math.max(...pages) : undefined
+  const pageSpan = firstPage !== undefined && lastPage !== undefined ? lastPage - firstPage : 0
+  const unsafeOverflow = unplaced.length > 5 || pageSpan > 2
+  const pageLabel = firstPage === undefined
+    ? ''
+    : firstPage === lastPage
+      ? `，位于第 ${firstPage} 页`
+      : `，跨第 ${firstPage}-${lastPage} 页`
+  fallback.issues.push({
+    code: 'unplaced_figure',
+    severity: unsafeOverflow ? 'error' : 'warning',
+    message: unsafeOverflow
+      ? `文档级图片归属异常：有 ${unplaced.length} 张图片${pageLabel}未能可靠归属。解析结果已阻止直接入库，请先核对题目边界。`
+      : unplaced.length === 1
+        ? `有一张图片（${unplaced[0].blockId}）未能可靠归属到题目，请核对。`
+        : `有 ${unplaced.length} 张图片${pageLabel}未能可靠归属到题目，请核对。`,
+    relatedBlockIds: unplaced.map((item) => item.blockId),
+    relatedFigures: figures,
+  })
+  fallback.status = statusForIssues(fallback.issues)
 }
 
 type OCRBlock = OCRDocument['pages'][number]['blocks'][number]

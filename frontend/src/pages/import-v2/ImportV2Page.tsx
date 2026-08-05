@@ -2,6 +2,7 @@ import { ChevronLeft, Check, BadgeAlert, Layers } from 'lucide-react'
 import { importJobQuestionsPath } from './importV2Routes'
 import { MarkdownStructurePreviewDialog } from '@/components/import-v2/MarkdownStructurePreviewDialog'
 import { ImportMetadataEditorDialog } from '@/components/import-v2/ImportMetadataEditorDialog'
+import { WatermarkCleanupDialog } from '@/components/import-v2/WatermarkCleanupDialog'
 import { PageTitle, Button } from '@/components/ui'
 import { useImportV2Workspace } from './useImportV2Workspace'
 import { ReviewHeaderBar } from './components/ReviewHeaderBar'
@@ -104,6 +105,17 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
           saving={ws.busy === `metadata-${ws.activeImportJob?.id}`}
           onClose={() => ws.setShowMetadataEditor(false)}
           onSave={ws.handleSaveSourceMetadata}
+        />
+      ) : null}
+
+      {ws.showWatermarkCleanupEditor ? (
+        <WatermarkCleanupDialog
+          draft={ws.watermarkCleanupDraft}
+          setDraft={ws.setWatermarkCleanupDraft}
+          saving={ws.busy === `watermark-${ws.activeImportJob?.id || ''}`}
+          canReclean={ws.canRecleanSelectedDoc}
+          onClose={() => ws.setShowWatermarkCleanupEditor(false)}
+          onSave={ws.handleSaveWatermarkCleanup}
         />
       ) : null}
 
