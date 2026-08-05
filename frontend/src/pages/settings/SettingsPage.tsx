@@ -1,5 +1,11 @@
+import { useState } from 'react'
 import {
+  Bot,
+  FileCode,
   Plus,
+  ScanText,
+  ShieldCheck,
+  Sliders,
   Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui'
@@ -22,6 +28,16 @@ import {
 import { PARSER_RULE_CATEGORIES } from './types'
 import { useSettingsState } from './useSettingsState'
 import { AccountManagementCard } from './AccountManagementCard'
+
+type SettingsTabKey = 'general' | 'ocr' | 'parser' | 'ai' | 'system'
+
+const SETTINGS_TABS: { key: SettingsTabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: 'general', label: '基础设置', icon: Sliders },
+  { key: 'ocr', label: 'OCR 引擎', icon: ScanText },
+  { key: 'parser', label: '导入识别规则', icon: FileCode },
+  { key: 'ai', label: 'AI 助手与分类', icon: Bot },
+  { key: 'system', label: '系统与账号', icon: ShieldCheck },
+]
 
 export function SettingsPage() {
   const {
@@ -55,6 +71,19 @@ export function SettingsPage() {
     toggleTeachingStage,
   } = useSettingsState()
 
+  const [activeTab, setActiveTabState] = useState<SettingsTabKey>(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tab = params.get('tab') as SettingsTabKey
+    return SETTINGS_TABS.some((t) => t.key === tab) ? tab : 'general'
+  })
+
+  const setActiveTab = (tab: SettingsTabKey) => {
+    setActiveTabState(tab)
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', tab)
+    window.history.replaceState({}, '', url.toString())
+  }
+
   if (loading && !data) {
     return <div className="mock-page-root p-6 text-xs text-zinc-400">读取设置中...</div>
   }
@@ -75,8 +104,32 @@ export function SettingsPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-6 text-left lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
+      {/* Tab Navigation */}
+      <div className="flex w-full flex-wrap items-center gap-1.5 rounded-xl border border-zinc-200/80 bg-zinc-100/80 p-1.5 dark:border-zinc-800/80 dark:bg-zinc-900/80">
+        {SETTINGS_TABS.map((tab) => {
+          const Icon = tab.icon
+          const isActive = activeTab === tab.key
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all duration-150 active:scale-[0.98] ${
+                isActive
+                  ? 'border border-zinc-200/60 bg-white text-zinc-950 shadow-xs dark:border-zinc-800/80 dark:bg-zinc-950 dark:text-zinc-50'
+                  : 'text-zinc-500 hover:bg-zinc-200/50 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200'
+              }`}
+            >
+              <Icon className={`size-4 ${isActive ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400'}`} />
+              <span>{tab.label}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Tab Content */}
+      <div className="text-left animate-in fade-in-50 slide-in-from-bottom-1 duration-200">
+        {activeTab === 'general' && (
           <SettingsCard
             title="基础设置"
             desc="控制左上角系统名称、网页标题描述，以及几套 TeX 模板导出时使用的水印/品牌文字。"
@@ -155,14 +208,16 @@ export function SettingsPage() {
               </Field>
             </div>
           </SettingsCard>
+        )}
 
+        {activeTab === 'ocr' && (
           <SettingsCard
             title="OCR 接口设置"
             desc="配置默认的 OCR 解析提供方。支持 Doc2X 批量识别与 GLM-OCR 的版面及段落解析。"
             footer={<SaveButton label="保存 OCR 配置" loading={isSaving} onClick={() => save('OCR 引擎')} />}
           >
             <Field label="默认 OCR 提供方">
-              <div className="grid grid-cols-2 gap-2 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900">
+              <div className="grid max-w-sm grid-cols-2 gap-2 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900">
                 <SegmentButton active={(draft.ocrProvider ?? 'doc2x') === 'doc2x'} onClick={() => setDraft({ ...draft, ocrProvider: 'doc2x' })}>Doc2X API</SegmentButton>
                 <SegmentButton active={draft.ocrProvider === 'glm'} onClick={() => setDraft({ ...draft, ocrProvider: 'glm' })}>GLM-OCR</SegmentButton>
               </div>
@@ -200,9 +255,10 @@ export function SettingsPage() {
                 </Field>
               </div>
             )}
-
           </SettingsCard>
+        )}
 
+        {activeTab === 'parser' && (
           <SettingsCard
             title="导入识别规则"
             desc="用于 GLM-OCR 导入资料时识别题号、卷面栏目和答案解析区。调整后仅影响之后重新生成的待确认题目。"
@@ -347,10 +403,12 @@ export function SettingsPage() {
               </Field>
             </> : null}
           </SettingsCard>
+        )}
 
+        {activeTab === 'ai' && (
           <SettingsCard
             title="AI 助手与自动标签"
-            desc="用于单题 AI 清洗、格式修复、评分拆分，以及题目批次自动标签和难度评估。"
+            desc="用于题目批次自动标签和难度评估。"
             footer={<SaveButton label="保存 AI 助手设置" loading={isSaving} onClick={() => save('AI 助手')} />}
           >
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -377,32 +435,6 @@ export function SettingsPage() {
                 <TextInput mono value={draft.cleanupModel ?? ''} placeholder="deepseek-v4-flash" onChange={(value) => setDraft({ ...draft, cleanupModel: value })} />
               </Field>
             </div>
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-300">
-              这组模型配置会被单题 AI 清洗和自动分类共同使用。单题清洗 Prompt 用于“AI 清洗”按钮；分类 Prompt 用于批次自动标签。
-            </div>
-            <SectionTitle className="pt-2">单题 AI 清洗 Prompt</SectionTitle>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="单题清洗 System Prompt">
-                <TextArea
-                  mono
-                  rows={8}
-                  value={draft.assistantCleanSystemPrompt ?? ''}
-                  placeholder="定义单题清洗助手的角色、安全边界和输出格式。"
-                  onChange={(value) => setDraft({ ...draft, assistantCleanSystemPrompt: value })}
-                />
-                <p className="text-[11px] text-zinc-400">建议保留“不解题、不补写、不改题意、只输出 JSON”的约束。</p>
-              </Field>
-              <Field label="单题清洗 User Prompt">
-                <TextArea
-                  mono
-                  rows={8}
-                  value={draft.assistantCleanUserPrompt ?? ''}
-                  placeholder="必须保留 {payload}，系统会替换为当前题目 JSON。"
-                  onChange={(value) => setDraft({ ...draft, assistantCleanUserPrompt: value })}
-                />
-                <p className="text-[11px] text-zinc-400">可使用 `{'{payload}'}` 插入当前题目、模式和输出 schema；若遗漏，系统会自动追加在末尾。</p>
-              </Field>
-            </div>
             <SectionTitle className="pt-2">自动分类 Prompt</SectionTitle>
             <div className="grid grid-cols-1 gap-4 border-t border-zinc-100 pt-4 dark:border-zinc-800 md:grid-cols-2">
               <Field label="分类 System Prompt 基础模板">
@@ -427,23 +459,26 @@ export function SettingsPage() {
               </Field>
             </div>
           </SettingsCard>
+        )}
 
-        </div>
-
-        <div className="space-y-6">
-          <AccountManagementCard />
-
-          <SettingsCard title="系统运行状态" desc="诊断本地运行环境服务及相关编译器套件路径。">
-            <StatusLine label="本地服务端引擎" status="运行中" ready />
-            <StatusLine label="KaTeX 数学渲染" status="正常" ready />
-            <StatusLine label="Python 脚本切片 service" status="就绪" ready />
-            <StatusLine label="XeLaTeX 编译器" status="就绪" ready />
-          </SettingsCard>
-
-          <SettingsCard title="应用版本更新" desc="检查最新客户端版本与开源社区发布记录。">
-            <UpdateCard autoCheck />
-          </SettingsCard>
-        </div>
+        {activeTab === 'system' && (
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+            <div className="space-y-6">
+              <AccountManagementCard />
+              <SettingsCard title="应用版本更新" desc="检查最新客户端版本与开源社区发布记录。">
+                <UpdateCard autoCheck />
+              </SettingsCard>
+            </div>
+            <div className="space-y-6">
+              <SettingsCard title="系统运行状态" desc="诊断本地运行环境服务及相关编译器套件路径。">
+                <StatusLine label="本地服务端引擎" status="运行中" ready />
+                <StatusLine label="KaTeX 数学渲染" status="正常" ready />
+                <StatusLine label="Python 脚本切片 service" status="就绪" ready />
+                <StatusLine label="XeLaTeX 编译器" status="就绪" ready />
+              </SettingsCard>
+            </div>
+          </div>
+        )}
       </div>
 
       {saveStatus ? <Toast status={saveStatus} /> : null}

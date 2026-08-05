@@ -343,6 +343,13 @@ export type ImportV2ImportJobDetail = {
 
 export type ImportV2JobQuestionsResponse = ImportV2ImportJobDetail & {
   items: QuestionItem[]
+  filterOptions: {
+    stages: string[]
+    questionTypes: string[]
+    difficultyLabels: string[]
+    knowledgePoints: string[]
+    solutionMethods: string[]
+  }
 }
 
 export type ImportV2JobClassificationResponse = ImportV2JobQuestionsResponse & {

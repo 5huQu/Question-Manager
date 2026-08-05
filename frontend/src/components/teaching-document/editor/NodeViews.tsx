@@ -508,6 +508,15 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
       return {}
     }
   }, [node.attrs.display])
+  const updateInlineContent = useCallback((key: string, content: TeachingInline[]) => {
+    const inlineContent = { ...(display.inlineContent || {}) }
+    if (content.length) inlineContent[key] = content
+    else delete inlineContent[key]
+    const nextDisplay = { ...display }
+    if (Object.keys(inlineContent).length) nextDisplay.inlineContent = inlineContent
+    else delete nextDisplay.inlineContent
+    updateAttributes({ display: JSON.stringify(nextDisplay) })
+  }, [display, updateAttributes])
   const [dragAnswerHeightMm, setDragAnswerHeightMm] = useState<number | null>(null)
   const [dragFigureWidths, setDragFigureWidths] = useState<Record<string, number>>({})
   const [selectedInsertedFigureKey, setSelectedInsertedFigureKey] = useState('')
@@ -537,14 +546,14 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
     }
   }, [node.attrs.localContent])
 
-  const block: QuestionBlock = {
+  const block = useMemo<QuestionBlock>(() => ({
     type: 'question',
     id: String(node.attrs.blockId || ''),
     questionId,
     breakBehavior,
     display: figureDisplay,
     ...(localContent ? { localContent } : {}),
-  }
+  }), [breakBehavior, figureDisplay, localContent, node.attrs.blockId, questionId])
   const paginationContext = usePaginationContext()
   const questionFragments = paginationContext?.pagination?.pages.flatMap((page) => page.items
     .filter((item): item is QuestionFragmentPaginationItem => item.kind === 'fragment' && item.fragmentType === 'question' && item.blockId === block.id)
@@ -582,6 +591,12 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
   }, [display, updateAttributes])
 
   const resolution = resolveQuestion?.(questionId)
+  const question = resolution && !('status' in resolution) ? resolution : undefined
+  const effectiveQuestion = question ? (localContent ? { ...question, ...localContent } : question) : undefined
+  const runtimeModel = useMemo(
+    () => effectiveQuestion ? createQuestionRuntimeModel(block, effectiveQuestion) : null,
+    [block, effectiveQuestion],
+  )
 
   if (resolution && 'status' in resolution && resolution.status === 'loading') {
     return (
@@ -605,16 +620,13 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
     )
   }
 
-  const question = resolution && !('status' in resolution) ? resolution : undefined
-  if (!question) {
+  if (!question || !runtimeModel) {
     return (
       <NodeViewWrapper className={`my-4 ${selectionRing(selected)}`} data-block-id={block.id}>
         <QuestionPlaceholder block={block} message={`题目不可用（ID: ${questionId || '未设置'}）`} status="missing" />
       </NodeViewWrapper>
     )
   }
-
-  const effectiveQuestion = localContent ? { ...question, ...localContent } : question
 
   const updateFigurePlacement = (figureKey: string, patch: Record<string, unknown>) => {
     const current = display.figureOverrides?.[figureKey] || {}
@@ -722,16 +734,28 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
           <div key={`${item.fragmentIndex}:${pageIndex}`}>
             <QuestionRuntimeContent
               block={block}
-              model={createQuestionRuntimeModel(block, effectiveQuestion)}
+              model={runtimeModel}
               continuation={item.continuation}
               regionItems={item.regionItems}
               layoutEditor={layoutEditor}
               resolveFigure={resolveFigure}
+              typography={block.display?.typography}
+              // 题卡文字在可编辑画布中常驻内部编辑器，用户无需先选中整道题即可划选文字。
+              editableQuestionText
+              onInlineContentChange={updateInlineContent}
             />
             {index < questionFragments.length - 1 ? <PageTransition afterPageIndex={pageIndex} context={paginationContext!} /> : null}
           </div>
         )) : (
-          <QuestionRuntimeContent block={block} model={createQuestionRuntimeModel(block, effectiveQuestion)} layoutEditor={layoutEditor} resolveFigure={resolveFigure} />
+          <QuestionRuntimeContent
+            block={block}
+            model={runtimeModel}
+            layoutEditor={layoutEditor}
+            resolveFigure={resolveFigure}
+            typography={block.display?.typography}
+            editableQuestionText
+            onInlineContentChange={updateInlineContent}
+          />
         )}
         {selected && answerSpace ? (
           <div className="absolute inset-x-0 bottom-0 z-10" data-print-hide="">

@@ -1,7 +1,22 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { tagLibrariesDir } from '../../config.js'
+import { db } from '../../db/connection.js'
+import { configuredGradeStages } from '../settings/app-settings.js'
 import { parseJson } from '../../utils/json.js'
+import { difficultyLabel10 } from '../../utils/search.js'
+
+const DEFAULT_QUESTION_TYPES = ['单选题', '多选题', '填空题', '解答题']
+const DEFAULT_DIFFICULTY_LABELS = ['基础', '中等', '较难', '压轴']
+
+type QuestionBankFilterRow = {
+  stage?: string | null
+  question_type?: string | null
+  difficulty_label?: string | null
+  difficulty_score_10?: number | string | null
+  knowledge_points_json?: string | null
+  solution_methods_json?: string | null
+}
 
 export function normalizeTags(value: unknown) {
   const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[,，、;/；\n]+/) : []
@@ -26,6 +41,20 @@ export function uniqueTags(values: unknown[]) {
     tags.push(tag)
   }
   return tags
+}
+
+function storedTagValues(value: unknown) {
+  const parsed = parseJson<unknown>(String(value || '[]'), [])
+  return Array.isArray(parsed) ? parsed : []
+}
+
+function questionBankFilterRows() {
+  return db.prepare(`
+    SELECT stage, question_type, difficulty_label, difficulty_score_10,
+           knowledge_points_json, solution_methods_json
+    FROM question_bank_items
+    WHERE COALESCE(bank_status, '') <> 'skipped'
+  `).all() as QuestionBankFilterRow[]
 }
 
 export function tagLibraryType(value: unknown) {
@@ -183,6 +212,7 @@ export function writeLearningTagLibrary(rawPayload: unknown) {
 
 export function readTagLibraries() {
   const libraries = readLearningTagLibraries()
+  const questionRows = questionBankFilterRows()
   const libraryKnowledgePoints = libraries.filter((library) => library.libraryType === 'knowledge_point').flatMap((library) =>
     library.chapters.flatMap((chapter) => chapter.knowledgePoints.map((item: any) => item.name).filter(Boolean))
   )
@@ -191,11 +221,18 @@ export function readTagLibraries() {
   )
   const knowledgePoints = uniqueTags([...libraryKnowledgePoints])
   const solutionMethods = uniqueTags([...librarySolutionMethods])
+  const bankKnowledgePoints = questionRows.flatMap((row) => storedTagValues(row.knowledge_points_json))
+  const bankSolutionMethods = questionRows.flatMap((row) => storedTagValues(row.solution_methods_json))
+  const bankDifficultyLabels = questionRows.flatMap((row) => [
+    row.difficulty_label,
+    difficultyLabel10(Number(row.difficulty_score_10 || 0)),
+  ])
   return {
-    knowledgePoints,
-    solutionMethods,
-    stages: [],
-    questionTypes: [],
-    difficultyLabels: ['基础', '中等', '较难', '压轴'],
+    // 选项既要覆盖标签库，也要覆盖已经写入题库但尚未进入标签库的历史数据。
+    knowledgePoints: uniqueTags([...knowledgePoints, ...bankKnowledgePoints]),
+    solutionMethods: uniqueTags([...solutionMethods, ...bankSolutionMethods]),
+    stages: uniqueTags([...configuredGradeStages(), ...questionRows.map((row) => row.stage)]),
+    questionTypes: uniqueTags([...DEFAULT_QUESTION_TYPES, ...questionRows.map((row) => row.question_type)]),
+    difficultyLabels: uniqueTags([...DEFAULT_DIFFICULTY_LABELS, ...bankDifficultyLabels]),
   }
 }

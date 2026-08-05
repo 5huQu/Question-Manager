@@ -16,6 +16,7 @@ import { normalizeTags } from '../tags/tag-libraries.js'
 import { formatReviewPayload, validateQuestionMarkdown } from '../../utils/validation.js'
 import { pythonCommand } from '../settings/python.js'
 import { rerunQuestionBankItemOcr } from './ocr-rerun.js'
+import { compileTikz } from '../teaching-documents/tikz-renderer.js'
 import { RouteError } from '../../utils/http-error.js'
 import * as repo from '../../repositories/question-bank/items.repo.js'
 
@@ -278,6 +279,82 @@ export function uploadFigure(id: string, req: Request) {
   const figure = { id: figureId, origin: 'manual_upload', usage, category: 'question_figure', optionLabel: usage === 'options' && req.body?.optionLabel ? String(req.body.optionLabel).toUpperCase() : '', pageNumber: 1, bbox: {}, sourcePath: '', path: outputRel, originalName: file.originalname }
   persistFiguresWithInlineBinding(id, item, [...item.figures, figure])
   return figure
+}
+
+function normalizeFigureUsage(value: unknown) {
+  const usage = String(value || 'stem')
+  if (!['stem', 'analysis', 'options'].includes(usage)) throw new RouteError(400, '图片类型无效。')
+  return usage
+}
+
+export async function previewTikzFigure(id: string, source: unknown) {
+  if (!repo.getQuestion(id)) throw new RouteError(404, '题目不存在。')
+  const result = await compileTikz(source)
+  return {
+    sourceHash: result.sourceHash,
+    width: result.width,
+    height: result.height,
+    svgBase64: result.content.toString('base64'),
+  }
+}
+
+export async function createTikzFigure(id: string, body: Record<string, unknown>) {
+  const item = repo.getQuestion(id)
+  if (!item) throw new RouteError(404, '题目不存在。')
+  const usage = normalizeFigureUsage(body.usage)
+  const optionLabel = usage === 'options' ? String(body.optionLabel || '').toUpperCase() : ''
+  if (usage === 'options' && !optionLabel) throw new RouteError(400, '请选择对应选项。')
+  const source = String(body.source || '')
+  const result = await compileTikz(source)
+  const figureId = createId('fig')
+  const outputRel = path.join('data', 'question_figures', id, `${figureId}.svg`)
+  const outputPath = resolveStoragePath(outputRel)
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+  try {
+    fs.writeFileSync(outputPath, result.content)
+    const figure = {
+      id: figureId,
+      origin: 'tikz',
+      usage,
+      category: 'question_figure',
+      optionLabel,
+      pageNumber: 1,
+      bbox: {},
+      sourcePath: '',
+      path: outputRel,
+      tikzSource: source,
+      sourceHash: result.sourceHash,
+      width: result.width,
+      height: result.height,
+    }
+    persistFiguresWithInlineBinding(id, item, [...item.figures, figure])
+    return figure
+  } catch (error) {
+    fs.rmSync(outputPath, { force: true })
+    throw error
+  }
+}
+
+export async function updateTikzFigure(id: string, figureId: string, body: Record<string, unknown>) {
+  const item = repo.getQuestion(id)
+  if (!item) throw new RouteError(404, '题目不存在。')
+  const index = item.figures.findIndex((figure) => String(figure.id || '') === figureId)
+  if (index < 0) throw new RouteError(404, '题图不存在。')
+  const current = item.figures[index]
+  if (String(current.origin || '') !== 'tikz') throw new RouteError(400, '只有 TikZ 题图可以编辑源码。')
+  const usage = normalizeFigureUsage(body.usage ?? current.usage)
+  const optionLabel = usage === 'options' ? String(body.optionLabel || current.optionLabel || '').toUpperCase() : ''
+  if (usage === 'options' && !optionLabel) throw new RouteError(400, '请选择对应选项。')
+  const source = String(body.source ?? current.tikzSource ?? '')
+  const result = await compileTikz(source)
+  const outputRel = String(current.path || '').replace(/^question_assets\//, '').replace(/^\/+/, '') || path.join('data', 'question_figures', id, `${figureId}.svg`)
+  const outputPath = resolveStoragePath(outputRel)
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+  fs.writeFileSync(outputPath, result.content)
+  const nextFigure = { ...current, usage, optionLabel, path: outputRel, tikzSource: source, sourceHash: result.sourceHash, width: result.width, height: result.height }
+  const nextFigures = item.figures.map((figure, figureIndex) => figureIndex === index ? nextFigure : figure)
+  persistFiguresWithInlineBinding(id, item, nextFigures)
+  return nextFigure
 }
 
 export function deleteFigure(id: string, figureId: string) {

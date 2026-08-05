@@ -43,26 +43,6 @@ export type QuestionBankClassificationTask = {
   error?: string
 }
 
-export type AiCleanMode = 'full' | 'format_only'
-
-export type AiCleanPreview = {
-  itemId: string
-  mode: AiCleanMode
-  patch: Pick<QuestionItem, 'stemMarkdown' | 'answerText' | 'analysisMarkdown'>
-  warnings: string[]
-  confidence: number
-  formatIssues: Array<{
-    field?: string
-    code?: string
-    message?: string
-    snippet?: string
-    context?: string
-    mode?: string
-    start?: number
-    end?: number
-  }>
-}
-
 export type RandomPaperMatchMode = 'strict' | 'loose'
 export type RandomPaperDifficultyMode = 'foundation' | 'standard' | 'advanced' | 'challenge' | 'custom'
 
@@ -126,13 +106,6 @@ export const questionBankApi = {
       body: JSON.stringify(payload),
     })
   },
-  previewAiCleanItem(id: string, payload: { mode?: AiCleanMode } = {}) {
-    return api<AiCleanPreview>(`/api/question-bank/items/${encodeURIComponent(id)}/ai-clean-preview`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify(payload),
-    })
-  },
   classifyAllItems() {
     return api<{ task: QuestionBankClassificationTask }>('/api/question-bank/items/classify', {
       method: 'POST',
@@ -174,6 +147,27 @@ export const questionBankApi = {
     return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/upload`, {
       method: 'POST',
       body: form,
+    })
+  },
+  previewTikz(questionId: string, source: string) {
+    return api<{ sourceHash: string; width: number; height: number; svgBase64: string }>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/tikz/preview`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ source }),
+    })
+  },
+  createTikzFigure(questionId: string, payload: { source: string; usage: string; optionLabel?: string }) {
+    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/tikz`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    })
+  },
+  updateTikzFigure(questionId: string, figureId: string, payload: { source: string; usage: string; optionLabel?: string }) {
+    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/${encodeURIComponent(figureId)}/tikz`, {
+      method: 'PATCH',
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
     })
   },
   getQuickActionMetadata(params: {

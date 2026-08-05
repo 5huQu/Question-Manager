@@ -3,13 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronDown, ChevronUp, Database, LoaderCircle, RefreshCcw, Replace, Tags } from 'lucide-react'
 import { collectionsApi } from '@/api/collections'
 import { importV2Api, type ImportV2JobQuestionsResponse } from '@/api/importV2'
-import { learningTagsApi } from '@/api/learningTags'
 import { questionBankApi } from '@/api/questionBank'
 import { basketUpdatedEvent, notifyBasketUpdated } from '@/components/QuestionBasket'
+import { SearchableSelect } from '@/components/SearchableSelect'
 import { WorkbenchQuestionCard } from '@/components/questions/WorkbenchQuestionCard'
 import { Button, Empty, Input, SelectFilter } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
-import type { QuestionItem, TagLibraries } from '@/types'
+import type { QuestionItem } from '@/types'
 import { addQuestionToBasket, BASKET_COLLECTION_ID } from '@/utils/questionBasket'
 import { importJobDocumentPath } from './importV2Routes'
 
@@ -32,7 +32,6 @@ export function ImportJobQuestionsPage() {
     () => importV2Api.listImportJobQuestions(decodedJobId),
     [decodedJobId],
   )
-  const tagLibraries = useAsync<TagLibraries>(() => learningTagsApi.getQuestionBankTagLibraries(), [])
 
   const activeBasketId = BASKET_COLLECTION_ID
   const basket = useAsync(() => collectionsApi.getCollection(activeBasketId), [activeBasketId])
@@ -103,6 +102,7 @@ export function ImportJobQuestionsPage() {
 
   const importJob = data.importJob
   const items = localItems
+  const filterOptions = data.filterOptions
   const filteredItems = items.filter((item) => {
     const q = query.trim().toLowerCase()
     const haystack = [
@@ -183,13 +183,27 @@ export function ImportJobQuestionsPage() {
       </div>
 
       {/* SF Glass Search & Filter Panel */}
-      <div className="sf-glass grid gap-3 rounded-2xl p-4 sm:grid-cols-2 lg:grid-cols-6 shadow-sm">
+      <div className="sf-glass relative z-20 grid gap-3 overflow-visible rounded-2xl p-4 sm:grid-cols-2 lg:grid-cols-6 shadow-sm">
         <Input className="h-9 border-zinc-200/80 bg-white/80 dark:border-zinc-800/80 dark:bg-zinc-900/80 rounded-xl focus-visible:ring-1 focus-visible:ring-zinc-950 dark:focus-visible:ring-zinc-300 text-xs" placeholder="搜索本批次题目..." value={query} onChange={(event) => setQuery(event.target.value)} />
-        <SelectFilter label="全部学段" value={stage} options={tagLibraries.data?.stages ?? ['高一', '高二', '高三']} onChange={setStage} />
-        <SelectFilter label="全部题型" value={questionType} options={tagLibraries.data?.questionTypes ?? ['单选题', '多选题', '填空题', '解答题']} onChange={setQuestionType} />
-        <SelectFilter label="全部难度" value={difficulty} options={tagLibraries.data?.difficultyLabels ?? ['基础', '中等', '较难', '压轴']} onChange={setDifficulty} />
-        <SelectFilter label="全部知识点" value={knowledgePoint} options={tagLibraries.data?.knowledgePoints ?? []} onChange={setKnowledgePoint} />
-        <SelectFilter label="全部解题方法" value={solutionMethod} options={tagLibraries.data?.solutionMethods ?? []} onChange={setSolutionMethod} />
+        <SelectFilter label="全部学段" value={stage} options={filterOptions.stages} onChange={setStage} />
+        <SelectFilter label="全部题型" value={questionType} options={filterOptions.questionTypes} onChange={setQuestionType} />
+        <SelectFilter label="全部难度" value={difficulty} options={filterOptions.difficultyLabels} onChange={setDifficulty} />
+        <SearchableSelect
+          value={knowledgePoint}
+          options={filterOptions.knowledgePoints}
+          onChange={setKnowledgePoint}
+          placeholder="全部知识点"
+          searchPlaceholder="搜索知识点"
+          allowClear
+        />
+        <SearchableSelect
+          value={solutionMethod}
+          options={filterOptions.solutionMethods}
+          onChange={setSolutionMethod}
+          placeholder="全部解题方法"
+          searchPlaceholder="搜索解题方法"
+          allowClear
+        />
         {hasActiveFilters ? (
           <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400 lg:col-span-6 pt-1">
             <span>已筛选出 {filteredItems.length} / {items.length} 题</span>

@@ -385,6 +385,7 @@ export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
             : 'mx-auto my-0 min-h-[790px] w-[760px] max-w-none bg-white shadow-[0_0_0_1px_rgba(24,24,27,0.08),0_12px_28px_rgba(24,24,27,0.05)] dark:bg-zinc-950'}`}
           style={{
             zoom: displayScale,
+            ...(fontVars as CSSProperties | undefined),
             ...(paginated
               ? {
                   width: `${pageWidthPx}px`,

@@ -602,6 +602,14 @@
   color: var(--box-continuation-title-color);
 }
 
+/* 续页标题探针只在测量树中显示；普通画布不得把“（续）”当作实际内容渲染。 */
+.td-box-continuation-header.td-box-continuation-probe {
+  display: none;
+}
+[data-teaching-measure-root] .td-box-continuation-header.td-box-continuation-probe {
+  display: flex;
+}
+
 /* ─── 编辑辅助（打印排除） ───────────────────────────────────────────── */
 
 @media print {
@@ -660,6 +668,68 @@
 .td-document h4 {
   font-family: var(--td-heading-font, inherit);
   color: var(--td-heading-color, inherit);
+}
+
+/* 标题样式按级别统一；未配置时回退到既有 Tailwind 标题默认值。 */
+.td-document .td-heading[data-level="1"],
+.td-document h1[data-level="1"] {
+  font-family: var(--td-heading-1-font, var(--td-heading-font, inherit));
+  font-size: var(--td-heading-1-size, 24px);
+  color: var(--td-heading-1-color, var(--td-heading-color, inherit));
+  font-weight: var(--td-heading-1-weight, 700);
+  font-style: var(--td-heading-1-style, normal);
+}
+.td-document .td-heading[data-level="2"],
+.td-document h2[data-level="2"] {
+  font-family: var(--td-heading-2-font, var(--td-heading-font, inherit));
+  font-size: var(--td-heading-2-size, 20px);
+  color: var(--td-heading-2-color, var(--td-heading-color, inherit));
+  font-weight: var(--td-heading-2-weight, 600);
+  font-style: var(--td-heading-2-style, normal);
+}
+.td-document .td-heading[data-level="3"],
+.td-document h3[data-level="3"] {
+  font-family: var(--td-heading-3-font, var(--td-heading-font, inherit));
+  font-size: var(--td-heading-3-size, 18px);
+  color: var(--td-heading-3-color, var(--td-heading-color, inherit));
+  font-weight: var(--td-heading-3-weight, 600);
+  font-style: var(--td-heading-3-style, normal);
+}
+.td-document .td-heading[data-level="4"],
+.td-document h4[data-level="4"] {
+  font-family: var(--td-heading-4-font, var(--td-heading-font, inherit));
+  font-size: var(--td-heading-4-size, 16px);
+  color: var(--td-heading-4-color, var(--td-heading-color, inherit));
+  font-weight: var(--td-heading-4-weight, 500);
+  font-style: var(--td-heading-4-style, normal);
+}
+
+/* 题目块的全局样式由文档变量提供，单题覆盖通过题目根节点上的同名变量覆盖。 */
+.td-document .td-question {
+  font-family: var(--td-question-font, inherit);
+  font-size: var(--td-question-size, 14px);
+  color: var(--td-question-color, inherit);
+  font-weight: var(--td-question-weight, inherit);
+  font-style: var(--td-question-style, inherit);
+}
+.td-document .td-question .td-question-text,
+.td-document .td-question .td-question-markdown,
+.td-document .td-question .td-question-options,
+.td-document .td-question .td-question-answer > .markdown-content {
+  font-family: var(--td-question-font, inherit);
+  font-size: var(--td-question-size, inherit) !important;
+  color: var(--td-question-color, inherit);
+  font-weight: var(--td-question-weight, inherit);
+  font-style: var(--td-question-style, inherit);
+}
+
+/* 题卡内的局部编辑器也继承题目块全局样式；选中文字产生的 mark 样式优先覆盖这些默认值。 */
+.td-document .td-question [data-question-inline-editor] {
+  font-family: var(--td-question-font, inherit);
+  font-size: var(--td-question-size, inherit) !important;
+  color: var(--td-question-color, inherit);
+  font-weight: var(--td-question-weight, inherit);
+  font-style: var(--td-question-style, inherit);
 }
 
 .td-heading[data-number-label]::before {
@@ -812,11 +882,15 @@ button.td-print-chrome-slot:hover {
   --td-brand-warm: #A8762B;
 }
 
-/* 印刷风标题层级收紧 */
-.td-theme-print .td-document h1 { font-size: 19px; letter-spacing: 0.01em; }
-.td-theme-print .td-document h2 { font-size: 16px; letter-spacing: 0.01em; }
-.td-theme-print .td-document h3 { font-size: 14.5px; }
-.td-theme-print .td-document h4 { font-size: 13.5px; }
+/* 印刷风标题层级收紧；用户在工具条设置的级别字号继续生效。 */
+.td-theme-print .td-document .td-heading[data-level="1"],
+.td-theme-print .td-document h1[data-level="1"] { font-size: var(--td-heading-1-size, 19px); letter-spacing: 0.01em; }
+.td-theme-print .td-document .td-heading[data-level="2"],
+.td-theme-print .td-document h2[data-level="2"] { font-size: var(--td-heading-2-size, 16px); letter-spacing: 0.01em; }
+.td-theme-print .td-document .td-heading[data-level="3"],
+.td-theme-print .td-document h3[data-level="3"] { font-size: var(--td-heading-3-size, 14.5px); }
+.td-theme-print .td-document .td-heading[data-level="4"],
+.td-theme-print .td-document h4[data-level="4"] { font-size: var(--td-heading-4-size, 13.5px); }
 
 /* 文档大标题 */
 .td-theme-print .td-document-header h1 {
@@ -855,6 +929,9 @@ button.td-print-chrome-slot:hover {
 .td-document .td-question[data-question-continuation="end"] {
   margin-top: 0;
   margin-bottom: var(--td-question-gap, 6px);
+}
+.td-theme-print .td-question {
+  font-size: var(--td-question-size, 13px);
 }
 .td-theme-print .td-question-paragraph {
   font-size: 13px;

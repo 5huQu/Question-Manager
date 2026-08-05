@@ -6,6 +6,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, Bold, Check, ChevronLeft, ChevronRight, Download, FileUp, Italic, LoaderCircle, RefreshCcw, Settings2, X } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { springPanel } from '@/components/teaching-document/motion'
 import type { QuestionItem } from '@/types'
 import type {
   BoxBlock,
@@ -21,6 +23,7 @@ import type {
   PrintChromeContentType,
   PrintChromeSlot,
   PrintChromeSlotPosition,
+  TeachingTextStyle,
 } from '@/types/teachingDocument'
 import { questionBankApi } from '@/api/questionBank'
 import { teachingDocumentsApi } from '@/api/teachingDocuments'
@@ -47,7 +50,10 @@ import {
   TEXT_FONT_OPTIONS,
   lectureFontFaceCss,
   lectureFontCssVars,
+  teachingTypographyCssVars,
   resolveDocumentFonts,
+  resolveHeadingStyle,
+  resolveQuestionStyle,
   TYPOGRAPHY_PRESETS,
   typographyStyleForPreset,
 } from '@/utils/teachingDocument/lectureFonts'
@@ -72,6 +78,7 @@ import { QuestionEditDialog } from './components/QuestionEditDialog'
 import { QuestionPickerDrawer } from './components/QuestionPickerDrawer'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
 import { USER_BLOCK_LABEL, CARD_CHILD_TYPES } from './components/blockLabels'
+import { activePageFromPageRects, activePageFromPageTransitions } from './pageNavigation'
 import '@/components/teaching-document/teaching-document.css'
 
 const CHROME_CONTENT_OPTIONS: Array<{ value: PrintChromeContentType; label: string }> = [
@@ -112,6 +119,14 @@ function buildSelectedLocationIndex(document: TeachingDocumentV1): Map<string, S
   return map
 }
 
+function mergeTextStyle(current: TeachingTextStyle | undefined, patch: Partial<TeachingTextStyle>): TeachingTextStyle | undefined {
+  const next = { ...(current || {}), ...patch }
+  for (const key of Object.keys(next) as Array<keyof TeachingTextStyle>) {
+    if (next[key] === undefined) delete next[key]
+  }
+  return Object.keys(next).length ? next : undefined
+}
+
 function PageSettingsDrawer(props: {
   open: boolean
   onClose: () => void
@@ -120,16 +135,31 @@ function PageSettingsDrawer(props: {
   answerSettings: ReactNode
 }) {
   const [tab, setTab] = useState<'print' | 'typography' | 'answers'>('print')
-  if (!props.open) return null
+  const reduced = useReducedMotion()
   const tabs: Array<{ id: typeof tab; label: string }> = [
     { id: 'print', label: '页眉页脚' },
     { id: 'typography', label: '字体与题距' },
     { id: 'answers', label: '解答题' },
   ]
   return (
-    <div className="absolute inset-0 z-40" role="dialog" aria-modal="true" aria-label="页面设置">
-      <button type="button" aria-label="关闭页面设置" className="absolute inset-0 cursor-default bg-black/40" onClick={props.onClose} />
-      <aside className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="absolute inset-0 z-40 overflow-hidden" role="dialog" aria-modal="true" aria-label="页面设置">
+      <motion.button
+        type="button"
+        aria-label="关闭页面设置"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        className="absolute inset-0 cursor-default bg-black/40 backdrop-blur-xs"
+        onClick={props.onClose}
+      />
+      <motion.aside
+        initial={reduced ? { opacity: 0 } : { x: '100%', opacity: 0.8 }}
+        animate={reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
+        exit={reduced ? { opacity: 0 } : { x: '100%', opacity: 0 }}
+        transition={reduced ? { duration: 0.15 } : springPanel}
+        className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+      >
         <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
           <div><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">页面设置</h2><p className="mt-0.5 text-[11px] text-zinc-500">整份文档同步更新，不按页保存。</p></div>
           <button type="button" onClick={props.onClose} className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900">完成</button>
@@ -140,11 +170,21 @@ function PageSettingsDrawer(props: {
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-5">
-          {tab === 'print' ? props.printSettings : null}
-          {tab === 'typography' ? props.fontSettings : null}
-          {tab === 'answers' ? props.answerSettings : null}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={tab}
+              initial={reduced ? { opacity: 0 } : { opacity: 0, y: 6 }}
+              animate={reduced ? { opacity: 1 } : { opacity: 1, y: 0 }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, y: -4 }}
+              transition={{ duration: 0.15 }}
+            >
+              {tab === 'print' ? props.printSettings : null}
+              {tab === 'typography' ? props.fontSettings : null}
+              {tab === 'answers' ? props.answerSettings : null}
+            </motion.div>
+          </AnimatePresence>
         </div>
-      </aside>
+      </motion.aside>
     </div>
   )
 }
@@ -510,12 +550,13 @@ export default function TeachingDocumentEditorPage() {
   const questionSpacing = editor.document?.style?.questionSpacing || 'compact'
   const fontVars = useMemo(() => ({
     ...lectureFontCssVars(documentFonts.body, documentFonts.heading, documentFonts.bodyLatin, documentFonts.headingLatin, documentFonts.bodyNumber, documentFonts.headingNumber),
+    ...teachingTypographyCssVars(editor.document?.style),
     '--td-question-gap': {
       compact: '6px',
       normal: '12px',
       relaxed: '18px',
     }[questionSpacing],
-  }), [documentFonts, questionSpacing])
+  }), [documentFonts, editor.document?.style, questionSpacing])
   const fontFaceCss = useMemo(
     () => lectureFontFaceCss(documentFonts.bodyLatin, documentFonts.bodyNumber, documentFonts.headingLatin, documentFonts.headingNumber),
     [documentFonts],
@@ -617,8 +658,39 @@ export default function TeachingDocumentEditorPage() {
   useEffect(() => {
     if (!canvasScrollRoot || !editor.document) return
     let frame = 0
+    const updateCurrentPage = () => {
+      const viewport = canvasScrollRoot.getBoundingClientRect()
+      const pageCount = canvasMode === 'a4'
+        ? paginationState?.pagination?.pages.length || 1
+        : canvasMode === 'paginated' ? paginatedPageCount : 1
+      let nextPage = 1
+
+      if (canvasMode === 'a4') {
+        const pageRects = Array.from(canvasScrollRoot.querySelectorAll<HTMLElement>('[data-teaching-page-index]'))
+          .map((node) => ({
+            page: Number(node.dataset.teachingPageIndex) + 1,
+            rect: node.getBoundingClientRect(),
+          }))
+          .filter(({ page, rect }) => Number.isFinite(page) && rect.height > 0)
+          .map(({ page, rect }) => ({ page, top: rect.top, bottom: rect.bottom }))
+        nextPage = activePageFromPageRects(pageRects, viewport.top, viewport.bottom)
+      } else if (canvasMode === 'paginated') {
+        const transitions = Array.from(canvasScrollRoot.querySelectorAll<HTMLElement>('[data-page-number]'))
+          .map((node) => {
+            const rect = node.getBoundingClientRect()
+            return { page: Number(node.dataset.pageNumber), top: rect.top, height: rect.height }
+          })
+          .filter(({ page, height }) => Number.isFinite(page) && height > 0)
+        nextPage = activePageFromPageTransitions(transitions, viewport.top, viewport.bottom)
+      }
+
+      nextPage = Math.min(pageCount, Math.max(1, nextPage))
+      setCurrentPage((current) => current === nextPage ? current : nextPage)
+    }
     const updateActiveBlock = () => {
       frame = 0
+      // A4 预览会隐藏编辑画布，不能依赖 data-block-id 来触发页码更新。
+      updateCurrentPage()
       const viewport = canvasScrollRoot.getBoundingClientRect()
       const centerY = viewport.top + viewport.height / 2
       const candidates = Array.from(canvasScrollRoot.querySelectorAll<HTMLElement>('[data-block-id]'))
@@ -652,7 +724,7 @@ export default function TeachingDocumentEditorPage() {
       observer?.disconnect()
       if (frame) window.cancelAnimationFrame(frame)
     }
-  }, [canvasScrollRoot, editor.document])
+  }, [canvasMode, canvasScrollRoot, editor.document, paginatedPageCount, paginationState?.pagination?.pages.length])
 
   // 变体文档只服务于 a4 打印预览；连续流/页面编辑直接使用原始文档，避免无谓的整篇变换。
   const previewDocument = useMemo(
@@ -677,6 +749,55 @@ export default function TeachingDocumentEditorPage() {
       return `${id}:${!resolution ? 'pending' : 'status' in resolution ? resolution.status : resolution.updatedAt || resolution.contentRevision}`
     })
     .join('|')
+
+  const selectedQuestionBlock = selected?.block.type === 'question' ? selected.block : null
+  const selectedHeadingStyle = selected?.block.type === 'heading'
+    ? resolveHeadingStyle(document.style, selected.block.level)
+    : undefined
+  const questionGlobalStyle = resolveQuestionStyle(document.style)
+
+  function updateHeadingToolbarStyle(level: 1 | 2 | 3 | 4, patch: Partial<TeachingTextStyle>) {
+    const current = document.style?.headingStyles?.[level]
+    const next = mergeTextStyle(current, patch)
+    const headingStyles = { ...(document.style?.headingStyles || {}) }
+    if (next) headingStyles[level] = next
+    else delete headingStyles[level]
+    editor.dispatch({
+      type: 'setStyle',
+      patch: {
+        headingStyles: Object.keys(headingStyles).length ? headingStyles : undefined,
+        typographyPreset: undefined,
+      },
+      mergeKey: `heading-style:${level}`,
+    })
+  }
+
+  function updateQuestionToolbarStyle(patch: Partial<TeachingTextStyle>, scope: 'question' | 'document') {
+    if (scope === 'document') {
+      editor.dispatch({
+        type: 'setStyle',
+        patch: {
+          questionStyle: mergeTextStyle(document.style?.questionStyle, patch),
+          typographyPreset: undefined,
+        },
+        mergeKey: 'question-style:document',
+      })
+      return
+    }
+    if (!selectedQuestionBlock) return
+    const display = { ...(selectedQuestionBlock.display || {}) }
+    const typography = mergeTextStyle(display.typography, patch)
+    if (typography) display.typography = typography
+    else delete display.typography
+    updateSelected({ display }, `question-style:${selectedQuestionBlock.id}`)
+  }
+
+  function resetQuestionToolbarStyle() {
+    if (!selectedQuestionBlock?.display?.typography) return
+    const display = { ...(selectedQuestionBlock.display || {}) }
+    delete display.typography
+    updateSelected({ display }, `question-style:${selectedQuestionBlock.id}`)
+  }
 
   function selectAndShow(blockId: string) {
     setSelectedId(blockId)
@@ -1143,7 +1264,15 @@ export default function TeachingDocumentEditorPage() {
         paperActions={undefined}
       />
 
-      <DocumentFormattingToolbar editor={focusedCardEditor ?? (selected?.boxId ? lastFocusedCardEditor : editor.activeEditor)} />
+      <DocumentFormattingToolbar
+        editor={focusedCardEditor ?? (selected?.boxId ? lastFocusedCardEditor : editor.activeEditor)}
+        questionBlock={selectedQuestionBlock}
+        questionGlobalStyle={questionGlobalStyle}
+        onQuestionStyleChange={updateQuestionToolbarStyle}
+        onQuestionStyleReset={resetQuestionToolbarStyle}
+        headingStyle={selectedHeadingStyle}
+        onHeadingStyleChange={updateHeadingToolbarStyle}
+      />
 
       {editor.conflict ? (
         <div className="flex items-center justify-between gap-3 border-b border-red-200 bg-red-50/60 px-4 py-2 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">
@@ -1240,15 +1369,18 @@ export default function TeachingDocumentEditorPage() {
 
         {quickControls}
 
-        {chromePanelMounted ? (
-          <PageSettingsDrawer
-            open={chromePanelOpen}
-            onClose={() => { setChromePanelOpen(false); setEditingChromeSlot(null) }}
-            printSettings={<div className="space-y-5"><section><h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">纸张与边距</h3><div className="mt-2"><PaperSettingsControl paper={sheetPaper} marginPreset={marginPreset} style={document.style} onChange={applyCustomTypography} /></div></section><section className="border-t border-zinc-100 pt-5 dark:border-zinc-800"><ChromeSettingsPanel printLayout={printLayout} activeSlot={editingChromeSlot} onPrintOptionChange={updatePrintOptions} onSlotChange={updateChromeSlot} onApplyTemplate={applyChromeTemplate} /></section></div>}
-            fontSettings={fontSettings}
-            answerSettings={answerSettings}
-          />
-        ) : null}
+        <AnimatePresence>
+          {chromePanelOpen && chromePanelMounted ? (
+            <PageSettingsDrawer
+              key="page-settings-drawer"
+              open={chromePanelOpen}
+              onClose={() => { setChromePanelOpen(false); setEditingChromeSlot(null) }}
+              printSettings={<div className="space-y-5"><section><h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">纸张与边距</h3><div className="mt-2"><PaperSettingsControl paper={sheetPaper} marginPreset={marginPreset} style={document.style} onChange={applyCustomTypography} /></div></section><section className="border-t border-zinc-100 pt-5 dark:border-zinc-800"><ChromeSettingsPanel printLayout={printLayout} activeSlot={editingChromeSlot} onPrintOptionChange={updatePrintOptions} onSlotChange={updateChromeSlot} onApplyTemplate={applyChromeTemplate} /></section></div>}
+              fontSettings={fontSettings}
+              answerSettings={answerSettings}
+            />
+          ) : null}
+        </AnimatePresence>
 
         {editingBlock && editingLocation && editingQuestion ? (
           <QuestionEditDialog
@@ -1259,6 +1391,20 @@ export default function TeachingDocumentEditorPage() {
               setQuestionMap((current) => ({ ...current, [item.id]: item }))
               patchQuestionBlock(editingLocation, { localContent: undefined })
               setEditingQuestionBlockId('')
+            }}
+            onFiguresChanged={(figures) => {
+              setQuestionMap((current) => {
+                const currentQuestion = current[editingQuestion.id]
+                if (!currentQuestion || 'status' in currentQuestion) return current
+                return {
+                  ...current,
+                  [editingQuestion.id]: {
+                    ...currentQuestion,
+                    figures,
+                    hasFigures: figures.length > 0,
+                  },
+                }
+              })
             }}
             onKeepLocal={(localContent) => {
               patchQuestionBlock(editingLocation, { localContent })
@@ -1307,8 +1453,14 @@ export default function TeachingDocumentEditorPage() {
         />
       </div>
 
-        <aside data-teaching-properties-dock className={`h-full shrink-0 border-l border-zinc-200 bg-white transition-[width] dark:border-zinc-800 dark:bg-zinc-950 ${propertiesOpen ? 'w-[300px]' : 'w-0 overflow-hidden'}`}>
-          {selected ? <PropertiesSheet
+        <motion.aside
+          data-teaching-properties-dock
+          initial={false}
+          animate={{ width: propertiesOpen && selected ? 300 : 0 }}
+          transition={springPanel}
+          className={`h-full shrink-0 overflow-hidden border-l border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 ${propertiesOpen && selected ? 'w-[300px]' : 'w-0'}`}
+        >
+          <PropertiesSheet
             variant="docked"
             open={propertiesOpen}
             selected={selected}
@@ -1332,8 +1484,8 @@ export default function TeachingDocumentEditorPage() {
             onEditQuestion={openQuestionEditor}
             onOpenFormula={(blockId) => setFormulaBlockId(blockId)}
             onOpenQuestionPicker={(blockId, boxId) => setPickerTarget({ blockId, boxId })}
-          /> : <div className="flex flex-1 items-center justify-center px-6 text-center text-xs text-zinc-400">未选中内容</div>}
-        </aside>
+          />
+        </motion.aside>
       </div>
     </main>
   )

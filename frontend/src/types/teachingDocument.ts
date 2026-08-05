@@ -58,6 +58,9 @@ export interface UnknownInline {
 
 export type TeachingInline = InlineText | InlineMath | InlineHardBreak | UnknownInline
 
+/** 题卡内部可局部编辑的文字内容；key 对应题目运行时区域或选项。 */
+export type QuestionInlineContent = Record<string, TeachingInline[]>
+
 // ─── 块节点 ──────────────────────────────────────────────────────────────────
 
 export interface HeadingBlock {
@@ -230,6 +233,20 @@ export interface QuestionInsertedFigure extends QuestionFigurePlacement {
   alt?: string
 }
 
+/** 受控文字样式；工具条与文档级样式共用，禁止持久化任意 CSS。 */
+export interface TeachingTextStyle {
+  /** 行内字体 id（见 lectureFonts TEXT_FONT_OPTIONS）。 */
+  font?: string
+  /** 受控字号；缺省时继承当前内容的默认字号。 */
+  fontSize?: TeachingInlineFontSize
+  /** #RRGGBB；缺省时继承当前内容颜色。 */
+  color?: string
+  /** 400 / 500 / 600 / 700；缺省时保留渲染器默认字重。 */
+  fontWeight?: 400 | 500 | 600 | 700
+  /** 缺省时保留渲染器默认字形。 */
+  italic?: boolean
+}
+
 export interface QuestionDisplayOptions {
   showAnswer?: boolean
   showAnalysis?: boolean
@@ -252,6 +269,10 @@ export interface QuestionDisplayOptions {
   figureOverrides?: Record<string, QuestionFigurePlacement>
   /** 仅属于当前文档的题目插图，不写回题库。 */
   insertedFigures?: QuestionInsertedFigure[]
+  /** 仅属于当前文档的题卡局部文字内容；未覆盖区域继续读取题库 Markdown。 */
+  inlineContent?: QuestionInlineContent
+  /** 仅属于当前文档的本题文字样式覆盖；缺省时跟随文档题目样式。 */
+  typography?: TeachingTextStyle
 }
 
 /** 题目分页策略：默认自动流动；avoid 保持整题；force-before 从新页开始。 */
@@ -472,6 +493,10 @@ export interface TeachingDocumentStyle {
   headingLatinFont?: string
   /** 章节数字字体 id；章节编号优先使用此字体；缺省时跟随 headingLatinFont。 */
   headingNumberFont?: string
+  /** 按标题级别同步的样式；缺省时沿用现有标题默认样式。 */
+  headingStyles?: Partial<Record<1 | 2 | 3 | 4, TeachingTextStyle>>
+  /** 当前文档所有题目的统一样式；题目块 display.typography 可局部覆盖。 */
+  questionStyle?: TeachingTextStyle
   /** 页边距预设（见 MARGIN_PRESETS）；缺省 = normal */
   marginPreset?: TeachingMarginPreset
   /** 题目间距；缺省 compact，适合试卷高密度排版。 */

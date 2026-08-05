@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, CheckCircle, ChevronDown, ChevronUp, Crop, PencilLine, ShoppingBag, Trash2 } from 'lucide-react'
+import { Check, CheckCircle, ChevronDown, ChevronUp, PencilLine, ShoppingBag, Trash2 } from 'lucide-react'
 import { questionBankApi } from '@/api/questionBank'
-import { FigureCropDialog } from '@/components/questions/FigureDialogs'
 import { EditDialog } from '@/components/questions/EditDialog'
 import type { QuestionItem } from '@/types'
 import {
@@ -38,7 +37,6 @@ export function WorkbenchQuestionCard({
   showFigureAction?: boolean
   expandAll?: boolean
 }) {
-  const [cropOpen, setCropOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<Partial<QuestionItem>>(item)
   const [showAnalysis, setShowAnalysis] = useState(false)
@@ -51,23 +49,6 @@ export function WorkbenchQuestionCard({
   useEffect(() => {
     if (expandAll !== undefined) setShowAnalysis(expandAll)
   }, [expandAll])
-
-  async function addFigure(payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
-    return questionBankApi.createFigure(item.id, { usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox })
-  }
-
-  async function deleteFigure(figureId: string) {
-    await questionBankApi.deleteFigure(item.id, figureId)
-  }
-
-  async function updateFigure(figureId: string, payload: { usage: string; optionLabel?: string; bbox: Record<string, number> }) {
-    return questionBankApi.updateFigure(item.id, figureId, { usage: payload.usage, optionLabel: payload.optionLabel, pageNumber: 1, bbox: payload.bbox })
-  }
-
-  function closeCropDialog(changed?: boolean) {
-    setCropOpen(false)
-    if (changed) onReload()
-  }
 
   async function saveEditedQuestion(nextDraft = draft) {
     const saved = await questionBankApi.updateItem(item.id, nextDraft, item.contentRevision)
@@ -90,11 +71,6 @@ export function WorkbenchQuestionCard({
             <button type="button" onClick={() => setEditing(true)} className={questionCardOutlineButtonClass}>
               <PencilLine className="size-3.5" />编辑
             </button>
-            {showFigureAction ? (
-              <button type="button" onClick={() => setCropOpen(true)} className={questionCardOutlineButtonClass}>
-                <Crop className="size-3.5" />框选题图
-              </button>
-            ) : null}
             <button type="button" onClick={() => onDelete(item.id)} className={questionCardDangerButtonClass}>
               <Trash2 className="size-3.5" />删除
             </button>
@@ -119,8 +95,7 @@ export function WorkbenchQuestionCard({
         }
       />
 
-      {editing ? createPortal(<EditDialog draft={draft} setDraft={setDraft} onClose={() => setEditing(false)} onSave={saveEditedQuestion} onManageFigures={() => { setEditing(false); setCropOpen(true) }} />, document.body) : null}
-      {cropOpen ? createPortal(<FigureCropDialog question={item} onClose={closeCropDialog} onDelete={deleteFigure} onSave={addFigure} onUpdate={updateFigure} />, document.body) : null}
+      {editing ? createPortal(<EditDialog draft={draft} setDraft={setDraft} onClose={() => setEditing(false)} onSave={saveEditedQuestion} onFiguresChanged={() => onReload()} />, document.body) : null}
     </QuestionCardFrame>
   )
 }

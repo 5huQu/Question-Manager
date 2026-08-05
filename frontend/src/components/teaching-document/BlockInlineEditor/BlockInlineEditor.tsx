@@ -25,6 +25,7 @@ import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditor
 import { FormulaKeyboardButton } from './FormulaKeyboard'
 import { TEXT_FONT_OPTIONS } from '@/utils/teachingDocument/lectureFonts'
 import { createBlockEditorExtensions } from './extensions'
+import { clearCardEditorFocus, registerCardEditorFocus } from '../editor/cardEditorRegistry'
 
 export interface BlockInlineEditorProps {
   /** 当前块的行内内容（来自 TeachingDocumentV1，唯一事实来源） */
@@ -45,6 +46,8 @@ export interface BlockInlineEditorProps {
   onBackspaceAtStart?: () => void
   /** 新建或合并后将焦点放到该段末尾。 */
   autoFocus?: boolean
+  /** 题卡内文字编辑器需要把当前 Tiptap 选区提供给页面顶部工具条。 */
+  editorContext?: 'question'
 }
 
 function MarkButton({ label, active, disabled, onClick, children }: {
@@ -100,6 +103,7 @@ export function BlockInlineEditor({
   onCreateSiblingParagraph,
   onBackspaceAtStart,
   autoFocus = false,
+  editorContext,
 }: BlockInlineEditorProps) {
   const [formulaDialogOpen, setFormulaDialogOpen] = useState(false)
   const editable = !protectedReason
@@ -129,6 +133,7 @@ export function BlockInlineEditor({
         class: variant === 'embedded'
           ? 'min-h-0 px-0 py-1 text-sm leading-6 text-zinc-900 outline-none dark:text-zinc-50'
           : 'min-h-20 px-2.5 py-2 text-sm leading-6 text-zinc-900 outline-none dark:text-zinc-50',
+        ...(editorContext === 'question' ? { 'data-question-inline-editor': '' } : {}),
       },
       handleKeyDown: (_view, event) => {
         // 卡片内 Enter 创建同级段落；Shift+Enter 保留为当前段内换行。
@@ -169,6 +174,19 @@ export function BlockInlineEditor({
   useEffect(() => {
     if (editor && editor.isEditable !== editable) editor.setEditable(editable)
   }, [editor, editable])
+
+  useEffect(() => {
+    if (!editor || editorContext !== 'question') return
+    const handleFocus = () => registerCardEditorFocus(editor)
+    const handleBlur = () => clearCardEditorFocus(editor)
+    editor.on('focus', handleFocus)
+    editor.on('blur', handleBlur)
+    return () => {
+      editor.off('focus', handleFocus)
+      editor.off('blur', handleBlur)
+      clearCardEditorFocus(editor)
+    }
+  }, [editor, editorContext])
 
   // 编辑器实例就绪通知
   const onEditorReadyRef = useRef(onEditorReady)
@@ -293,9 +311,40 @@ export function selectTextBlockContentWhenSelectionIsEmpty(editor: Editor) {
   return false
 }
 
+type TextSelectionRange = { from: number; to: number }
+
+function restoreTextSelection(editor: Editor, range: TextSelectionRange) {
+  if (editor.isDestroyed) return
+  // Marks do not change document positions, but keeping the bounds inside the
+  // current document also makes this safe when a parent update has just
+  // replaced the editor content.
+  const maxPosition = Math.max(1, editor.state.doc.content.size - 1)
+  const from = Math.max(1, Math.min(range.from, maxPosition))
+  const to = Math.max(from, Math.min(range.to, maxPosition))
+  const nextSelection = TextSelection.create(editor.state.doc, from, to)
+  if (!editor.state.selection.eq(nextSelection)) {
+    editor.view.dispatch(editor.state.tr.setSelection(nextSelection))
+  }
+  editor.view.focus()
+}
+
 function applyTextFormat(editor: Editor, apply: () => void) {
   selectTextBlockContentWhenSelectionIsEmpty(editor)
+  const selection = editor.state.selection
+  const range = selection.empty ? null : { from: selection.from, to: selection.to }
   apply()
+  if (!range) return
+
+  // Updating a question's inlineContent updates the outer atom NodeView. That
+  // React update can briefly detach the inner contenteditable selection even
+  // though the ProseMirror selection is still the user's original range.
+  // Restore it now and once after paint so the highlight survives that update.
+  restoreTextSelection(editor, range)
+  if (typeof window !== 'undefined') {
+    window.requestAnimationFrame(() => {
+      if (!editor.isDestroyed && editor.state.selection.empty) restoreTextSelection(editor, range)
+    })
+  }
 }
 
 /** 可嵌入单块编辑器或画布对象工具栏的共享文字格式控件。 */

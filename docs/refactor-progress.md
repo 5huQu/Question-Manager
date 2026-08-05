@@ -24,7 +24,7 @@
 | # | 文件 | 行数 | 拆分目标 | 状态 |
 |---|------|------|---------|------|
 | 8 | `frontend/src/components/dialogs/QuickActionDialog.tsx` | 1438→1(barrel) | → `quick-action/` 6 模块(constants, CustomCheckbox, useQuickAction, TagTreeSelector, ResultPanels, QuickActionDialog 编排器) | ✅ 已完成 |
-| 9 | `frontend/src/components/questions/EditDialog.tsx` | 1319→2(barrel) | → `edit-dialog/` 4 模块(utils, form-fields, ai-clean-panel, EditDialog 编排器) | ✅ 已完成 |
+| 9 | `frontend/src/components/questions/EditDialog.tsx` | 1319→2(barrel) | → `edit-dialog/` 2 模块(form-fields, EditDialog 编排器) | ✅ 已完成 |
 | 10 | `frontend/src/pages/questions/LayoutWorkbenchPage.tsx` | 1341→2(barrel) | → `layout-workbench/` 5 模块(useLayoutWorkbench, OutlinePanel, PropertiesPanel, Toolbar, LayoutWorkbenchPage 编排器) | ✅ 已完成 |
 | 11 | `server/src/services/question-parser/parser-preview.ts` | 809→1(barrel) | → `preview/` 6 模块(types, markdown-utils, section-detection, match-extraction, diagnostics, preview-builder) + index.ts | ✅ 已完成 |
 | 12 | `frontend/src/pages/LearningTagsPage.tsx` | 973→1(barrel) | → `learning-tags/` 5 模块(utils, useLearningTags, LibraryListPanel, LibraryEditor, AddLibraryDialog) + 编排器 | ✅ 已完成 |

@@ -62,13 +62,10 @@ export function PropertiesSheet(props: {
   onOpenQuestionPicker?: (blockId: string, boxId?: string) => void
 }) {
   const reduced = useReducedMotion()
-  if (props.variant === 'docked') {
-    return props.open && props.selected ? <PropertiesSheetPanel {...props} selected={props.selected} variant="docked" reduced={reduced} /> : null
-  }
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="wait">
       {props.open && props.selected ? (
-        <PropertiesSheetPanel key="properties-sheet" {...props} selected={props.selected} reduced={reduced} />
+        <PropertiesSheetPanel key={props.selected.block.id || 'properties-sheet'} {...props} selected={props.selected} reduced={reduced} />
       ) : null}
     </AnimatePresence>
   )
@@ -108,12 +105,12 @@ function PropertiesSheetPanel(props: {
 
   return (
     <motion.aside
-      initial={props.variant === 'docked' || props.reduced ? { opacity: 0 } : { x: 432, opacity: 0 }}
-      animate={props.variant === 'docked' || props.reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
-      exit={props.variant === 'docked' || props.reduced ? { opacity: 0 } : { x: 432, opacity: 0 }}
+      initial={props.reduced ? { opacity: 0 } : { x: 20, opacity: 0 }}
+      animate={props.reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
+      exit={props.reduced ? { opacity: 0 } : { x: 20, opacity: 0 }}
       transition={springPanel}
       className={props.variant === 'docked'
-        ? 'flex h-full w-full flex-col bg-white dark:bg-zinc-950'
+        ? 'flex h-full w-[300px] flex-col bg-white dark:bg-zinc-950'
         : 'absolute inset-y-0 right-0 z-30 flex w-[min(26rem,calc(100vw-2rem))] flex-col border-l border-zinc-200/50 bg-white/90 shadow-[-8px_0_24px_-6px_rgba(0,0,0,0.08)] backdrop-blur-2xl backdrop-saturate-150 dark:border-zinc-800/50 dark:bg-zinc-950/90 dark:shadow-[-8px_0_24px_-6px_rgba(0,0,0,0.5)]'}
     >
       <div className="flex h-14 items-center justify-between border-b border-zinc-200 px-4 dark:border-zinc-800">

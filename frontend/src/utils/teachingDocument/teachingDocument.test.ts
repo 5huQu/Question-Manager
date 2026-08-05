@@ -132,6 +132,50 @@ describe('parseTeachingDocument', () => {
     }).document?.style?.questionSpacing).toBeUndefined()
   })
 
+  it('parses synchronized chapter styles and per-question typography overrides', () => {
+    const { document } = parseTeachingDocument({
+      version: 1,
+      documentType: 'lecture',
+      title: '章节与题目样式',
+      metadata: {},
+      style: {
+        headingStyles: {
+          1: { font: 'heiti', fontSize: 24, color: '#1d4ed8', fontWeight: 700 },
+          2: { fontSize: 20, italic: true },
+          3: { fontSize: 99, color: 'red' },
+        },
+        questionStyle: { font: 'songti', fontSize: 16, fontWeight: 600, italic: false },
+      },
+      content: [{
+        type: 'question',
+        id: 'question-1',
+        questionId: 'q-1',
+        display: {
+          typography: { font: 'kaiti', fontSize: 18, color: '#dc2626', fontWeight: 700, italic: true },
+          inlineContent: {
+            'question-1:question:stem:0': [{ type: 'text', text: '局部题干', color: '#2563eb', fontSize: 20, marks: ['bold'] }],
+          },
+        },
+      }],
+    })
+
+    expect(document?.style?.headingStyles).toEqual({
+      1: { font: 'heiti', fontSize: 24, color: '#1d4ed8', fontWeight: 700, italic: undefined },
+      2: { font: undefined, fontSize: 20, color: undefined, fontWeight: undefined, italic: true },
+    })
+    expect(document?.style?.questionStyle).toEqual({
+      font: 'songti', fontSize: 16, color: undefined, fontWeight: 600, italic: false,
+    })
+    expect(document?.content[0]).toMatchObject({
+      display: {
+        typography: { font: 'kaiti', fontSize: 18, color: '#dc2626', fontWeight: 700, italic: true },
+        inlineContent: {
+          'question-1:question:stem:0': [{ type: 'text', text: '局部题干', color: '#2563eb', fontSize: 20, marks: ['bold'], unknownMarks: undefined }],
+        },
+      },
+    })
+  })
+
   it('keeps supported persisted print preferences', () => {
     const { document } = parseTeachingDocument({
       version: 1,

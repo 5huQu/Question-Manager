@@ -83,6 +83,31 @@ function latestOcrDocumentForSource(sourceDocumentId: string) {
   return ocrDocument
 }
 
+function detachExportRecordsForDeletedImportJob(importJobId: string) {
+  const rows = db.prepare(`
+    SELECT id, snapshot_json
+    FROM question_bank_export_records
+    WHERE import_job_id = ?
+  `).all(importJobId) as Array<{ id: string; snapshot_json: string }>
+  if (!rows.length) return
+
+  const update = db.prepare(`
+    UPDATE question_bank_export_records
+    SET import_job_id = '', snapshot_json = ?
+    WHERE id = ?
+  `)
+  for (const row of rows) {
+    let snapshot: Record<string, unknown> = {}
+    try {
+      const parsed = JSON.parse(row.snapshot_json || '{}')
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) snapshot = parsed as Record<string, unknown>
+    } catch {
+      // Keep the export record usable even if an old snapshot was malformed.
+    }
+    update.run(JSON.stringify({ ...snapshot, removedImportJobId: importJobId }), row.id)
+  }
+}
+
 function metadataForCandidates(importJob: ImportJob, questionSource: SourceDocument) {
   return {
     province: importJob.province || questionSource.province,
@@ -390,6 +415,11 @@ export function deleteImportJob(id: string) {
     for (const sourceDocumentId of sourceDocumentIds) {
       db.prepare('DELETE FROM source_documents WHERE id = ?').run(sourceDocumentId)
     }
+    // Historical V1/V2 archive rows intentionally use RESTRICT to retain
+    // provenance. Once the owning import job is explicitly deleted, remove
+    // that ownership record and detach export history before deleting the job.
+    detachExportRecordsForDeletedImportJob(id)
+    db.prepare('DELETE FROM import_provenance_archive WHERE import_job_id = ?').run(id)
     db.prepare('DELETE FROM import_jobs WHERE id = ?').run(id)
     db.prepare(`
       UPDATE import_job_deletion_manifests

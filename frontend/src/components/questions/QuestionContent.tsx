@@ -5,6 +5,8 @@ import { RichContent, richBlocksPlainText } from '@/components/RichContent'
 import { LargeImageDialog } from '@/components/dialogs/Modal'
 import { Button } from '@/components/ui'
 import type { ChoiceOption, QuestionFigure, RichBlock } from '@/types'
+import type { TeachingInline } from '@/types/teachingDocument'
+import { BlockInlineEditor } from '@/components/teaching-document/BlockInlineEditor/BlockInlineEditor'
 import { choiceLayoutForTexts } from '@/utils/choiceLayout'
 import { assetUrl, figureAlt, figureCaption, figuresByUsage, parseChoiceQuestion } from '@/utils/questionDisplay'
 
@@ -189,20 +191,28 @@ export function QuestionDocumentMarkdownContent({ content, className = '' }: { c
 export function ChoiceOptions({
   options,
   figures = [],
+  className = '',
   layout: layoutOverride,
   optionIndexOffset = 0,
   optionDomAttributes,
   showFigureCaptions = true,
   choiceLayoutBlockId,
+  inlineContent,
+  editableText = false,
+  onInlineContentChange,
 }: {
   options: ChoiceOption[]
   figures?: QuestionFigure[]
+  className?: string
   layout?: 'four' | 'two' | 'one'
   optionIndexOffset?: number
   optionDomAttributes?: (optionIndex: number) => Record<string, string | number | undefined>
   showFigureCaptions?: boolean
   /** 讲义测量树使用，关联本次实际测得的列数与题目块。 */
   choiceLayoutBlockId?: string
+  inlineContent?: Record<string, TeachingInline[]>
+  editableText?: boolean
+  onInlineContentChange?: (label: string, content: TeachingInline[]) => void
 }) {
   const hasFigures = figures.some((figure) => Boolean(figure.path))
 
@@ -258,7 +268,7 @@ export function ChoiceOptions({
   return (
     <div
       ref={containerRef}
-      className={`choice-options ${isAdaptive ? '' : `choice-options-${layoutClass}`}`.trim()}
+      className={`choice-options ${isAdaptive ? '' : `choice-options-${layoutClass}`} ${className}`.trim()}
       data-layout={isAdaptive ? `adaptive-${adaptiveColumns}` : resolvedLayout}
       data-teaching-question-choice-layout={isAdaptive ? `adaptive-${adaptiveColumns}` : resolvedLayout}
       data-teaching-question-choice-layout-block-id={choiceLayoutBlockId}
@@ -296,7 +306,18 @@ export function ChoiceOptions({
         >
           <span className="choice-label">{option.label}</span>
           <div className="min-w-0">
-            <MarkdownContent className="choice-markdown" content={withoutInlineFigureMarkers(option.content)} />
+            {editableText && inlineContent?.[option.label] ? (
+              <BlockInlineEditor
+                inlines={inlineContent[option.label]}
+                variant="embedded"
+                toolbar="none"
+                editorContext="question"
+                ariaLabel={`选项 ${option.label}`}
+                onChange={(content) => onInlineContentChange?.(option.label, content)}
+              />
+            ) : (
+              <MarkdownContent className="choice-markdown" content={withoutInlineFigureMarkers(option.content)} />
+            )}
             <FigureGallery
               figures={figures.filter((figure) => String(figure.optionLabel || '').toUpperCase() === option.label)}
               className="mt-2"

@@ -265,6 +265,7 @@ Before starting:
 While coding:
 
 - Make small, focused changes and reuse existing service/repo/API/component patterns.
+- For structured lecture, worksheet, or exam authoring through the local API, use `skills/teaching-document-authoring`; use `skills/question-manager-ingestion` for creating new question-bank items.
 - Avoid unrelated refactors and broad formatting churn.
 - Do not revert user changes or run destructive git commands.
 - Do not commit test data, uploaded PDFs, OCR responses, secrets, or local databases.

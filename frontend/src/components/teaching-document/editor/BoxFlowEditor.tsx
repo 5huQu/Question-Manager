@@ -24,7 +24,7 @@ import {
 } from '@/utils/teachingDocument'
 import { createDocumentEditorExtensions } from './schema'
 import { blockToEditorNode, cachedJsonSignature, editorNodeToBlock } from './serialization'
-import { registerCardEditorFocus } from './cardEditorRegistry'
+import { clearCardEditorFocus, registerCardEditorFocus } from './cardEditorRegistry'
 import {
   blockIdFromEditorSelection,
   BOX_CHILD_MULTI_SELECT_EVENT,
@@ -257,13 +257,13 @@ export function BoxFlowEditor({
   useEffect(() => {
     if (!editor) return
     const handleFocus = () => registerCardEditorFocus(editor)
-    const handleBlur = () => registerCardEditorFocus(null)
+    const handleBlur = () => clearCardEditorFocus(editor)
     editor.on('focus', handleFocus)
     editor.on('blur', handleBlur)
     return () => {
       editor.off('focus', handleFocus)
       editor.off('blur', handleBlur)
-      registerCardEditorFocus(null)
+      clearCardEditorFocus(editor)
     }
   }, [editor])
 

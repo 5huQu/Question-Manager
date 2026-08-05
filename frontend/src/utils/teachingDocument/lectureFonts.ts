@@ -3,7 +3,7 @@
  * 编辑视图、A4 预览与 PDF 打印页共用；字体选择存于文档 style（唯一数据源）。
  */
 
-import type { TeachingDocumentStyle, TeachingDocumentType, TeachingDocumentTypographyPreset } from '@/types/teachingDocument'
+import type { TeachingDocumentStyle, TeachingDocumentType, TeachingDocumentTypographyPreset, TeachingTextStyle } from '@/types/teachingDocument'
 
 export interface LectureFontOption {
   id: string
@@ -62,6 +62,45 @@ export const TEXT_FONT_OPTIONS: LectureFontOption[] = [
   { id: 'georgia', label: 'Georgia', stack: 'Georgia, "Times New Roman", "Songti SC", serif' },
   { id: 'arial', label: 'Arial', stack: 'Arial, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif' },
 ]
+
+const DEFAULT_HEADING_STYLES: Record<1 | 2 | 3 | 4, TeachingTextStyle> = {
+  1: { fontSize: 24, fontWeight: 700 },
+  2: { fontSize: 20, fontWeight: 600 },
+  3: { fontSize: 18, fontWeight: 600 },
+  4: { fontSize: 16, fontWeight: 500 },
+}
+
+/** 返回指定标题级别的最终样式；文档只保存用户覆盖字段。 */
+export function resolveHeadingStyle(style: TeachingDocumentStyle | undefined, level: 1 | 2 | 3 | 4): TeachingTextStyle {
+  return { ...DEFAULT_HEADING_STYLES[level], ...(style?.headingStyles?.[level] || {}) }
+}
+
+/** 返回当前文档题目的局部覆盖；未设置时由渲染器保留现有题目默认排版。 */
+export function resolveQuestionStyle(style: TeachingDocumentStyle | undefined): TeachingTextStyle {
+  return { ...(style?.questionStyle || {}) }
+}
+
+function textStyleCssVars(style: TeachingTextStyle, prefix: string): Record<string, string> {
+  const vars: Record<string, string> = {}
+  const stack = fontStackById(style.font)
+  if (stack) vars[`${prefix}-font`] = stack
+  if (style.fontSize) vars[`${prefix}-size`] = `${style.fontSize}px`
+  if (style.color) vars[`${prefix}-color`] = style.color
+  if (style.fontWeight) vars[`${prefix}-weight`] = String(style.fontWeight)
+  if (style.italic !== undefined) vars[`${prefix}-style`] = style.italic ? 'italic' : 'normal'
+  return vars
+}
+
+/** 生成编辑器、预览和打印页共同使用的章节/题目样式变量。 */
+export function teachingTypographyCssVars(style?: TeachingDocumentStyle): Record<string, string> {
+  const vars: Record<string, string> = {}
+  for (const level of [1, 2, 3, 4] as const) {
+    Object.assign(vars, textStyleCssVars(style?.headingStyles?.[level] || {}, `--td-heading-${level}`))
+  }
+  const questionStyle = resolveQuestionStyle(style)
+  Object.assign(vars, textStyleCssVars(questionStyle, '--td-question'))
+  return vars
+}
 
 /** 由字体 id 查 CSS font-family 栈；未知 id 返回 undefined，渲染端回退默认字体。 */
 export function fontStackById(id: string | undefined): string | undefined {

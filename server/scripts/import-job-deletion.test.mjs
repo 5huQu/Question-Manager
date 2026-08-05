@@ -66,7 +66,26 @@ try {
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM question_bank_items WHERE id = ?').get(question.id).count, 0)
   assert.equal(db.prepare('SELECT status FROM import_job_deletion_manifests WHERE job_id = ?').get(first.id).status, 'trashed')
 
-  console.log('5. Trash retention removes only expired completed manifests...')
+  console.log('5. Explicit deletion detaches historical provenance and export records...')
+  const archiveJob = createImportJob({ id: 'archive_delete_job', title: 'Archive delete job' }).importJob
+  db.prepare(`
+    INSERT INTO question_bank_export_records
+      (id, source_type, import_job_id, title, format, snapshot_json, created_at)
+    VALUES ('archive_delete_export', 'run', ?, 'Archive export', 'pdf', ?, ?)
+  `).run(archiveJob.id, JSON.stringify({ legacy: true }), new Date().toISOString())
+  db.prepare(`
+    INSERT INTO import_provenance_archive
+      (provenance_kind, legacy_id, import_job_id, source_document_id, resolution, detail_json, created_at)
+    VALUES ('orphan_v1_run', 'archive_delete_legacy_run', ?, NULL, 'archive_job_without_source_file', '{}', ?)
+  `).run(archiveJob.id, new Date().toISOString())
+  assert.equal(deleteImportJob(archiveJob.id).success, true)
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM import_jobs WHERE id = ?').get(archiveJob.id).count, 0)
+  assert.equal(db.prepare('SELECT import_job_id FROM question_bank_export_records WHERE id = ?').get('archive_delete_export').import_job_id, '')
+  assert.deepEqual(JSON.parse(db.prepare('SELECT snapshot_json FROM question_bank_export_records WHERE id = ?').get('archive_delete_export').snapshot_json), { legacy: true, removedImportJobId: archiveJob.id })
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM import_provenance_archive WHERE import_job_id = ?').get(archiveJob.id).count, 0)
+  assert.equal(db.prepare('SELECT status FROM import_job_deletion_manifests WHERE job_id = ?').get(archiveJob.id).status, 'trashed')
+
+  console.log('6. Trash retention removes only expired completed manifests...')
   db.prepare("UPDATE import_job_deletion_manifests SET updated_at = '2000-01-01T00:00:00.000Z' WHERE job_id = ?").run(first.id)
   const cleanup = cleanupImportJobTrash({ retentionDays: 30, now: new Date('2026-01-01T00:00:00.000Z') })
   assert.deepEqual(cleanup.removed, [first.id])

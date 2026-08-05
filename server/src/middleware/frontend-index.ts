@@ -15,6 +15,9 @@ export function sendFrontendIndex(_req: Request, res: Response) {
     res.status(404).type('text/plain').send('前端尚未构建。')
     return
   }
+  // index.html contains the current hashed JS entrypoint. It must be fetched
+  // again after a deployment; the hashed assets themselves remain cacheable.
+  res.setHeader('Cache-Control', 'no-store')
   res.sendFile(indexPath)
 }
 

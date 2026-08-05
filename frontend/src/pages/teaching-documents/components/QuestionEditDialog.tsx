@@ -6,13 +6,14 @@
 
 import { useMemo, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Database, FileText, HelpCircle, LoaderCircle } from 'lucide-react'
+import { Database, FileText, HelpCircle, Image, LoaderCircle } from 'lucide-react'
 import type { QuestionItem } from '@/types'
 import type { QuestionContentDraft } from '@/types/questionContent'
 import type { QuestionBlock } from '@/types/teachingDocument'
 import { questionBankApi } from '@/api/questionBank'
 import { ApiError } from '@/api/client'
 import { QuestionContentEditor, type QuestionEditorConflict } from '@/components/questions/editor/QuestionContentEditor'
+import { QuestionFigureManager } from '@/components/questions/QuestionFigureManager'
 import { contentEquals, type QuestionContentValue } from '@/components/questions/editor/model'
 
 export function QuestionEditDialog(props: {
@@ -23,6 +24,8 @@ export function QuestionEditDialog(props: {
   onWrittenBack: (item: QuestionItem) => void
   /** 仅保存在本文档：页面写入 localContent */
   onKeepLocal: (draft: QuestionContentDraft) => void
+  /** 题图资源保存后同步当前文档的题目缓存 */
+  onFiguresChanged?: (figures: QuestionItem['figures']) => void
 }) {
   const { block, question } = props
   const initialValue = useMemo<QuestionContentValue>(() => ({
@@ -35,6 +38,7 @@ export function QuestionEditDialog(props: {
   const [saving, setSaving] = useState(false)
   const [conflict, setConflict] = useState<QuestionEditorConflict | null>(null)
   const [writeError, setWriteError] = useState('')
+  const [editPanel, setEditPanel] = useState<'content' | 'figures'>('content')
 
   const dirty = !contentEquals(draft, initialValue)
   const dialogTitle = `编辑题目内容 · ${question.questionNo || block.questionId}`
@@ -95,21 +99,53 @@ export function QuestionEditDialog(props: {
     >
       <div className="flex h-full max-h-[56rem] w-full max-w-4xl flex-col overflow-hidden">
         {step === 'edit' ? (
-          <QuestionContentEditor
-            entityKey={`teaching-question-${block.id}`}
-            className="min-h-0 flex-1"
-            title={dialogTitle}
-            description="内容以 Markdown 保存，公式与表格可视化编辑。保存时可选择回填题库或仅保留在本文档。"
-            value={draft}
-            savedValue={initialValue}
-            dirty={dirty}
-            onChange={setDraft}
-            onSave={() => { setConflict(null); setStep('confirm') }}
-            onCancel={requestClose}
-            contentRevision={question.contentRevision}
-            conflict={conflict}
-            saving={saving}
-          />
+          <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50/30 p-2 dark:border-zinc-800 dark:bg-zinc-950/40">
+            <div role="tablist" aria-label="题目编辑面板" className="flex w-fit max-w-full shrink-0 overflow-x-auto rounded-lg border border-zinc-200/70 bg-zinc-100/80 p-0.5 dark:border-zinc-800/70 dark:bg-zinc-900/80">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={editPanel === 'content'}
+                onClick={() => setEditPanel('content')}
+                className={`h-8 whitespace-nowrap rounded-md px-3 text-xs font-medium transition-colors ${editPanel === 'content' ? 'border border-zinc-200/70 bg-white text-zinc-900 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'}`}
+              >
+                内容编辑
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={editPanel === 'figures'}
+                onClick={() => setEditPanel('figures')}
+                className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-xs font-medium transition-colors ${editPanel === 'figures' ? 'border border-zinc-200/70 bg-white text-zinc-900 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'}`}
+              >
+                <Image className="size-3.5" />题图管理
+              </button>
+            </div>
+            <div className="min-h-0 flex-1">
+              {editPanel === 'figures' ? (
+                <QuestionFigureManager
+                  question={question}
+                  onFiguresChange={props.onFiguresChanged}
+                  onClose={requestClose}
+                />
+              ) : (
+                <QuestionContentEditor
+                  entityKey={`teaching-question-${block.id}`}
+                  className="h-full min-h-0"
+                  title={dialogTitle}
+                  description="内容以 Markdown 保存，公式与表格可视化编辑。保存时可选择回填题库或仅保留在本文档。"
+                  value={draft}
+                  savedValue={initialValue}
+                  dirty={dirty}
+                  onChange={setDraft}
+                  onSave={() => { setConflict(null); setStep('confirm') }}
+                  onCancel={requestClose}
+                  contentRevision={question.contentRevision}
+                  conflict={conflict}
+                  saving={saving}
+                />
+              )}
+            </div>
+          </div>
         ) : step === 'confirm' ? (
           <div className="flex flex-1 items-center justify-center rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-800 dark:bg-zinc-950">
             <div className="w-full max-w-md space-y-5">
