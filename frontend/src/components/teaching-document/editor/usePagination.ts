@@ -19,6 +19,7 @@ import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
   effectivePaperMetrics,
+  createCountingParagraphRangeGeometryAdapter,
   measuredChoiceLayoutOverrides,
   measureTeachingDocumentAll,
   paginateTeachingDocument,
@@ -161,18 +162,28 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
             return
           }
 
+          const paragraphGeometryCounter = profiler.enabled
+            ? createCountingParagraphRangeGeometryAdapter(paragraphGeometryAdapter)
+            : null
           const bundle = profiler.measure('dom-measurement', () => measureTeachingDocumentAll(
             measureRoot,
             document,
             {
               geometry: geometryAdapter,
-              paragraphGeometry: paragraphGeometryAdapter,
+              paragraphGeometry: paragraphGeometryCounter?.adapter ?? paragraphGeometryAdapter,
               boxGeometry: boxGeometryAdapter,
               questionGeometry: questionGeometryAdapter,
             },
             resolveQuestion,
             choiceLayoutOverrides,
           ))
+          if (paragraphGeometryCounter) {
+            profiler.addMetadata({
+              paragraphTextRangeCalls: paragraphGeometryCounter.stats.textRangeCalls,
+              paragraphTextProbeCalls: paragraphGeometryCounter.stats.textProbeCalls,
+              paragraphAtomicRectCalls: paragraphGeometryCounter.stats.atomicCalls,
+            })
+          }
           const { measurement, paragraphs: paragraphMeasurements, boxes: boxMeasurements, questions: questionMeasurements, boxChildQuestions: boxChildQuestionMeasurements, boxChildRawMarkdowns: boxChildRawMarkdownMeasurements } = bundle
           measurement.diagnostics.push(...nextReadiness.diagnostics)
           if (controller.signal.aborted || currentGeneration !== generationRef.current) return

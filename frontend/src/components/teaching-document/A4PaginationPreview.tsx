@@ -8,6 +8,7 @@ import {
   measureTeachingDocumentAll,
   paginateTeachingDocument,
   createDefaultPrintLayout,
+  createCountingParagraphRangeGeometryAdapter,
   effectivePaperMetrics,
   isA3LandscapeSpread,
   paperMetrics,
@@ -203,18 +204,28 @@ export function A4PaginationPreview({
           profiler.finish('retry')
           return
         }
+        const paragraphGeometryCounter = profiler.enabled
+          ? createCountingParagraphRangeGeometryAdapter(paragraphGeometryAdapter)
+          : null
         const bundle = profiler.measure('dom-measurement', () => measureTeachingDocumentAll(
           root,
           document,
           {
             geometry: geometryAdapter,
-            paragraphGeometry: paragraphGeometryAdapter,
+            paragraphGeometry: paragraphGeometryCounter?.adapter ?? paragraphGeometryAdapter,
             boxGeometry: boxGeometryAdapter,
             questionGeometry: questionGeometryAdapter,
           },
           resolveQuestion,
           choiceLayoutOverrides,
         ))
+        if (paragraphGeometryCounter) {
+          profiler.addMetadata({
+            paragraphTextRangeCalls: paragraphGeometryCounter.stats.textRangeCalls,
+            paragraphTextProbeCalls: paragraphGeometryCounter.stats.textProbeCalls,
+            paragraphAtomicRectCalls: paragraphGeometryCounter.stats.atomicCalls,
+          })
+        }
         const { measurement, paragraphs: paragraphMeasurements, boxes: boxMeasurements, questions: questionMeasurements, boxChildQuestions: boxChildQuestionMeasurements, boxChildRawMarkdowns: boxChildRawMarkdownMeasurements } = bundle
         measurement.diagnostics.push(...nextReadiness.diagnostics)
         if (controller.signal.aborted || generation !== generationRef.current) return

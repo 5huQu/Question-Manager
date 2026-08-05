@@ -35,6 +35,15 @@ export interface ParagraphRangeGeometryAdapter {
     endOffset: number,
     root: HTMLElement,
   ): BlockGeometry[]
+  /**
+   * 批量读取一段文本的全部行盒。未实现时保留逐字素测量路径，兼容测试和外部适配器。
+   */
+  measureTextRange?(
+    inlineElement: HTMLElement,
+    startOffset: number,
+    endOffset: number,
+    root: HTMLElement,
+  ): BlockGeometry[]
   measureAtomic(inlineElement: HTMLElement, root: HTMLElement): BlockGeometry[]
   margins(paragraphElement: HTMLElement): { marginTop: number; marginBottom: number }
 }
@@ -67,25 +76,33 @@ function boundaryForOffset(nodes: Text[], offset: number) {
   return last ? { node: last, offset: last.data.length } : null
 }
 
+function measureBrowserTextRange(
+  inlineElement: HTMLElement,
+  startOffset: number,
+  endOffset: number,
+  root: HTMLElement,
+) {
+  const content = inlineElement.querySelector<HTMLElement>(`[${TEACHING_DOM.inlineContent}]`)
+  if (!content) return []
+  const nodes = textNodes(content)
+  const localStart = startOffset - Number(inlineElement.getAttribute(TEACHING_DOM.inlineTextStart) || 0)
+  const localEnd = endOffset - Number(inlineElement.getAttribute(TEACHING_DOM.inlineTextStart) || 0)
+  const start = boundaryForOffset(nodes, localStart)
+  const end = boundaryForOffset(nodes, localEnd)
+  if (!start || !end) return []
+  try {
+    const range = inlineElement.ownerDocument.createRange()
+    range.setStart(start.node, start.offset)
+    range.setEnd(end.node, end.offset)
+    return Array.from(range.getClientRects(), (rect) => relativeRect(rect, root))
+  } catch {
+    return []
+  }
+}
+
 export const browserParagraphRangeGeometryAdapter: ParagraphRangeGeometryAdapter = {
-  measureText(inlineElement, startOffset, endOffset, root) {
-    const content = inlineElement.querySelector<HTMLElement>(`[${TEACHING_DOM.inlineContent}]`)
-    if (!content) return []
-    const nodes = textNodes(content)
-    const localStart = startOffset - Number(inlineElement.getAttribute(TEACHING_DOM.inlineTextStart) || 0)
-    const localEnd = endOffset - Number(inlineElement.getAttribute(TEACHING_DOM.inlineTextStart) || 0)
-    const start = boundaryForOffset(nodes, localStart)
-    const end = boundaryForOffset(nodes, localEnd)
-    if (!start || !end) return []
-    try {
-      const range = inlineElement.ownerDocument.createRange()
-      range.setStart(start.node, start.offset)
-      range.setEnd(end.node, end.offset)
-      return Array.from(range.getClientRects(), (rect) => relativeRect(rect, root))
-    } catch {
-      return []
-    }
-  },
+  measureText: measureBrowserTextRange,
+  measureTextRange: measureBrowserTextRange,
   measureAtomic(inlineElement, root) {
     return Array.from(inlineElement.getClientRects(), (rect) => relativeRect(rect, root))
   },
@@ -96,6 +113,40 @@ export const browserParagraphRangeGeometryAdapter: ParagraphRangeGeometryAdapter
       marginBottom: Number.parseFloat(style?.marginBottom || '0') || 0,
     }
   },
+}
+
+export interface ParagraphRangeGeometryCallStats {
+  textProbeCalls: number
+  textRangeCalls: number
+  atomicCalls: number
+}
+
+export function createCountingParagraphRangeGeometryAdapter(
+  source: ParagraphRangeGeometryAdapter = browserParagraphRangeGeometryAdapter,
+) {
+  const stats: ParagraphRangeGeometryCallStats = {
+    textProbeCalls: 0,
+    textRangeCalls: 0,
+    atomicCalls: 0,
+  }
+  const adapter: ParagraphRangeGeometryAdapter = {
+    measureText(...args) {
+      stats.textProbeCalls += 1
+      return source.measureText(...args)
+    },
+    measureTextRange: source.measureTextRange
+      ? (...args) => {
+          stats.textRangeCalls += 1
+          return source.measureTextRange!(...args)
+        }
+      : undefined,
+    measureAtomic(...args) {
+      stats.atomicCalls += 1
+      return source.measureAtomic(...args)
+    },
+    margins: (...args) => source.margins(...args),
+  }
+  return { adapter, stats }
 }
 
 function cursorAfterAtomic(inlineIndex: number): InlineCursor {
@@ -128,6 +179,133 @@ function hasSourceContent(inlines: TeachingInline[]) {
   return inlines.some((inline) => inline.type === 'text'
     ? inline.text.trim().length > 0
     : inline.type === 'inlineMath' || inline.type === 'unknown')
+}
+
+const LINE_TOP_TOLERANCE = 1.5
+
+function validGeometry(geometry: BlockGeometry) {
+  return [geometry.top, geometry.bottom, geometry.height, geometry.width].every(Number.isFinite)
+    && geometry.height > 0
+    && geometry.width >= 0
+    && geometry.bottom >= geometry.top
+}
+
+function geometriesShareLine(
+  left: Pick<BlockGeometry, 'top' | 'bottom'>,
+  right: Pick<BlockGeometry, 'top' | 'bottom'>,
+) {
+  return Math.abs(left.top - right.top) <= LINE_TOP_TOLERANCE
+    || (right.top < left.bottom && right.bottom > left.top)
+}
+
+function mergeRangeLineGeometries(rects: BlockGeometry[]) {
+  if (!rects.length || rects.some((rect) => !validGeometry(rect))) return []
+  const lines: BlockGeometry[] = []
+  rects.forEach((rect) => {
+    const current = lines[lines.length - 1]
+    if (!current || !geometriesShareLine(current, rect)) {
+      lines.push({ ...rect })
+      return
+    }
+    current.top = Math.min(current.top, rect.top)
+    current.bottom = Math.max(current.bottom, rect.bottom)
+    current.height = current.bottom - current.top
+    current.width += rect.width
+  })
+  return lines
+}
+
+function geometryLineIndex(rects: BlockGeometry[], lines: BlockGeometry[]) {
+  if (!rects.length || rects.some((rect) => !validGeometry(rect))) return null
+  const matches = new Set<number>()
+  rects.forEach((rect) => {
+    const index = lines.findIndex((line) => geometriesShareLine(line, rect))
+    if (index >= 0) matches.add(index)
+  })
+  return matches.size === 1 ? [...matches][0] : null
+}
+
+function textCursor(inlineIndex: number, offset: number, textLength: number, edge: 'start' | 'end'): InlineCursor {
+  if (offset === 0) return { inlineIndex }
+  if (offset === textLength && edge === 'end') return cursorAfterAtomic(inlineIndex)
+  return { inlineIndex, textOffset: offset }
+}
+
+interface BatchedTextLine {
+  geometry: BlockGeometry
+  startOffset: number
+  endOffset: number
+}
+
+function measureTextLinesBatched(
+  root: HTMLElement,
+  element: HTMLElement,
+  text: string,
+  boundaries: number[],
+  adapter: ParagraphRangeGeometryAdapter,
+): BatchedTextLine[] | null {
+  if (!adapter.measureTextRange || boundaries.length <= 1) return null
+  const lineGeometries = mergeRangeLineGeometries(adapter.measureTextRange(element, 0, text.length, root))
+  if (!lineGeometries.length) return null
+  if (lineGeometries.length === 1) {
+    return [{ geometry: lineGeometries[0], startOffset: 0, endOffset: text.length }]
+  }
+
+  const graphemeCount = boundaries.length - 1
+  const probeCache = new Map<number, number | null>()
+  const probeLine = (graphemeIndex: number, refresh = false) => {
+    if (!refresh && probeCache.has(graphemeIndex)) return probeCache.get(graphemeIndex) ?? null
+    const rects = adapter.measureText(
+      element,
+      boundaries[graphemeIndex],
+      boundaries[graphemeIndex + 1],
+      root,
+    )
+    const lineIndex = geometryLineIndex(rects, lineGeometries)
+    probeCache.set(graphemeIndex, lineIndex)
+    return lineIndex
+  }
+
+  const transitions = [0]
+  for (let lineIndex = 0; lineIndex < lineGeometries.length - 1; lineIndex += 1) {
+    const searchStart = transitions[transitions.length - 1]
+    let low = searchStart
+    let high = graphemeCount
+    let binarySearchValid = true
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      const measuredLine = probeLine(middle)
+      if (measuredLine === null) {
+        binarySearchValid = false
+        break
+      }
+      if (measuredLine <= lineIndex) low = middle + 1
+      else high = middle
+    }
+
+    let transition = binarySearchValid ? low : -1
+    if (transition <= searchStart || transition >= graphemeCount) {
+      transition = -1
+      // 浏览器对空白或复杂字形的单字素 Range 偶尔不稳定，仅线性回退当前行边界。
+      for (let graphemeIndex = searchStart + 1; graphemeIndex < graphemeCount; graphemeIndex += 1) {
+        const measuredLine = probeLine(graphemeIndex, true)
+        if (measuredLine !== null && measuredLine > lineIndex) {
+          transition = graphemeIndex
+          break
+        }
+      }
+    }
+    if (transition < 0) return null
+    transitions.push(transition)
+  }
+  transitions.push(graphemeCount)
+  if (transitions.length !== lineGeometries.length + 1) return null
+
+  return lineGeometries.map((geometry, lineIndex) => ({
+    geometry,
+    startOffset: boundaries[transitions[lineIndex]],
+    endOffset: boundaries[transitions[lineIndex + 1]],
+  }))
 }
 
 export function measureParagraphLines(
@@ -170,8 +348,7 @@ export function measureParagraphLines(
     pendingStart = null
   }
   const appendGeometry = (start: InlineCursor, end: InlineCursor, geometry: BlockGeometry) => {
-    if (![geometry.top, geometry.bottom, geometry.height, geometry.width].every(Number.isFinite)
-      || geometry.height <= 0 || geometry.width < 0 || geometry.bottom < geometry.top) {
+    if (!validGeometry(geometry)) {
       diagnostics.push({
         code: 'paragraph-range-invalid',
         severity: 'warning',
@@ -182,8 +359,7 @@ export function measureParagraphLines(
       return
     }
     const sameLine = current
-      && (Math.abs(current.top - geometry.top) <= 1.5
-        || (geometry.top < current.bottom && geometry.bottom > current.top))
+      && geometriesShareLine(current, geometry)
     if (!sameLine) flush()
     if (!current) {
       current = {
@@ -217,6 +393,17 @@ export function measureParagraphLines(
 
     if (inline.type === 'text') {
       const boundaries = graphemeBoundaries(inline.text)
+      const batchedLines = measureTextLinesBatched(root, element, inline.text, boundaries, adapter)
+      if (batchedLines) {
+        batchedLines.forEach((line) => {
+          appendGeometry(
+            textCursor(inlineIndex, line.startOffset, inline.text.length, 'start'),
+            textCursor(inlineIndex, line.endOffset, inline.text.length, 'end'),
+            line.geometry,
+          )
+        })
+        return
+      }
       for (let boundaryIndex = 0; boundaryIndex < boundaries.length - 1; boundaryIndex += 1) {
         const startOffset = boundaries[boundaryIndex]
         const endOffset = boundaries[boundaryIndex + 1]

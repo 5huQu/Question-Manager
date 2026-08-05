@@ -74,7 +74,7 @@ export function createLayoutPerformanceProfiler(input: {
     pipeline: input.pipeline,
     generation: input.generation,
     startedAt: now(),
-    metadata: input.metadata ?? {},
+    metadata: { ...(input.metadata ?? {}) },
     phases: {},
   }
   let finished = false
@@ -101,6 +101,11 @@ export function createLayoutPerformanceProfiler(input: {
     }
   }
 
+  const addMetadata = (metadata: Record<string, string | number | boolean>) => {
+    if (!enabled || finished) return
+    Object.assign(trace.metadata, metadata)
+  }
+
   const finish = (status: LayoutPerformanceStatus) => {
     if (!enabled || finished) return
     finished = true
@@ -113,7 +118,7 @@ export function createLayoutPerformanceProfiler(input: {
     window.dispatchEvent(new CustomEvent<LayoutPerformanceTrace>(LAYOUT_PERFORMANCE_EVENT, { detail: result }))
   }
 
-  return { enabled, startPhase, measure, finish }
+  return { enabled, startPhase, measure, addMetadata, finish }
 }
 
 export function clearTeachingDocumentLayoutPerformance() {

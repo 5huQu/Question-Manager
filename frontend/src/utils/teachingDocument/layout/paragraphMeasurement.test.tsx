@@ -9,6 +9,7 @@ import {
   measureTeachingDocumentParagraphs,
   type ParagraphRangeGeometryAdapter,
 } from './paragraphMeasurement'
+import { graphemeBoundaries } from './grapheme'
 
 function paragraph(): ParagraphBlock {
   return {
@@ -71,6 +72,141 @@ describe('measureParagraphLines', () => {
       'paragraph-measurement-missing',
       'paragraph-range-invalid',
     ]))
+  })
+
+  it('collects full-range line boxes and probes only near line boundaries', () => {
+    const text = '甲'.repeat(64)
+    const block: ParagraphBlock = {
+      type: 'paragraph',
+      id: 'batched',
+      content: [{ type: 'text', text }],
+    }
+    const { root, shell } = measurementDom(block)
+    let rangeCalls = 0
+    let probeCalls = 0
+    const adapter: ParagraphRangeGeometryAdapter = {
+      measureText(_element, startOffset) {
+        probeCalls += 1
+        const lineIndex = Math.floor(startOffset / 16)
+        const top = lineIndex * 20
+        return [{ width: 10, height: 20, top, bottom: top + 20 }]
+      },
+      measureTextRange() {
+        rangeCalls += 1
+        return Array.from({ length: 4 }, (_, lineIndex) => {
+          const top = lineIndex * 20
+          return { width: 160, height: 20, top, bottom: top + 20 }
+        })
+      },
+      measureAtomic: () => [],
+      margins: () => ({ marginTop: 0, marginBottom: 0 }),
+    }
+
+    const result = measureParagraphLines(root, block, 0, shell, adapter)
+    expect(result.lines.map((line) => line.end)).toEqual([
+      { inlineIndex: 0, textOffset: 16 },
+      { inlineIndex: 0, textOffset: 32 },
+      { inlineIndex: 0, textOffset: 48 },
+      { inlineIndex: 1 },
+    ])
+    expect(rangeCalls).toBe(1)
+    expect(probeCalls).toBeLessThan(24)
+    expect(probeCalls).toBeLessThan(text.length / 2)
+  })
+
+  it('keeps every binary-search probe and resulting cursor on grapheme boundaries', () => {
+    const text = `甲👩‍👩‍👧‍👦e\u0301乙丁`
+    const boundaries = graphemeBoundaries(text)
+    const splitOffset = boundaries[2]
+    const block: ParagraphBlock = {
+      type: 'paragraph',
+      id: 'graphemes',
+      content: [{ type: 'text', text }],
+    }
+    const { root, shell } = measurementDom(block)
+    const probedOffsets: number[] = []
+    const adapter: ParagraphRangeGeometryAdapter = {
+      measureText(_element, startOffset, endOffset) {
+        probedOffsets.push(startOffset, endOffset)
+        const top = startOffset < splitOffset ? 0 : 20
+        return [{ width: 10, height: 20, top, bottom: top + 20 }]
+      },
+      measureTextRange: () => [
+        { width: 20, height: 20, top: 0, bottom: 20 },
+        { width: 30, height: 20, top: 20, bottom: 40 },
+      ],
+      measureAtomic: () => [],
+      margins: () => ({ marginTop: 0, marginBottom: 0 }),
+    }
+
+    const result = measureParagraphLines(root, block, 0, shell, adapter)
+    expect(result.lines).toHaveLength(2)
+    expect(result.lines[0].end).toEqual({ inlineIndex: 0, textOffset: splitOffset })
+    expect(result.lines[1].start).toEqual({ inlineIndex: 0, textOffset: splitOffset })
+    expect(probedOffsets.every((offset) => boundaries.includes(offset))).toBe(true)
+  })
+
+  it('merges multiple full-range rects on one visual line', () => {
+    const block: ParagraphBlock = {
+      type: 'paragraph',
+      id: 'segmented-range',
+      content: [{ type: 'text', text: '甲乙丙丁' }],
+    }
+    const { root, shell } = measurementDom(block)
+    const adapter: ParagraphRangeGeometryAdapter = {
+      measureText(_element, startOffset) {
+        const top = startOffset < 2 ? 0 : 20
+        return [{ width: 10, height: 20, top, bottom: top + 20 }]
+      },
+      measureTextRange: () => [
+        { width: 8, height: 20, top: 0, bottom: 20 },
+        { width: 12, height: 18, top: 1, bottom: 19 },
+        { width: 20, height: 20, top: 20, bottom: 40 },
+      ],
+      measureAtomic: () => [],
+      margins: () => ({ marginTop: 0, marginBottom: 0 }),
+    }
+
+    const result = measureParagraphLines(root, block, 0, shell, adapter)
+    expect(result.lines).toHaveLength(2)
+    expect(result.lines[0]).toMatchObject({
+      top: 0,
+      bottom: 20,
+      start: { inlineIndex: 0 },
+      end: { inlineIndex: 0, textOffset: 2 },
+    })
+  })
+
+  it('falls back only the unstable line boundary to linear grapheme probes', () => {
+    const block: ParagraphBlock = {
+      type: 'paragraph',
+      id: 'boundary-fallback',
+      content: [{ type: 'text', text: '甲乙丙丁戊己庚辛' }],
+    }
+    const { root, shell } = measurementDom(block)
+    const probedStarts: number[] = []
+    const adapter: ParagraphRangeGeometryAdapter = {
+      measureText(_element, startOffset) {
+        probedStarts.push(startOffset)
+        if (startOffset === 4 && probedStarts.length === 1) return []
+        const top = startOffset < 4 ? 0 : 20
+        return [{ width: 10, height: 20, top, bottom: top + 20 }]
+      },
+      measureTextRange: () => [
+        { width: 40, height: 20, top: 0, bottom: 20 },
+        { width: 40, height: 20, top: 20, bottom: 40 },
+      ],
+      measureAtomic: () => [],
+      margins: () => ({ marginTop: 0, marginBottom: 0 }),
+    }
+
+    const result = measureParagraphLines(root, block, 0, shell, adapter)
+    expect(result.lines.map((line) => line.end)).toEqual([
+      { inlineIndex: 0, textOffset: 4 },
+      { inlineIndex: 1 },
+    ])
+    expect(result.diagnostics).toEqual([])
+    expect(probedStarts).toContain(1)
   })
 
   it('measures top-level and box-child paragraphs by source path', () => {

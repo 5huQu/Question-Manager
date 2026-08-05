@@ -30,6 +30,7 @@ describe('teaching document layout performance profiler', () => {
       metadata: { blockCount: 100, variant: 'teacher' },
     })
     expect(profiler.measure('dom-measurement', () => 'measured')).toBe('measured')
+    profiler.addMetadata({ paragraphTextRangeCalls: 180, paragraphTextProbeCalls: 42 })
     profiler.finish('settled')
 
     expect(window.__QUESTION_MANAGER_LAYOUT_TRACES__).toHaveLength(1)
@@ -37,7 +38,12 @@ describe('teaching document layout performance profiler', () => {
       pipeline: 'preview',
       generation: 3,
       status: 'settled',
-      metadata: { blockCount: 100, variant: 'teacher' },
+      metadata: {
+        blockCount: 100,
+        variant: 'teacher',
+        paragraphTextRangeCalls: 180,
+        paragraphTextProbeCalls: 42,
+      },
     })
     expect(listener).toHaveBeenCalledTimes(1)
     window.removeEventListener(LAYOUT_PERFORMANCE_EVENT, listener)
