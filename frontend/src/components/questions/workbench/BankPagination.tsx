@@ -22,12 +22,12 @@ export function BankPagination({
   }
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="question-edit-glass-tabs flex items-center gap-1 p-0.5 rounded-lg border border-black/6 dark:border-white/8">
       <button
         type="button"
         onClick={() => setPage(1)}
         disabled={page === 1}
-        className="size-7 rounded border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 cursor-pointer transition-colors flex items-center justify-center"
+        className="flex size-6.5 items-center justify-center rounded text-zinc-500 hover:bg-black/5 hover:text-zinc-900 disabled:opacity-30 disabled:pointer-events-none dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100 cursor-pointer transition-colors"
         title="第一页"
       >
         <ChevronsLeft className="size-3.5" />
@@ -37,7 +37,7 @@ export function BankPagination({
         type="button"
         onClick={() => setPage((p: number) => Math.max(1, p - 1))}
         disabled={page === 1}
-        className="size-7 rounded border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 cursor-pointer transition-colors flex items-center justify-center"
+        className="flex size-6.5 items-center justify-center rounded text-zinc-500 hover:bg-black/5 hover:text-zinc-900 disabled:opacity-30 disabled:pointer-events-none dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100 cursor-pointer transition-colors"
         title="上一页"
       >
         <ChevronLeft className="size-3.5" />
@@ -50,10 +50,10 @@ export function BankPagination({
             key={p}
             type="button"
             onClick={() => setPage(p)}
-            className={`size-7 rounded border text-xs font-semibold transition-all cursor-pointer flex items-center justify-center ${
+            className={`flex size-6.5 items-center justify-center rounded text-xs font-medium transition-all cursor-pointer ${
               isActive
-                ? "bg-zinc-900 border-zinc-900 text-zinc-50 dark:bg-zinc-50 dark:border-zinc-50 dark:text-zinc-950 shadow-xs"
-                : "border-zinc-200 bg-white text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-950 shadow-xs"
+                : "text-zinc-600 hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
             }`}
           >
             {p}
@@ -65,7 +65,7 @@ export function BankPagination({
         type="button"
         onClick={() => setPage((p: number) => Math.min(totalPages, p + 1))}
         disabled={page === totalPages}
-        className="size-7 rounded border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 cursor-pointer transition-colors flex items-center justify-center"
+        className="flex size-6.5 items-center justify-center rounded text-zinc-500 hover:bg-black/5 hover:text-zinc-900 disabled:opacity-30 disabled:pointer-events-none dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100 cursor-pointer transition-colors"
         title="下一页"
       >
         <ChevronRight className="size-3.5" />
@@ -75,7 +75,7 @@ export function BankPagination({
         type="button"
         onClick={() => setPage(totalPages)}
         disabled={page === totalPages}
-        className="size-7 rounded border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 cursor-pointer transition-colors flex items-center justify-center"
+        className="flex size-6.5 items-center justify-center rounded text-zinc-500 hover:bg-black/5 hover:text-zinc-900 disabled:opacity-30 disabled:pointer-events-none dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100 cursor-pointer transition-colors"
         title="最后一页"
       >
         <ChevronsRight className="size-3.5" />

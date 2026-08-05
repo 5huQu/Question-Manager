@@ -136,7 +136,10 @@ export function sourceRefsForRange(document: OCRDocument, range: MarkdownRange |
 
 export function figuresForRange(document: OCRDocument, range: MarkdownRange | undefined, usage: CandidateFigureUsage): CandidateFigure[] {
   return blocksInRange(document, range)
-    .filter((block) => block.assetId || block.type === 'image' || block.type === 'table')
+    // A raw OCR table is part of the answer/solution text, not a figure. Only
+    // asset-backed tables (for example a rendered table image) should be
+    // exposed as CandidateFigure records.
+    .filter((block) => block.assetId || block.type === 'image')
     .filter((block) => !isLikelyPageChromeBlock(document, block))
     .flatMap((block) => figureForBlock(document, block, usage) || [])
 }

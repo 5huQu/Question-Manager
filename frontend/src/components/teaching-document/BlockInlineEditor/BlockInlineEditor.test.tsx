@@ -212,7 +212,7 @@ describe('BlockInlineEditor: 基础编辑', () => {
     const keyboard = host.querySelector<HTMLButtonElement>('button[aria-label="公式键盘"]')
     expect(keyboard).toBeTruthy()
     await act(async () => { keyboard!.click() })
-    const alpha = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.title === '\\alpha')
+    const alpha = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.title === '\\alpha')
     expect(alpha).toBeTruthy()
     await act(async () => { alpha!.click() })
 

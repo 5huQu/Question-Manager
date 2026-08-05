@@ -21,7 +21,7 @@ import { PageTitle, Panel, Badge, Button } from '@/components/ui'
 import { Modal } from '@/components/dialogs/Modal'
 import { useAsync } from '@/hooks/useAsync'
 import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling'
-import { cityOptionsForProvince, provinceOptions, yearOptionsFromServerYear } from '@/utils/metadataOptions'
+import { cityOptionsForProvince, provinceForCity, provinceOptions, yearOptionsFromServerYear } from '@/utils/metadataOptions'
 import { candidateReviewPath, importJobDocumentPath, importJobPath, importJobQuestionsPath } from './importV2Routes'
 
 const paperKindOptions: Array<{ value: PaperKind; label: string }> = [
@@ -266,7 +266,7 @@ export default function ImportJobsListPage() {
       batchName: job.importJob.batchName || '',
       stage: job.importJob.stage || '高中',
       subject: job.importJob.subject || '数学',
-      province: job.importJob.province || '',
+      province: job.importJob.province || provinceForCity(job.importJob.city || ''),
       city: job.importJob.city || '',
       paperKind: job.importJob.paperKind || 'unknown',
       examYear: job.importJob.examYear ? String(job.importJob.examYear) : '',
@@ -848,7 +848,7 @@ export default function ImportJobsListPage() {
                           <SearchableSelect
                             value={editForm.city}
                             options={visibleEditCityOptions}
-                            onChange={(city) => updateEditForm({ city })}
+                            onChange={(city) => updateEditForm({ city, province: provinceForCity(city) || editForm.province })}
                             placeholder={editForm.province ? '请选择城市' : '可先选择省份'}
                             searchPlaceholder="搜索城市"
                             allowClear

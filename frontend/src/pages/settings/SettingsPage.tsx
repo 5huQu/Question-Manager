@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Bot,
   FileCode,
@@ -71,17 +72,12 @@ export function SettingsPage() {
     toggleTeachingStage,
   } = useSettingsState()
 
-  const [activeTab, setActiveTabState] = useState<SettingsTabKey>(() => {
-    const params = new URLSearchParams(window.location.search)
-    const tab = params.get('tab') as SettingsTabKey
-    return SETTINGS_TABS.some((t) => t.key === tab) ? tab : 'general'
-  })
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab') as SettingsTabKey
+  const activeTab = SETTINGS_TABS.some((t) => t.key === tabParam) ? tabParam : 'general'
 
   const setActiveTab = (tab: SettingsTabKey) => {
-    setActiveTabState(tab)
-    const url = new URL(window.location.href)
-    url.searchParams.set('tab', tab)
-    window.history.replaceState({}, '', url.toString())
+    setSearchParams({ tab }, { replace: true })
   }
 
   if (loading && !data) {

@@ -64,7 +64,7 @@ export function BankFilterSidebar({
   }
 
   return (
-    <aside className="flex w-52 shrink-0 flex-col gap-4 overflow-y-auto border-r border-zinc-200 bg-zinc-50/30 p-4 text-left dark:border-zinc-800 dark:bg-zinc-950/20">
+    <aside className="question-edit-glass-aside flex h-full w-56 shrink-0 flex-col gap-4 overflow-y-auto rounded-2xl p-4 text-left border border-black/6 dark:border-white/8 backdrop-blur-md">
       {activeFiltersCount > 0 && (
         <div className="flex items-center justify-between rounded-md bg-zinc-100/50 px-2.5 py-1.5 text-xs border border-zinc-200/60 dark:bg-zinc-900/40 dark:border-zinc-800/60">
           <span className="text-zinc-500 dark:text-zinc-400 font-medium">已选 {activeFiltersCount} 个条件</span>

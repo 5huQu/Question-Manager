@@ -5,9 +5,11 @@
  * 点击某项即在光标处插入 inlineMath 节点（与 Sigma 对话框共用同一节点类型，
  * 插入后点击公式仍可弹出编辑器精修）。面板支持连续插入，点击外部或 Esc 关闭。
  */
+import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState } from 'react'
 import { Keyboard } from 'lucide-react'
 import type { Editor } from '@tiptap/react'
+import { useFloatingMenuPosition } from '@/hooks/useFloatingMenuPosition'
 
 export interface FormulaKeyboardItem {
   label: string
@@ -102,11 +104,14 @@ export function insertInlineFormula(editor: Editor, latex: string) {
 export function FormulaKeyboardButton({ editor }: { editor: Editor }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
     const handlePointer = (event: MouseEvent) => {
-      if (rootRef.current?.contains(event.target as Node)) return
+      const target = event.target as Node
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return
       setOpen(false)
     }
     const handleKey = (event: KeyboardEvent) => {
@@ -120,10 +125,13 @@ export function FormulaKeyboardButton({ editor }: { editor: Editor }) {
     }
   }, [open])
 
+  const menuPosition = useFloatingMenuPosition(open, triggerRef, menuRef, { width: 320 })
+
   return (
     <div ref={rootRef} className="relative">
       <button
         type="button"
+        ref={triggerRef}
         aria-label="公式键盘"
         aria-pressed={open}
         title="公式键盘：点击常用符号与结构，直接插入行内公式"
@@ -133,11 +141,17 @@ export function FormulaKeyboardButton({ editor }: { editor: Editor }) {
       >
         <Keyboard className="size-3.5" />
       </button>
-      {open ? (
+      {open ? createPortal(
         <div
+          ref={menuRef}
           role="menu"
           aria-label="公式键盘"
-          className="absolute left-0 top-full z-50 mt-1 max-h-80 w-80 overflow-auto rounded-lg border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+          className="fixed z-[110] max-h-[calc(100vh-1rem)] w-80 overflow-auto rounded-lg border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+          style={{
+            top: menuPosition?.top ?? 0,
+            left: menuPosition?.left ?? 0,
+            visibility: menuPosition ? 'visible' : 'hidden',
+          }}
           onMouseDown={(event) => event.preventDefault()}
         >
           {FORMULA_KEYBOARD_GROUPS.map((group) => (
@@ -158,7 +172,8 @@ export function FormulaKeyboardButton({ editor }: { editor: Editor }) {
               </div>
             </div>
           ))}
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   )

@@ -106,7 +106,7 @@ export function OutlinePanel(props: {
         initial={false}
         animate={{ width: props.open ? 256 : 44 }}
         transition={reduced ? { duration: 0.15 } : springPanel}
-        className="hidden h-full shrink-0 flex-col overflow-hidden border-r border-zinc-200 bg-white lg:flex dark:border-zinc-800 dark:bg-zinc-950"
+        className="question-edit-glass-aside hidden h-full shrink-0 flex-col overflow-hidden border-r border-black/6 lg:flex dark:border-white/8 backdrop-blur-md"
       >
         <AnimatePresence mode="wait" initial={false}>
           {props.open ? (
@@ -134,7 +134,7 @@ export function OutlinePanel(props: {
                 title="展开大纲"
                 aria-label="展开大纲"
                 onClick={props.onOpen}
-                className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
               >
                 <PanelLeft className="size-4" />
               </button>
@@ -154,7 +154,7 @@ export function OutlinePanel(props: {
           animate={reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
           exit={reduced ? { opacity: 0 } : { x: -280, opacity: 0 }}
           transition={springPanel}
-          className="absolute inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-zinc-300/40 bg-zinc-100/80 shadow-[6px_0_20px_-6px_rgba(0,0,0,0.06)] backdrop-blur-2xl backdrop-saturate-150 dark:border-zinc-700/40 dark:bg-zinc-900/80 dark:shadow-[6px_0_20px_-6px_rgba(0,0,0,0.4)]"
+          className="question-edit-glass-dialog absolute inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-black/6 shadow-[6px_0_20px_-6px_rgba(0,0,0,0.06)] backdrop-blur-2xl backdrop-saturate-150 dark:border-white/8 dark:shadow-[6px_0_20px_-6px_rgba(0,0,0,0.4)]"
         >
           <OutlinePanelBodyContent {...props} reduced={reduced} />
         </motion.aside>

@@ -117,6 +117,18 @@ function questionFromUnknown(question: unknown, fallback: Draft): Draft {
   }
 }
 
+export function buildSingleQuestionImportPayload(question: unknown, fallback: Draft) {
+  const draft = questionFromUnknown(question, fallback)
+  return {
+    draft,
+    payload: {
+      questions: [question],
+      sourceTitle: draft.sourceTitle.trim() || '手动创建',
+      stage: draft.stage,
+    },
+  }
+}
+
 function noticeTone(text: string): NoticeType {
   if (text.includes('失败') || text.includes('错误') || text.includes('请') || text.includes('必须')) return 'error'
   if (text.includes('成功') || text.includes('已')) return 'success'
@@ -198,7 +210,12 @@ export function QuestionCreatePage() {
     }
     setSaving(true)
     try {
-      await createQuestion(questionFromUnknown(singleJson.questions[0], singleDraft))
+      const { draft, payload } = buildSingleQuestionImportPayload(singleJson.questions[0], singleDraft)
+      if (!draft.problemText.trim()) throw new Error('请填写题干。')
+      const result = await questionBankApi.importJsonItems(payload)
+      const item = result.items[0]
+      setNotice(`已创建题目 ${item?.serialNo ?? item?.questionNo ?? ''}。`, 'success')
+      navigate('/questions')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error), 'error')
     } finally {

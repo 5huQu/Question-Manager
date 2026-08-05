@@ -779,6 +779,46 @@ const imageBetweenDocument = {
 const imageBetweenCandidates = parseQuestionCandidates(imageBetweenDocument, { now: '2026-06-24T00:00:00.000Z' })
 assert.equal(imageBetweenCandidates[0].figures.some((figure) => figure.sourceBlockId === 'b_image_between'), true)
 
+const rawAnswerTableFigureMarkdown = '1. 第一题题干。\n参考答案\n<table border="1"><tr><td>题号</td><td>1</td></tr><tr><td>答案</td><td>A</td></tr></table>'
+const rawAnswerTableFigureDocument = {
+  ...ocrDocument,
+  id: 'ocr_raw_answer_table_figure_test',
+  markdown: rawAnswerTableFigureMarkdown,
+  pages: [{ pageNo: 1, width: 800, height: 1100, blocks: [
+    block(rawAnswerTableFigureMarkdown, '1. 第一题题干。', 1, 'b_raw_table_q1'),
+    block(rawAnswerTableFigureMarkdown, '<table border="1"><tr><td>题号</td><td>1</td></tr><tr><td>答案</td><td>A</td></tr></table>', 1, 'b_raw_answer_table', 'table'),
+  ] }],
+  assets: [],
+}
+const rawAnswerTableFigureCandidates = parseQuestionCandidates(rawAnswerTableFigureDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.equal(rawAnswerTableFigureCandidates[0].figures.some((figure) => figure.path.startsWith('<table')), false)
+
+const misplacedFigureMarkdown = [
+  '12. 向量 a、b 在网格中的位置如图。',
+  '13. 已知抛物线的焦点为 F。',
+  '<!-- DOC2X_FIGURE:grid_misplaced -->',
+  '14. 已知奇函数 f(x)。',
+].join('\n')
+const misplacedFigureDocument = {
+  ...ocrDocument,
+  id: 'ocr_misplaced_figure_test',
+  markdown: misplacedFigureMarkdown,
+  pages: [{ pageNo: 1, width: 800, height: 1100, blocks: [
+    { ...block(misplacedFigureMarkdown, '12. 向量 a、b 在网格中的位置如图。', 1, 'b_misplaced_q12'), bbox: [10, 100, 400, 150] },
+    { ...block(misplacedFigureMarkdown, '13. 已知抛物线的焦点为 F。', 1, 'b_misplaced_q13'), bbox: [10, 200, 400, 250] },
+    { id: 'b_misplaced_grid', pageNo: 1, type: 'image', content: 'grid.png', assetId: 'grid_misplaced', markdownStart: 999, markdownEnd: 1000, bbox: [500, 110, 760, 300] },
+    { ...block(misplacedFigureMarkdown, '14. 已知奇函数 f(x)。', 1, 'b_misplaced_q14'), bbox: [10, 300, 400, 350] },
+  ] }],
+  assets: [{ id: 'grid_misplaced', type: 'image', path: 'grid.png', pageNo: 1, bbox: [500, 110, 760, 300], sourceBlockId: 'b_misplaced_grid' }],
+}
+const misplacedFigureCandidates = parseQuestionCandidates(misplacedFigureDocument, { now: '2026-06-24T00:00:00.000Z' })
+const misplacedQ12 = misplacedFigureCandidates.find((candidate) => candidate.questionNo === '12')
+const misplacedQ13 = misplacedFigureCandidates.find((candidate) => candidate.questionNo === '13')
+assert.equal(misplacedQ12?.figures.some((figure) => figure.id === 'grid_misplaced'), true)
+assert.equal(misplacedQ13?.figures.some((figure) => figure.id === 'grid_misplaced'), false)
+assert.match(misplacedQ12?.stemMarkdown || '', /DOC2X_FIGURE:grid_misplaced/)
+assert.doesNotMatch(misplacedQ13?.stemMarkdown || '', /DOC2X_FIGURE:grid_misplaced/)
+
 const unplacedImageDocument = { ...imageBetweenDocument, id: 'ocr_unplaced_image_test', pages: [{ pageNo: 2, width: 800, height: 1100, blocks: [{ id: 'b_unplaced', pageNo: 2, type: 'image', content: 'orphan.png' }] }] }
 const unplacedImageCandidates = parseQuestionCandidates(unplacedImageDocument, { now: '2026-06-24T00:00:00.000Z' })
 assert.equal(unplacedImageCandidates.some((candidate) => candidate.issues.some((issue) => issue.code === 'unplaced_figure')), true)

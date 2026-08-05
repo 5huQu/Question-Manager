@@ -140,34 +140,34 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
       locked
       surface="glass"
       actions={
-        <div role="tablist" aria-label="编辑模式" className="question-edit-glass-tabs inline-flex items-center gap-0.5 p-1">
+        <div role="tablist" aria-label="编辑模式" className="question-edit-glass-tabs inline-flex items-center gap-1">
           <button
             role="tab"
             aria-selected={mode === 'form'}
-            className="inline-flex h-7.5 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-xs font-medium cursor-pointer transition-all"
+            className="inline-flex h-7.5 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-xs font-medium cursor-pointer transition-all active:scale-95"
             onClick={() => setMode('form')}
             type="button"
           >
-            <Pencil className="size-3.5" />直观修改
+            <Pencil className="size-3.5 text-zinc-500 dark:text-zinc-400" />直观修改
           </button>
           <button
             role="tab"
             aria-selected={mode === 'metadata'}
-            className="inline-flex h-7.5 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-xs font-medium cursor-pointer transition-all"
+            className="inline-flex h-7.5 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-xs font-medium cursor-pointer transition-all active:scale-95"
             onClick={() => setMode('metadata')}
             type="button"
           >
-            <Tag className="size-3.5" />题目元数据
+            <Tag className="size-3.5 text-zinc-500 dark:text-zinc-400" />题目元数据
           </button>
-          {draft.id ? (
+          {draft.id || onManageFigures ? (
             <button
               role="tab"
               aria-selected={mode === 'figures'}
-              className="inline-flex h-7.5 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-xs font-medium cursor-pointer transition-all"
+              className="inline-flex h-7.5 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-xs font-medium cursor-pointer transition-all active:scale-95"
               onClick={() => { setMode('figures'); onManageFigures?.() }}
               type="button"
             >
-              <Image className="size-3.5" />题图管理
+              <Image className="size-3.5 text-zinc-500 dark:text-zinc-400" />题图管理
             </button>
           ) : null}
         </div>
@@ -248,28 +248,32 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
               ) : mode === 'metadata' ? (
                 <div className="space-y-4">
                   {/* Metadata fields */}
-                  <div className="question-edit-glass-choice rounded-xl p-4 space-y-3">
-                    <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-200 block border-b pb-1.5 border-black/6 dark:border-white/8">题目元数据</span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="question-edit-glass-preview rounded-2xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-black/6 pb-2 dark:border-white/8">
+                      <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-200">题目元数据</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <LabeledInput label="来源" help="用于题目来源展示和筛选。" value={draft.sourceTitle ?? ''} onChange={(value) => updateDraft({ sourceTitle: value })} />
                       <LabeledInput label="章节/知识点概览" help="旧字段；可作为主知识点简写。" value={draft.chapter ?? ''} onChange={(value) => updateDraft({ chapter: value })} />
                     </div>
-                    <LabeledSelect
-                      label="学段"
-                      help="用于题目展示、筛选和后续导入记录。"
-                      value={draft.stage ?? ''}
-                      options={metadataStageOptions}
-                      placeholder="未设学段"
-                      onChange={(value) => updateDraft({ stage: value })}
-                    />
-                    <LabeledSelect
-                      label="题型"
-                      help="影响题目展示、筛选和试卷导出时的版式判断。"
-                      value={draft.questionType ?? ''}
-                      options={['单选题', '多选题', '填空题', '解答题']}
-                      placeholder="未设题型"
-                      onChange={(value) => updateDraft({ questionType: value })}
-                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <LabeledSelect
+                        label="学段"
+                        help="用于题目展示、筛选和后续导入记录。"
+                        value={draft.stage ?? ''}
+                        options={metadataStageOptions}
+                        placeholder="未设学段"
+                        onChange={(value) => updateDraft({ stage: value })}
+                      />
+                      <LabeledSelect
+                        label="题型"
+                        help="影响题目展示、筛选和试卷导出时的版式判断。"
+                        value={draft.questionType ?? ''}
+                        options={['单选题', '多选题', '填空题', '解答题']}
+                        placeholder="未设题型"
+                        onChange={(value) => updateDraft({ questionType: value })}
+                      />
+                    </div>
                     <LabeledInput label="难度分 1-10" help="保存时同步显示难度标签。" value={String(draft.difficultyScore10 ?? '')} onChange={(value) => updateDraft({ difficultyScore10: Number(value), difficultyLabel: difficultyLabelFromScore10(Number(value)) })} />
                     <MultiTagSelector label="知识点" help="搜索并勾选多个知识点；再次点击可取消选择。" options={tagLibraries.data?.knowledgePoints ?? []} values={draft.knowledgePoints ?? []} onChange={(values) => updateDraft({ knowledgePoints: values })} />
                     <MultiTagSelector label="解题方法" help="搜索并勾选多个解题方法；再次点击可取消选择。" options={tagLibraries.data?.solutionMethods ?? []} values={draft.solutionMethods ?? []} onChange={(values) => updateDraft({ solutionMethods: values })} />

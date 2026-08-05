@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Editor } from '@tiptap/react'
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, IndentDecrease, IndentIncrease, Italic, List, ListOrdered } from 'lucide-react'
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, IndentDecrease, IndentIncrease, Italic, List, ListOrdered, Sparkles } from 'lucide-react'
 import type { QuestionBlock, TeachingTextStyle } from '@/types/teachingDocument'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
 import { InlineFormattingControls } from '@/components/teaching-document/BlockInlineEditor/BlockInlineEditor'
@@ -164,7 +164,7 @@ export function DocumentFormattingToolbar({
   const hasQuestionOverride = Boolean(questionBlock?.display?.typography && Object.keys(questionBlock.display.typography).length)
 
   return (
-    <div role="toolbar" aria-label="文档格式" className="flex h-12 min-w-0 items-center gap-0.5 overflow-x-auto border-b border-zinc-200 bg-white px-3 dark:border-zinc-800 dark:bg-zinc-950">
+    <div role="toolbar" aria-label="文档格式" className="question-edit-glass-toolbar flex h-11 min-w-0 items-center gap-1 overflow-x-auto border-b border-black/6 dark:border-white/8 px-4 backdrop-blur-md">
       {questionTextMode && editor ? (
         <InlineFormattingControls editor={editor} inheritedFontLabel="跟随题目默认字体" onFormula={() => setFormulaOpen(true)} />
       ) : questionMode ? (
@@ -186,7 +186,12 @@ export function DocumentFormattingToolbar({
         </>
       ) : editor && enabled ? (
         <InlineFormattingControls editor={editor} inheritedFontLabel="跟随文档字体" onFormula={() => setFormulaOpen(true)} />
-      ) : <div className="flex h-8 items-center px-1 text-[11px] text-zinc-400">选择文字后编辑格式</div>}
+      ) : (
+        <div className="flex h-8 items-center gap-1.5 px-1 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+          <Sparkles className="size-3.5 opacity-60" />
+          <span>选择画布中的文字、章节标题或题目以编辑格式与外观</span>
+        </div>
+      )}
 
       {!questionMode && !questionTextMode ? <>
         <span className="mx-1 h-5 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" />

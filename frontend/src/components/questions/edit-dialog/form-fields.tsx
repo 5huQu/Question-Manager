@@ -1,15 +1,29 @@
+import { createPortal } from 'react-dom'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
 import { QuestionContent } from '@/components/questions/QuestionContent'
+import { useFloatingMenuPosition } from '@/hooks/useFloatingMenuPosition'
 import { paragraphBlocksFromText } from '@/utils/jsonCleanup'
 
-export function LabeledInput({ label: labelText, help, value, onChange }: { label: string; help: string; value: string; onChange: (value: string) => void }) {
+export function LabeledInput({
+  label: labelText,
+  help,
+  value,
+  onChange,
+}: {
+  label: string
+  help: string
+  value: string
+  onChange: (value: string) => void
+}) {
   return (
-    <div className="block rounded-xl border bg-white dark:bg-zinc-900 dark:border-zinc-800 p-3">
-      <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-50 block">{labelText}</span>
-      <span className="mt-1 block text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal">{help}</span>
+    <div className="space-y-1.5">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{labelText}</span>
+        {help ? <span className="text-[10px] leading-normal text-zinc-400 dark:text-zinc-500">{help}</span> : null}
+      </div>
       <input
-        className="mt-2 h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 text-xs dark:text-zinc-100 outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 dark:focus:ring-zinc-200 dark:focus:border-zinc-200 focus:bg-white dark:focus:bg-zinc-800 transition-all"
+        className="h-9 w-full rounded-xl border border-black/8 bg-white/80 px-3 text-xs text-zinc-900 shadow-2xs outline-none transition-all focus:border-zinc-900 focus:bg-white focus:ring-1 focus:ring-zinc-900 dark:border-white/10 dark:bg-zinc-900/80 dark:text-zinc-100 dark:focus:border-zinc-100 dark:focus:bg-zinc-900 dark:focus:ring-zinc-100"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -17,31 +31,64 @@ export function LabeledInput({ label: labelText, help, value, onChange }: { labe
   )
 }
 
-export function LabeledSelect({ label: labelText, help, value, options, placeholder, onChange }: { label: string; help: string; value: string; options: string[]; placeholder: string; onChange: (value: string) => void }) {
+export function LabeledSelect({
+  label: labelText,
+  help,
+  value,
+  options,
+  placeholder,
+  onChange,
+}: {
+  label: string
+  help: string
+  value: string
+  options: string[]
+  placeholder: string
+  onChange: (value: string) => void
+}) {
   return (
-    <label className="block rounded-xl border bg-white dark:bg-zinc-900 dark:border-zinc-800 p-3">
-      <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-50 block">{labelText}</span>
-      <span className="mt-1 block text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal">{help}</span>
+    <label className="block space-y-1.5">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{labelText}</span>
+        {help ? <span className="text-[10px] leading-normal text-zinc-400 dark:text-zinc-500">{help}</span> : null}
+      </div>
       <select
-        className="mt-2 h-9 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 text-xs dark:text-zinc-100 outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 dark:focus:ring-zinc-200 dark:focus:border-zinc-200 focus:bg-white dark:focus:bg-zinc-800 transition-all cursor-pointer"
+        className="h-9 w-full cursor-pointer rounded-xl border border-black/8 bg-white/80 px-3 text-xs text-zinc-900 shadow-2xs outline-none transition-all focus:border-zinc-900 focus:bg-white focus:ring-1 focus:ring-zinc-900 dark:border-white/10 dark:bg-zinc-900/80 dark:text-zinc-100 dark:focus:border-zinc-100 dark:focus:bg-zinc-900 dark:focus:ring-zinc-100"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
         <option value="">{placeholder}</option>
         {options.map((option) => (
-          <option key={option} value={option}>{option}</option>
+          <option key={option} value={option}>
+            {option}
+          </option>
         ))}
       </select>
     </label>
   )
 }
 
-export function MultiTagSelector({ label: labelText, help, options, values, onChange }: { label: string; help: string; options: string[]; values: string[]; onChange: (values: string[]) => void }) {
+export function MultiTagSelector({
+  label: labelText,
+  help,
+  options,
+  values,
+  onChange,
+}: {
+  label: string
+  help: string
+  options: string[]
+  values: string[]
+  onChange: (values: string[]) => void
+}) {
   const cleanValues = values.map((value) => String(value).trim()).filter(Boolean)
   const mergedOptions = Array.from(new Set([...cleanValues, ...options.map((option) => String(option).trim()).filter(Boolean)]))
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const filteredOptions = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase()
     return normalizedQuery
@@ -52,10 +99,22 @@ export function MultiTagSelector({ label: labelText, help, options, values, onCh
   useEffect(() => {
     if (!open) return
     const handlePointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false)
     }
     document.addEventListener('pointerdown', handlePointerDown)
     return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [open])
+
+  const menuPosition = useFloatingMenuPosition(open, triggerRef, menuRef, { contentKey: filteredOptions.length })
+
+  useEffect(() => {
+    if (!open) return
+    const input = searchInputRef.current
+    if (!input) return
+    input.focus()
+    const cursorPosition = input.value.length
+    input.setSelectionRange(cursorPosition, cursorPosition)
   }, [open])
 
   function toggleTag(value: string) {
@@ -68,72 +127,119 @@ export function MultiTagSelector({ label: labelText, help, options, values, onCh
   }
 
   return (
-    <div ref={rootRef} className="relative rounded-xl border bg-white dark:bg-zinc-900 dark:border-zinc-800 p-3">
-      <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-500">{labelText}</p>
-      <p className="mt-1 text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal">{help}</p>
+    <div ref={rootRef} className="relative space-y-1.5">
+      <div className="flex flex-col gap-0.5">
+        <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{labelText}</p>
+        {help ? <p className="text-[10px] leading-normal text-zinc-400 dark:text-zinc-500">{help}</p> : null}
+      </div>
       <button
         type="button"
+        ref={triggerRef}
         aria-expanded={open}
         aria-haspopup="listbox"
         onClick={() => setOpen((current) => !current)}
-        className={`mt-2 flex min-h-9 w-full items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-left text-xs outline-none transition-colors ${open ? 'border-zinc-900 bg-white ring-1 ring-zinc-900 dark:border-zinc-100 dark:bg-zinc-900 dark:ring-zinc-100' : 'border-zinc-200 bg-zinc-50 hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-500'}`}
+        className={`flex min-h-9 w-full items-center justify-between gap-2 rounded-xl border px-3 py-1.5 text-left text-xs outline-none shadow-2xs transition-all ${
+          open
+            ? 'border-zinc-900 bg-white ring-1 ring-zinc-900 dark:border-zinc-100 dark:bg-zinc-900 dark:ring-zinc-100'
+            : 'border-black/8 bg-white/80 hover:border-black/16 dark:border-white/10 dark:bg-zinc-900/80 dark:hover:border-white/20'
+        }`}
       >
-        <span className={cleanValues.length ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}>{cleanValues.length ? `已选择 ${cleanValues.length} 项` : `搜索并选择${labelText}`}</span>
-        <ChevronDown className={`size-3.5 shrink-0 text-zinc-400 motion-safe:transition-transform ${open ? 'rotate-180' : ''}`} />
+        <span className={cleanValues.length ? 'font-medium text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}>
+          {cleanValues.length ? `已选择 ${cleanValues.length} 项` : `搜索并选择${labelText}`}
+        </span>
+        <ChevronDown className={`size-3.5 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open ? (
-        <div className="absolute inset-x-3 top-[calc(100%-0.25rem)] z-30 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-          <div className="border-b border-zinc-100 p-2 dark:border-zinc-800">
-            <div className="flex items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-2 dark:border-zinc-700 dark:bg-zinc-800">
+      {open ? createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-[110] max-h-[calc(100vh-1rem)] overflow-hidden rounded-xl border border-black/10 bg-white shadow-xl backdrop-blur-xl dark:border-white/12 dark:bg-zinc-900"
+          style={{
+            top: menuPosition?.top ?? 0,
+            left: menuPosition?.left ?? 0,
+            width: menuPosition?.width ?? 0,
+            visibility: menuPosition ? 'visible' : 'hidden',
+          }}
+        >
+          <div className="border-b border-black/6 p-2 dark:border-white/8">
+            <div className="flex items-center gap-2 rounded-lg border border-black/8 bg-zinc-50 px-2 dark:border-white/10 dark:bg-zinc-800">
               <Search className="size-3.5 shrink-0 text-zinc-400" />
               <input
+                ref={searchInputRef}
                 autoFocus
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false) }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setOpen(false)
+                }}
                 placeholder={`搜索${labelText}`}
                 aria-label={`搜索${labelText}`}
                 className="h-8 min-w-0 flex-1 bg-transparent text-xs text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100"
               />
-              {query ? <button type="button" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700" onClick={() => setQuery('')} aria-label="清除搜索"><X className="size-3" /></button> : null}
+              {query ? (
+                <button
+                  type="button"
+                  className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  onClick={() => setQuery('')}
+                  aria-label="清除搜索"
+                >
+                  <X className="size-3" />
+                </button>
+              ) : null}
             </div>
           </div>
           <div className="max-h-52 overflow-y-auto p-1" role="listbox" aria-multiselectable="true" aria-label={labelText}>
-            {filteredOptions.length ? filteredOptions.map((option) => {
-              const checked = cleanValues.includes(option)
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  role="option"
-                  aria-selected={checked}
-                  onClick={() => toggleTag(option)}
-                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs motion-safe:transition-colors ${checked ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50' : 'text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/70'}`}
-                >
-                  <span className={`flex size-4 items-center justify-center rounded border ${checked ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900' : 'border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900'}`}>{checked ? <Check className="size-3" /> : null}</span>
-                  <span className="min-w-0 flex-1 truncate">{option}</span>
-                </button>
-              )
-            }) : <p className="px-2.5 py-5 text-center text-xs text-zinc-400">没有匹配项</p>}
+            {filteredOptions.length ? (
+              filteredOptions.map((option) => {
+                const checked = cleanValues.includes(option)
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    role="option"
+                    aria-selected={checked}
+                    onClick={() => toggleTag(option)}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
+                      checked
+                        ? 'bg-zinc-100 text-zinc-900 font-medium dark:bg-zinc-800 dark:text-zinc-50'
+                        : 'text-zinc-600 hover:bg-black/3 dark:text-zinc-300 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <span
+                      className={`flex size-4 items-center justify-center rounded border ${
+                        checked
+                          ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900'
+                          : 'border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900'
+                      }`}
+                    >
+                      {checked ? <Check className="size-3" /> : null}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{option}</span>
+                  </button>
+                )
+              })
+            ) : (
+              <p className="px-2.5 py-5 text-center text-xs text-zinc-400">没有匹配项</p>
+            )}
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
       {cleanValues.length ? (
-        <div className="mt-2 flex max-h-16 flex-wrap gap-1.5 overflow-y-auto">
+        <div className="mt-2 flex max-h-20 flex-wrap gap-1.5 overflow-y-auto pt-1">
           {cleanValues.map((value) => (
             <button
               key={value}
-              className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-left text-xs font-medium text-zinc-700 hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:bg-zinc-700"
+              className="inline-flex items-center gap-1 rounded-lg border border-black/8 bg-white/90 px-2 py-0.5 text-left text-xs font-medium text-zinc-700 shadow-2xs transition-all hover:border-black/16 hover:bg-white dark:border-white/10 dark:bg-zinc-800/90 dark:text-zinc-300 dark:hover:border-white/20 dark:hover:bg-zinc-800"
               onClick={() => removeTag(value)}
               type="button"
               aria-label={`移除${value}`}
             >
               <span className="max-w-44 truncate">{value}</span>
-              <X className="size-3 text-zinc-400" />
+              <X className="size-3 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200" />
             </button>
           ))}
         </div>
-      ) : <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500 italic">尚未选择</p>}
+      ) : null}
     </div>
   )
 }
@@ -147,63 +253,67 @@ export function LabeledTextarea({
   className = '',
   readOnly = false,
   showPreview = false,
-  headerAction
+  headerAction,
 }: {
-  label: string;
-  help: string;
-  value: string;
-  onChange: (value: string) => void;
-  minHeight: string;
-  className?: string;
-  readOnly?: boolean;
-  showPreview?: boolean;
-  headerAction?: ReactNode;
+  label: string
+  help: string
+  value: string
+  onChange: (value: string) => void
+  minHeight: string
+  className?: string
+  readOnly?: boolean
+  showPreview?: boolean
+  headerAction?: ReactNode
 }) {
   const [tab, setTab] = useState<'edit' | 'preview'>('edit')
   return (
-    <div className={`block rounded-xl border bg-white p-3 dark:bg-zinc-900 dark:border-zinc-800 ${className}`}>
-      <div className="flex items-center justify-between mb-1.5 gap-2">
-        <div className="min-w-0 flex-1">
-          <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-500 block">{labelText}</span>
-          <span className="mt-0.5 block text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal">{help}</span>
+    <div className={`block space-y-1.5 ${className}`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{labelText}</span>
+          {help ? <span className="text-[10px] leading-normal text-zinc-400 dark:text-zinc-500">{help}</span> : null}
         </div>
-        {headerAction && (
-          <div className="shrink-0">
-            {headerAction}
-          </div>
-        )}
-        {showPreview && !readOnly && (
-          <div className="flex gap-0.5 bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-md text-[9px] border border-zinc-200 dark:border-zinc-700 shrink-0 ml-2">
+        {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
+        {showPreview && !readOnly ? (
+          <div className="ml-2 flex shrink-0 rounded-lg border border-black/6 bg-black/4 p-0.5 text-[10px] dark:border-white/8 dark:bg-white/6">
             <button
               type="button"
               onClick={() => setTab('edit')}
-              className={`px-1.5 py-0.5 rounded transition-all cursor-pointer font-medium ${tab === 'edit' ? 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-100 font-bold shadow-sm' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+              className={`cursor-pointer rounded-md px-2 py-0.5 font-medium transition-all ${
+                tab === 'edit'
+                  ? 'bg-white font-semibold text-zinc-900 shadow-2xs dark:bg-zinc-800 dark:text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+              }`}
             >
               编辑
             </button>
             <button
               type="button"
               onClick={() => setTab('preview')}
-              className={`px-1.5 py-0.5 rounded transition-all cursor-pointer font-medium ${tab === 'preview' ? 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-100 font-bold shadow-sm' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+              className={`cursor-pointer rounded-md px-2 py-0.5 font-medium transition-all ${
+                tab === 'preview'
+                  ? 'bg-white font-semibold text-zinc-900 shadow-2xs dark:bg-zinc-800 dark:text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+              }`}
             >
               预览
             </button>
           </div>
-        )}
+        ) : null}
       </div>
       {tab === 'edit' ? (
         <textarea
-          className={`mt-2 w-full resize-y rounded-lg border bg-zinc-50 dark:bg-zinc-800 px-3 py-2 font-mono text-xs leading-6 outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 dark:focus:ring-zinc-200 dark:focus:border-zinc-200 transition-all ${minHeight}`}
+          className={`w-full resize-y rounded-xl border border-black/8 bg-white/80 px-3 py-2 font-mono text-xs leading-6 text-zinc-900 shadow-2xs outline-none transition-all focus:border-zinc-900 focus:bg-white focus:ring-1 focus:ring-zinc-900 dark:border-white/10 dark:bg-zinc-900/80 dark:text-zinc-100 dark:focus:border-zinc-100 dark:focus:bg-zinc-900 dark:focus:ring-zinc-100 ${minHeight}`}
           readOnly={readOnly}
           value={value}
           onChange={(event) => onChange(event.target.value)}
         />
       ) : (
-        <div className={`mt-2 w-full rounded-lg border bg-zinc-50/50 dark:bg-zinc-800/30 px-3.5 py-2.5 text-sm overflow-auto ${minHeight}`}>
+        <div className={`w-full overflow-auto rounded-xl border border-black/8 bg-white/50 px-3.5 py-2.5 text-xs text-zinc-900 dark:border-white/10 dark:bg-zinc-900/50 dark:text-zinc-100 ${minHeight}`}>
           {value.trim() ? (
             <QuestionContent blocks={paragraphBlocksFromText(value)} />
           ) : (
-            <span className="text-zinc-400 dark:text-zinc-500 text-xs italic">无内容预览</span>
+            <span className="text-xs italic text-zinc-400 dark:text-zinc-500">无内容预览</span>
           )}
         </div>
       )}

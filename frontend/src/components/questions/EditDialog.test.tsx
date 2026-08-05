@@ -5,7 +5,7 @@ import { ApiError } from '@/api/client'
 import type { QuestionItem } from '@/types'
 
 vi.mock('@/components/dialogs/Modal', () => ({
-  Modal: ({ children, actions }: { children: ReactNode; actions?: ReactNode }) => <div>{actions}{children}</div>,
+  Modal: ({ children, actions, footer }: { children: ReactNode; actions?: ReactNode; footer?: ReactNode }) => <div>{actions}{children}{footer}</div>,
 }))
 
 vi.mock('@/api/learningTags', () => ({
@@ -67,7 +67,7 @@ describe('EditDialog unified content editor integration', () => {
     const onManageFigures = vi.fn()
     await renderDialog(vi.fn(async () => undefined), onManageFigures)
     await act(async () => {
-      ;[...document.querySelectorAll('button')].find((button) => button.textContent?.trim() === '管理题图')!.click()
+      ;[...document.querySelectorAll('button')].find((button) => button.textContent?.includes('题图'))!.click()
     })
     expect(onManageFigures).toHaveBeenCalledOnce()
   })
@@ -77,12 +77,12 @@ describe('EditDialog unified content editor integration', () => {
     await renderDialog(onSave)
 
     await act(async () => {
-      ;[...container.querySelectorAll('button')].find((button) => button.textContent === '修改内容')!.click()
+      ;[...document.querySelectorAll('button')].find((button) => button.textContent === '修改内容')!.click()
     })
-    expect(container.querySelector('[data-testid="stem"]')?.textContent).toBe('修改后的题干')
+    expect(document.querySelector('[data-testid="stem"]')?.textContent).toBe('修改后的题干')
 
     await act(async () => {
-      ;[...container.querySelectorAll('button')].find((button) => button.textContent === '保存内容')!.click()
+      ;[...document.querySelectorAll('button')].find((button) => button.textContent?.includes('保存'))!.click()
     })
     expect(onSave).toHaveBeenCalledOnce()
     expect(onSave.mock.calls[0][0]?.stemMarkdown).toBe('修改后的题干')
@@ -94,9 +94,9 @@ describe('EditDialog unified content editor integration', () => {
     await renderDialog(onSave)
 
     await act(async () => {
-      ;[...container.querySelectorAll('button')].find((button) => button.textContent === '题目元数据')!.click()
+      ;[...document.querySelectorAll('button')].find((button) => button.textContent?.includes('题目元数据'))!.click()
     })
-    const sourceInput = [...container.querySelectorAll('input')].find((input) => input.value === '')
+    const sourceInput = [...document.querySelectorAll('input')].find((input) => input.value === '')
     expect(sourceInput).toBeTruthy()
     await act(async () => {
       const input = sourceInput!
@@ -105,7 +105,7 @@ describe('EditDialog unified content editor integration', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     await act(async () => {
-      ;[...container.querySelectorAll('button')].find((button) => button.textContent === '保存')!.click()
+      ;[...document.querySelectorAll('button')].find((button) => button.textContent?.includes('保存'))!.click()
     })
 
     expect(onSave).toHaveBeenCalledOnce()

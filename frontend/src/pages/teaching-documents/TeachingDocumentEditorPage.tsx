@@ -78,6 +78,7 @@ import { QuestionEditDialog } from './components/QuestionEditDialog'
 import { QuestionPickerDrawer } from './components/QuestionPickerDrawer'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
 import { USER_BLOCK_LABEL, CARD_CHILD_TYPES } from './components/blockLabels'
+import { useCanvasViewportAnchor } from './components/useCanvasViewportAnchor'
 import { activePageFromPageRects, activePageFromPageTransitions } from './pageNavigation'
 import '@/components/teaching-document/teaching-document.css'
 
@@ -450,6 +451,7 @@ export default function TeachingDocumentEditorPage() {
   const [selectedId, setSelectedId] = useState('')
   const [viewportBlockId, setViewportBlockId] = useState('')
   const [canvasScrollRoot, setCanvasScrollRoot] = useState<HTMLElement | null>(null)
+  const { captureViewportAnchor } = useCanvasViewportAnchor(canvasScrollRoot)
   const [questionMap, setQuestionMap] = useState<Record<string, QuestionResolution>>({})
   // 连续流是正文撰写面：卡片正文以一个连续文本区编辑；页面编辑保留给版式核对。
   const [canvasMode, setCanvasMode] = useState<TeachingCanvasMode>('continuous')
@@ -623,6 +625,14 @@ export default function TeachingDocumentEditorPage() {
     return figure?.path ? assetUrl(figure.path) : { status: 'missing' as const }
   }, [assetMap, questionMap])
   const selectBlock = useCallback((blockId: string) => setSelectedId(blockId), [])
+  const openProperties = useCallback((blockId: string) => {
+    if (!propertiesOpen) captureViewportAnchor(blockId)
+    setPropertiesOpen(true)
+  }, [captureViewportAnchor, propertiesOpen])
+  const closeProperties = useCallback(() => {
+    if (propertiesOpen) captureViewportAnchor(selectedId)
+    setPropertiesOpen(false)
+  }, [captureViewportAnchor, propertiesOpen, selectedId])
 
   // 键盘快捷键：[ 切换大纲
   // 注意：下方 `const document = editor.document` 会遮蔽全局 document，
@@ -799,7 +809,7 @@ export default function TeachingDocumentEditorPage() {
     updateSelected({ display }, `question-style:${selectedQuestionBlock.id}`)
   }
 
-  function selectAndShow(blockId: string) {
+  function selectAndShow(blockId: string, preserveViewport = true) {
     setSelectedId(blockId)
     // 任何普通单选变化都会清空顶层多选集合（Ctrl+点击不经过这里）
     topLevelMultiSelectRef.current = []
@@ -809,11 +819,15 @@ export default function TeachingDocumentEditorPage() {
     // 其他类型保持自动弹出；浮动工具栏"属性"按钮与大纲点击仍显式打开。
     const target = findSelected(blockId)
     const isTopLevelText = Boolean(target && !target.boxId && (target.block.type === 'heading' || target.block.type === 'paragraph'))
-    if (!isTopLevelText) setPropertiesOpen(true)
+    if (!isTopLevelText) {
+      if (preserveViewport) openProperties(blockId)
+      else setPropertiesOpen(true)
+    }
   }
 
   function selectFromOutline(blockId: string) {
-    selectAndShow(blockId)
+    // 大纲导航的明确意图是居中目标，不沿用点击对象时的原视口锚点。
+    selectAndShow(blockId, false)
     // 滚动到对应块（注意：局部 document 为文档数据，DOM 查询须走 window.document）
     requestAnimationFrame(() => {
       window.document
@@ -848,7 +862,7 @@ export default function TeachingDocumentEditorPage() {
       editor.dispatch({ type: 'replaceBlockWithBlocks', blockId: block.id, blocks })
     }
     selectAndShow(figure.id)
-    setPropertiesOpen(true)
+    openProperties(figure.id)
   }
 
   function updatePrintOptions(patch: Partial<TeachingDocumentPrintOptions>) {
@@ -896,7 +910,7 @@ export default function TeachingDocumentEditorPage() {
     if (!window.confirm(`确定删除所选的 ${childIds.length} 项卡片内容？`)) return false
     editor.dispatch({ type: 'deleteBoxChildren', boxId, childIds })
     setSelectedId(boxId)
-    setPropertiesOpen(true)
+    openProperties(boxId)
     return true
   }
 
@@ -933,7 +947,7 @@ export default function TeachingDocumentEditorPage() {
     const replacement = { ...newTeachingBlock('rawMarkdown'), markdown: markdownParts.join('\n\n') } as Extract<BoxChildBlock, { type: 'rawMarkdown' }>
     editor.dispatch({ type: 'replaceBoxChildRange', boxId, childIds, replacement })
     setSelectedId(replacement.id)
-    setPropertiesOpen(true)
+    openProperties(replacement.id)
     return true
   }
 
@@ -953,7 +967,7 @@ export default function TeachingDocumentEditorPage() {
       if (!child) return
       selectAndShow(child.id)
       // 新建对象后立即给出可见的编辑入口
-      setPropertiesOpen(true)
+      openProperties(child.id)
       if (type === 'blockMath') setFormulaBlockId(child.id)
       if (type === 'question') setPickerTarget({ blockId: child.id })
       return
@@ -969,7 +983,7 @@ export default function TeachingDocumentEditorPage() {
     editor.dispatch({ type: 'insertBlock', block, afterBlockId: insertionAnchor })
     selectAndShow(block.id)
     // 新建对象后立即给出可见的编辑入口；即使是段落或章节，也不让用户再额外寻找属性面板。
-    setPropertiesOpen(true)
+    openProperties(block.id)
     // 插入公式块自动弹出可视化公式编辑器（顶栏与块间菜单共用此入口）
     if (type === 'blockMath') setFormulaBlockId(block.id)
     // 插入题目块自动弹出题库筛选抽屉
@@ -980,7 +994,7 @@ export default function TeachingDocumentEditorPage() {
     const child = newTeachingBlock(type) as BoxChildBlock
     editor.dispatch({ type: 'insertBoxChild', boxId, child, afterChildId })
     setSelectedId(child.id)
-    setPropertiesOpen(true)
+    openProperties(child.id)
     if (type === 'blockMath') setFormulaBlockId(child.id)
     if (type === 'question') setPickerTarget({ blockId: child.id, boxId })
   }
@@ -1264,16 +1278,6 @@ export default function TeachingDocumentEditorPage() {
         paperActions={undefined}
       />
 
-      <DocumentFormattingToolbar
-        editor={focusedCardEditor ?? (selected?.boxId ? lastFocusedCardEditor : editor.activeEditor)}
-        questionBlock={selectedQuestionBlock}
-        questionGlobalStyle={questionGlobalStyle}
-        onQuestionStyleChange={updateQuestionToolbarStyle}
-        onQuestionStyleReset={resetQuestionToolbarStyle}
-        headingStyle={selectedHeadingStyle}
-        onHeadingStyleChange={updateHeadingToolbarStyle}
-      />
-
       {editor.conflict ? (
         <div className="flex items-center justify-between gap-3 border-b border-red-200 bg-red-50/60 px-4 py-2 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">
           <span className="flex items-center gap-2"><AlertTriangle className="size-4 shrink-0" />文档已在其他地方更新，自动保存已暂停。请重新加载最新版本。</span>
@@ -1302,6 +1306,16 @@ export default function TeachingDocumentEditorPage() {
         />
 
         <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+          <DocumentFormattingToolbar
+            editor={focusedCardEditor ?? (selected?.boxId ? lastFocusedCardEditor : editor.activeEditor)}
+            questionBlock={selectedQuestionBlock}
+            questionGlobalStyle={questionGlobalStyle}
+            onQuestionStyleChange={updateQuestionToolbarStyle}
+            onQuestionStyleReset={resetQuestionToolbarStyle}
+            headingStyle={selectedHeadingStyle}
+            onHeadingStyleChange={updateHeadingToolbarStyle}
+          />
+
           <section ref={setCanvasScrollRoot} className="min-h-0 flex-1 overflow-auto px-3 pb-16 pt-4 sm:px-5 sm:pb-16 sm:pt-7 md:px-9">
           {/* a4 打印预览（只读叠加层）；编辑画布在预览期间保持挂载（隐藏），
               编辑器与撤销历史不因预览被销毁。 */}
@@ -1349,7 +1363,7 @@ export default function TeachingDocumentEditorPage() {
               onMove={moveSelected}
               onDuplicate={() => { if (selected && !selected.boxId) editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id }) }}
               onDelete={deleteSelected}
-              onOpenProperties={() => setPropertiesOpen(true)}
+              onOpenProperties={() => openProperties(selectedId)}
               onReorder={(order, mergeKey) => editor.dispatch({ type: 'reorderBlocks', order, mergeKey })}
               onMoveSection={(headingId, targetHeadingId, position, mergeKey) => editor.dispatch({ type: 'moveSection', headingId, targetHeadingId, position, mergeKey })}
               onEditQuestion={editQuestionTargetId ? () => setEditingQuestionBlockId(editQuestionTargetId) : undefined}
@@ -1464,7 +1478,7 @@ export default function TeachingDocumentEditorPage() {
             variant="docked"
             open={propertiesOpen}
             selected={selected}
-            onClose={() => setPropertiesOpen(false)}
+            onClose={closeProperties}
             onUpdate={updateSelected}
             onUpdateTopLevel={updateSelectedTopLevel}
             onDelete={deleteSelected}

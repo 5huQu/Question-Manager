@@ -1,5 +1,6 @@
 import type { ImportV2Candidate, ImportV2ImportJobDocument, ImportV2SourceDocument } from '@/api/importV2'
 import { importIssueLabel } from '@/utils/importDiagnostics'
+import { provinceForCity } from '@/utils/metadataOptions'
 
 export type UnifiedQuestion = {
   id: string
@@ -85,7 +86,7 @@ export function metadataDraftFromDoc(doc?: Partial<ImportV2SourceDocument> | nul
     batchName: doc?.batchName || '',
     stage: doc?.stage || '高三',
     subject: doc?.subject || '数学',
-    province: doc?.province || '',
+    province: doc?.province || provinceForCity(doc?.city || ''),
     city: doc?.city || '',
     paperKind: doc?.paperKind || 'unknown',
     examYear: doc?.examYear ? String(doc.examYear) : '',
