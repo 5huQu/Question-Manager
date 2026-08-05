@@ -32,3 +32,14 @@ export {
 } from './resizeLogic'
 export { TeachingDocumentCanvas, type TeachingDocumentCanvasProps, type TeachingCanvasMode } from './TeachingDocumentCanvas'
 export { usePagination, type UsePaginationOptions, type UsePaginationResult } from './usePagination'
+export {
+  createLayoutCoordinatorKey,
+  TeachingDocumentLayoutCoordinator,
+  type LayoutCoordinatorEvent,
+  type LayoutCoordinatorRequest,
+  type LayoutCoordinatorRequestHandle,
+  type LayoutCoordinatorSnapshot,
+  type LayoutCoordinatorStatus,
+  type LayoutCoordinatorVariant,
+  type LayoutCoordinatorWorkResult,
+} from './layoutCoordinator'

@@ -28,6 +28,7 @@ import {
 } from '@/utils/teachingDocument'
 import { DocumentEditor } from './DocumentEditor'
 import { usePagination } from './usePagination'
+import type { TeachingDocumentLayoutCoordinator } from './layoutCoordinator'
 import {
   DEFAULT_PAGINATION_LAYOUT_DELAY_MS,
   INITIAL_LAYOUT_REQUEST,
@@ -128,6 +129,8 @@ export interface TeachingDocumentCanvasProps {
   layoutUpdateDelayMs?: number
   /** 最近一次布局请求的明确来源；只有 typing 使用尾随延迟。 */
   layoutRequest?: LayoutRequest
+  /** 与打印预览共享的文档级布局协调器。 */
+  layoutCoordinator?: TeachingDocumentLayoutCoordinator
 }
 
 export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
@@ -169,6 +172,7 @@ export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
     debounceMs,
     layoutUpdateDelayMs = DEFAULT_PAGINATION_LAYOUT_DELAY_MS,
     layoutRequest = INITIAL_LAYOUT_REQUEST,
+    layoutCoordinator,
   } = props
 
   const paginated = mode === 'paginated'
@@ -221,6 +225,7 @@ export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
     questionGeometryAdapter,
     readinessWait,
     layoutRequest,
+    coordinator: layoutCoordinator,
   })
   const { pagination, readiness, generation, settled, choiceLayoutOverrides } = paginationState
   const [documentEditor, setDocumentEditor] = useState<Editor | null>(null)

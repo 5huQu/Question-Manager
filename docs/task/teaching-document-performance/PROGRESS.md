@@ -15,7 +15,7 @@
 | 2 | T1 调度分级与旧快照展示 | completed | 已按请求原因分级调度，并保留成对旧快照与导出门槛。 |
 | 3 | T2 段落测量热路径优化 | completed | 整段行盒 + 字素边界二分；M/L DOM 测量中位数分别下降 58.9% / 60.5%。 |
 | 4 | T3 签名拆分与版本缓存 | completed | 稳定资源/样式/块/版本签名；双 variant 分页快照与 readiness 缓存。 |
-| 5 | T4 统一 Layout Coordinator | pending | 依赖 T1/T3。 |
+| 5 | T4 统一 Layout Coordinator | completed | 文档级 generation、取消、同 key 去重、readiness 与快照缓存已统一。 |
 | 6 | T5 按块增量测量与局部分页 | pending | 依赖 T2/T4。 |
 | 7 | T6 ProseMirror 结构操作快速路径 | pending | 依赖 T5 的 change set/dirty range。 |
 | 8 | T7 页面窗口化与集成验收 | pending | 依赖 T1～T6。 |
@@ -34,3 +34,6 @@
 - 下一步按推荐顺序执行 T3：拆分资源、几何与分页签名，复用未变化的测量结果。
 - 完成 T3：移除整篇内容 stringify 失效键，加入按块复用的稳定签名、最多 4 份分页快照和最多 8 份资源 readiness；真实 87 题文档暖切只增加单 generation。
 - 下一步按推荐顺序执行 T4：统一编辑器与预览 Layout Coordinator，并以 T3 签名作为失效契约。
+- 完成 T4：编辑分页与 A4 预览共享文档级协调器；统一 generation、取消、in-flight 去重、readiness 与快照缓存，并保留 miss 时的导出阻塞语义。
+- T4 全量前端测试 90 文件 / 637 项通过；真实 87 题文档学生版 27 页、教师版 81 页，双向 warm 切均无重排状态。
+- 下一步按推荐顺序执行 T5：建立按块测量缓存、dirty range 和局部分页边界。

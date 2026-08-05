@@ -14,7 +14,7 @@
  * - 测量复用与独立预览完全相同的管线（measureTeachingDocument 等），
  *   保证编辑画布与打印预览/导出的分页结果一致，不复制第二套 renderer。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
@@ -37,6 +37,11 @@ import {
 import type { QuestionResolution } from '../blocks/BlockRenderer'
 import { createLayoutPerformanceProfiler } from '@/utils/teachingDocument/layout/performance'
 import { INITIAL_LAYOUT_REQUEST, type LayoutRequest } from './useDeferredPaginationDocument'
+import {
+  createLayoutCoordinatorKey,
+  TeachingDocumentLayoutCoordinator,
+  type LayoutCoordinatorSnapshot,
+} from './layoutCoordinator'
 
 const PREPARING_READINESS: RenderReadinessResult = {
   ready: false,
@@ -47,21 +52,6 @@ const PREPARING_READINESS: RenderReadinessResult = {
   pendingFigures: [],
   failedImages: [],
   diagnostics: [],
-}
-
-const MAX_CACHED_RESOURCE_REVISIONS = 8
-
-function cacheResourceReadiness(
-  cache: Map<string, RenderReadinessResult>,
-  revision: string,
-  readiness: RenderReadinessResult,
-) {
-  cache.set(revision, readiness)
-  while (cache.size > MAX_CACHED_RESOURCE_REVISIONS) {
-    const oldestKey = cache.keys().next().value
-    if (!oldestKey) break
-    cache.delete(oldestKey)
-  }
 }
 
 export interface UsePaginationOptions {
@@ -84,6 +74,8 @@ export interface UsePaginationOptions {
   questionGeometryAdapter?: QuestionChromeGeometryAdapter
   readinessWait?: typeof waitForRenderReadiness
   layoutRequest?: LayoutRequest
+  /** 文档级布局协调器；省略时使用当前 hook 实例的本地协调器。 */
+  coordinator?: TeachingDocumentLayoutCoordinator
 }
 
 export interface UsePaginationResult {
@@ -115,20 +107,21 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     questionGeometryAdapter,
     readinessWait = waitForRenderReadiness,
     layoutRequest = INITIAL_LAYOUT_REQUEST,
+    coordinator: coordinatorOption,
   } = options
   const debounceMs = debounceMsOption ?? (layoutRequest.reason === 'typing' ? 300 : 0)
 
   // 页眉页脚参与分页有效高度，与独立预览保持同一扣除语义。
   const metrics = useMemo(() => effectivePaperMetrics(printLayout), [printLayout])
 
-  const generationRef = useRef(0)
+  const [localCoordinator] = useState(() => new TeachingDocumentLayoutCoordinator())
+  const coordinator = coordinatorOption ?? localCoordinator
   const [pagination, setPagination] = useState<PaginationResult | null>(null)
   const [readiness, setReadiness] = useState<RenderReadinessResult>(PREPARING_READINESS)
   const [generation, setGeneration] = useState(0)
   const [paragraphLineCount, setParagraphLineCount] = useState(0)
   const [settled, setSettled] = useState(false)
   const [choiceLayoutOverrides, setChoiceLayoutOverrides] = useState<ChoiceLayoutOverrides>({})
-  const resourceReadinessCacheRef = useRef(new Map<string, RenderReadinessResult>())
 
   const layoutSignatures = useMemo(() => createTeachingDocumentLayoutSignatures({
     document,
@@ -138,61 +131,76 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     renderVersion,
     spread: false,
   }), [document, fontVars, paper, printLayout, renderVersion])
+  const coordinatorKey = createLayoutCoordinatorKey(layoutSignatures.paginationSignature, [
+    geometryAdapter,
+    paragraphGeometryAdapter,
+    boxGeometryAdapter,
+    questionGeometryAdapter,
+  ])
 
   useEffect(() => {
+    if (coordinator.getSnapshot(coordinatorKey)) return
     setChoiceLayoutOverrides((current) => Object.keys(current).length ? {} : current)
-  }, [document, renderVersion])
+  }, [coordinator, coordinatorKey])
 
   useEffect(() => {
     if (!measureRoot) return
-    const currentGeneration = generationRef.current + 1
-    generationRef.current = currentGeneration
-    const controller = new AbortController()
-    const profiler = createLayoutPerformanceProfiler({
-      pipeline: 'editor',
-      generation: currentGeneration,
-      metadata: {
-        blockCount: document.content.length,
-        debounceMs,
-        resourceRevision: layoutSignatures.resourceRevision,
-        reason: layoutRequest.reason,
-        priority: layoutRequest.priority,
-      },
-    })
+    let live = true
+    const handle = coordinator.request({
+      key: coordinatorKey,
+      documentRevision: layoutSignatures.documentRevision,
+      resourceRevision: layoutSignatures.resourceRevision,
+      variant: layoutSignatures.variant,
+      execute: async ({ generation: currentGeneration, signal }) => {
+        const profiler = createLayoutPerformanceProfiler({
+          pipeline: 'editor',
+          generation: currentGeneration,
+          metadata: {
+            blockCount: document.content.length,
+            debounceMs,
+            resourceRevision: layoutSignatures.resourceRevision,
+            paginationSignature: layoutSignatures.paginationSignature,
+            cacheHit: false,
+            reason: layoutRequest.reason,
+            priority: layoutRequest.priority,
+          },
+        })
+        try {
+          const endScheduleWait = profiler.startPhase('schedule-wait')
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const timer = window.setTimeout(resolve, Math.max(0, debounceMs))
+              signal.addEventListener('abort', () => {
+                window.clearTimeout(timer)
+                reject(new DOMException('Layout request aborted', 'AbortError'))
+              }, { once: true })
+            })
+          } finally {
+            endScheduleWait()
+          }
 
-    // 新一轮开始：重置 readiness（阻塞导出）、标记未 settled，
-    // 但保留上一份 pagination 供平滑渲染。
-    setReadiness(PREPARING_READINESS)
-    setSettled(false)
-    setGeneration(currentGeneration)
-
-    const endScheduleWait = profiler.startPhase('schedule-wait')
-    const timer = window.setTimeout(() => {
-      endScheduleWait()
-      const endResourceWait = profiler.startPhase('resource-wait')
-      const cachedResourceReadiness = resourceReadinessCacheRef.current.get(layoutSignatures.resourceRevision)
-      profiler.addMetadata({ resourceCacheHit: Boolean(cachedResourceReadiness) })
-      const readiness = cachedResourceReadiness
-        ? Promise.resolve(cachedResourceReadiness)
-        : readinessWait(measureRoot, {
-            timeoutMs: 8_000,
-            stableFrames: 2,
-            signal: controller.signal,
-          })
-      void readiness
-        .then((nextReadiness) => {
-          endResourceWait()
-          if (controller.signal.aborted || currentGeneration !== generationRef.current) return
-          cacheResourceReadiness(resourceReadinessCacheRef.current, layoutSignatures.resourceRevision, nextReadiness)
-          setReadiness(nextReadiness)
+          const cachedResourceReadiness = coordinator.getResourceReadiness(layoutSignatures.resourceRevision)
+          profiler.addMetadata({ resourceCacheHit: Boolean(cachedResourceReadiness) })
+          const endResourceWait = profiler.startPhase('resource-wait')
+          let nextReadiness: RenderReadinessResult
+          try {
+            nextReadiness = cachedResourceReadiness ?? await readinessWait(measureRoot, {
+              timeoutMs: 8_000,
+              stableFrames: 2,
+              signal,
+            })
+          } finally {
+            endResourceWait()
+          }
+          if (signal.aborted) throw new DOMException('Layout request aborted', 'AbortError')
+          coordinator.cacheResourceReadiness(layoutSignatures.resourceRevision, nextReadiness)
 
           const measuredLayouts = profiler.measure('choice-layout', () => (
             measuredChoiceLayoutOverrides(measureRoot, choiceLayoutOverrides)
           ))
           if (!choiceLayoutOverridesEqual(measuredLayouts, choiceLayoutOverrides)) {
-            setChoiceLayoutOverrides(measuredLayouts)
             profiler.finish('retry')
-            return
+            return { status: 'retry' as const, choiceLayoutOverrides: measuredLayouts }
           }
 
           const paragraphGeometryCounter = profiler.enabled
@@ -219,11 +227,8 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
           }
           const { measurement, paragraphs: paragraphMeasurements, boxes: boxMeasurements, questions: questionMeasurements, boxChildQuestions: boxChildQuestionMeasurements, boxChildRawMarkdowns: boxChildRawMarkdownMeasurements } = bundle
           measurement.diagnostics.push(...nextReadiness.diagnostics)
-          if (controller.signal.aborted || currentGeneration !== generationRef.current) return
-
-          setParagraphLineCount(
-            paragraphMeasurements.reduce((total, item) => total + item.lines.length, 0),
-          )
+          if (signal.aborted) throw new DOMException('Layout request aborted', 'AbortError')
+          const nextParagraphLineCount = paragraphMeasurements.reduce((total, item) => total + item.lines.length, 0)
           const result = profiler.measure('pagination', () => paginateTeachingDocument({
             document,
             measurements: measurement,
@@ -235,37 +240,80 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
             paper,
             metrics,
           }))
-          setPagination(result)
-          setSettled(true)
           profiler.finish('settled')
-        })
-        .catch((error) => {
-          endResourceWait()
-          // readiness 等待被拒绝（非中断/非过期 generation）时发布稳定失败态：
-          // 标记 timedOut 使导出 readiness 被阻塞，避免悬挂的未处理 rejection。
-          if (controller.signal.aborted || currentGeneration !== generationRef.current) return
+          return {
+            status: 'settled' as const,
+            document,
+            pagination: result,
+            readiness: nextReadiness,
+            paragraphLineCount: nextParagraphLineCount,
+            choiceLayoutOverrides,
+          }
+        } catch (error) {
+          if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+            profiler.finish('aborted')
+            throw error
+          }
           const failedReadiness: RenderReadinessResult = {
             ...PREPARING_READINESS,
             timedOut: true,
-            diagnostics: [
-              {
-                code: 'resource-timeout',
-                severity: 'error',
-                message: error instanceof Error ? error.message : '排版资源准备失败。',
-              },
-            ],
+            diagnostics: [{
+              code: 'resource-timeout',
+              severity: 'error',
+              message: error instanceof Error ? error.message : '排版资源准备失败。',
+            }],
           }
-          setReadiness(failedReadiness)
-          setPagination(null)
-          setSettled(false)
           profiler.finish('failed')
-        })
-    }, Math.max(0, debounceMs))
+          return {
+            status: 'failed' as const,
+            document,
+            pagination: null,
+            readiness: failedReadiness,
+            paragraphLineCount: 0,
+            choiceLayoutOverrides,
+          }
+        }
+      },
+    })
+
+    setGeneration(handle.generation)
+    if (handle.cacheHit) {
+      const profiler = createLayoutPerformanceProfiler({
+        pipeline: 'editor',
+        generation: handle.generation,
+        metadata: {
+          blockCount: document.content.length,
+          cacheHit: true,
+          resourceRevision: layoutSignatures.resourceRevision,
+          paginationSignature: layoutSignatures.paginationSignature,
+        },
+      })
+      profiler.finish('settled')
+    } else {
+      // 保留上一份 pagination 供平滑渲染，但 readiness 立即阻塞导出。
+      setReadiness(PREPARING_READINESS)
+      setSettled(false)
+    }
+    void handle.promise.then((result) => {
+      if (!live) return
+      if (result.status === 'retry') {
+        setChoiceLayoutOverrides(result.choiceLayoutOverrides)
+        return
+      }
+      const snapshot = result as LayoutCoordinatorSnapshot
+      setPagination(snapshot.pagination)
+      setReadiness(snapshot.readiness)
+      setParagraphLineCount(snapshot.paragraphLineCount)
+      setChoiceLayoutOverrides(snapshot.choiceLayoutOverrides)
+      setSettled(snapshot.status === 'settled')
+    }).catch((error) => {
+      if (!live || (error instanceof DOMException && error.name === 'AbortError')) return
+      setSettled(false)
+    })
 
     return () => {
-      window.clearTimeout(timer)
-      controller.abort()
-      profiler.finish('aborted')
+      live = false
+      handle.release()
     }
   }, [
     measureRoot,
@@ -284,7 +332,12 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     choiceLayoutOverrides,
     layoutRequest.priority,
     layoutRequest.reason,
+    layoutSignatures.documentRevision,
+    layoutSignatures.paginationSignature,
     layoutSignatures.resourceRevision,
+    layoutSignatures.variant,
+    coordinatorKey,
+    coordinator,
   ])
 
   return { pagination, readiness, generation, paragraphLineCount, settled, choiceLayoutOverrides }

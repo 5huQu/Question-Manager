@@ -13,8 +13,10 @@ import {
   waitForRenderReadiness,
 } from '@/utils/teachingDocument'
 import { TeachingDocumentRenderer } from '../TeachingDocumentRenderer'
+import { A4PaginationPreview } from '../A4PaginationPreview'
 import { usePagination } from './usePagination'
 import { createLayoutRequest, type LayoutRequest } from './useDeferredPaginationDocument'
+import { TeachingDocumentLayoutCoordinator } from './layoutCoordinator'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -75,6 +77,7 @@ interface HarnessProps {
   defaultDebounce?: boolean
   layoutRequest?: LayoutRequest
   renderVersion?: string
+  coordinator?: TeachingDocumentLayoutCoordinator
   /** 模拟父层把分页结果回写为自身状态（如页面层的 paginationState）。 */
   onPagination?: (pagination: PaginationResult | null) => void
 }
@@ -96,6 +99,7 @@ function Harness(props: HarnessProps) {
     readinessWait: props.readinessWait,
     layoutRequest: props.layoutRequest,
     renderVersion: props.renderVersion,
+    coordinator: props.coordinator,
   })
   const { onPagination } = props
   // 回写仅依赖 pagination 引用：与页面层用法一致，引用不变则不重复回写。
@@ -309,5 +313,40 @@ describe('usePagination', () => {
     expect(readinessWait.mock.calls.length).toBe(callsAfterSettle)
     expect(container.querySelector('[data-testid="mirror-pages"]')?.textContent).toBe('2')
     expect(stateAttr('data-pages')).toBe('2')
+  })
+
+  it('deduplicates one layout key across editor pagination and A4 preview', async () => {
+    const coordinator = new TeachingDocumentLayoutCoordinator()
+    const readinessWait = vi.fn(async () => READY)
+    const countedGeometry = { measure: vi.fn(geometry.measure) }
+    const source = documentWith(['shared'])
+    root = createRoot(container)
+
+    await act(async () => {
+      root?.render(
+        <>
+          <Harness
+            document={source}
+            readinessWait={readinessWait}
+            geometryAdapter={countedGeometry}
+            coordinator={coordinator}
+          />
+          <A4PaginationPreview
+            document={source}
+            paper={DEFAULT_A4_PAPER}
+            printLayout={createDefaultPrintLayout(DEFAULT_A4_PAPER)}
+            geometryAdapter={countedGeometry}
+            readinessWait={readinessWait}
+            coordinator={coordinator}
+          />
+        </>,
+      )
+    })
+    await settle()
+
+    expect(readinessWait).toHaveBeenCalledTimes(1)
+    expect(countedGeometry.measure).toHaveBeenCalledTimes(1)
+    expect(stateAttr('data-pages')).toBe('1')
+    expect(container.querySelectorAll('[data-teaching-page-index]')).toHaveLength(1)
   })
 })

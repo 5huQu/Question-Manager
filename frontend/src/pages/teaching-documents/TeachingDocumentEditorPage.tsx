@@ -29,7 +29,7 @@ import { questionBankApi } from '@/api/questionBank'
 import { teachingDocumentsApi } from '@/api/teachingDocuments'
 import { ApiError, type PdfExportVariant } from '@/api/client'
 import { A4PaginationPreview, type A4PaginationState } from '@/components/teaching-document/A4PaginationPreview'
-import { TeachingDocumentCanvas } from '@/components/teaching-document/editor'
+import { TeachingDocumentCanvas, TeachingDocumentLayoutCoordinator } from '@/components/teaching-document/editor'
 import { ExportPdfPanel } from '@/components/teaching-document/ExportPdfPanel'
 import { PrintChrome, type PrintChromeSection } from '@/components/teaching-document/PrintChrome'
 import { type QuestionResolution } from '@/components/teaching-document/blocks/BlockRenderer'
@@ -447,6 +447,7 @@ export default function TeachingDocumentEditorPage() {
   const { documentId = '' } = useParams()
   const navigate = useNavigate()
   const editor = useTeachingDocumentEditor(decodeURIComponent(documentId))
+  const [layoutCoordinator] = useState(() => new TeachingDocumentLayoutCoordinator())
   const [selectedId, setSelectedId] = useState('')
   const [viewportBlockId, setViewportBlockId] = useState('')
   const [canvasScrollRoot, setCanvasScrollRoot] = useState<HTMLElement | null>(null)
@@ -1346,6 +1347,7 @@ export default function TeachingDocumentEditorPage() {
               editingChromeSlot={editingChromeSlot}
               onChromeSlotEdit={openChromeSlot}
               onPaginationState={setPaginationState}
+              coordinator={layoutCoordinator}
             />
           </div>
           <div className={canvasMode === 'a4' ? 'hidden' : ''} data-editing-canvas="">
@@ -1376,6 +1378,7 @@ export default function TeachingDocumentEditorPage() {
               onEditorFlushReady={editor.registerEditorFlush}
               onEditorReady={editor.registerEditor}
               layoutRequest={editor.layoutRequest}
+              layoutCoordinator={layoutCoordinator}
               mode={editCanvasMode}
               totalPages={paginationState?.pagination?.pages.length || 1}
               onPageCountChange={setPaginatedPageCount}
