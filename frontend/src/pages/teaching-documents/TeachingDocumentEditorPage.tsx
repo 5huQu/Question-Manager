@@ -1147,8 +1147,13 @@ export default function TeachingDocumentEditorPage() {
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
   const selectPrintVariant = (variant: PdfExportVariant) => {
+    editor.flushEditorChanges?.()
+    editor.requestLayout?.('variant')
     setPrintVariant(variant)
-    if (canvasMode !== 'a4') setCanvasMode('a4')
+    if (canvasMode !== 'a4') {
+      editor.requestLayout?.('view')
+      setCanvasMode('a4')
+    }
   }
   function deleteTopLevelMulti() {
     if (!topLevelMultiSelect.length) return
@@ -1269,6 +1274,8 @@ export default function TeachingDocumentEditorPage() {
         onUndo={editor.undo}
         onRedo={editor.redo}
         onCanvasModeChange={(mode) => {
+          editor.flushEditorChanges?.()
+          editor.requestLayout?.('view')
           setCanvasMode(mode)
           // a4 预览是叠加层：编辑画布保持原模式挂载（隐藏），不销毁编辑器。
           if (mode !== 'a4') setEditCanvasMode(mode)
@@ -1331,6 +1338,7 @@ export default function TeachingDocumentEditorPage() {
               zoom={viewZoom}
               selectedBlockId={selectedId}
               renderVersion={renderResourceVersion}
+              layoutRequest={editor.layoutRequest}
               active={canvasMode === 'a4'}
               onBlockSelect={selectBlock}
               onDiagnosticNavigate={(blockId) => {
@@ -1371,6 +1379,7 @@ export default function TeachingDocumentEditorPage() {
               onEditorDirty={editor.markEditorDirty}
               onEditorFlushReady={editor.registerEditorFlush}
               onEditorReady={editor.registerEditor}
+              layoutRequest={editor.layoutRequest}
               mode={editCanvasMode}
               totalPages={paginationState?.pagination?.pages.length || 1}
               onPageCountChange={setPaginatedPageCount}

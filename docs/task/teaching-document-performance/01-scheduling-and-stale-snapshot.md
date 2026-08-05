@@ -34,3 +34,12 @@
 - 连续输入仍不会逐键触发全量分页。
 - 快速切换视图或版本时没有旧 generation 覆盖新结果。
 - 导出 readiness 的现有安全门槛保持不变。
+
+## 实施结果（2026-08-05）
+
+- 新增 `LayoutRequest`，显式携带 `typing/structure/view/variant/export` reason 与 `background/interactive/blocking` priority。
+- 只有 `typing` 保留 700ms 稳定快照和 300ms 分页防抖；结构、视图与版本请求直接进入下一次可中断布局。
+- 视图和打印版本切换前先冲刷编辑器尚未同步的文字，避免预览读取 350ms 模型合并窗口之前的旧内容。
+- A4 重排期间继续展示上一份一致的文档、分页与 choice layout 快照；父层仍收到 `pagination: null` 的 preparing 状态，因此导出不会使用 stale 快照。
+- 页面编辑和打印预览增加低干扰的“正在准备/重新排版”状态；非激活预览不发布可见状态。
+- 已覆盖 typing 防抖、结构/视图/版本即时请求、快速 view 请求取消旧 typing 定时器、A4 成对旧快照和旧 generation 丢弃。

@@ -34,6 +34,7 @@ import {
 } from '@/utils/teachingDocument'
 import type { QuestionResolution } from '../blocks/BlockRenderer'
 import { createLayoutPerformanceProfiler } from '@/utils/teachingDocument/layout/performance'
+import { INITIAL_LAYOUT_REQUEST, type LayoutRequest } from './useDeferredPaginationDocument'
 
 const PREPARING_READINESS: RenderReadinessResult = {
   ready: false,
@@ -65,6 +66,7 @@ export interface UsePaginationOptions {
   boxGeometryAdapter?: BoxChromeGeometryAdapter
   questionGeometryAdapter?: QuestionChromeGeometryAdapter
   readinessWait?: typeof waitForRenderReadiness
+  layoutRequest?: LayoutRequest
 }
 
 export interface UsePaginationResult {
@@ -89,13 +91,15 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     resolveQuestion,
     fontVars,
     renderVersion,
-    debounceMs = 300,
+    debounceMs: debounceMsOption,
     geometryAdapter,
     paragraphGeometryAdapter,
     boxGeometryAdapter,
     questionGeometryAdapter,
     readinessWait = waitForRenderReadiness,
+    layoutRequest = INITIAL_LAYOUT_REQUEST,
   } = options
+  const debounceMs = debounceMsOption ?? (layoutRequest.reason === 'typing' ? 300 : 0)
 
   // 页眉页脚参与分页有效高度，与独立预览保持同一扣除语义。
   const metrics = useMemo(() => effectivePaperMetrics(printLayout), [printLayout])
@@ -123,6 +127,8 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
       metadata: {
         blockCount: document.content.length,
         debounceMs,
+        reason: layoutRequest.reason,
+        priority: layoutRequest.priority,
       },
     })
 
@@ -232,6 +238,8 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     questionGeometryAdapter,
     readinessWait,
     choiceLayoutOverrides,
+    layoutRequest.priority,
+    layoutRequest.reason,
   ])
 
   return { pagination, readiness, generation, paragraphLineCount, settled, choiceLayoutOverrides }

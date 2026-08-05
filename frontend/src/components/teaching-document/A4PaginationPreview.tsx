@@ -32,6 +32,10 @@ import {
 import { PaperPageView } from './PaperPageView'
 import { A3TwoColumnSheetView } from './A3TwoColumnSheetView'
 import { createLayoutPerformanceProfiler } from '@/utils/teachingDocument/layout/performance'
+import {
+  INITIAL_LAYOUT_REQUEST,
+  type LayoutRequest,
+} from './editor/useDeferredPaginationDocument'
 
 const PREPARING_READINESS: RenderReadinessResult = {
   ready: false,
@@ -94,6 +98,7 @@ export interface A4PaginationPreviewProps {
   boxGeometryAdapter?: BoxChromeGeometryAdapter
   questionGeometryAdapter?: QuestionChromeGeometryAdapter
   readinessWait?: typeof waitForRenderReadiness
+  layoutRequest?: LayoutRequest
 }
 
 export function A4PaginationPreview({
@@ -118,6 +123,7 @@ export function A4PaginationPreview({
   boxGeometryAdapter,
   questionGeometryAdapter,
   readinessWait = waitForRenderReadiness,
+  layoutRequest = INITIAL_LAYOUT_REQUEST,
 }: A4PaginationPreviewProps) {
   const paper = useMemo(
     () => paperProp ?? resolveDocumentPaper(document.style),
@@ -130,12 +136,14 @@ export function A4PaginationPreview({
   const generationRef = useRef(0)
   /** 可见页面的展示快照：重测期间保留上一对（文档，分页），避免白屏闪烁。 */
   const displayDocumentRef = useRef(document)
+  const displayChoiceLayoutOverridesRef = useRef<ChoiceLayoutOverrides>({})
   /** 上一轮测量的资源签名；用于跳过与资源装载无关的重测等待。 */
   const measurementSignatureRef = useRef('')
   const [readiness, setReadiness] = useState<RenderReadinessResult>(PREPARING_READINESS)
   const [pagination, setPagination] = useState<PaginationResult | null>(null)
   const [measurementGeneration, setMeasurementGeneration] = useState(0)
   const [paragraphLineCount, setParagraphLineCount] = useState(0)
+  const [reflowing, setReflowing] = useState(false)
   const [choiceLayoutOverrides, setChoiceLayoutOverrides] = useState<ChoiceLayoutOverrides>({})
   useEffect(() => {
     setChoiceLayoutOverrides((current) => Object.keys(current).length ? {} : current)
@@ -161,8 +169,11 @@ export function A4PaginationPreview({
       metadata: {
         blockCount: document.content.length,
         spread,
+        reason: layoutRequest.reason,
+        priority: layoutRequest.priority,
       },
     })
+    setReflowing(true)
     setReadiness(PREPARING_READINESS)
     setMeasurementGeneration(generation)
     // 新 generation 开始即向父层发布 preparing/null，
@@ -224,6 +235,8 @@ export function A4PaginationPreview({
         setPagination(paginationResult)
         // 展示快照与分页同步切换，保证可见页面永远渲染一致的一对。
         displayDocumentRef.current = document
+        displayChoiceLayoutOverridesRef.current = choiceLayoutOverrides
+        setReflowing(false)
         onPaginationState?.({ pagination: paginationResult, readiness: nextReadiness, measurementGeneration: generation })
         profiler.finish('settled')
       })
@@ -243,6 +256,7 @@ export function A4PaginationPreview({
         }
         setReadiness(failedReadiness)
         setPagination(null)
+        setReflowing(false)
         onPaginationState?.({ pagination: null, readiness: failedReadiness, measurementGeneration: generation })
         profiler.finish('failed')
       })
@@ -251,7 +265,7 @@ export function A4PaginationPreview({
       controller.abort()
       profiler.finish('aborted')
     }
-  }, [active, boxGeometryAdapter, choiceLayoutOverrides, document, fontVars, geometryAdapter, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion, spread])
+  }, [active, boxGeometryAdapter, choiceLayoutOverrides, document, fontVars, geometryAdapter, layoutRequest.priority, layoutRequest.reason, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion, spread])
 
   const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure'> = {
     resolveQuestion,
@@ -325,6 +339,17 @@ export function A4PaginationPreview({
           ) : null}
         </div>
       </div>
+
+      {active && (reflowing || !pagination) ? (
+        <div
+          role="status"
+          data-teaching-layout-status=""
+          className="sticky top-2 z-10 mx-auto mb-3 flex w-fit items-center gap-1.5 rounded-md border border-zinc-200 bg-white/90 px-2 py-1 text-[11px] text-zinc-500 shadow-sm backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/90 dark:text-zinc-400"
+        >
+          {readiness.timedOut ? <AlertTriangle className="size-3" /> : <LoaderCircle className="size-3 animate-spin" />}
+          {readiness.timedOut ? '排版资源准备失败' : pagination ? '正在重新排版' : '正在准备排版'}
+        </div>
+      ) : null}
 
       <div className="hidden" aria-hidden="true">
         {!pagination ? (
@@ -401,7 +426,7 @@ export function A4PaginationPreview({
                 printLayout={printLayout}
                 pageProps={{
                   resolvers: rendererProps,
-                  choiceLayoutOverrides,
+                  choiceLayoutOverrides: displayChoiceLayoutOverridesRef.current,
                   selectedBlockId,
                   overflowBlockIds: overflowIdsByPage.get(leftPage.index),
                   editingChromeSlot,
@@ -430,7 +455,7 @@ export function A4PaginationPreview({
               printLayout={printLayout}
               totalPages={pagination?.pages.length ?? 0}
               resolvers={rendererProps}
-              choiceLayoutOverrides={choiceLayoutOverrides}
+              choiceLayoutOverrides={displayChoiceLayoutOverridesRef.current}
             selectedBlockId={selectedBlockId}
             overflowBlockIds={overflowIdsByPage.get(page.index)}
             editingChromeSlot={editingChromeSlot}

@@ -14,6 +14,7 @@ import {
 } from '@/utils/teachingDocument'
 import { TeachingDocumentRenderer } from '../TeachingDocumentRenderer'
 import { usePagination } from './usePagination'
+import { createLayoutRequest, type LayoutRequest } from './useDeferredPaginationDocument'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -71,6 +72,8 @@ interface HarnessProps {
   readinessWait: typeof waitForRenderReadiness
   geometryAdapter?: GeometryAdapter
   debounceMs?: number
+  defaultDebounce?: boolean
+  layoutRequest?: LayoutRequest
   /** 模拟父层把分页结果回写为自身状态（如页面层的 paginationState）。 */
   onPagination?: (pagination: PaginationResult | null) => void
 }
@@ -87,9 +90,10 @@ function Harness(props: HarnessProps) {
     printLayout,
     measureRoot,
     resolveQuestion,
-    debounceMs: props.debounceMs ?? 0,
+    debounceMs: props.defaultDebounce ? undefined : props.debounceMs ?? 0,
     geometryAdapter: props.geometryAdapter ?? geometry,
     readinessWait: props.readinessWait,
+    layoutRequest: props.layoutRequest,
   })
   const { onPagination } = props
   // 回写仅依赖 pagination 引用：与页面层用法一致，引用不变则不重复回写。
@@ -169,6 +173,42 @@ describe('usePagination', () => {
     expect(stateAttr('data-pages')).toBe('1')
     // 恰好新增一轮测量：若依赖被掩盖则为 +0，若失控则远大于 +1。
     expect(readinessWait.mock.calls.length).toBe(callsBefore + 1)
+  })
+
+  it('only typing keeps the default 300ms pagination debounce', async () => {
+    const readinessWait = vi.fn(async () => READY)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <Harness
+          document={documentWith(['a'])}
+          readinessWait={readinessWait}
+          defaultDebounce
+          layoutRequest={createLayoutRequest(1, 'typing')}
+        />,
+      )
+    })
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(299) })
+    expect(readinessWait).not.toHaveBeenCalled()
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(readinessWait).toHaveBeenCalled()
+
+    act(() => root?.unmount())
+    root = createRoot(container)
+    readinessWait.mockClear()
+    await act(async () => {
+      root?.render(
+        <Harness
+          document={documentWith(['b'])}
+          readinessWait={readinessWait}
+          defaultDebounce
+          layoutRequest={createLayoutRequest(2, 'structure')}
+        />,
+      )
+    })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(readinessWait).toHaveBeenCalled()
   })
 
   it('字体/图片未就绪时 ready=false，且未 settled 前不产出分页', async () => {

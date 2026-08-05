@@ -23,6 +23,19 @@ import {
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import type { DocumentValidationResult } from '@/types/teachingDocument'
 import { structuralDocumentSignature } from '@/utils/teachingDocument/validate'
+import {
+  createLayoutRequest,
+  INITIAL_LAYOUT_REQUEST,
+  type LayoutRequest,
+  type LayoutRequestReason,
+} from '@/components/teaching-document/editor/useDeferredPaginationDocument'
+
+function layoutStructureSignature(document: TeachingDocumentV1): string {
+  return document.content.map((block) => {
+    if (block.type !== 'box') return `${block.type}:${block.id}`
+    return `box:${block.id}:${block.children.map((child) => `${child.type}:${child.id}`).join(',')}`
+  }).join('|')
+}
 
 export function useTeachingDocumentEditor(documentId: string) {
   const [record, setRecord] = useState<TeachingDocumentRecord | null>(null)
@@ -32,6 +45,8 @@ export function useTeachingDocumentEditor(documentId: string) {
   const [conflict, setConflict] = useState<TeachingDocumentRevisionConflict | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const layoutRequestIdRef = useRef(INITIAL_LAYOUT_REQUEST.id)
+  const [layoutRequest, setLayoutRequest] = useState<LayoutRequest>(INITIAL_LAYOUT_REQUEST)
   const recordRef = useRef<TeachingDocumentRecord | null>(null)
   const documentRef = useRef<TeachingDocumentV1 | null>(null)
   const autosaveRef = useRef<TeachingDocumentAutosave<TeachingDocumentV1> | null>(null)
@@ -42,12 +57,19 @@ export function useTeachingDocumentEditor(documentId: string) {
   const editorFlushRef = useRef<(() => void) | null>(null)
   const [editorHistoryState, setEditorHistoryState] = useState({ canUndo: false, canRedo: false })
   const editorHistoryListenerRef = useRef<((payload?: unknown) => void) | null>(null)
+  const pendingEditorLayoutReasonRef = useRef<LayoutRequestReason | null>(null)
   /**
    * 校验结果按结构签名延迟计算：普通文本回显不产生结构变化，不再每次键入停顿
    * 都跑全量 validateTeachingDocument（长文档可省下每次几毫秒到几十毫秒）。
    */
   const [validation, setValidation] = useState<DocumentValidationResult>({ valid: true, issues: [] })
   const lastValidationSignatureRef = useRef('')
+
+  const requestLayout = useCallback((reason: LayoutRequestReason) => {
+    const id = layoutRequestIdRef.current + 1
+    layoutRequestIdRef.current = id
+    setLayoutRequest(createLayoutRequest(id, reason))
+  }, [])
 
   const configureAutosave = useCallback((loaded: TeachingDocumentRecord) => {
     autosaveRef.current?.dispose()
@@ -95,13 +117,14 @@ export function useTeachingDocumentEditor(documentId: string) {
       setSaveError('')
       setSaveState('saved')
       configureAutosave(loaded)
+      requestLayout('structure')
       setLoadError('')
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
     }
-  }, [configureAutosave, documentId])
+  }, [configureAutosave, documentId, requestLayout])
 
   useEffect(() => {
     void load()
@@ -137,6 +160,7 @@ export function useTeachingDocumentEditor(documentId: string) {
 
   const dispatch = useCallback((command: TeachingDocumentCommand) => {
     editorFlushRef.current?.()
+    requestLayout(command.type === 'setTitle' ? 'typing' : 'structure')
     setHistory((current) => {
       if (!current) return current
       const next = executeTeachingDocumentCommand(current, command)
@@ -145,16 +169,19 @@ export function useTeachingDocumentEditor(documentId: string) {
       autosaveRef.current?.changed()
       return next
     })
-  }, [])
+  }, [requestLayout])
 
   const undo = useCallback(() => {
     // T3：优先使用编辑器内置 undo（跨块连续撤销）
     const editorInstance = editorInstanceRef.current
     if (editorInstance && editorInstance.can().undo()) {
+      pendingEditorLayoutReasonRef.current = 'structure'
+      requestLayout('structure')
       editorInstance.commands.undo()
       return
     }
     // 回退到外部历史（编辑器未就绪时）
+    requestLayout('structure')
     setHistory((current) => {
       if (!current) return current
       const next = undoTeachingDocument(current)
@@ -163,15 +190,18 @@ export function useTeachingDocumentEditor(documentId: string) {
       autosaveRef.current?.changed()
       return next
     })
-  }, [])
+  }, [requestLayout])
 
   const redo = useCallback(() => {
     // T3：优先使用编辑器内置 redo
     const editorInstance = editorInstanceRef.current
     if (editorInstance && editorInstance.can().redo()) {
+      pendingEditorLayoutReasonRef.current = 'structure'
+      requestLayout('structure')
       editorInstance.commands.redo()
       return
     }
+    requestLayout('structure')
     setHistory((current) => {
       if (!current) return current
       const next = redoTeachingDocument(current)
@@ -180,7 +210,7 @@ export function useTeachingDocumentEditor(documentId: string) {
       autosaveRef.current?.changed()
       return next
     })
-  }, [])
+  }, [requestLayout])
 
   /** 最近一次重编号前的题序签名；签名未变说明编号无需更新。 */
   const questionSequenceSignatureRef = useRef('')
@@ -193,6 +223,13 @@ export function useTeachingDocumentEditor(documentId: string) {
     const normalized = nextSignature === questionSequenceSignatureRef.current
       ? doc
       : renumberAutomaticQuestionNumbers(doc)
+    const previous = documentRef.current
+    const inferredReason: LayoutRequestReason = previous
+      && layoutStructureSignature(previous) !== layoutStructureSignature(normalized)
+      ? 'structure'
+      : 'typing'
+    requestLayout(pendingEditorLayoutReasonRef.current ?? inferredReason)
+    pendingEditorLayoutReasonRef.current = null
     questionSequenceSignatureRef.current = questionSequenceSignature(normalized)
     documentRef.current = normalized
     setHistory((current) => {
@@ -200,7 +237,7 @@ export function useTeachingDocumentEditor(documentId: string) {
       return { ...current, document: normalized }
     })
     autosaveRef.current?.changed()
-  }, [])
+  }, [requestLayout])
 
   /** 键入发生时立即标脏；全文模型可在编辑器合并窗口结束后再同步。 */
   const markEditorDirty = useCallback(() => {
@@ -233,6 +270,10 @@ export function useTeachingDocumentEditor(documentId: string) {
 
   const registerEditorFlush = useCallback((flush: (() => void) | null) => {
     editorFlushRef.current = flush
+  }, [])
+
+  const flushEditorChanges = useCallback(() => {
+    editorFlushRef.current?.()
   }, [])
 
   /**
@@ -294,6 +335,8 @@ export function useTeachingDocumentEditor(documentId: string) {
     saveError,
     conflict,
     validation,
+    layoutRequest,
+    requestLayout,
     dispatch,
     undo,
     redo,
@@ -312,6 +355,7 @@ export function useTeachingDocumentEditor(documentId: string) {
     /** 当前文档级编辑器，供页面级格式工具栏驱动。 */
     activeEditor,
     registerEditorFlush,
+    flushEditorChanges,
     activeTopLevelBlockId,
     canUndo: editorHistoryState.canUndo || Boolean(history?.past.length),
     canRedo: editorHistoryState.canRedo || Boolean(history?.future.length),

@@ -13,6 +13,8 @@ import type {
 import { createDefaultPrintLayout, createPaperSpec, DEFAULT_A4_PAPER, logicalPagePaper } from '@/utils/teachingDocument'
 import { A4PaginationPreview, type A4PaginationState } from './A4PaginationPreview'
 
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
 const ready: RenderReadinessResult = {
   ready: true,
   timedOut: false,
@@ -446,6 +448,43 @@ describe('A4PaginationPreview', () => {
     expect(container.querySelectorAll('[data-teaching-page-index]')).toHaveLength(1)
     expect(container.querySelector('[data-teaching-block-id="old-a"]')).toBeNull()
     expect(container.querySelector('[data-teaching-block-id="latest"]')).not.toBeNull()
+  })
+
+  it('keeps the previous document and pagination as one visible snapshot while reflowing', async () => {
+    const completions: Array<(value: RenderReadinessResult) => void> = []
+    const controlledReadiness = () => new Promise<RenderReadinessResult>((resolve) => {
+      completions.push(resolve)
+    })
+    const container = document.createElement('div')
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={documentWith(['old-a', 'old-b'])}
+          geometryAdapter={geometry}
+          readinessWait={controlledReadiness}
+        />,
+      )
+    })
+    await act(async () => completions[0](ready))
+    expect(container.querySelector('[data-teaching-page-index] [data-teaching-block-id="old-a"]')).not.toBeNull()
+
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={documentWith(['latest'])}
+          geometryAdapter={geometry}
+          readinessWait={controlledReadiness}
+        />,
+      )
+    })
+    expect(container.querySelector('[data-teaching-layout-status]')?.textContent).toContain('正在重新排版')
+    expect(container.querySelector('[data-teaching-page-index] [data-teaching-block-id="old-a"]')).not.toBeNull()
+    expect(container.querySelector('[data-teaching-page-index] [data-teaching-block-id="latest"]')).toBeNull()
+
+    await act(async () => completions[1](ready))
+    expect(container.querySelector('[data-teaching-page-index] [data-teaching-block-id="old-a"]')).toBeNull()
+    expect(container.querySelector('[data-teaching-page-index] [data-teaching-block-id="latest"]')).not.toBeNull()
   })
 
   it('re-measures when the print layout (header/footer) changes', async () => {
