@@ -25,12 +25,14 @@ export const browserGeometryAdapter: GeometryAdapter = {
   },
 }
 
-function allDocumentBlocks(document: TeachingDocumentV1) {
+function allDocumentBlocks(document: TeachingDocumentV1, sourceIndexes?: ReadonlySet<number>) {
   const blocks: TeachingBlock[] = []
-  for (const block of document.content) {
+  document.content.forEach((block, sourceIndex) => {
+    if (sourceIndexes && !sourceIndexes.has(sourceIndex)) return
+    if (block.type === 'pageBreak') return
     blocks.push(block)
     if (block.type === 'box') blocks.push(...block.children)
-  }
+  })
   return blocks
 }
 
@@ -50,14 +52,12 @@ function maxTableHeightIn(
   return max
 }
 
-function measurementVersion(blocks: BlockMeasurement[], headerHeight: number) {
+export function teachingDocumentMeasurementVersion(blocks: BlockMeasurement[], headerHeight: number) {
   const flatten = (block: BlockMeasurement): Array<string | number> => [
     block.blockId,
     block.blockType,
     block.width,
     block.height,
-    block.top,
-    block.bottom,
     block.sourceIndex ?? '',
     block.childIndex ?? '',
     block.maxTableHeight ?? '',
@@ -76,9 +76,14 @@ export function measureTeachingDocument(
   root: HTMLElement,
   document: TeachingDocumentV1,
   geometry: GeometryAdapter = browserGeometryAdapter,
+  options: {
+    elements?: HTMLElement[]
+    sourceIndexes?: ReadonlySet<number>
+  } = {},
 ): TeachingDocumentMeasurement {
   const diagnostics: RenderDiagnostic[] = []
-  const elements = Array.from(root.querySelectorAll<HTMLElement>(TEACHING_DOM_SELECTORS.block))
+  const elements = (options.elements ?? Array.from(root.querySelectorAll<HTMLElement>(TEACHING_DOM_SELECTORS.block)))
+    .filter((element) => element.getAttribute(TEACHING_DOM.blockType) !== 'pageBreak')
   const measuredByElement = new Map<HTMLElement, BlockMeasurement>()
   const idCounts = new Map<string, number>()
 
@@ -152,7 +157,7 @@ export function measureTeachingDocument(
     }
   }
 
-  for (const block of allDocumentBlocks(document)) {
+  for (const block of allDocumentBlocks(document, options.sourceIndexes)) {
     if ((idCounts.get(block.id) || 0) === 0) {
       diagnostics.push({
         code: 'measurement-missing',
@@ -191,6 +196,6 @@ export function measureTeachingDocument(
     blocks: topLevel,
     headerHeight: Number.isFinite(headerHeight) && headerHeight >= 0 ? headerHeight : 0,
     diagnostics,
-    measurementVersion: measurementVersion(topLevel, headerHeight),
+    measurementVersion: teachingDocumentMeasurementVersion(topLevel, headerHeight),
   }
 }

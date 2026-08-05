@@ -49,6 +49,10 @@ function blockContentSignature(block: TeachingBlock) {
   return signature
 }
 
+export function teachingBlockContentSignature(block: TeachingBlock) {
+  return blockContentSignature(block)
+}
+
 function collectResourceShape(value: unknown, key = ''): unknown {
   if (value === null || value === undefined) return undefined
   if (['questionId', 'asset', 'assetId', 'figureId', 'insertedFigures', 'font', 'path', 'src', 'url'].includes(key)) {

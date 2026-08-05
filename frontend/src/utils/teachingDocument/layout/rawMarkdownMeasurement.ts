@@ -39,9 +39,14 @@ function findChildElement(root: HTMLElement, path: BlockSourcePath) {
 }
 
 /** Measurements for rawMarkdown children inside boxes. */
-export function measureBoxChildRawMarkdowns(root: HTMLElement, document: TeachingDocumentV1): RawMarkdownMeasurement[] {
+export function measureBoxChildRawMarkdowns(
+  root: HTMLElement,
+  document: TeachingDocumentV1,
+  sourceIndexes?: ReadonlySet<number>,
+): RawMarkdownMeasurement[] {
   const measurements: RawMarkdownMeasurement[] = []
   document.content.forEach((parent, sourceIndex) => {
+    if (sourceIndexes && !sourceIndexes.has(sourceIndex)) return
     if (parent.type !== 'box') return
     parent.children.forEach((child, childIndex) => {
       if (child.type !== 'rawMarkdown') return

@@ -19,10 +19,11 @@ import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
   effectivePaperMetrics,
+  createTeachingDocumentLayoutChangeSet,
   createCountingParagraphRangeGeometryAdapter,
   createTeachingDocumentLayoutSignatures,
   measuredChoiceLayoutOverrides,
-  measureTeachingDocumentAll,
+  measureTeachingDocumentIncrementally,
   paginateTeachingDocument,
   waitForRenderReadiness,
   type BoxChromeGeometryAdapter,
@@ -39,6 +40,7 @@ import { createLayoutPerformanceProfiler } from '@/utils/teachingDocument/layout
 import { INITIAL_LAYOUT_REQUEST, type LayoutRequest } from './useDeferredPaginationDocument'
 import {
   createLayoutCoordinatorKey,
+  createLayoutCoordinatorMeasurementSignature,
   TeachingDocumentLayoutCoordinator,
   type LayoutCoordinatorSnapshot,
 } from './layoutCoordinator'
@@ -131,12 +133,17 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     renderVersion,
     spread: false,
   }), [document, fontVars, paper, printLayout, renderVersion])
-  const coordinatorKey = createLayoutCoordinatorKey(layoutSignatures.paginationSignature, [
+  const geometryDependencies = [
     geometryAdapter,
     paragraphGeometryAdapter,
     boxGeometryAdapter,
     questionGeometryAdapter,
-  ])
+  ]
+  const coordinatorKey = createLayoutCoordinatorKey(layoutSignatures.paginationSignature, geometryDependencies)
+  const measurementStyleSignature = createLayoutCoordinatorMeasurementSignature(
+    layoutSignatures.layoutStyleSignature,
+    geometryDependencies,
+  )
 
   useEffect(() => {
     if (coordinator.getSnapshot(coordinatorKey)) return
@@ -146,10 +153,29 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
   useEffect(() => {
     if (!measureRoot) return
     let live = true
+    const previousSnapshot = coordinator.getLatestSnapshot(layoutSignatures.variant)
+    const changeSet = createTeachingDocumentLayoutChangeSet({
+      previous: previousSnapshot?.document ?? null,
+      current: document,
+      previousLayoutStyleSignature: previousSnapshot?.layoutStyleSignature,
+      currentLayoutStyleSignature: measurementStyleSignature,
+      previousResourceRevision: previousSnapshot?.resourceRevision,
+      currentResourceRevision: layoutSignatures.resourceRevision,
+    })
+    const incrementalPagination = previousSnapshot?.pagination
+      && changeSet.firstDirtyTopLevelIndex > 0
+      && !changeSet.paperOrGlobalStyleChanged
+      && changeSet.resourceIdsChanged.length === 0
+      ? {
+          previous: previousSnapshot.pagination,
+          firstDirtyTopLevelIndex: changeSet.firstDirtyTopLevelIndex,
+        }
+      : undefined
     const handle = coordinator.request({
       key: coordinatorKey,
       documentRevision: layoutSignatures.documentRevision,
       resourceRevision: layoutSignatures.resourceRevision,
+      layoutStyleSignature: measurementStyleSignature,
       variant: layoutSignatures.variant,
       execute: async ({ generation: currentGeneration, signal }) => {
         const profiler = createLayoutPerformanceProfiler({
@@ -163,6 +189,8 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
             cacheHit: false,
             reason: layoutRequest.reason,
             priority: layoutRequest.priority,
+            firstDirtyTopLevelIndex: changeSet.firstDirtyTopLevelIndex,
+            incrementalPagination: Boolean(incrementalPagination),
           },
         })
         try {
@@ -206,18 +234,30 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
           const paragraphGeometryCounter = profiler.enabled
             ? createCountingParagraphRangeGeometryAdapter(paragraphGeometryAdapter)
             : null
-          const bundle = profiler.measure('dom-measurement', () => measureTeachingDocumentAll(
-            measureRoot,
-            document,
-            {
-              geometry: geometryAdapter,
-              paragraphGeometry: paragraphGeometryCounter?.adapter ?? paragraphGeometryAdapter,
-              boxGeometry: boxGeometryAdapter,
-              questionGeometry: questionGeometryAdapter,
-            },
-            resolveQuestion,
-            choiceLayoutOverrides,
+          const incrementalMeasurement = profiler.measure('dom-measurement', () => (
+            measureTeachingDocumentIncrementally({
+              root: measureRoot,
+              document,
+              cache: coordinator.getMeasurementCache(),
+              layoutStyleSignature: measurementStyleSignature,
+              variant: layoutSignatures.variant,
+              resourceRevision: layoutSignatures.resourceRevision,
+              adapters: {
+                geometry: geometryAdapter,
+                paragraphGeometry: paragraphGeometryCounter?.adapter ?? paragraphGeometryAdapter,
+                boxGeometry: boxGeometryAdapter,
+                questionGeometry: questionGeometryAdapter,
+              },
+              resolveQuestion,
+              choiceLayoutOverrides,
+              cacheable: nextReadiness.ready && !nextReadiness.timedOut,
+            })
           ))
+          const bundle = incrementalMeasurement.bundle
+          profiler.addMetadata({
+            measuredBlockCount: incrementalMeasurement.measuredBlockCount,
+            measurementCacheHitBlockCount: incrementalMeasurement.cacheHitBlockCount,
+          })
           if (paragraphGeometryCounter) {
             profiler.addMetadata({
               paragraphTextRangeCalls: paragraphGeometryCounter.stats.textRangeCalls,
@@ -239,7 +279,14 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
             boxChildRawMarkdownMeasurements,
             paper,
             metrics,
+            incremental: incrementalPagination,
           }))
+          const reusedPageCount = incrementalPagination
+            ? result.pages.findIndex((page, index) => page !== incrementalPagination.previous.pages[index])
+            : 0
+          profiler.addMetadata({
+            reusedPageCount: reusedPageCount < 0 ? result.pages.length : reusedPageCount,
+          })
           profiler.finish('settled')
           return {
             status: 'settled' as const,
@@ -333,9 +380,11 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     layoutRequest.priority,
     layoutRequest.reason,
     layoutSignatures.documentRevision,
+    layoutSignatures.layoutStyleSignature,
     layoutSignatures.paginationSignature,
     layoutSignatures.resourceRevision,
     layoutSignatures.variant,
+    measurementStyleSignature,
     coordinatorKey,
     coordinator,
   ])

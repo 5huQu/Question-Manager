@@ -17,6 +17,10 @@ function paragraph(id: string): ParagraphBlock {
   return { type: 'paragraph', id, content: [{ type: 'text', text: id }] }
 }
 
+function spacer(id: string): TeachingBlock {
+  return { type: 'spacer', id, heightEm: 1 }
+}
+
 function documentWith(content: TeachingBlock[]): TeachingDocumentV1 {
   return { version: 1, documentType: 'lecture', title: '', metadata: {}, content }
 }
@@ -541,6 +545,164 @@ describe('paginateTeachingDocument', () => {
     })
     expect(result.pages).toHaveLength(2)
     expect(result.diagnostics.some((item) => item.code === 'duplicate-block-id')).toBe(true)
+  })
+
+  it('reuses complete pages before a later dirty block and matches full pagination', () => {
+    const beforeDocument = documentWith([
+      spacer('a'),
+      spacer('b'),
+      spacer('c'),
+      spacer('d'),
+    ])
+    const beforeMeasurements = measurements([
+      measurement('a', 600),
+      measurement('b', 600),
+      measurement('c', 600),
+      measurement('d', 600),
+    ])
+    const previous = paginateTeachingDocument({
+      document: beforeDocument,
+      measurements: beforeMeasurements,
+      paper: DEFAULT_A4_PAPER,
+      metrics: { pageWidthPx: 800, pageHeightPx: 1200, contentWidthPx: 700, contentHeightPx: 1000 },
+    })
+    const afterDocument = {
+      ...beforeDocument,
+      content: beforeDocument.content.map((block) => block.id === 'c'
+        ? { ...spacer('c'), heightEm: 2 }
+        : block),
+    }
+    const afterMeasurements = measurements([
+      measurement('a', 600),
+      measurement('b', 600),
+      measurement('c', 300),
+      measurement('d', 600),
+    ])
+    const full = paginateTeachingDocument({
+      document: afterDocument,
+      measurements: afterMeasurements,
+      paper: DEFAULT_A4_PAPER,
+      metrics: { pageWidthPx: 800, pageHeightPx: 1200, contentWidthPx: 700, contentHeightPx: 1000 },
+    })
+    const incremental = paginateTeachingDocument({
+      document: afterDocument,
+      measurements: afterMeasurements,
+      paper: DEFAULT_A4_PAPER,
+      metrics: { pageWidthPx: 800, pageHeightPx: 1200, contentWidthPx: 700, contentHeightPx: 1000 },
+      incremental: { previous, firstDirtyTopLevelIndex: 2 },
+    })
+
+    expect(incremental).toEqual(full)
+    expect(incremental.pages[0]).toBe(previous.pages[0])
+    expect(incremental.pages[1]).not.toBe(previous.pages[1])
+  })
+
+  it('matches full pagination after inserting a page break without rebuilding prior pages', () => {
+    const beforeDocument = documentWith([
+      paragraph('a'),
+      paragraph('b'),
+      paragraph('c'),
+      paragraph('d'),
+    ])
+    const measured = measurements([
+      measurement('a', 400),
+      measurement('b', 400),
+      measurement('c', 400),
+      measurement('d', 400),
+    ], 100)
+    const metrics = { pageWidthPx: 800, pageHeightPx: 1200, contentWidthPx: 700, contentHeightPx: 1000 }
+    const previous = paginateTeachingDocument({
+      document: beforeDocument,
+      measurements: measured,
+      paper: DEFAULT_A4_PAPER,
+      metrics,
+      documentHeaderSpanColumns: 2,
+    })
+    const afterDocument = documentWith([
+      beforeDocument.content[0],
+      beforeDocument.content[1],
+      { type: 'pageBreak', id: 'break' },
+      beforeDocument.content[2],
+      beforeDocument.content[3],
+    ])
+    const full = paginateTeachingDocument({
+      document: afterDocument,
+      measurements: measured,
+      paper: DEFAULT_A4_PAPER,
+      metrics,
+      documentHeaderSpanColumns: 2,
+    })
+    const incremental = paginateTeachingDocument({
+      document: afterDocument,
+      measurements: measured,
+      paper: DEFAULT_A4_PAPER,
+      metrics,
+      documentHeaderSpanColumns: 2,
+      incremental: { previous, firstDirtyTopLevelIndex: 2 },
+    })
+
+    expect(incremental).toEqual(full)
+    expect(incremental.pages[0]).toBe(previous.pages[0])
+  })
+
+  it('matches full pagination after deleting a block or appending a block', () => {
+    const metrics = { pageWidthPx: 800, pageHeightPx: 1200, contentWidthPx: 700, contentHeightPx: 1000 }
+    const beforeDocument = documentWith([
+      spacer('a'),
+      spacer('b'),
+      spacer('c'),
+      spacer('d'),
+      spacer('e'),
+      spacer('f'),
+    ])
+    const beforeMeasured = measurements(beforeDocument.content.map((block) => measurement(block.id, 400)))
+    const previous = paginateTeachingDocument({ document: beforeDocument, measurements: beforeMeasured, paper: DEFAULT_A4_PAPER, metrics })
+    const afterDelete = documentWith([
+      beforeDocument.content[0],
+      beforeDocument.content[1],
+      beforeDocument.content[2],
+      beforeDocument.content[3],
+      beforeDocument.content[5],
+    ])
+    const deleteMeasured = measurements(afterDelete.content.map((block) => measurement(block.id, 400)))
+    const fullDelete = paginateTeachingDocument({ document: afterDelete, measurements: deleteMeasured, paper: DEFAULT_A4_PAPER, metrics })
+    const incrementalDelete = paginateTeachingDocument({
+      document: afterDelete,
+      measurements: deleteMeasured,
+      paper: DEFAULT_A4_PAPER,
+      metrics,
+      incremental: { previous, firstDirtyTopLevelIndex: 4 },
+    })
+    expect(incrementalDelete).toEqual(fullDelete)
+    expect(incrementalDelete.pages[0]).toBe(previous.pages[0])
+
+    const afterAppend = documentWith([...beforeDocument.content, spacer('g')])
+    const appendMeasured = measurements(afterAppend.content.map((block) => measurement(block.id, 400)))
+    const fullAppend = paginateTeachingDocument({ document: afterAppend, measurements: appendMeasured, paper: DEFAULT_A4_PAPER, metrics })
+    const incrementalAppend = paginateTeachingDocument({
+      document: afterAppend,
+      measurements: appendMeasured,
+      paper: DEFAULT_A4_PAPER,
+      metrics,
+      incremental: { previous, firstDirtyTopLevelIndex: beforeDocument.content.length },
+    })
+    expect(incrementalAppend).toEqual(fullAppend)
+  })
+
+  it('performs a full pagination when the dirty range starts at zero', () => {
+    const document = documentWith([paragraph('a'), paragraph('b')])
+    const measured = measurements([measurement('a', 600), measurement('b', 600)])
+    const previous = paginateTeachingDocument({ document, measurements: measured, paper: DEFAULT_A4_PAPER })
+    const incremental = paginateTeachingDocument({
+      document,
+      measurements: measured,
+      paper: DEFAULT_A4_PAPER,
+      incremental: { previous, firstDirtyTopLevelIndex: 0 },
+    })
+    const full = paginateTeachingDocument({ document, measurements: measured, paper: DEFAULT_A4_PAPER })
+
+    expect(incremental).toEqual(full)
+    expect(incremental.pages[0]).not.toBe(previous.pages[0])
   })
 
   it('uses the configured margins to change available page height', () => {

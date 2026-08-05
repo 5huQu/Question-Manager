@@ -2,6 +2,7 @@ import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import type { ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import type { PaginationResult, RenderReadinessResult } from '@/utils/teachingDocument'
 import type { TeachingDocumentPrintVariant } from '@/utils/teachingDocument/printVariant'
+import { TeachingDocumentIncrementalMeasurementCache } from '@/utils/teachingDocument/layout/incrementalMeasurement'
 
 export type LayoutCoordinatorVariant = TeachingDocumentPrintVariant | 'source'
 export type LayoutCoordinatorStatus = 'measuring' | 'settled' | 'failed'
@@ -10,6 +11,7 @@ export interface LayoutCoordinatorSnapshot {
   key: string
   documentRevision: string
   resourceRevision: string
+  layoutStyleSignature: string
   variant: LayoutCoordinatorVariant
   generation: number
   status: 'settled' | 'failed'
@@ -21,7 +23,7 @@ export interface LayoutCoordinatorSnapshot {
 }
 
 export type LayoutCoordinatorWorkResult =
-  | Omit<LayoutCoordinatorSnapshot, 'key' | 'documentRevision' | 'resourceRevision' | 'variant' | 'generation'>
+  | Omit<LayoutCoordinatorSnapshot, 'key' | 'documentRevision' | 'resourceRevision' | 'layoutStyleSignature' | 'variant' | 'generation'>
   | { status: 'retry'; choiceLayoutOverrides: ChoiceLayoutOverrides }
 
 export interface LayoutCoordinatorEvent {
@@ -35,6 +37,7 @@ export interface LayoutCoordinatorRequest {
   key: string
   documentRevision: string
   resourceRevision: string
+  layoutStyleSignature: string
   variant: LayoutCoordinatorVariant
   execute(context: { generation: number; signal: AbortSignal }): Promise<LayoutCoordinatorWorkResult>
 }
@@ -71,8 +74,21 @@ function dependencyIdentity(value: unknown) {
 
 /** 测试注入的 geometry 实现不属于文档签名，但更换后必须使旧快照失效。 */
 export function createLayoutCoordinatorKey(paginationSignature: string, geometryDependencies: unknown[]) {
-  if (geometryDependencies.every((dependency) => dependency === undefined)) return paginationSignature
-  return `${paginationSignature}:geometry-${geometryDependencies.map(dependencyIdentity).join('.')}`
+  const geometrySignature = layoutCoordinatorGeometrySignature(geometryDependencies)
+  return geometrySignature ? `${paginationSignature}:${geometrySignature}` : paginationSignature
+}
+
+export function createLayoutCoordinatorMeasurementSignature(
+  layoutStyleSignature: string,
+  geometryDependencies: unknown[],
+) {
+  const geometrySignature = layoutCoordinatorGeometrySignature(geometryDependencies)
+  return geometrySignature ? `${layoutStyleSignature}:${geometrySignature}` : layoutStyleSignature
+}
+
+function layoutCoordinatorGeometrySignature(geometryDependencies: unknown[]) {
+  if (geometryDependencies.every((dependency) => dependency === undefined)) return ''
+  return `geometry-${geometryDependencies.map(dependencyIdentity).join('.')}`
 }
 
 function abortedError() {
@@ -83,6 +99,7 @@ export class TeachingDocumentLayoutCoordinator {
   private generation = 0
   private snapshots = new Map<string, LayoutCoordinatorSnapshot>()
   private resourceReadiness = new Map<string, RenderReadinessResult>()
+  private measurementCache = new TeachingDocumentIncrementalMeasurementCache()
   private inFlight = new Map<string, InFlightLayoutRequest>()
   private listeners = new Set<(event: LayoutCoordinatorEvent) => void>()
 
@@ -128,6 +145,7 @@ export class TeachingDocumentLayoutCoordinator {
           key: input.key,
           documentRevision: input.documentRevision,
           resourceRevision: input.resourceRevision,
+          layoutStyleSignature: input.layoutStyleSignature,
           variant: input.variant,
           generation,
         }
@@ -145,6 +163,18 @@ export class TeachingDocumentLayoutCoordinator {
 
   getSnapshot(key: string) {
     return this.snapshots.get(key) ?? null
+  }
+
+  getLatestSnapshot(variant: LayoutCoordinatorVariant) {
+    const snapshots = [...this.snapshots.values()]
+    for (let index = snapshots.length - 1; index >= 0; index -= 1) {
+      if (snapshots[index].variant === variant) return snapshots[index]
+    }
+    return null
+  }
+
+  getMeasurementCache() {
+    return this.measurementCache
   }
 
   getResourceReadiness(revision: string) {
@@ -177,6 +207,7 @@ export class TeachingDocumentLayoutCoordinator {
     this.inFlight.clear()
     this.snapshots.clear()
     this.resourceReadiness.clear()
+    this.measurementCache.clear()
   }
 
   private nextGeneration() {

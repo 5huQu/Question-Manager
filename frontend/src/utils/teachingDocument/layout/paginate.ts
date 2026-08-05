@@ -65,6 +65,66 @@ function duplicateDocumentIdDiagnostics(blocks: TeachingBlock[]): RenderDiagnost
     }))
 }
 
+function incrementalPaginationPrefix(
+  document: PaginationInput['document'],
+  input: PaginationInput['incremental'],
+) {
+  if (!input || input.firstDirtyTopLevelIndex <= 0 || !input.previous.pages.length) {
+    return { pages: [] as PaginatedPage[], restartSourceIndex: 0, diagnostics: [] as RenderDiagnostic[] }
+  }
+  const indexes = new Map<string, number>()
+  for (const [index, block] of document.content.entries()) {
+    if (indexes.has(block.id)) return { pages: [] as PaginatedPage[], restartSourceIndex: 0, diagnostics: [] as RenderDiagnostic[] }
+    indexes.set(block.id, index)
+  }
+  const dirtyIndex = Math.min(input.firstDirtyTopLevelIndex, document.content.length)
+  const dirtyBlock = document.content[dirtyIndex]
+  let affectedPageIndex: number
+  if (dirtyBlock?.type === 'pageBreak') {
+    // A newly inserted break has no prior page item. The first old block after it
+    // identifies the first page whose allocation changes; pages before it remain exact.
+    affectedPageIndex = input.previous.pages.findIndex((page) => page.items.some((item) => {
+      const currentIndex = indexes.get(item.blockId)
+      return currentIndex === undefined || currentIndex >= dirtyIndex
+    }))
+    if (affectedPageIndex < 0) affectedPageIndex = input.previous.pages.length
+  } else {
+    // The dirty block may become small enough to move onto its predecessor's page,
+    // so restart from the page containing the preceding current block.
+    const predecessorIndex = dirtyIndex - 1
+    affectedPageIndex = input.previous.pages.findIndex((page) => page.items.some((item) => (
+      indexes.get(item.blockId) === predecessorIndex
+    )))
+    if (affectedPageIndex < 0) affectedPageIndex = input.previous.pages.findIndex((page) => (
+      page.items.some((item) => {
+        const currentIndex = indexes.get(item.blockId)
+        return currentIndex === undefined || currentIndex >= dirtyIndex
+      })
+    ))
+    // Append still depends on the current last page state.
+    if (affectedPageIndex < 0) affectedPageIndex = Math.max(0, input.previous.pages.length - 1)
+  }
+  const affectedPage = input.previous.pages[affectedPageIndex]
+  const pageSourceIndexes = affectedPage?.items.flatMap((item) => {
+    const currentIndex = indexes.get(item.blockId)
+    return currentIndex === undefined ? [] : [currentIndex]
+  }) ?? []
+  const restartSourceIndex = Math.min(dirtyIndex, ...(pageSourceIndexes.length ? pageSourceIndexes : [dirtyIndex]))
+  const pages = input.previous.pages.slice(0, affectedPageIndex)
+  return {
+    pages,
+    restartSourceIndex,
+    diagnostics: input.previous.diagnostics.filter((diagnostic) => {
+      if (diagnostic.pageIndex === undefined || diagnostic.pageIndex >= pages.length) return false
+      if (dirtyBlock?.type !== 'pageBreak' || !diagnostic.blockId) return true
+      const diagnosticSourceIndex = indexes.get(diagnostic.blockId)
+      // A forced break makes old "did not fit on the prior page" diagnostics
+      // for following blocks obsolete even though that prior page is reused.
+      return diagnosticSourceIndex === undefined || diagnosticSourceIndex < dirtyIndex
+    }),
+  }
+}
+
 export function paginateTeachingDocument(input: PaginationInput): PaginationResult {
   const { document, measurements, paper } = input
   const paragraphMeasurements = input.paragraphMeasurements || []
@@ -111,20 +171,24 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
   const boxes = boxMeasurementBySource(boxMeasurements)
   const rawMarkdownsByPath = rawMarkdownMeasurementByPath(boxChildRawMarkdownMeasurements)
   const questions = questionMeasurementBySource(questionMeasurements)
-  const pages: PaginatedPage[] = []
+  const incrementalPrefix = incrementalPaginationPrefix(document, input.incremental)
+  const pages: PaginatedPage[] = [...incrementalPrefix.pages]
+  diagnostics.push(...incrementalPrefix.diagnostics)
+  const initialPageIndex = pages.length
+  const reserveInitialHeader = initialPageIndex < documentHeaderSpanColumns
   let current: PaginatedPage = {
-    index: 0,
+    index: initialPageIndex,
     items: [],
-    usedHeight: measurements.headerHeight,
-    overflow: measurements.headerHeight > metrics.contentHeightPx,
-    showDocumentHeader: true,
+    usedHeight: reserveInitialHeader ? measurements.headerHeight : 0,
+    overflow: reserveInitialHeader && measurements.headerHeight > metrics.contentHeightPx,
+    showDocumentHeader: initialPageIndex === 0,
   }
 
   if (current.overflow) {
     diagnostics.push({
       code: 'page-overflow',
       severity: 'error',
-      pageIndex: 0,
+      pageIndex: current.index,
       message: '文档标题区域已经超过单页内容区高度。',
     })
   }
@@ -212,7 +276,13 @@ export function paginateTeachingDocument(input: PaginationInput): PaginationResu
   }
 
   document.content.forEach((block, sourceIndex) => {
+    if (sourceIndex < incrementalPrefix.restartSourceIndex) return
     if (block.type === 'pageBreak') {
+      if (sourceIndex === incrementalPrefix.restartSourceIndex
+        && pages.length > 0
+        && current.items.length === 0) {
+        return
+      }
       commitPage()
       return
     }

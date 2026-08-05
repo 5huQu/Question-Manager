@@ -181,6 +181,158 @@ describe('usePagination', () => {
     expect(readinessWait.mock.calls.length).toBe(callsBefore)
   })
 
+  it('re-measures only an edited top-level block', async () => {
+    const coordinator = new TeachingDocumentLayoutCoordinator()
+    const readinessWait = vi.fn(async () => READY)
+    const countedGeometry = { measure: vi.fn(geometry.measure) }
+    const before = documentWith(['a', 'b', 'c'])
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <Harness
+          document={before}
+          readinessWait={readinessWait}
+          geometryAdapter={countedGeometry}
+          coordinator={coordinator}
+        />,
+      )
+    })
+    await settle()
+    countedGeometry.measure.mockClear()
+
+    const after: TeachingDocumentV1 = {
+      ...before,
+      content: before.content.map((block) => block.id === 'b'
+        ? { ...block, content: [{ type: 'text' as const, text: 'changed' }] }
+        : block),
+    }
+    await act(async () => {
+      root?.render(
+        <Harness
+          document={after}
+          readinessWait={readinessWait}
+          geometryAdapter={countedGeometry}
+          coordinator={coordinator}
+        />,
+      )
+    })
+    await settle()
+
+    expect(countedGeometry.measure).toHaveBeenCalledTimes(1)
+    expect(countedGeometry.measure.mock.calls[0][0].getAttribute('data-teaching-block-id')).toBe('b')
+  })
+
+  it('inserts a page break without re-measuring content blocks', async () => {
+    const coordinator = new TeachingDocumentLayoutCoordinator()
+    const readinessWait = vi.fn(async () => READY)
+    const countedGeometry = { measure: vi.fn(geometry.measure) }
+    const before = documentWith(['a', 'b'])
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <Harness
+          document={before}
+          readinessWait={readinessWait}
+          geometryAdapter={countedGeometry}
+          coordinator={coordinator}
+        />,
+      )
+    })
+    await settle()
+    countedGeometry.measure.mockClear()
+
+    const after: TeachingDocumentV1 = {
+      ...before,
+      content: [before.content[0], { type: 'pageBreak', id: 'break' }, before.content[1]],
+    }
+    await act(async () => {
+      root?.render(
+        <Harness
+          document={after}
+          readinessWait={readinessWait}
+          geometryAdapter={countedGeometry}
+          coordinator={coordinator}
+        />,
+      )
+    })
+    await settle()
+
+    expect(countedGeometry.measure).not.toHaveBeenCalled()
+    expect(stateAttr('data-pages')).toBe('2')
+  })
+
+  it('serves undo and redo revisions from settled layout caches', async () => {
+    const coordinator = new TeachingDocumentLayoutCoordinator()
+    const readinessWait = vi.fn(async () => READY)
+    const countedGeometry = { measure: vi.fn(geometry.measure) }
+    const before = documentWith(['a', 'b'])
+    const after: TeachingDocumentV1 = {
+      ...before,
+      content: before.content.map((block) => block.id === 'b'
+        ? { ...block, content: [{ type: 'text' as const, text: 'changed' }] }
+        : block),
+    }
+    const render = async (document: TeachingDocumentV1) => {
+      await act(async () => {
+        root?.render(
+          <Harness
+            document={document}
+            readinessWait={readinessWait}
+            geometryAdapter={countedGeometry}
+            coordinator={coordinator}
+          />,
+        )
+      })
+      await settle()
+    }
+    root = createRoot(container)
+    await render(before)
+    await render(after)
+    countedGeometry.measure.mockClear()
+
+    await render(before)
+    await render(after)
+
+    expect(countedGeometry.measure).not.toHaveBeenCalled()
+    expect(stateAttr('data-settled')).toBe('true')
+  })
+
+  it('invalidates every block measurement when the resource revision changes', async () => {
+    const coordinator = new TeachingDocumentLayoutCoordinator()
+    const readinessWait = vi.fn(async () => READY)
+    const countedGeometry = { measure: vi.fn(geometry.measure) }
+    const source = documentWith(['a', 'b'])
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <Harness
+          document={source}
+          readinessWait={readinessWait}
+          geometryAdapter={countedGeometry}
+          renderVersion="r1"
+          coordinator={coordinator}
+        />,
+      )
+    })
+    await settle()
+    countedGeometry.measure.mockClear()
+
+    await act(async () => {
+      root?.render(
+        <Harness
+          document={source}
+          readinessWait={readinessWait}
+          geometryAdapter={countedGeometry}
+          renderVersion="r2"
+          coordinator={coordinator}
+        />,
+      )
+    })
+    await settle()
+
+    expect(countedGeometry.measure).toHaveBeenCalledTimes(2)
+  })
+
   it('reuses stable resource readiness and invalidates it on render revision changes', async () => {
     const readinessWait = vi.fn(async () => READY)
     const source = documentWith(['a'])

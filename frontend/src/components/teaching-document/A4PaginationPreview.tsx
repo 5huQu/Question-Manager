@@ -4,9 +4,10 @@ import type { FigureAssetRef, TeachingDocumentV1 } from '@/types/teachingDocumen
 import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
   resolveDocumentPaper,
+  createTeachingDocumentLayoutChangeSet,
   createTeachingDocumentLayoutSignatures,
   measuredChoiceLayoutOverrides,
-  measureTeachingDocumentAll,
+  measureTeachingDocumentIncrementally,
   paginateTeachingDocument,
   createDefaultPrintLayout,
   createCountingParagraphRangeGeometryAdapter,
@@ -41,6 +42,7 @@ import {
 } from './editor/useDeferredPaginationDocument'
 import {
   createLayoutCoordinatorKey,
+  createLayoutCoordinatorMeasurementSignature,
   TeachingDocumentLayoutCoordinator,
   type LayoutCoordinatorSnapshot,
 } from './editor/layoutCoordinator'
@@ -166,12 +168,17 @@ export function A4PaginationPreview({
     spread,
     variant,
   }), [document, fontVars, paper, printLayout, renderVersion, spread, variant])
-  const coordinatorKey = createLayoutCoordinatorKey(layoutSignatures.paginationSignature, [
+  const geometryDependencies = [
     geometryAdapter,
     paragraphGeometryAdapter,
     boxGeometryAdapter,
     questionGeometryAdapter,
-  ])
+  ]
+  const coordinatorKey = createLayoutCoordinatorKey(layoutSignatures.paginationSignature, geometryDependencies)
+  const measurementStyleSignature = createLayoutCoordinatorMeasurementSignature(
+    layoutSignatures.layoutStyleSignature,
+    geometryDependencies,
+  )
   const safeZoom = Math.min(1.5, Math.max(0.35, zoom))
 
   useEffect(() => {
@@ -183,10 +190,29 @@ export function A4PaginationPreview({
     const root = measurementRootRef.current
     if (!active || !root) return
     let live = true
+    const previousSnapshot = coordinator.getLatestSnapshot(layoutSignatures.variant)
+    const changeSet = createTeachingDocumentLayoutChangeSet({
+      previous: previousSnapshot?.document ?? null,
+      current: layoutDocument,
+      previousLayoutStyleSignature: previousSnapshot?.layoutStyleSignature,
+      currentLayoutStyleSignature: measurementStyleSignature,
+      previousResourceRevision: previousSnapshot?.resourceRevision,
+      currentResourceRevision: layoutSignatures.resourceRevision,
+    })
+    const incrementalPagination = previousSnapshot?.pagination
+      && changeSet.firstDirtyTopLevelIndex > 0
+      && !changeSet.paperOrGlobalStyleChanged
+      && changeSet.resourceIdsChanged.length === 0
+      ? {
+          previous: previousSnapshot.pagination,
+          firstDirtyTopLevelIndex: changeSet.firstDirtyTopLevelIndex,
+        }
+      : undefined
     const handle = coordinator.request({
       key: coordinatorKey,
       documentRevision: layoutSignatures.documentRevision,
       resourceRevision: layoutSignatures.resourceRevision,
+      layoutStyleSignature: measurementStyleSignature,
       variant: layoutSignatures.variant,
       execute: async ({ generation, signal }) => {
         const profiler = createLayoutPerformanceProfiler({
@@ -201,6 +227,8 @@ export function A4PaginationPreview({
             cacheHit: false,
             reason: layoutRequest.reason,
             priority: layoutRequest.priority,
+            firstDirtyTopLevelIndex: changeSet.firstDirtyTopLevelIndex,
+            incrementalPagination: Boolean(incrementalPagination),
           },
         })
         try {
@@ -227,18 +255,30 @@ export function A4PaginationPreview({
           const paragraphGeometryCounter = profiler.enabled
             ? createCountingParagraphRangeGeometryAdapter(paragraphGeometryAdapter)
             : null
-          const bundle = profiler.measure('dom-measurement', () => measureTeachingDocumentAll(
-            root,
-            layoutDocument,
-            {
-              geometry: geometryAdapter,
-              paragraphGeometry: paragraphGeometryCounter?.adapter ?? paragraphGeometryAdapter,
-              boxGeometry: boxGeometryAdapter,
-              questionGeometry: questionGeometryAdapter,
-            },
-            resolveQuestion,
-            choiceLayoutOverrides,
+          const incrementalMeasurement = profiler.measure('dom-measurement', () => (
+            measureTeachingDocumentIncrementally({
+              root,
+              document: layoutDocument,
+              cache: coordinator.getMeasurementCache(),
+              layoutStyleSignature: measurementStyleSignature,
+              variant: layoutSignatures.variant,
+              resourceRevision: layoutSignatures.resourceRevision,
+              adapters: {
+                geometry: geometryAdapter,
+                paragraphGeometry: paragraphGeometryCounter?.adapter ?? paragraphGeometryAdapter,
+                boxGeometry: boxGeometryAdapter,
+                questionGeometry: questionGeometryAdapter,
+              },
+              resolveQuestion,
+              choiceLayoutOverrides,
+              cacheable: nextReadiness.ready && !nextReadiness.timedOut,
+            })
           ))
+          const bundle = incrementalMeasurement.bundle
+          profiler.addMetadata({
+            measuredBlockCount: incrementalMeasurement.measuredBlockCount,
+            measurementCacheHitBlockCount: incrementalMeasurement.cacheHitBlockCount,
+          })
           if (paragraphGeometryCounter) {
             profiler.addMetadata({
               paragraphTextRangeCalls: paragraphGeometryCounter.stats.textRangeCalls,
@@ -261,7 +301,14 @@ export function A4PaginationPreview({
             paper,
             metrics,
             documentHeaderSpanColumns: spread ? 2 : 1,
+            incremental: incrementalPagination,
           }))
+          const reusedPageCount = incrementalPagination
+            ? paginationResult.pages.findIndex((page, index) => page !== incrementalPagination.previous.pages[index])
+            : 0
+          profiler.addMetadata({
+            reusedPageCount: reusedPageCount < 0 ? paginationResult.pages.length : reusedPageCount,
+          })
           profiler.finish('settled')
           return {
             status: 'settled' as const,
@@ -346,7 +393,7 @@ export function A4PaginationPreview({
       live = false
       handle.release()
     }
-  }, [active, boxGeometryAdapter, choiceLayoutOverrides, coordinator, coordinatorKey, geometryAdapter, layoutDocument, layoutRequest.priority, layoutRequest.reason, layoutSignatures.documentRevision, layoutSignatures.paginationSignature, layoutSignatures.resourceRevision, layoutSignatures.variant, metrics, onPaginationState, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, resolveQuestion, spread])
+  }, [active, boxGeometryAdapter, choiceLayoutOverrides, coordinator, coordinatorKey, geometryAdapter, layoutDocument, layoutRequest.priority, layoutRequest.reason, layoutSignatures.documentRevision, layoutSignatures.layoutStyleSignature, layoutSignatures.paginationSignature, layoutSignatures.resourceRevision, layoutSignatures.variant, measurementStyleSignature, metrics, onPaginationState, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, resolveQuestion, spread])
 
   const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure'> = {
     resolveQuestion,

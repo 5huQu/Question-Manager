@@ -121,6 +121,7 @@ export function measureTeachingDocumentBoxes(
   adapter: BoxChromeGeometryAdapter = browserBoxChromeGeometryAdapter,
   /** 编排器传入已查询的顶层块元素，避免同轮重复 querySelectorAll。 */
   topLevelElements?: HTMLElement[],
+  sourceIndexes?: ReadonlySet<number>,
 ): BoxMeasurement[] {
   const topLevelElementsResolved = topLevelElements ?? Array.from(
     root.querySelectorAll<HTMLElement>(TEACHING_DOM_SELECTORS.block),
@@ -142,6 +143,7 @@ export function measureTeachingDocumentBoxes(
 
   const result: BoxMeasurement[] = []
   document.content.forEach((block, sourceIndex) => {
+    if (sourceIndexes && !sourceIndexes.has(sourceIndex)) return
     if (block.type !== 'box') return
     const diagnostics: RenderDiagnostic[] = []
     const topLevel = elementsBySource.get(sourceIndex)?.shift()

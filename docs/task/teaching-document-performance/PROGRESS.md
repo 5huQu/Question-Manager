@@ -16,7 +16,7 @@
 | 3 | T2 段落测量热路径优化 | completed | 整段行盒 + 字素边界二分；M/L DOM 测量中位数分别下降 58.9% / 60.5%。 |
 | 4 | T3 签名拆分与版本缓存 | completed | 稳定资源/样式/块/版本签名；双 variant 分页快照与 readiness 缓存。 |
 | 5 | T4 统一 Layout Coordinator | completed | 文档级 generation、取消、同 key 去重、readiness 与快照缓存已统一。 |
-| 6 | T5 按块增量测量与局部分页 | pending | 依赖 T2/T4。 |
+| 6 | T5 按块增量测量与局部分页 | completed | 共享块缓存、dirty range、局部分页与失效边界已落地。 |
 | 7 | T6 ProseMirror 结构操作快速路径 | pending | 依赖 T5 的 change set/dirty range。 |
 | 8 | T7 页面窗口化与集成验收 | pending | 依赖 T1～T6。 |
 
@@ -36,4 +36,6 @@
 - 下一步按推荐顺序执行 T4：统一编辑器与预览 Layout Coordinator，并以 T3 签名作为失效契约。
 - 完成 T4：编辑分页与 A4 预览共享文档级协调器；统一 generation、取消、in-flight 去重、readiness 与快照缓存，并保留 miss 时的导出阻塞语义。
 - T4 全量前端测试 90 文件 / 637 项通过；真实 87 题文档学生版 27 页、教师版 81 页，双向 warm 切均无重排状态。
-- 下一步按推荐顺序执行 T5：建立按块测量缓存、dirty range 和局部分页边界。
+- 完成 T5：建立共享的按块测量缓存、结构化 change set 和从受影响页开始的局部分页；单块编辑仅重测 1 块，插入分页符重测 0 块。
+- T5 覆盖 undo/redo 暖命中、资源/样式全量失效、不稳定 readiness 禁止写缓存，以及增量/全量分页一致性。
+- 下一步按推荐顺序执行 T6：为 ProseMirror 结构操作接入 change set 快速路径。

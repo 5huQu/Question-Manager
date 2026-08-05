@@ -154,13 +154,14 @@ function cursorAfterAtomic(inlineIndex: number): InlineCursor {
 }
 
 function paragraphVersion(blockId: string, lines: ParagraphLineMeasurement[], marginTop: number, marginBottom: number) {
+  const originTop = lines[0]?.top ?? 0
   const source = [
     blockId,
     marginTop,
     marginBottom,
     ...lines.flatMap((line) => [
-      line.top,
-      line.bottom,
+      line.top - originTop,
+      line.bottom - originTop,
       line.start.inlineIndex,
       line.start.textOffset ?? '',
       line.end.inlineIndex,
@@ -467,6 +468,7 @@ export function measureTeachingDocumentParagraphs(
   adapter: ParagraphRangeGeometryAdapter = browserParagraphRangeGeometryAdapter,
   /** 编排器传入已查询的段落块元素，避免同轮重复 querySelectorAll。 */
   paragraphElements?: HTMLElement[],
+  sourceIndexes?: ReadonlySet<number>,
 ) {
   const paragraphElementsResolved = paragraphElements ?? Array.from(root.querySelectorAll<HTMLElement>(
     `${TEACHING_DOM_SELECTORS.block}[${TEACHING_DOM.blockType}="paragraph"]`,
@@ -517,6 +519,7 @@ export function measureTeachingDocumentParagraphs(
   }
 
   document.content.forEach((block, sourceIndex) => {
+    if (sourceIndexes && !sourceIndexes.has(sourceIndex)) return
     if (block.type === 'paragraph') {
       measureOne(block, sourceIndex, block.id)
       return

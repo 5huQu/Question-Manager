@@ -47,6 +47,7 @@ function requestInput(key: string, execute: () => Promise<LayoutCoordinatorWorkR
     key,
     documentRevision: `document-${key}`,
     resourceRevision: 'resources',
+    layoutStyleSignature: 'style',
     variant: 'source' as const,
     execute,
   }
@@ -106,6 +107,16 @@ describe('TeachingDocumentLayoutCoordinator', () => {
     coordinator.cacheResourceReadiness('r1', { ...readiness, failedImages: ['missing.png'] })
     expect(coordinator.getResourceReadiness('r1')?.failedImages).toEqual(['missing.png'])
     expect(coordinator.getSnapshot('r1')).toBeNull()
+  })
+
+  it('exposes the latest same-variant snapshot and one shared measurement cache', async () => {
+    const coordinator = new TeachingDocumentLayoutCoordinator()
+    await coordinator.request(requestInput('first', async () => settled())).promise
+    await coordinator.request(requestInput('second', async () => settled())).promise
+
+    expect(coordinator.getLatestSnapshot('source')).toMatchObject({ key: 'second' })
+    expect(coordinator.getLatestSnapshot('student')).toBeNull()
+    expect(coordinator.getMeasurementCache()).toBe(coordinator.getMeasurementCache())
   })
 
   it('does not cache an incomplete choice-layout retry', async () => {

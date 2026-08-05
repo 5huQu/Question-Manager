@@ -45,3 +45,15 @@ blockId + blockContentSignature + layoutStyleSignature + variant + resourceRevis
 - 插入分页符时块测量数量为零或仅包含确有变化的相邻装饰。
 - 全量算法与增量算法在 fixture 上得到相同 PaginationResult。
 - Undo/redo、资源加载完成和全局样式变化均正确失效。
+
+## 实施结果（2026-08-05）
+
+- 文档级 `TeachingDocumentLayoutCoordinator` 持有最多 512 项的块测量缓存，编辑画布与打印预览共享同一份缓存。
+- 缓存键包含块 ID/重复序号、块内容签名、布局样式、variant、资源 revision 和选项布局；geometry 实现变化也会隔离缓存。
+- 测量入口支持按 `sourceIndex` 过滤，缓存结果可在插入/删除后重映射 source path；分页符不进入 DOM 块测量。
+- change set 已包含 dirty block、首个 dirty 索引、结构变化、全局样式变化和资源变化信息。
+- 局部分页从 dirty block 前驱所在页保守重排；分页符插入可直接复用之前的完整页面，尾部追加、删除和全局失效均与全量分页一致。
+- 仅在资源 readiness 稳定且未超时时写入块缓存；undo/redo 可直接命中已结算的布局快照。
+- 性能记录新增重测块数、测量缓存命中数、首个 dirty 索引、是否增量分页和复用页数。
+
+自动化验收覆盖：单块编辑仅 1 次块测量、插入分页符 0 次块测量、undo/redo 暖命中、资源/样式全量失效，以及增量与全量 `PaginationResult` 一致性。

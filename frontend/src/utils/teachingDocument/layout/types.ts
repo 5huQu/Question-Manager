@@ -138,6 +138,11 @@ export interface PaginationInput {
   metrics?: PaperMetrics
   /** 文档标题跨越的逻辑栏数；A3 横向双栏首面为 2，其余版式为 1。 */
   documentHeaderSpanColumns?: number
+  /** 复用上一稳定结果中 dirty 块所在页之前的完整页面。 */
+  incremental?: {
+    previous: PaginationResult
+    firstDirtyTopLevelIndex: number
+  }
 }
 
 export interface PaginationResult {
