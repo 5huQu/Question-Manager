@@ -21,6 +21,7 @@ import {
   type AutosaveState,
 } from '@/utils/teachingDocument'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { TeachingDocumentLayoutChangeSet } from '@/utils/teachingDocument/layout/changeSet'
 import type { DocumentValidationResult } from '@/types/teachingDocument'
 import { structuralDocumentSignature } from '@/utils/teachingDocument/validate'
 import {
@@ -65,10 +66,13 @@ export function useTeachingDocumentEditor(documentId: string) {
   const [validation, setValidation] = useState<DocumentValidationResult>({ valid: true, issues: [] })
   const lastValidationSignatureRef = useRef('')
 
-  const requestLayout = useCallback((reason: LayoutRequestReason) => {
+  const requestLayout = useCallback((
+    reason: LayoutRequestReason,
+    changeSet?: TeachingDocumentLayoutChangeSet,
+  ) => {
     const id = layoutRequestIdRef.current + 1
     layoutRequestIdRef.current = id
-    setLayoutRequest(createLayoutRequest(id, reason))
+    setLayoutRequest(createLayoutRequest(id, reason, changeSet))
   }, [])
 
   const configureAutosave = useCallback((loaded: TeachingDocumentRecord) => {
@@ -216,7 +220,10 @@ export function useTeachingDocumentEditor(documentId: string) {
   const questionSequenceSignatureRef = useRef('')
 
   /** 编辑器内容变化回调（由 DocumentEditor onChange 调用） */
-  const handleEditorChange = useCallback((doc: TeachingDocumentV1) => {
+  const handleEditorChange = useCallback((
+    doc: TeachingDocumentV1,
+    transactionChangeSet?: TeachingDocumentLayoutChangeSet,
+  ) => {
     // 普通文本回显不改变题序：题序签名未变时跳过全量重编号（长文档每次键入的
     // 停顿期都会走到这里，重编号会克隆全部题目块）。
     const nextSignature = questionSequenceSignature(doc)
@@ -228,7 +235,7 @@ export function useTeachingDocumentEditor(documentId: string) {
       && layoutStructureSignature(previous) !== layoutStructureSignature(normalized)
       ? 'structure'
       : 'typing'
-    requestLayout(pendingEditorLayoutReasonRef.current ?? inferredReason)
+    requestLayout(pendingEditorLayoutReasonRef.current ?? inferredReason, transactionChangeSet)
     pendingEditorLayoutReasonRef.current = null
     questionSequenceSignatureRef.current = questionSequenceSignature(normalized)
     documentRef.current = normalized

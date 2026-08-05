@@ -4,6 +4,7 @@ import type { Editor } from '@tiptap/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import { DocumentEditor } from './DocumentEditor'
+import { insertTopLevelTeachingBlock } from './structuralActions'
 
 function documentWithContent(content: TeachingDocumentV1['content']): TeachingDocumentV1 {
   return {
@@ -114,6 +115,50 @@ describe('DocumentEditor model synchronization', () => {
         type: 'paragraph',
         id: 'p-1',
         content: [{ type: 'text', text: '甲乙丙' }],
+      })
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+      vi.useRealTimers()
+    }
+  })
+
+  it('forwards a structural transaction change set with the deferred domain snapshot', async () => {
+    vi.useFakeTimers()
+    const onChange = vi.fn()
+    const editorRef: { current: Editor | null } = { current: null }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => {
+        root.render(
+          <DocumentEditor
+            document={documentWithContent([
+              { type: 'paragraph', id: 'a', content: [{ type: 'text', text: 'a' }] },
+              { type: 'paragraph', id: 'b', content: [{ type: 'text', text: 'b' }] },
+            ])}
+            onChange={onChange}
+            modelSyncDelayMs={350}
+            onEditorReady={(instance) => { editorRef.current = instance }}
+          />,
+        )
+      })
+      const editor = editorRef.current
+      if (!editor) throw new Error('编辑器未就绪')
+      await act(async () => {
+        insertTopLevelTeachingBlock(editor, { type: 'pageBreak', id: 'break' }, 'a')
+      })
+      expect(editor.getJSON().content?.map((node) => node.attrs?.blockId)).toEqual(['a', 'break', 'b'])
+      expect(onChange).not.toHaveBeenCalled()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(350) })
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(onChange.mock.calls[0]?.[0].content.map((block: { id: string }) => block.id)).toEqual(['a', 'break', 'b'])
+      expect(onChange.mock.calls[0]?.[1]).toMatchObject({
+        dirtyBlockIds: ['break'],
+        firstDirtyTopLevelIndex: 1,
+        structureChanged: true,
       })
     } finally {
       act(() => root.unmount())

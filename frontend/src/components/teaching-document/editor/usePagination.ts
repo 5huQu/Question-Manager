@@ -19,6 +19,7 @@ import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
   effectivePaperMetrics,
+  canUseTeachingDocumentLayoutChangeSetHint,
   createTeachingDocumentLayoutChangeSet,
   createCountingParagraphRangeGeometryAdapter,
   createTeachingDocumentLayoutSignatures,
@@ -154,14 +155,22 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     if (!measureRoot) return
     let live = true
     const previousSnapshot = coordinator.getLatestSnapshot(layoutSignatures.variant)
-    const changeSet = createTeachingDocumentLayoutChangeSet({
-      previous: previousSnapshot?.document ?? null,
-      current: document,
-      previousLayoutStyleSignature: previousSnapshot?.layoutStyleSignature,
-      currentLayoutStyleSignature: measurementStyleSignature,
-      previousResourceRevision: previousSnapshot?.resourceRevision,
-      currentResourceRevision: layoutSignatures.resourceRevision,
-    })
+    const canUseTransactionChangeSet = previousSnapshot
+      && layoutRequest.changeSet
+      && previousSnapshot.layoutStyleSignature === measurementStyleSignature
+      && previousSnapshot.resourceRevision === layoutSignatures.resourceRevision
+      && previousSnapshot.document.title === document.title
+      && canUseTeachingDocumentLayoutChangeSetHint(previousSnapshot.document, document, layoutRequest.changeSet)
+    const changeSet = canUseTransactionChangeSet
+      ? layoutRequest.changeSet!
+      : createTeachingDocumentLayoutChangeSet({
+          previous: previousSnapshot?.document ?? null,
+          current: document,
+          previousLayoutStyleSignature: previousSnapshot?.layoutStyleSignature,
+          currentLayoutStyleSignature: measurementStyleSignature,
+          previousResourceRevision: previousSnapshot?.resourceRevision,
+          currentResourceRevision: layoutSignatures.resourceRevision,
+        })
     const incrementalPagination = previousSnapshot?.pagination
       && changeSet.firstDirtyTopLevelIndex > 0
       && !changeSet.paperOrGlobalStyleChanged
@@ -379,6 +388,7 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     choiceLayoutOverrides,
     layoutRequest.priority,
     layoutRequest.reason,
+    layoutRequest.changeSet,
     layoutSignatures.documentRevision,
     layoutSignatures.layoutStyleSignature,
     layoutSignatures.paginationSignature,

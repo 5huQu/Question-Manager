@@ -4,6 +4,7 @@ import type { FigureAssetRef, TeachingDocumentV1 } from '@/types/teachingDocumen
 import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
   resolveDocumentPaper,
+  canUseTeachingDocumentLayoutChangeSetHint,
   createTeachingDocumentLayoutChangeSet,
   createTeachingDocumentLayoutSignatures,
   measuredChoiceLayoutOverrides,
@@ -191,14 +192,22 @@ export function A4PaginationPreview({
     if (!active || !root) return
     let live = true
     const previousSnapshot = coordinator.getLatestSnapshot(layoutSignatures.variant)
-    const changeSet = createTeachingDocumentLayoutChangeSet({
-      previous: previousSnapshot?.document ?? null,
-      current: layoutDocument,
-      previousLayoutStyleSignature: previousSnapshot?.layoutStyleSignature,
-      currentLayoutStyleSignature: measurementStyleSignature,
-      previousResourceRevision: previousSnapshot?.resourceRevision,
-      currentResourceRevision: layoutSignatures.resourceRevision,
-    })
+    const canUseTransactionChangeSet = previousSnapshot
+      && layoutRequest.changeSet
+      && previousSnapshot.layoutStyleSignature === measurementStyleSignature
+      && previousSnapshot.resourceRevision === layoutSignatures.resourceRevision
+      && previousSnapshot.document.title === layoutDocument.title
+      && canUseTeachingDocumentLayoutChangeSetHint(previousSnapshot.document, layoutDocument, layoutRequest.changeSet)
+    const changeSet = canUseTransactionChangeSet
+      ? layoutRequest.changeSet!
+      : createTeachingDocumentLayoutChangeSet({
+          previous: previousSnapshot?.document ?? null,
+          current: layoutDocument,
+          previousLayoutStyleSignature: previousSnapshot?.layoutStyleSignature,
+          currentLayoutStyleSignature: measurementStyleSignature,
+          previousResourceRevision: previousSnapshot?.resourceRevision,
+          currentResourceRevision: layoutSignatures.resourceRevision,
+        })
     const incrementalPagination = previousSnapshot?.pagination
       && changeSet.firstDirtyTopLevelIndex > 0
       && !changeSet.paperOrGlobalStyleChanged
@@ -393,7 +402,7 @@ export function A4PaginationPreview({
       live = false
       handle.release()
     }
-  }, [active, boxGeometryAdapter, choiceLayoutOverrides, coordinator, coordinatorKey, geometryAdapter, layoutDocument, layoutRequest.priority, layoutRequest.reason, layoutSignatures.documentRevision, layoutSignatures.layoutStyleSignature, layoutSignatures.paginationSignature, layoutSignatures.resourceRevision, layoutSignatures.variant, measurementStyleSignature, metrics, onPaginationState, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, resolveQuestion, spread])
+  }, [active, boxGeometryAdapter, choiceLayoutOverrides, coordinator, coordinatorKey, geometryAdapter, layoutDocument, layoutRequest.changeSet, layoutRequest.priority, layoutRequest.reason, layoutSignatures.documentRevision, layoutSignatures.layoutStyleSignature, layoutSignatures.paginationSignature, layoutSignatures.resourceRevision, layoutSignatures.variant, measurementStyleSignature, metrics, onPaginationState, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, resolveQuestion, spread])
 
   const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure'> = {
     resolveQuestion,

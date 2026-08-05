@@ -252,6 +252,13 @@ describe('usePagination', () => {
           readinessWait={readinessWait}
           geometryAdapter={countedGeometry}
           coordinator={coordinator}
+          layoutRequest={createLayoutRequest(1, 'structure', {
+            dirtyBlockIds: ['break'],
+            firstDirtyTopLevelIndex: 1,
+            structureChanged: true,
+            paperOrGlobalStyleChanged: false,
+            resourceIdsChanged: [],
+          })}
         />,
       )
     })

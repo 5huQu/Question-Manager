@@ -29,7 +29,12 @@ import { questionBankApi } from '@/api/questionBank'
 import { teachingDocumentsApi } from '@/api/teachingDocuments'
 import { ApiError, type PdfExportVariant } from '@/api/client'
 import { A4PaginationPreview, type A4PaginationState } from '@/components/teaching-document/A4PaginationPreview'
-import { TeachingDocumentCanvas, TeachingDocumentLayoutCoordinator } from '@/components/teaching-document/editor'
+import {
+  deleteTopLevelTeachingBlock,
+  insertTopLevelTeachingBlock,
+  TeachingDocumentCanvas,
+  TeachingDocumentLayoutCoordinator,
+} from '@/components/teaching-document/editor'
 import { ExportPdfPanel } from '@/components/teaching-document/ExportPdfPanel'
 import { PrintChrome, type PrintChromeSection } from '@/components/teaching-document/PrintChrome'
 import { type QuestionResolution } from '@/components/teaching-document/blocks/BlockRenderer'
@@ -104,6 +109,14 @@ const CHROME_FONT_OPTIONS = [
 ] as const
 
 const CHROME_FONT_SIZE_OPTIONS = [8, 9, 10, 11, 12, 14] as const
+
+const PROSEMIRROR_FAST_INSERT_TYPES = new Set<TeachingBlock['type']>([
+  'pageBreak',
+  'paragraph',
+  'heading',
+  'divider',
+  'spacer',
+])
 
 /** id → 选中位置的缓存索引，避免每次选择/定位都线性扫描整篇文档。 */
 function buildSelectedLocationIndex(document: TeachingDocumentV1): Map<string, SelectedLocation> {
@@ -895,6 +908,14 @@ export default function TeachingDocumentEditorPage() {
       || selected.block.type === 'figure'
       || (selected.block.type === 'paragraph' && selected.block.content.some((inline) => inline.type !== 'text' || inline.text.trim()))
     if (needsConfirm && !window.confirm(`确定删除当前${USER_BLOCK_LABEL[selected.block.type]}？`)) return
+    if (!selected.boxId
+      && selected.block.type === 'pageBreak'
+      && editor.activeEditor
+      && deleteTopLevelTeachingBlock(editor.activeEditor, selected.block.id)) {
+      setSelectedId('')
+      setPropertiesOpen(false)
+      return
+    }
     if (selected.boxId) editor.dispatch({ type: 'deleteBoxChild', boxId: selected.boxId, childId: selected.block.id })
     else editor.dispatch({ type: 'deleteBlock', blockId: selected.block.id })
     setSelectedId('')
@@ -976,6 +997,12 @@ export default function TeachingDocumentEditorPage() {
     const resolvedHeadingLevel = headingLevel
       ?? (contextualHeading?.type === 'heading' ? contextualHeading.level : 1)
     const block = newTeachingBlock(type, type === 'heading' ? { headingLevel: resolvedHeadingLevel } : undefined)
+    if (editor.activeEditor
+      && PROSEMIRROR_FAST_INSERT_TYPES.has(type)
+      && insertTopLevelTeachingBlock(editor.activeEditor, block, insertionAnchor || '')) {
+      selectAndShow(block.id)
+      return
+    }
     editor.dispatch({ type: 'insertBlock', block, afterBlockId: insertionAnchor })
     selectAndShow(block.id)
     // 新建对象后立即给出可见的编辑入口；即使是段落或章节，也不让用户再额外寻找属性面板。

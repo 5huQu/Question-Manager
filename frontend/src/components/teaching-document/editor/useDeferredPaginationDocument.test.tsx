@@ -59,6 +59,17 @@ describe('useDeferredPaginationDocument', () => {
     expect(createLayoutRequest(5, 'export').priority).toBe('blocking')
   })
 
+  it('carries a transaction change set into the layout request', () => {
+    const changeSet = {
+      dirtyBlockIds: ['break'],
+      firstDirtyTopLevelIndex: 3,
+      structureChanged: true,
+      paperOrGlobalStyleChanged: false,
+      resourceIdsChanged: [],
+    }
+    expect(createLayoutRequest(6, 'structure', changeSet).changeSet).toBe(changeSet)
+  })
+
   it('keeps the previous layout snapshot until typing becomes idle', async () => {
     const states: Array<ReturnType<typeof useDeferredPaginationDocument>> = []
     const onState = (state: ReturnType<typeof useDeferredPaginationDocument>) => states.push(state)

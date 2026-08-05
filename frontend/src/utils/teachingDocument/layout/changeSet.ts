@@ -9,6 +9,20 @@ export interface TeachingDocumentLayoutChangeSet {
   resourceIdsChanged: string[]
 }
 
+export function canUseTeachingDocumentLayoutChangeSetHint(
+  previous: TeachingDocumentV1,
+  current: TeachingDocumentV1,
+  hint: TeachingDocumentLayoutChangeSet,
+) {
+  const prefixLength = Math.min(hint.firstDirtyTopLevelIndex, current.content.length)
+  if (previous.content.length < prefixLength) return false
+  for (let index = 0; index < prefixLength; index += 1) {
+    if (teachingBlockContentSignature(previous.content[index])
+      !== teachingBlockContentSignature(current.content[index])) return false
+  }
+  return true
+}
+
 function structureToken(block: TeachingBlock) {
   if (block.type !== 'box') return `${block.type}:${block.id}`
   return `box:${block.id}:${block.children.map((child) => `${child.type}:${child.id}`).join(',')}`

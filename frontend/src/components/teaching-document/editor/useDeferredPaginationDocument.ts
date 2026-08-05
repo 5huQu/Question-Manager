@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useState } from 'react'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { TeachingDocumentLayoutChangeSet } from '@/utils/teachingDocument/layout/changeSet'
 
 /**
  * 编辑器中的文字输入需要即时反映到 ProseMirror 画布，但精确分页会触发一整套
@@ -15,13 +16,19 @@ export interface LayoutRequest {
   id: number
   reason: LayoutRequestReason
   priority: LayoutRequestPriority
+  changeSet?: TeachingDocumentLayoutChangeSet
 }
 
-export function createLayoutRequest(id: number, reason: LayoutRequestReason): LayoutRequest {
+export function createLayoutRequest(
+  id: number,
+  reason: LayoutRequestReason,
+  changeSet?: TeachingDocumentLayoutChangeSet,
+): LayoutRequest {
   return {
     id,
     reason,
     priority: reason === 'typing' ? 'background' : reason === 'export' ? 'blocking' : 'interactive',
+    ...(changeSet ? { changeSet } : {}),
   }
 }
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
-import { createTeachingDocumentLayoutChangeSet } from './changeSet'
+import {
+  canUseTeachingDocumentLayoutChangeSetHint,
+  createTeachingDocumentLayoutChangeSet,
+} from './changeSet'
 
 function documentWith(ids: string[]): TeachingDocumentV1 {
   return {
@@ -66,5 +69,31 @@ describe('createTeachingDocumentLayoutChangeSet', () => {
     expect(result.firstDirtyTopLevelIndex).toBe(0)
     expect(result.paperOrGlobalStyleChanged).toBe(true)
     expect(result.resourceIdsChanged).toEqual(['*'])
+  })
+
+  it('uses a transaction hint only when its unchanged prefix matches the snapshot', () => {
+    const previous = documentWith(['a', 'b', 'c'])
+    const current = {
+      ...previous,
+      content: previous.content.map((block) => block.id === 'c'
+        ? { ...block, content: [{ type: 'text' as const, text: 'changed' }] }
+        : block),
+    }
+    const hint = {
+      dirtyBlockIds: ['c'],
+      firstDirtyTopLevelIndex: 2,
+      structureChanged: false,
+      paperOrGlobalStyleChanged: false,
+      resourceIdsChanged: [],
+    }
+    expect(canUseTeachingDocumentLayoutChangeSetHint(previous, current, hint)).toBe(true)
+
+    const missedEarlierEdit = {
+      ...current,
+      content: current.content.map((block) => block.id === 'a'
+        ? { ...block, content: [{ type: 'text' as const, text: 'earlier change' }] }
+        : block),
+    }
+    expect(canUseTeachingDocumentLayoutChangeSetHint(previous, missedEarlierEdit, hint)).toBe(false)
   })
 })

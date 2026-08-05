@@ -4,6 +4,14 @@
 export { DocumentEditor, type DocumentEditorProps, type DocumentEditorInstance } from './DocumentEditor'
 export { createDocumentEditorExtensions } from './schema'
 export { teachingDocumentToEditorDoc, editorDocToTeachingDocument, type EditorDocMeta } from './serialization'
+export {
+  DOCUMENT_LAYOUT_CHANGE_SET_META,
+  DocumentStructuralChangeSet,
+  deleteTopLevelTeachingBlock,
+  insertTopLevelTeachingBlock,
+  mergeStructuralChangeSets,
+  structuralTransactionChangeSet,
+} from './structuralActions'
 export { ResolverProvider, PaperProvider, paperContentWidthMm, type DocumentEditorResolvers } from './NodeViews'
 export { ResizeCommands, RESIZE_MERGE_META } from './resizeCommands'
 export {
