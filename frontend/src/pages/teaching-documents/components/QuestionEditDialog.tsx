@@ -93,29 +93,29 @@ export function QuestionEditDialog(props: {
       role="dialog"
       aria-modal="true"
       aria-label={dialogTitle}
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4 md:p-8"
+      className="question-edit-glass-backdrop fixed inset-0 z-[90] flex items-center justify-center p-4 md:p-8"
       onKeyDown={handleKeyDown}
       onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose() }}
     >
-      <div className="flex h-full max-h-[56rem] w-full max-w-4xl flex-col overflow-hidden">
+      <div className="question-edit-glass-dialog flex h-full max-h-[56rem] w-full max-w-4xl flex-col overflow-hidden">
         {step === 'edit' ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50/30 p-2 dark:border-zinc-800 dark:bg-zinc-950/40">
-            <div role="tablist" aria-label="题目编辑面板" className="flex w-fit max-w-full shrink-0 overflow-x-auto rounded-lg border border-zinc-200/70 bg-zinc-100/80 p-0.5 dark:border-zinc-800/70 dark:bg-zinc-900/80">
+          <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
+            <div role="tablist" aria-label="题目编辑面板" className="question-edit-glass-tabs inline-flex w-fit shrink-0 items-center gap-0.5">
               <button
                 type="button"
                 role="tab"
                 aria-selected={editPanel === 'content'}
                 onClick={() => setEditPanel('content')}
-                className={`h-8 whitespace-nowrap rounded-md px-3 text-xs font-medium transition-colors ${editPanel === 'content' ? 'border border-zinc-200/70 bg-white text-zinc-900 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'}`}
+                className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-3.5 text-xs font-medium"
               >
-                内容编辑
+                <FileText className="size-3.5" />内容编辑
               </button>
               <button
                 type="button"
                 role="tab"
                 aria-selected={editPanel === 'figures'}
                 onClick={() => setEditPanel('figures')}
-                className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-xs font-medium transition-colors ${editPanel === 'figures' ? 'border border-zinc-200/70 bg-white text-zinc-900 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'}`}
+                className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-3.5 text-xs font-medium"
               >
                 <Image className="size-3.5" />题图管理
               </button>
@@ -126,11 +126,13 @@ export function QuestionEditDialog(props: {
                   question={question}
                   onFiguresChange={props.onFiguresChanged}
                   onClose={requestClose}
+                  surface="glass"
                 />
               ) : (
                 <QuestionContentEditor
                   entityKey={`teaching-question-${block.id}`}
                   className="h-full min-h-0"
+                  surface="glass"
                   title={dialogTitle}
                   description="内容以 Markdown 保存，公式与表格可视化编辑。保存时可选择回填题库或仅保留在本文档。"
                   value={draft}
@@ -147,7 +149,7 @@ export function QuestionEditDialog(props: {
             </div>
           </div>
         ) : step === 'confirm' ? (
-          <div className="flex flex-1 items-center justify-center rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="question-edit-glass-panel flex flex-1 items-center justify-center p-8">
             <div className="w-full max-w-md space-y-5">
               <div className="flex items-center gap-2">
                 <HelpCircle className="size-5 text-zinc-500" />
@@ -189,7 +191,7 @@ export function QuestionEditDialog(props: {
             </div>
           </div>
         ) : (
-          <div className="flex flex-1 items-center justify-center rounded-xl border border-zinc-200 bg-white p-8 dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="question-edit-glass-panel flex flex-1 items-center justify-center p-8">
             <div className="w-full max-w-sm space-y-5 text-center">
               <h3 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">放弃未保存的修改？</h3>
               <p className="text-sm leading-6 text-zinc-500">关闭后，本次对题目内容的修改将不会保留。</p>

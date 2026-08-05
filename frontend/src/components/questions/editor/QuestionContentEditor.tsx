@@ -27,6 +27,8 @@ export interface QuestionContentEditorProps {
   conflict?: QuestionEditorConflict | null
   dirty?: boolean
   className?: string
+  surface?: 'solid' | 'glass'
+  hideFooter?: boolean
 }
 
 type EditorField = keyof QuestionContentValue
@@ -43,18 +45,21 @@ function StructuredChoicesEditor({
   suggestion,
   onChange,
   onApplySuggestion,
+  surface = 'solid',
 }: {
   entityKey: string
   choices: StructuredChoice[]
   suggestion?: ChoiceConversionSuggestion | null
   onChange: (choices: StructuredChoice[]) => void
   onApplySuggestion?: () => void
+  surface?: 'solid' | 'glass'
 }) {
+  const glass = surface === 'glass'
   if (!choices.length) {
     return (
       <div className="space-y-2">
         {suggestion ? (
-          <div className="rounded-lg border border-zinc-300 bg-zinc-50/60 p-3 dark:border-zinc-700 dark:bg-zinc-900/30" role="status">
+          <div className={`${glass ? 'question-edit-glass-choice' : 'border-zinc-300 bg-zinc-50/60 dark:border-zinc-700 dark:bg-zinc-900/30'} rounded-lg border p-3`} role="status">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200">从题干识别到 A–D 四个选项</p>
@@ -70,7 +75,7 @@ function StructuredChoicesEditor({
             </div>
             <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
               {suggestion.choices.map((choice) => (
-                <div key={choice.label} className="flex min-w-0 items-start gap-2 rounded-md border border-zinc-200 bg-white px-2.5 py-2 dark:border-zinc-800 dark:bg-zinc-950">
+                <div key={choice.label} className={`${glass ? 'question-edit-glass-choice' : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950'} flex min-w-0 items-start gap-2 rounded-md border px-2.5 py-2`}>
                   <span className="flex size-5 shrink-0 items-center justify-center rounded bg-zinc-100 text-[11px] font-semibold dark:bg-zinc-800">{choice.label}</span>
                   <MarkdownContent className="min-w-0 text-xs" content={choice.content} />
                 </div>
@@ -167,6 +172,8 @@ export function QuestionContentEditor({
   conflict,
   dirty: dirtyOverride,
   className = '',
+  surface = 'solid',
+  hideFooter = false,
 }: QuestionContentEditorProps) {
   const [activeField, setActiveField] = useState<EditorField>('stemMarkdown')
   const [saveError, setSaveError] = useState('')
@@ -225,12 +232,13 @@ export function QuestionContentEditor({
       minHeight={compact ? 'min-h-28' : field === 'stemMarkdown' ? 'min-h-52' : 'min-h-40'}
       placeholder={field === 'stemMarkdown' ? '输入题干，使用工具栏插入公式或表格…' : field === 'answerText' ? '输入答案…' : '输入解题过程与关键步骤…'}
       onSaveRequest={() => { void save() }}
+      surface={surface}
     />
   )
 
   return (
-    <div className={`flex min-h-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950 ${className}`} aria-busy={saving}>
-      <header className="border-b border-zinc-100 bg-zinc-50/50 px-5 py-4 dark:border-zinc-900 dark:bg-zinc-900/10">
+    <div className={`${surface === 'glass' ? 'question-edit-glass-inner' : 'flex overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950'} flex min-h-0 flex-col ${className}`} aria-busy={saving}>
+      <header className={`${surface === 'glass' ? 'question-edit-glass-inner-header' : 'border-b border-zinc-100 bg-zinc-50/50 dark:border-zinc-900 dark:bg-zinc-900/10'} px-5 py-4`}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
@@ -258,9 +266,9 @@ export function QuestionContentEditor({
           </div>
         ) : null}
 
-        <div role="tablist" aria-label="题目内容字段" className="flex w-fit max-w-full overflow-x-auto rounded-lg border border-zinc-200/50 bg-zinc-100/80 p-0.5 dark:border-zinc-800/50 dark:bg-zinc-900/80">
+        <div role="tablist" aria-label="题目内容字段" className={`${surface === 'glass' ? 'question-edit-glass-tabs' : 'border-zinc-200/50 bg-zinc-100/80 dark:border-zinc-800/50 dark:bg-zinc-900/80 border'} inline-flex w-fit max-w-full overflow-x-auto rounded-lg p-0.5`}>
           {tabs.map((tab) => (
-            <button key={tab.key} type="button" role="tab" aria-selected={activeField === tab.key} aria-controls={`${entityKey}-${tab.key}-panel`} className={`h-8 whitespace-nowrap rounded-md px-3 text-xs font-medium ${activeField === tab.key ? 'border border-zinc-200/50 bg-white text-zinc-900 shadow-xs dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`} onClick={() => setActiveField(tab.key)}>{tab.label}</button>
+            <button key={tab.key} type="button" role="tab" aria-selected={activeField === tab.key} aria-controls={`${entityKey}-${tab.key}-panel`} className={`h-7.5 whitespace-nowrap rounded-md px-3 text-xs font-medium transition-all ${activeField === tab.key ? 'border border-zinc-200/50 bg-white text-zinc-900 shadow-2xs dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`} onClick={() => setActiveField(tab.key)}>{tab.label}</button>
           ))}
         </div>
 
@@ -272,6 +280,7 @@ export function QuestionContentEditor({
             entityKey={entityKey}
             choices={stem.choices}
             suggestion={choiceSuggestion}
+            surface={surface}
             onApplySuggestion={choiceSuggestion
               ? () => updateField('stemMarkdown', joinChoices(choiceSuggestion.body, choiceSuggestion.choices))
               : undefined}
@@ -280,17 +289,49 @@ export function QuestionContentEditor({
         ) : null}
       </div>
 
-      <footer className="sticky bottom-0 z-10 flex items-center justify-between gap-4 border-t border-zinc-200 bg-white/90 px-5 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/90">
-        <div className="flex min-w-0 items-center gap-2 text-xs text-zinc-400" aria-live="polite">
-          {dirty ? <><span className="size-1.5 shrink-0 rounded-full bg-amber-500" />有未保存修改</> : <><Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />内容已保存</>}
-          <span className="hidden truncate sm:inline">快捷键 ⌘/Ctrl + S</span>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {onCancel ? <button type="button" className="h-9 rounded-md px-3 text-sm font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50" onClick={onCancel}><span className="flex items-center gap-1.5"><X className="size-3.5" />关闭</span></button> : null}
-          <button type="button" disabled={!dirty || saving || disabled} className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:pointer-events-none disabled:opacity-40 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900" onClick={reset}><span className="flex items-center gap-1.5"><RotateCcw className="size-3.5" />重置</span></button>
-          <button type="button" disabled={!onSave || !dirty || saving || disabled} className="h-9 rounded-md bg-zinc-900 px-4 text-sm font-medium text-zinc-50 hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200" onClick={() => { void save() }}><span className="flex items-center gap-1.5"><Save className="size-3.5" />{saving ? '保存中…' : '保存内容'}</span></button>
-        </div>
-      </footer>
+      {!hideFooter ? (
+        <footer className={`${surface === 'glass' ? 'question-edit-glass-footer' : 'border-t border-zinc-200 bg-white/90 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/90'} sticky bottom-0 z-10 flex items-center justify-between gap-4 px-5 py-3`}>
+          <div className="flex min-w-0 items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400" aria-live="polite">
+            {dirty ? (
+              <span className="flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-400/10 dark:text-amber-400">
+                <span className="size-1.5 shrink-0 rounded-full bg-amber-500 animate-pulse" />有未保存修改
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-400">
+                <Check className="size-3.5 shrink-0" />内容已保存
+              </span>
+            )}
+            <span className="hidden truncate text-zinc-400 sm:inline dark:text-zinc-500">快捷键 ⌘/Ctrl + S</span>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {onCancel ? (
+              <button
+                type="button"
+                className="h-8.5 rounded-lg px-3 text-xs font-medium text-zinc-500 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-50"
+                onClick={onCancel}
+              >
+                <span className="flex items-center gap-1.5"><X className="size-3.5" />关闭</span>
+              </button>
+            ) : null}
+            <button
+              type="button"
+              disabled={!dirty || saving || disabled}
+              className={`${surface === 'glass' ? 'question-edit-glass-button-secondary' : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950'} h-8.5 rounded-lg border px-3 text-xs font-medium text-zinc-700 transition-all hover:bg-zinc-50 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-900`}
+              onClick={reset}
+            >
+              <span className="flex items-center gap-1.5"><RotateCcw className="size-3.5" />重置</span>
+            </button>
+            <button
+              type="button"
+              disabled={!onSave || !dirty || saving || disabled}
+              className="h-8.5 rounded-lg bg-zinc-900 px-4 text-xs font-medium text-zinc-50 shadow-xs transition-all hover:bg-zinc-800 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              onClick={() => { void save() }}
+            >
+              <span className="flex items-center gap-1.5"><Save className="size-3.5" />{saving ? '保存中…' : '保存内容'}</span>
+            </button>
+          </div>
+        </footer>
+      ) : null}
     </div>
   )
 }
