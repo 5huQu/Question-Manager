@@ -14,7 +14,7 @@
 | 1 | T0 基线、埋点与性能预算 | completed | 已建立 S/M/L fixture、分页阶段埋点及开发/生产三轮基线。 |
 | 2 | T1 调度分级与旧快照展示 | completed | 已按请求原因分级调度，并保留成对旧快照与导出门槛。 |
 | 3 | T2 段落测量热路径优化 | completed | 整段行盒 + 字素边界二分；M/L DOM 测量中位数分别下降 58.9% / 60.5%。 |
-| 4 | T3 签名拆分与版本缓存 | pending | 依赖 T0；建议在 T2 后实施。 |
+| 4 | T3 签名拆分与版本缓存 | completed | 稳定资源/样式/块/版本签名；双 variant 分页快照与 readiness 缓存。 |
 | 5 | T4 统一 Layout Coordinator | pending | 依赖 T1/T3。 |
 | 6 | T5 按块增量测量与局部分页 | pending | 依赖 T2/T4。 |
 | 7 | T6 ProseMirror 结构操作快速路径 | pending | 依赖 T5 的 change set/dirty range。 |
@@ -32,3 +32,5 @@
 - 完成 T1：typing 保留尾随防抖；structure/view/variant 立即调度，A4 重排期间展示成对旧快照和可见状态。
 - 完成 T2：文本测量改为整段行盒读取、换行边界二分与行级回退；加入显式 Range 调用计数，生产 M/L 测量中位数分别降至 16.2ms / 52.6ms。
 - 下一步按推荐顺序执行 T3：拆分资源、几何与分页签名，复用未变化的测量结果。
+- 完成 T3：移除整篇内容 stringify 失效键，加入按块复用的稳定签名、最多 4 份分页快照和最多 8 份资源 readiness；真实 87 题文档暖切只增加单 generation。
+- 下一步按推荐顺序执行 T4：统一编辑器与预览 Layout Coordinator，并以 T3 签名作为失效契约。

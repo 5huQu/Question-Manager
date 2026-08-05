@@ -20,6 +20,7 @@ import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/
 import {
   effectivePaperMetrics,
   createCountingParagraphRangeGeometryAdapter,
+  createTeachingDocumentLayoutSignatures,
   measuredChoiceLayoutOverrides,
   measureTeachingDocumentAll,
   paginateTeachingDocument,
@@ -46,6 +47,21 @@ const PREPARING_READINESS: RenderReadinessResult = {
   pendingFigures: [],
   failedImages: [],
   diagnostics: [],
+}
+
+const MAX_CACHED_RESOURCE_REVISIONS = 8
+
+function cacheResourceReadiness(
+  cache: Map<string, RenderReadinessResult>,
+  revision: string,
+  readiness: RenderReadinessResult,
+) {
+  cache.set(revision, readiness)
+  while (cache.size > MAX_CACHED_RESOURCE_REVISIONS) {
+    const oldestKey = cache.keys().next().value
+    if (!oldestKey) break
+    cache.delete(oldestKey)
+  }
 }
 
 export interface UsePaginationOptions {
@@ -112,6 +128,16 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
   const [paragraphLineCount, setParagraphLineCount] = useState(0)
   const [settled, setSettled] = useState(false)
   const [choiceLayoutOverrides, setChoiceLayoutOverrides] = useState<ChoiceLayoutOverrides>({})
+  const resourceReadinessCacheRef = useRef(new Map<string, RenderReadinessResult>())
+
+  const layoutSignatures = useMemo(() => createTeachingDocumentLayoutSignatures({
+    document,
+    paper,
+    printLayout,
+    fontVars,
+    renderVersion,
+    spread: false,
+  }), [document, fontVars, paper, printLayout, renderVersion])
 
   useEffect(() => {
     setChoiceLayoutOverrides((current) => Object.keys(current).length ? {} : current)
@@ -128,6 +154,7 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
       metadata: {
         blockCount: document.content.length,
         debounceMs,
+        resourceRevision: layoutSignatures.resourceRevision,
         reason: layoutRequest.reason,
         priority: layoutRequest.priority,
       },
@@ -143,14 +170,20 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     const timer = window.setTimeout(() => {
       endScheduleWait()
       const endResourceWait = profiler.startPhase('resource-wait')
-      void readinessWait(measureRoot, {
-        timeoutMs: 8_000,
-        stableFrames: 2,
-        signal: controller.signal,
-        })
+      const cachedResourceReadiness = resourceReadinessCacheRef.current.get(layoutSignatures.resourceRevision)
+      profiler.addMetadata({ resourceCacheHit: Boolean(cachedResourceReadiness) })
+      const readiness = cachedResourceReadiness
+        ? Promise.resolve(cachedResourceReadiness)
+        : readinessWait(measureRoot, {
+            timeoutMs: 8_000,
+            stableFrames: 2,
+            signal: controller.signal,
+          })
+      void readiness
         .then((nextReadiness) => {
           endResourceWait()
           if (controller.signal.aborted || currentGeneration !== generationRef.current) return
+          cacheResourceReadiness(resourceReadinessCacheRef.current, layoutSignatures.resourceRevision, nextReadiness)
           setReadiness(nextReadiness)
 
           const measuredLayouts = profiler.measure('choice-layout', () => (
@@ -251,6 +284,7 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     choiceLayoutOverrides,
     layoutRequest.priority,
     layoutRequest.reason,
+    layoutSignatures.resourceRevision,
   ])
 
   return { pagination, readiness, generation, paragraphLineCount, settled, choiceLayoutOverrides }

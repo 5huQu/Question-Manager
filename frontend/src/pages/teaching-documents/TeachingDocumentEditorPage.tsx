@@ -58,7 +58,6 @@ import {
   typographyStyleForPreset,
 } from '@/utils/teachingDocument/lectureFonts'
 import { assetUrl } from '@/utils/questionDisplay'
-import { documentForPrintVariant } from '@/utils/teachingDocument/printVariant'
 import type { PrintChromeTemplate } from '@/api/teachingDocuments'
 import { useTeachingDocumentEditor } from './useTeachingDocumentEditor'
 import { getFocusedCardEditor, insertCardBlockAtCaret, subscribeFocusedCardEditor } from '@/components/teaching-document/editor/cardEditorRegistry'
@@ -736,12 +735,6 @@ export default function TeachingDocumentEditorPage() {
     }
   }, [canvasMode, canvasScrollRoot, editor.document, paginatedPageCount, paginationState?.pagination?.pages.length])
 
-  // 变体文档只服务于 a4 打印预览；连续流/页面编辑直接使用原始文档，避免无谓的整篇变换。
-  const previewDocument = useMemo(
-    () => canvasMode === 'a4' && editor.document ? documentForPrintVariant(editor.document, printVariant) : null,
-    [canvasMode, editor.document, printVariant],
-  )
-
   if (editor.loading) {
     return <div className="flex h-[60vh] items-center justify-center text-sm text-zinc-500"><LoaderCircle className="mr-2 size-4 animate-spin" />正在读取文档…</div>
   }
@@ -750,7 +743,6 @@ export default function TeachingDocumentEditorPage() {
   }
 
   const document = editor.document
-  const resolvedPreviewDocument = previewDocument ?? document
   const marginPreset = document.style?.marginPreset ?? 'normal'
   const selected = findSelected(selectedId)
   const renderResourceVersion = questionIds
@@ -758,6 +750,9 @@ export default function TeachingDocumentEditorPage() {
       const resolution = questionMap[id]
       return `${id}:${!resolution ? 'pending' : 'status' in resolution ? resolution.status : resolution.updatedAt || resolution.contentRevision}`
     })
+    .concat((editor.record.assets ?? []).map((asset) => (
+      `asset:${asset.id}:${asset.url}:${asset.byteSize}:${asset.createdAt}`
+    )))
     .join('|')
 
   const selectedQuestionBlock = selected?.block.type === 'question' ? selected.block : null
@@ -1328,7 +1323,8 @@ export default function TeachingDocumentEditorPage() {
               编辑器与撤销历史不因预览被销毁。 */}
           <div className={canvasMode === 'a4' ? 'p-5' : 'hidden'}>
             <A4PaginationPreview
-              document={resolvedPreviewDocument}
+              document={document}
+              variant={printVariant}
               resolveQuestion={resolveQuestion}
               resolveFigure={resolveFigure}
               paper={paper}

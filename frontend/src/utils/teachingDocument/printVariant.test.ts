@@ -22,4 +22,22 @@ describe('documentForPrintVariant', () => {
     expect(questions.map((block) => block.display?.displayNumber)).toEqual(['1', '例 1', '3'])
     expect(questions.map((block) => block.display?.displayNumberAuto)).toEqual([true, undefined, true])
   })
+
+  it('keeps the source immutable and reuses each source/variant projection', () => {
+    const document: TeachingDocumentV1 = {
+      version: 1,
+      documentType: 'worksheet',
+      title: '',
+      metadata: {},
+      content: [{ type: 'question', id: 'q', questionId: 'question' }],
+    }
+    const before = structuredClone(document)
+    const student = documentForPrintVariant(document, 'student')
+    const teacher = documentForPrintVariant(document, 'teacher')
+
+    expect(document).toEqual(before)
+    expect(documentForPrintVariant(document, 'student')).toBe(student)
+    expect(documentForPrintVariant(document, 'teacher')).toBe(teacher)
+    expect(student).not.toBe(teacher)
+  })
 })

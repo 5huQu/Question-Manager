@@ -4,6 +4,7 @@ import type { FigureAssetRef, TeachingDocumentV1 } from '@/types/teachingDocumen
 import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
   resolveDocumentPaper,
+  createTeachingDocumentLayoutSignatures,
   measuredChoiceLayoutOverrides,
   measureTeachingDocumentAll,
   paginateTeachingDocument,
@@ -22,6 +23,7 @@ import {
   type PrintLayoutSpec,
   type RenderReadinessResult,
 } from '@/utils/teachingDocument'
+import { documentForPrintVariant, type TeachingDocumentPrintVariant } from '@/utils/teachingDocument/printVariant'
 import {
   TeachingDocumentRenderer,
   type TeachingDocumentRendererProps,
@@ -49,22 +51,34 @@ const PREPARING_READINESS: RenderReadinessResult = {
   diagnostics: [],
 }
 
-/** 资源签名未变化（如教师/学生版切换、页眉页脚调整）时直接使用的就绪态。 */
-const INSTANT_READINESS: RenderReadinessResult = {
-  ready: true,
-  timedOut: false,
-  pendingFonts: false,
-  pendingImages: [],
-  pendingQuestions: [],
-  pendingFigures: [],
-  failedImages: [],
-  diagnostics: [],
-}
-
 export interface A4PaginationState {
   pagination: PaginationResult | null
   readiness: RenderReadinessResult
   measurementGeneration: number
+}
+
+interface CachedPaginationSnapshot {
+  document: TeachingDocumentV1
+  pagination: PaginationResult
+  readiness: RenderReadinessResult
+  paragraphLineCount: number
+  choiceLayoutOverrides: ChoiceLayoutOverrides
+}
+
+const MAX_CACHED_PAGINATION_SNAPSHOTS = 4
+const MAX_CACHED_RESOURCE_REVISIONS = 8
+
+function cacheResourceReadiness(
+  cache: Map<string, RenderReadinessResult>,
+  revision: string,
+  readiness: RenderReadinessResult,
+) {
+  cache.set(revision, readiness)
+  while (cache.size > MAX_CACHED_RESOURCE_REVISIONS) {
+    const oldestKey = cache.keys().next().value
+    if (!oldestKey) break
+    cache.delete(oldestKey)
+  }
 }
 
 export interface A4PaginationPreviewProps {
@@ -100,6 +114,8 @@ export interface A4PaginationPreviewProps {
   questionGeometryAdapter?: QuestionChromeGeometryAdapter
   readinessWait?: typeof waitForRenderReadiness
   layoutRequest?: LayoutRequest
+  /** 打印版本作为独立布局策略；源文档本身保持不变。 */
+  variant?: TeachingDocumentPrintVariant
 }
 
 export function A4PaginationPreview({
@@ -125,6 +141,7 @@ export function A4PaginationPreview({
   questionGeometryAdapter,
   readinessWait = waitForRenderReadiness,
   layoutRequest = INITIAL_LAYOUT_REQUEST,
+  variant,
 }: A4PaginationPreviewProps) {
   const paper = useMemo(
     () => paperProp ?? resolveDocumentPaper(document.style),
@@ -132,23 +149,25 @@ export function A4PaginationPreview({
   )
   const sheetPaper = sheetPaperProp ?? paper
   const spread = isA3LandscapeSpread(sheetPaper)
+  const layoutDocument = useMemo(
+    () => variant ? documentForPrintVariant(document, variant) : document,
+    [document, variant],
+  )
   const sheetMetrics = useMemo(() => paperMetrics(sheetPaper), [sheetPaper])
   const measurementRootRef = useRef<HTMLDivElement>(null)
   const generationRef = useRef(0)
   /** 可见页面的展示快照：重测期间保留上一对（文档，分页），避免白屏闪烁。 */
-  const displayDocumentRef = useRef(document)
+  const displayDocumentRef = useRef(layoutDocument)
   const displayChoiceLayoutOverridesRef = useRef<ChoiceLayoutOverrides>({})
-  /** 上一轮测量的资源签名；用于跳过与资源装载无关的重测等待。 */
-  const measurementSignatureRef = useRef('')
+  /** 资源 revision 与分页快照分别缓存，版本切换不再污染资源就绪状态。 */
+  const resourceReadinessCacheRef = useRef(new Map<string, RenderReadinessResult>())
+  const paginationCacheRef = useRef(new Map<string, CachedPaginationSnapshot>())
   const [readiness, setReadiness] = useState<RenderReadinessResult>(PREPARING_READINESS)
   const [pagination, setPagination] = useState<PaginationResult | null>(null)
   const [measurementGeneration, setMeasurementGeneration] = useState(0)
   const [paragraphLineCount, setParagraphLineCount] = useState(0)
   const [reflowing, setReflowing] = useState(false)
   const [choiceLayoutOverrides, setChoiceLayoutOverrides] = useState<ChoiceLayoutOverrides>({})
-  useEffect(() => {
-    setChoiceLayoutOverrides((current) => Object.keys(current).length ? {} : current)
-  }, [document, renderVersion])
   const printLayout = useMemo(
     () => printLayoutProp ?? createDefaultPrintLayout(paper),
     [printLayoutProp, paper],
@@ -156,7 +175,25 @@ export function A4PaginationPreview({
   // 页眉页脚参与分页有效高度。保守统一扣除：即使 showOnFirstPage=false，
   // 首页也扣除页眉高度（已知风险：首页页眉区域留白）。
   const metrics = useMemo(() => effectivePaperMetrics(printLayout), [printLayout])
+  const layoutSignatures = useMemo(() => createTeachingDocumentLayoutSignatures({
+    document,
+    paper,
+    printLayout,
+    fontVars,
+    renderVersion,
+    spread,
+    variant,
+  }), [document, fontVars, paper, printLayout, renderVersion, spread, variant])
   const safeZoom = Math.min(1.5, Math.max(0.35, zoom))
+
+  useEffect(() => {
+    if (paginationCacheRef.current.has(layoutSignatures.paginationSignature)) return
+    setChoiceLayoutOverrides((current) => Object.keys(current).length ? {} : current)
+  }, [layoutSignatures.paginationSignature])
+
+  useEffect(() => {
+    paginationCacheRef.current.clear()
+  }, [boxGeometryAdapter, geometryAdapter, paragraphGeometryAdapter, questionGeometryAdapter])
 
   useEffect(() => {
     const root = measurementRootRef.current
@@ -168,12 +205,34 @@ export function A4PaginationPreview({
       pipeline: 'preview',
       generation,
       metadata: {
-        blockCount: document.content.length,
+        blockCount: layoutDocument.content.length,
         spread,
+        variant: layoutSignatures.variant,
+        resourceRevision: layoutSignatures.resourceRevision,
+        paginationSignature: layoutSignatures.paginationSignature,
         reason: layoutRequest.reason,
         priority: layoutRequest.priority,
       },
     })
+    const cached = paginationCacheRef.current.get(layoutSignatures.paginationSignature)
+    if (cached) {
+      profiler.addMetadata({ cacheHit: true })
+      displayDocumentRef.current = cached.document
+      displayChoiceLayoutOverridesRef.current = cached.choiceLayoutOverrides
+      setReadiness(cached.readiness)
+      setPagination(cached.pagination)
+      setParagraphLineCount(cached.paragraphLineCount)
+      setMeasurementGeneration(generation)
+      setReflowing(false)
+      onPaginationState?.({
+        pagination: cached.pagination,
+        readiness: cached.readiness,
+        measurementGeneration: generation,
+      })
+      profiler.finish('settled')
+      return
+    }
+    profiler.addMetadata({ cacheHit: false })
     setReflowing(true)
     setReadiness(PREPARING_READINESS)
     setMeasurementGeneration(generation)
@@ -184,17 +243,17 @@ export function A4PaginationPreview({
 
     // 资源签名（内容 + 字体变量 + 资源版本）未变化时跳过 waitForRenderReadiness：
     // 字体、图片、题目的装载状态都没变，等待只会白白耗时（教师/学生版切换、页眉页脚调整即此类）。
-    const nextSignature = `${JSON.stringify(document.content)}|${JSON.stringify(fontVars || {})}|${renderVersion}`
-    const resourcesUnchanged = measurementSignatureRef.current === nextSignature
-    measurementSignatureRef.current = nextSignature
-    const wait = resourcesUnchanged
-      ? Promise.resolve(INSTANT_READINESS)
+    const cachedResourceReadiness = resourceReadinessCacheRef.current.get(layoutSignatures.resourceRevision)
+    profiler.addMetadata({ resourceCacheHit: Boolean(cachedResourceReadiness) })
+    const wait = cachedResourceReadiness
+      ? Promise.resolve(cachedResourceReadiness)
       : readinessWait(root, { timeoutMs: 8_000, stableFrames: 2, signal: controller.signal })
 
     const endResourceWait = profiler.startPhase('resource-wait')
     void wait.then((nextReadiness) => {
       endResourceWait()
       if (controller.signal.aborted || generation !== generationRef.current) return
+      cacheResourceReadiness(resourceReadinessCacheRef.current, layoutSignatures.resourceRevision, nextReadiness)
       setReadiness(nextReadiness)
         const measuredLayouts = profiler.measure('choice-layout', () => (
           measuredChoiceLayoutOverrides(root, choiceLayoutOverrides)
@@ -209,7 +268,7 @@ export function A4PaginationPreview({
           : null
         const bundle = profiler.measure('dom-measurement', () => measureTeachingDocumentAll(
           root,
-          document,
+          layoutDocument,
           {
             geometry: geometryAdapter,
             paragraphGeometry: paragraphGeometryCounter?.adapter ?? paragraphGeometryAdapter,
@@ -229,10 +288,11 @@ export function A4PaginationPreview({
         const { measurement, paragraphs: paragraphMeasurements, boxes: boxMeasurements, questions: questionMeasurements, boxChildQuestions: boxChildQuestionMeasurements, boxChildRawMarkdowns: boxChildRawMarkdownMeasurements } = bundle
         measurement.diagnostics.push(...nextReadiness.diagnostics)
         if (controller.signal.aborted || generation !== generationRef.current) return
-        setParagraphLineCount(paragraphMeasurements.reduce((total, paragraph) => total + paragraph.lines.length, 0))
+        const nextParagraphLineCount = paragraphMeasurements.reduce((total, paragraph) => total + paragraph.lines.length, 0)
+        setParagraphLineCount(nextParagraphLineCount)
         setMeasurementGeneration(generation)
         const paginationResult = profiler.measure('pagination', () => paginateTeachingDocument({
-          document,
+          document: layoutDocument,
           measurements: measurement,
           paragraphMeasurements,
           boxMeasurements,
@@ -245,8 +305,20 @@ export function A4PaginationPreview({
         }))
         setPagination(paginationResult)
         // 展示快照与分页同步切换，保证可见页面永远渲染一致的一对。
-        displayDocumentRef.current = document
+        displayDocumentRef.current = layoutDocument
         displayChoiceLayoutOverridesRef.current = choiceLayoutOverrides
+        paginationCacheRef.current.set(layoutSignatures.paginationSignature, {
+          document: layoutDocument,
+          pagination: paginationResult,
+          readiness: nextReadiness,
+          paragraphLineCount: nextParagraphLineCount,
+          choiceLayoutOverrides,
+        })
+        while (paginationCacheRef.current.size > MAX_CACHED_PAGINATION_SNAPSHOTS) {
+          const oldestKey = paginationCacheRef.current.keys().next().value
+          if (!oldestKey) break
+          paginationCacheRef.current.delete(oldestKey)
+        }
         setReflowing(false)
         onPaginationState?.({ pagination: paginationResult, readiness: nextReadiness, measurementGeneration: generation })
         profiler.finish('settled')
@@ -276,7 +348,7 @@ export function A4PaginationPreview({
       controller.abort()
       profiler.finish('aborted')
     }
-  }, [active, boxGeometryAdapter, choiceLayoutOverrides, document, fontVars, geometryAdapter, layoutRequest.priority, layoutRequest.reason, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion, spread])
+  }, [active, boxGeometryAdapter, choiceLayoutOverrides, geometryAdapter, layoutDocument, layoutRequest.priority, layoutRequest.reason, layoutSignatures.paginationSignature, layoutSignatures.resourceRevision, layoutSignatures.variant, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, resolveQuestion, spread])
 
   const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure'> = {
     resolveQuestion,
@@ -340,7 +412,7 @@ export function A4PaginationPreview({
         <div ref={measurementRootRef}>
           {active ? (
             <TeachingDocumentRenderer
-              document={document}
+              document={layoutDocument}
               {...rendererProps}
               eagerImages
               surface="paper"

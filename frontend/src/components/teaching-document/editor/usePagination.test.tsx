@@ -74,6 +74,7 @@ interface HarnessProps {
   debounceMs?: number
   defaultDebounce?: boolean
   layoutRequest?: LayoutRequest
+  renderVersion?: string
   /** 模拟父层把分页结果回写为自身状态（如页面层的 paginationState）。 */
   onPagination?: (pagination: PaginationResult | null) => void
 }
@@ -94,6 +95,7 @@ function Harness(props: HarnessProps) {
     geometryAdapter: props.geometryAdapter ?? geometry,
     readinessWait: props.readinessWait,
     layoutRequest: props.layoutRequest,
+    renderVersion: props.renderVersion,
   })
   const { onPagination } = props
   // 回写仅依赖 pagination 引用：与页面层用法一致，引用不变则不重复回写。
@@ -171,8 +173,31 @@ describe('usePagination', () => {
     })
     await settle()
     expect(stateAttr('data-pages')).toBe('1')
-    // 恰好新增一轮测量：若依赖被掩盖则为 +0，若失控则远大于 +1。
-    expect(readinessWait.mock.calls.length).toBe(callsBefore + 1)
+    // 正文变化会重新测量并更新页数，但资源 revision 未变，不重复等待字体/图片/题目。
+    expect(readinessWait.mock.calls.length).toBe(callsBefore)
+  })
+
+  it('reuses stable resource readiness and invalidates it on render revision changes', async () => {
+    const readinessWait = vi.fn(async () => READY)
+    const source = documentWith(['a'])
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(<Harness document={source} readinessWait={readinessWait} renderVersion="r1" />)
+    })
+    await settle()
+    expect(readinessWait).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      root?.render(<Harness document={documentWith(['b'])} readinessWait={readinessWait} renderVersion="r1" />)
+    })
+    await settle()
+    expect(readinessWait).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      root?.render(<Harness document={documentWith(['b'])} readinessWait={readinessWait} renderVersion="r2" />)
+    })
+    await settle()
+    expect(readinessWait).toHaveBeenCalledTimes(2)
   })
 
   it('only typing keeps the default 300ms pagination debounce', async () => {

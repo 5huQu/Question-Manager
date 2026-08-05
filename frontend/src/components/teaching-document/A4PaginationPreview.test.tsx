@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { QuestionItem } from '@/types'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import type {
@@ -427,6 +427,7 @@ describe('A4PaginationPreview', () => {
       root?.render(
         <A4PaginationPreview
           document={documentWith(['old-a', 'old-b'])}
+          renderVersion="old-resources"
           geometryAdapter={geometry}
           readinessWait={controlledReadiness}
         />,
@@ -436,6 +437,7 @@ describe('A4PaginationPreview', () => {
       root?.render(
         <A4PaginationPreview
           document={documentWith(['latest'])}
+          renderVersion="latest-resources"
           geometryAdapter={geometry}
           readinessWait={controlledReadiness}
         />,
@@ -461,6 +463,7 @@ describe('A4PaginationPreview', () => {
       root?.render(
         <A4PaginationPreview
           document={documentWith(['old-a', 'old-b'])}
+          renderVersion="snapshot-old-resources"
           geometryAdapter={geometry}
           readinessWait={controlledReadiness}
         />,
@@ -473,6 +476,7 @@ describe('A4PaginationPreview', () => {
       root?.render(
         <A4PaginationPreview
           document={documentWith(['latest'])}
+          renderVersion="snapshot-latest-resources"
           geometryAdapter={geometry}
           readinessWait={controlledReadiness}
         />,
@@ -524,6 +528,87 @@ describe('A4PaginationPreview', () => {
     // printLayout 变化触发新一轮测量：generation 递增，且过程中发布了 preparing/null。
     expect(states[states.length - 1].measurementGeneration).toBe(2)
     expect(states.some((state) => state.measurementGeneration === 2 && state.pagination === null)).toBe(true)
+  })
+
+  it('restores warm student/teacher snapshots and invalidates them on resource revision', async () => {
+    const question: QuestionItem = {
+      id: 'variant-question',
+      serialNo: null,
+      questionNo: '1',
+      stage: '高中',
+      questionType: '解答题',
+      difficultyScore: 3,
+      difficultyScore10: 6,
+      difficultyLabel: '中等',
+      chapter: '',
+      knowledgePoints: [],
+      solutionMethods: [],
+      sourceTitle: '',
+      bankStatus: 'ready',
+      stemMarkdown: '版本缓存题干',
+      answerText: '版本缓存答案',
+      analysisMarkdown: '版本缓存解析',
+      totalScore: 10,
+      scoringRubric: [],
+      sliceImagePath: '',
+      figures: [],
+      sourceRunId: '',
+      updatedAt: 'r1',
+      hasFigures: false,
+    }
+    const source: TeachingDocumentV1 = {
+      ...documentWith([]),
+      content: [{ type: 'question', id: 'variant-block', questionId: question.id }],
+    }
+    let geometryCalls = 0
+    const countedGeometry: GeometryAdapter = {
+      measure(element) {
+        geometryCalls += 1
+        if (element.matches('[data-teaching-document-header]')) return { width: 600, height: 0, top: 0, bottom: 0 }
+        return { width: 600, height: 120, top: 0, bottom: 120 }
+      },
+    }
+    const countedReadiness = vi.fn(async () => ready)
+    const resolveVariantQuestion = () => question
+    const variantQuestionGeometry = { margins: () => ({ marginTop: 10, marginBottom: 10 }) }
+    const container = document.createElement('div')
+    root = createRoot(container)
+    const render = async (variant: 'student' | 'teacher', renderVersion: string) => {
+      await act(async () => {
+        root?.render(
+          <A4PaginationPreview
+            document={source}
+            variant={variant}
+            renderVersion={renderVersion}
+            resolveQuestion={resolveVariantQuestion}
+            geometryAdapter={countedGeometry}
+            paragraphGeometryAdapter={lineGeometry}
+            questionGeometryAdapter={variantQuestionGeometry}
+            readinessWait={countedReadiness}
+          />,
+        )
+      })
+    }
+
+    await render('student', 'r1')
+    const visibleStudent = container.querySelector('[data-teaching-page-index]')?.textContent || ''
+    expect(visibleStudent).toContain('版本缓存题干')
+    expect(visibleStudent).not.toContain('版本缓存答案')
+
+    await render('teacher', 'r1')
+    const visibleTeacher = container.querySelector('[data-teaching-page-index]')?.textContent || ''
+    expect(visibleTeacher).toContain('版本缓存答案')
+    expect(visibleTeacher).toContain('版本缓存解析')
+    const callsAfterTeacher = geometryCalls
+
+    await render('student', 'r1')
+    expect(geometryCalls).toBe(callsAfterTeacher)
+    expect(container.querySelector('[data-teaching-page-index]')?.textContent).not.toContain('版本缓存答案')
+    expect(countedReadiness).toHaveBeenCalledTimes(1)
+
+    await render('student', 'r2')
+    expect(geometryCalls).toBeGreaterThan(callsAfterTeacher)
+    expect(countedReadiness).toHaveBeenCalledTimes(2)
   })
 
   it('publishes a stable failed state when readiness waiting rejects', async () => {

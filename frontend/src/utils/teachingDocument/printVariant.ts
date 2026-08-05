@@ -3,12 +3,16 @@ import { renumberAutomaticQuestionNumbers } from './editorState'
 
 export type TeachingDocumentPrintVariant = 'student' | 'teacher'
 
+const variantDocumentCache = new WeakMap<TeachingDocumentV1, Partial<Record<TeachingDocumentPrintVariant, TeachingDocumentV1>>>()
+
 /**
  * 输出版本只影响答案与解析的可见性，不回写原始文档。
  * 编辑器预览与实际打印共用此转换，避免两处版本规则偏离。
  * 自动题号也在这里统一按文档出现顺序计算，不能直接沿用题库原始题号。
  */
 export function documentForPrintVariant(source: TeachingDocumentV1, variant: TeachingDocumentPrintVariant): TeachingDocumentV1 {
+  const cached = variantDocumentCache.get(source)?.[variant]
+  if (cached) return cached
   const showSolutions = variant === 'teacher'
   const normalizedSource = renumberAutomaticQuestionNumbers(source)
   const transformQuestion = (block: QuestionBlock): QuestionBlock => ({
@@ -25,5 +29,9 @@ export function documentForPrintVariant(source: TeachingDocumentV1, variant: Tea
     if (block.type === 'box') return { ...block, children: block.children.map(transformChild) }
     return block
   }
-  return { ...normalizedSource, content: normalizedSource.content.map(transformBlock) }
+  const result = { ...normalizedSource, content: normalizedSource.content.map(transformBlock) }
+  const variants = variantDocumentCache.get(source) ?? {}
+  variants[variant] = result
+  variantDocumentCache.set(source, variants)
+  return result
 }
