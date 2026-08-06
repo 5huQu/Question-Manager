@@ -3,7 +3,7 @@
  * 状态协调 + 布局骨架；具体 UI 委托给 components/ 子组件
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AlertTriangle, Bold, Check, ChevronLeft, ChevronRight, Download, FileUp, Italic, LoaderCircle, RefreshCcw, Settings2, X } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
@@ -502,6 +502,7 @@ export default function TeachingDocumentEditorPage() {
   }, [paper, editor.document?.style?.print])
   const [outlineOpen, setOutlineOpen] = useState(true)
   const [propertiesOpen, setPropertiesOpen] = useState(false)
+  const [propertiesDockOccupied, setPropertiesDockOccupied] = useState(false)
   const [focusedCardEditor, setFocusedCardEditor] = useState<import('@tiptap/react').Editor | null>(null)
   const [lastFocusedCardEditor, setLastFocusedCardEditor] = useState<import('@tiptap/react').Editor | null>(null)
   const [editingQuestionBlockId, setEditingQuestionBlockId] = useState('')
@@ -646,6 +647,9 @@ export default function TeachingDocumentEditorPage() {
     if (propertiesOpen) captureViewportAnchor(selectedId)
     setPropertiesOpen(false)
   }, [captureViewportAnchor, propertiesOpen, selectedId])
+  useLayoutEffect(() => {
+    if (propertiesOpen && selectedId) setPropertiesDockOccupied(true)
+  }, [propertiesOpen, selectedId])
 
   // 键盘快捷键：[ 切换大纲
   // 注意：下方 `const document = editor.document` 会遮蔽全局 document，
@@ -1503,12 +1507,10 @@ export default function TeachingDocumentEditorPage() {
         />
       </div>
 
-        <motion.aside
+        <aside
           data-teaching-properties-dock
-          initial={false}
-          animate={{ width: propertiesOpen && selected ? 300 : 0 }}
-          transition={springPanel}
-          className={`h-full shrink-0 overflow-hidden border-l border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 ${propertiesOpen && selected ? 'w-[300px]' : 'w-0'}`}
+          data-teaching-dock-occupied={propertiesDockOccupied ? 'true' : 'false'}
+          className={`h-full shrink-0 overflow-hidden border-l border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 ${propertiesDockOccupied ? 'w-[300px]' : 'w-0'}`}
         >
           <PropertiesSheet
             variant="docked"
@@ -1534,8 +1536,11 @@ export default function TeachingDocumentEditorPage() {
             onEditQuestion={openQuestionEditor}
             onOpenFormula={(blockId) => setFormulaBlockId(blockId)}
             onOpenQuestionPicker={(blockId, boxId) => setPickerTarget({ blockId, boxId })}
+            onExitComplete={() => {
+              if (!propertiesOpen || !selected) setPropertiesDockOccupied(false)
+            }}
           />
-        </motion.aside>
+        </aside>
       </div>
     </main>
   )

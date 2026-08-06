@@ -12,7 +12,7 @@ import { BlockInlineEditor } from '@/components/teaching-document/BlockInlineEdi
 import { FormulaLiveInput } from '@/components/questions/editor/FormulaLiveInput'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
 import { MarkdownContent } from '@/components/MarkdownContent'
-import { springPanel } from '@/components/teaching-document/motion'
+import { springDock, springPanel } from '@/components/teaching-document/motion'
 import { BUILTIN_BOX_TEMPLATES, hasProtectedInlineContent, protectedInlineReason } from '@/utils/teachingDocument'
 import { figureDisplayLabels } from '@/utils/questionDisplay'
 import { FIGURE_LAYOUT_PRESETS, resolveFigureLayout } from '@/utils/teachingDocument/figureLayoutPresets'
@@ -61,10 +61,11 @@ export function PropertiesSheet(props: {
   onEditQuestion?: (blockId: string) => void
   onOpenFormula?: (blockId: string) => void
   onOpenQuestionPicker?: (blockId: string, boxId?: string) => void
+  onExitComplete?: () => void
 }) {
   const reduced = useReducedMotion()
   return (
-    <AnimatePresence mode="wait">
+    <AnimatePresence mode="wait" onExitComplete={props.onExitComplete}>
       {props.open && props.selected ? (
         <PropertiesSheetPanel key={props.selected.block.id || 'properties-sheet'} {...props} selected={props.selected} reduced={reduced} />
       ) : null}
@@ -109,9 +110,9 @@ function PropertiesSheetPanel(props: {
       initial={props.reduced ? { opacity: 0 } : { x: 20, opacity: 0 }}
       animate={props.reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
       exit={props.reduced ? { opacity: 0 } : { x: 20, opacity: 0 }}
-      transition={springPanel}
+      transition={props.reduced ? { duration: 0.15 } : props.variant === 'docked' ? springDock : springPanel}
       className={props.variant === 'docked'
-        ? 'question-edit-glass-aside flex h-full w-[300px] flex-col border-l border-black/6 dark:border-white/8 backdrop-blur-md'
+        ? 'question-edit-glass-aside flex h-full w-[300px] flex-col border-l border-black/6 dark:border-white/8'
         : 'question-edit-glass-dialog absolute inset-y-0 right-0 z-30 flex w-[min(26rem,calc(100vw-2rem))] flex-col border-l border-black/6 dark:border-white/8 shadow-[-8px_0_24px_-6px_rgba(0,0,0,0.08)] backdrop-blur-2xl backdrop-saturate-150'}
     >
       <div className="flex h-12 items-center justify-between border-b border-black/6 px-4 dark:border-white/8">

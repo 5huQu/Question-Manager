@@ -4,14 +4,14 @@
  */
 
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
   AlertTriangle, Box, FileCode2, Heading, Image, Minus,
   ChevronDown, ChevronRight, FileQuestion, PanelLeft, PilcrowLeft, ScissorsLineDashed, TextCursorInput, X, ArrowDown, ArrowUp,
 } from 'lucide-react'
 import type { DocumentValidationIssue, TeachingBlock, TeachingDocumentOutlineOptions, TeachingDocumentV1, TeachingInline } from '@/types/teachingDocument'
 import { buildDocumentOutline } from '@/utils/teachingDocument'
-import { springPanel } from '@/components/teaching-document/motion'
+import { springDock, springPanel } from '@/components/teaching-document/motion'
 import { USER_BLOCK_LABEL } from './blockLabels'
 
 const BLOCK_ICONS: Partial<Record<TeachingBlock['type'], typeof Heading>> = {
@@ -100,22 +100,31 @@ export function OutlinePanel(props: {
   onMoveSection?: (headingId: string, direction: -1 | 1) => void
 }) {
   const reduced = useReducedMotion()
+  const [dockedOccupied, setDockedOccupied] = useState(props.open)
+  useLayoutEffect(() => {
+    if (props.variant === 'docked' && props.open) setDockedOccupied(true)
+  }, [props.open, props.variant])
   if (props.variant === 'docked') {
     return (
-      <motion.aside
-        initial={false}
-        animate={{ width: props.open ? 256 : 44 }}
-        transition={reduced ? { duration: 0.15 } : springPanel}
-        className="question-edit-glass-aside hidden h-full shrink-0 flex-col overflow-hidden border-r border-black/6 lg:flex dark:border-white/8 backdrop-blur-md"
+      <aside
+        data-teaching-outline-dock=""
+        data-teaching-dock-occupied={dockedOccupied ? 'true' : 'false'}
+        className={`question-edit-glass-aside hidden h-full shrink-0 flex-col overflow-hidden border-r border-black/6 lg:flex dark:border-white/8 backdrop-blur-md ${dockedOccupied ? 'w-64' : 'w-11'}`}
       >
-        <AnimatePresence mode="wait" initial={false}>
+        <AnimatePresence
+          mode="sync"
+          initial={false}
+          onExitComplete={() => {
+            if (!props.open) setDockedOccupied(false)
+          }}
+        >
           {props.open ? (
             <motion.div
               key="docked-expanded"
               initial={reduced ? { opacity: 0 } : { opacity: 0, x: -8 }}
               animate={reduced ? { opacity: 1 } : { opacity: 1, x: 0 }}
               exit={reduced ? { opacity: 0 } : { opacity: 0, x: -8 }}
-              transition={{ duration: 0.2 }}
+              transition={reduced ? { duration: 0.15 } : springDock}
               className="flex h-full w-64 flex-col overflow-hidden"
             >
               <OutlinePanelBodyContent {...props} reduced={reduced} />
@@ -141,7 +150,7 @@ export function OutlinePanel(props: {
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.aside>
+      </aside>
     )
   }
 
