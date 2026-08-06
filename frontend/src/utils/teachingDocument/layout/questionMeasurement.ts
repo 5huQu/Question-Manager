@@ -30,6 +30,8 @@ export interface QuestionRegionMeasurement {
   height: number
   top: number
   bottom: number
+  /** 题图区域内容后的可折叠留白，单位与 height 相同。 */
+  trailingSpacing?: number
   optionStart?: number
   optionEnd?: number
   rowIndex?: number
@@ -114,6 +116,7 @@ function versionForQuestion(input: Omit<QuestionMeasurement, 'measurementVersion
         option.height,
       ]),
       region.paragraphMeasurement?.measurementVersion || '',
+      region.trailingSpacing ?? '',
     ]),
   ].join('|')
   let hash = 2166136261
@@ -183,6 +186,9 @@ export function measureQuestionCore(input: MeasureQuestionCoreInput): QuestionMe
     const rect = element
       ? geometry.measure(element, root)
       : { width: 0, height: 0, top: 0, bottom: 0 }
+    const trailingSpacing = region.kind === 'figure' && element?.firstElementChild
+      ? Math.max(0, rect.bottom - geometry.measure(element.firstElementChild as HTMLElement, root).bottom)
+      : 0
     if (!validGeometry([rect.width, rect.height, rect.top, rect.bottom])
       || rect.bottom < rect.top || rect.height === 0) {
       diagnostics.push({
@@ -305,6 +311,7 @@ export function measureQuestionCore(input: MeasureQuestionCoreInput): QuestionMe
       height: Number.isFinite(rect.height) && rect.height >= 0 ? rect.height : 0,
       top: Number.isFinite(rect.top) ? rect.top : 0,
       bottom: Number.isFinite(rect.bottom) ? rect.bottom : 0,
+      ...(trailingSpacing > 0 ? { trailingSpacing } : {}),
       ...(region.kind === 'options-row'
         ? {
             optionStart: region.optionStart,

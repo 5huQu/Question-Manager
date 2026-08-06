@@ -66,6 +66,22 @@ describe('question figure rendering', () => {
     expect(container.textContent).not.toContain('题干图')
   })
 
+  it('supports natural aspect ratio without changing the legacy gallery default', async () => {
+    await act(async () => {
+      root.render(<FigureGallery figures={[figure]} showCaption={false} naturalAspectRatio />)
+    })
+
+    expect(container.querySelector('figure')?.className).toContain('w-full')
+    expect(container.querySelector('button')?.className).toContain('h-auto')
+    expect(container.querySelector('img')?.className).toContain('h-auto')
+
+    await act(async () => {
+      root.render(<FigureGallery figures={[figure]} showCaption={false} />)
+    })
+    expect(container.querySelector('button')?.className).toContain('h-44')
+    expect(container.querySelector('img')?.className).toContain('h-full')
+  })
+
   it('renders the image preview in the document body so global floating controls stay behind it', async () => {
     await act(async () => {
       root.render(<FigureGallery figures={[figure]} />)

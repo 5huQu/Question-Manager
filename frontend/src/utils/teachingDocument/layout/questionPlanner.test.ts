@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { QuestionItem } from '@/types'
+import type { QuestionFigure, QuestionItem } from '@/types'
 import type { QuestionBlock } from '@/types/teachingDocument'
 import type { QuestionMeasurement } from './questionMeasurement'
 import type { ParagraphMeasurement } from './paragraphMeasurement'
@@ -200,6 +200,35 @@ describe('planQuestionFragments', () => {
         .reduce((total, region) => total + (region.optionEnd! - region.optionStart!), 0)
     )).filter(Boolean)
     expect(optionsPerFragment).toEqual([2, 2])
+  })
+
+  it('folds a figure trailing margin when the figure is the last region at a page boundary', () => {
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'question-block',
+      questionId: 'q1',
+    }
+    const item = question('题干\n\n<!-- DOC2X_FIGURE:fig-1 -->', {
+      figures: [{ id: 'fig-1', path: 'figure.png', usage: 'stem' } as QuestionFigure],
+    })
+    const measured = measurement(block, item, { paragraph: 20, figure: 40 }, 1)
+    const figureRegion = measured.regions.find((region) => region.type === 'figure')
+    expect(figureRegion).toBeTruthy()
+    figureRegion!.trailingSpacing = 8
+
+    const plan = planQuestionFragments({
+      block,
+      measurement: measured,
+      firstPageAvailableHeight: 52,
+      pageContentHeight: 100,
+    })
+
+    expect(plan.fragments).toHaveLength(1)
+    expect(plan.fragments[0].regionItems.at(-1)).toMatchObject({
+      regionType: 'figure',
+      height: 32,
+      trimTrailingSpacing: true,
+    })
   })
 
   it('diagnoses an indivisible oversized answer without dropping it', () => {

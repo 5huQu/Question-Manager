@@ -750,6 +750,9 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
           <QuestionRuntimeContent
             block={block}
             model={runtimeModel}
+            continuation={questionFragments[0]?.item.continuation || 'single'}
+            trimEndChrome={questionFragments[0]?.item.trimEndChrome}
+            regionItems={questionFragments[0]?.item.regionItems}
             layoutEditor={layoutEditor}
             resolveFigure={resolveFigure}
             typography={block.display?.typography}

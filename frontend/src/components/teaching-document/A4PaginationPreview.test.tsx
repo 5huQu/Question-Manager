@@ -604,6 +604,7 @@ describe('A4PaginationPreview', () => {
     await render('student', 'r1')
     expect(geometryCalls).toBe(callsAfterTeacher)
     expect(container.querySelector('[data-teaching-page-index]')?.textContent).not.toContain('版本缓存答案')
+    expect(container.querySelector('[data-teaching-layout-status]')).toBeNull()
     expect(countedReadiness).toHaveBeenCalledTimes(1)
 
     await render('student', 'r2')

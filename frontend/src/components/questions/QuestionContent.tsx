@@ -336,12 +336,15 @@ export function FigureGallery({
   className = '',
   compact = false,
   showCaption = true,
+  naturalAspectRatio = false,
   onSelect,
 }: {
   figures: QuestionFigure[]
   className?: string
   compact?: boolean
   showCaption?: boolean
+  /** 文档排版中的明确尺寸覆盖使用图片原始比例，默认图库行为保持不变。 */
+  naturalAspectRatio?: boolean
   onSelect?: (figure: QuestionFigure) => void
 }) {
   const [preview, setPreview] = useState<QuestionFigure | null>(null)
@@ -358,24 +361,24 @@ export function FigureGallery({
           return (
           <figure
             key={resourceKey}
-            className={`overflow-hidden rounded-lg border bg-white ${compact ? 'max-w-40' : 'max-w-[26rem]'}`}
+            className={`overflow-hidden rounded-lg border bg-white ${naturalAspectRatio ? 'w-full' : ''} ${compact ? 'max-w-40' : 'max-w-[26rem]'}`}
             data-teaching-resource="image"
             data-teaching-resource-id={resourceId}
             data-teaching-resource-status={hasFailed ? 'error' : 'ready'}
           >
-            <button className={`flex w-full justify-center bg-white p-2 text-left ${compact ? 'h-32' : 'h-44'} ${hasFailed ? 'cursor-default' : onSelect ? 'cursor-pointer' : 'cursor-zoom-in'}`} onClick={() => {
+            <button className={`flex w-full justify-center bg-white p-2 text-left ${naturalAspectRatio ? 'h-auto min-h-0' : compact ? 'h-32' : 'h-44'} ${hasFailed ? 'cursor-default' : onSelect ? 'cursor-pointer' : 'cursor-zoom-in'}`} onClick={() => {
               if (hasFailed) return
               if (onSelect) onSelect(figure)
               else setPreview(figure)
             }} type="button">
               {hasFailed ? (
-                <span className="flex h-full w-full items-center justify-center bg-zinc-50 text-xs text-zinc-400">
+                  <span className={`flex w-full items-center justify-center bg-zinc-50 text-xs text-zinc-400 ${naturalAspectRatio ? 'min-h-32' : 'h-full'}`}>
                   图片加载失败
                 </span>
               ) : (
                 <img
                   alt={figureAlt(figure, index)}
-                  className="block h-full w-full object-contain bg-white"
+                  className={`block w-full object-contain bg-white ${naturalAspectRatio ? 'h-auto' : 'h-full'}`}
                   src={assetUrl(String(figure.path || ''))}
                   onError={() => setFailed((current) => new Set(current).add(resourceKey))}
                 />

@@ -361,6 +361,20 @@ export function A4PaginationPreview({
 
     setMeasurementGeneration(handle.generation)
     if (handle.cacheHit) {
+      const cachedSnapshot = coordinator.getSnapshot(coordinatorKey)
+      if (cachedSnapshot) {
+        displayDocumentRef.current = cachedSnapshot.document
+        displayChoiceLayoutOverridesRef.current = cachedSnapshot.choiceLayoutOverrides
+        setReadiness(cachedSnapshot.readiness)
+        setPagination(cachedSnapshot.pagination)
+        setParagraphLineCount(cachedSnapshot.paragraphLineCount)
+        setReflowing(cachedSnapshot.status !== 'settled')
+        onPaginationState?.({
+          pagination: cachedSnapshot.pagination,
+          readiness: cachedSnapshot.readiness,
+          measurementGeneration: handle.generation,
+        })
+      }
       const profiler = createLayoutPerformanceProfiler({
         pipeline: 'preview',
         generation: handle.generation,

@@ -304,6 +304,33 @@ describe('usePagination', () => {
     expect(stateAttr('data-settled')).toBe('true')
   })
 
+  it('synchronously restores editor state when a settled layout cache is hit', async () => {
+    const coordinator = new TeachingDocumentLayoutCoordinator()
+    const readinessWait = vi.fn(async () => READY)
+    const source = documentWith(['cached-a', 'cached-b'])
+    root = createRoot(container)
+
+    await act(async () => {
+      root?.render(<Harness document={source} readinessWait={readinessWait} coordinator={coordinator} />)
+    })
+    await settle()
+    expect(stateAttr('data-settled')).toBe('true')
+
+    await act(async () => {
+      root?.render(<Harness document={documentWith(['latest'])} readinessWait={readinessWait} coordinator={coordinator} />)
+    })
+    expect(stateAttr('data-settled')).toBe('false')
+
+    // Returning to the cached revision must clear the transient reflow state
+    // during the cache-hit effect itself, before any promise continuation.
+    await act(async () => {
+      root?.render(<Harness document={source} readinessWait={readinessWait} coordinator={coordinator} />)
+    })
+    expect(stateAttr('data-ready')).toBe('true')
+    expect(stateAttr('data-settled')).toBe('true')
+    expect(stateAttr('data-pages')).toBe('2')
+  })
+
   it('invalidates every block measurement when the resource revision changes', async () => {
     const coordinator = new TeachingDocumentLayoutCoordinator()
     const readinessWait = vi.fn(async () => READY)

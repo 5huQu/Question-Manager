@@ -638,7 +638,6 @@ export default function TeachingDocumentEditorPage() {
     const figure = question.figures?.find((item) => String(item.id || item.blockId || '') === asset.figureId)
     return figure?.path ? assetUrl(figure.path) : { status: 'missing' as const }
   }, [assetMap, questionMap])
-  const selectBlock = useCallback((blockId: string) => setSelectedId(blockId), [])
   const openProperties = useCallback((blockId: string) => {
     if (!propertiesOpen) captureViewportAnchor(blockId)
     setPropertiesOpen(true)
@@ -1369,7 +1368,7 @@ export default function TeachingDocumentEditorPage() {
               renderVersion={renderResourceVersion}
               layoutRequest={editor.layoutRequest}
               active={canvasMode === 'a4'}
-              onBlockSelect={selectBlock}
+              onBlockSelect={(blockId) => selectAndShow(blockId)}
               onDiagnosticNavigate={(blockId) => {
                 // 预览本身只读；修复需回到连续编辑并打开对应卡片的跨页设置。
                 setCanvasMode('continuous')
@@ -1396,6 +1395,7 @@ export default function TeachingDocumentEditorPage() {
               selectedTopLevelId={selected?.topLevel.id || ''}
               selectedIsBoxChild={Boolean(selected?.boxId)}
               onSelect={selectAndShow}
+              onBlockActivate={selectAndShow}
               onInsertAfter={(type, afterBlockId, headingLevel) => insertBlock(type, afterBlockId, headingLevel)}
               onInsertBoxChild={insertBoxChild}
               onMove={moveSelected}

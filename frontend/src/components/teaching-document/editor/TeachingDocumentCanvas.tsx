@@ -93,6 +93,8 @@ export interface TeachingDocumentCanvasProps {
   selectedTopLevelId: string
   selectedIsBoxChild: boolean
   onSelect: (blockId: string) => void
+  /** 点击已选对象时也要再次激活属性栏。 */
+  onBlockActivate?: (blockId: string) => void
   onInsertAfter: (type: TeachingBlock['type'], afterBlockId: string, headingLevel?: HeadingLevel) => void
   onInsertBoxChild: (type: BoxChildBlock['type'], boxId: string, afterChildId?: string) => void
   onMove: (direction: -1 | 1) => void
@@ -147,6 +149,7 @@ export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
     selectedTopLevelId,
     selectedIsBoxChild,
     onSelect,
+    onBlockActivate,
     onInsertAfter,
     onMove,
     onDuplicate,
@@ -442,6 +445,12 @@ export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
               ref={setContentRoot}
               data-teaching-page-content=""
               className={paginated ? '' : 'px-5 py-6 sm:px-10 sm:py-9'}
+              onMouseDownCapture={onBlockActivate ? (event) => {
+                const target = event.target
+                if (!(target instanceof Element)) return
+                const blockId = target.closest<HTMLElement>('[data-block-id]')?.dataset.blockId
+                if (blockId) onBlockActivate(blockId)
+              } : undefined}
               style={paginated ? { width: `${contentWidthPx}px` } : undefined}
             >
               <header

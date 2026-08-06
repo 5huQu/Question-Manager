@@ -135,6 +135,38 @@ describe('TeachingDocumentEditorPage 选中图片弹出属性面板', () => {
     expect(propertiesDock?.dataset.teachingDockOccupied).toBe('false')
   })
 
+  it('关闭属性面板后再次点击同一顶层对象会重新打开', async () => {
+    const teachingDoc: TeachingDocumentV1 = {
+      version: 1,
+      documentType: 'lecture',
+      title: '重复激活',
+      metadata: {},
+      content: [{ type: 'figure', id: 'top-fig-repeat', asset: { type: 'documentAsset', assetId: 'asset-1' }, alignment: 'center' }],
+    }
+    mocks.editor.current = makeEditor(teachingDoc)
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <MemoryRouter initialEntries={['/teaching-documents/doc-1']}>
+          <Routes><Route path="/teaching-documents/:documentId" element={<TeachingDocumentEditorPage />} /></Routes>
+        </MemoryRouter>,
+      )
+    })
+    const figure = container.querySelector<HTMLElement>('[data-editing-canvas] [data-block-id="top-fig-repeat"]')
+    expect(figure).toBeTruthy()
+    const originalElementFromPoint = document.elementFromPoint
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => figure })
+    await act(async () => figure?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })))
+    expect(container.querySelector('aside')?.textContent).toContain('图片')
+    const close = container.querySelector<HTMLButtonElement>('button[title="关闭属性面板"]')
+    await act(async () => close?.click())
+    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 350)) })
+    expect(container.querySelector('[data-teaching-properties-dock]')?.getAttribute('data-teaching-dock-occupied')).toBe('false')
+    await act(async () => figure?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })))
+    expect(container.querySelector('aside')?.textContent).toContain('图片')
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: originalElementFromPoint })
+  })
+
   it('Ctrl+点击顶层对象累积多选集合，批量删除一次性生效', async () => {
     const teachingDoc: TeachingDocumentV1 = {
       version: 1,

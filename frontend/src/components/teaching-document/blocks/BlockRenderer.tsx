@@ -506,9 +506,11 @@ function QuestionRegionContent({
     const hasExplicitLayout = Boolean(figureRegion.layoutPreset || figureRegion.widthOverrideMm || figureRegion.alignmentOverride)
     const widthStyle = hasExplicitLayout ? { width: `${resolvedLayout.widthMm * CSS_PIXELS_PER_MM}px`, maxWidth: '100%' } : undefined
     const alignClass = hasExplicitLayout ? { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[resolvedLayout.alignment] : ''
+    const trimTrailingSpacing = item?.kind === 'whole-question-region' && item.trimTrailingSpacing
+    const figureSpacingClass = trimTrailingSpacing ? 'mt-3 mb-0' : 'my-3'
     if (figureRegion.asset) {
       return (
-        <div className={`relative my-3 ${alignClass}`} style={widthStyle}>
+        <div className={`relative ${figureSpacingClass} ${alignClass}`} style={widthStyle}>
           <FigureBlockView
             block={{ type: 'figure', id: figureRegion.figureKey || figureRegion.key, asset: figureRegion.asset, alignment: resolvedLayout.alignment, widthMm: resolvedLayout.widthMm }}
             resolveFigure={resolveFigure}
@@ -518,8 +520,13 @@ function QuestionRegionContent({
       )
     }
     return visibleFigures.length ? (
-      <div className={`relative my-3 ${alignClass}`} style={widthStyle}>
-        <FigureGallery figures={visibleFigures} showCaption={false} onSelect={() => layoutEditor?.onFigureSelect?.(figureKey)} />
+      <div className={`relative ${figureSpacingClass} ${alignClass}`} style={widthStyle}>
+        <FigureGallery
+          figures={visibleFigures}
+          showCaption={false}
+          naturalAspectRatio={hasExplicitLayout}
+          onSelect={() => layoutEditor?.onFigureSelect?.(figureKey)}
+        />
         {layoutEditor?.selected ? (
           <ImageResizeOverlay
             currentWidthMm={resolvedLayout.widthMm}
@@ -531,7 +538,7 @@ function QuestionRegionContent({
       </div>
     ) : (
       <div
-        className="my-3 rounded-lg border border-dashed border-amber-300 bg-amber-50/40 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300"
+        className={`${figureSpacingClass} rounded-lg border border-dashed border-amber-300 bg-amber-50/40 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300`}
         {...{
           [TEACHING_DOM.resource]: 'image',
           [TEACHING_DOM.resourceId]: region.missingFigureId || region.key,
@@ -636,6 +643,7 @@ export function QuestionRuntimeContent({
   block,
   model,
   continuation = 'single',
+  trimEndChrome = false,
   regionItems,
   layoutEditor,
   resolveFigure,
@@ -647,6 +655,7 @@ export function QuestionRuntimeContent({
   block: QuestionBlock
   model: QuestionRuntimeModel
   continuation?: 'single' | 'start' | 'middle' | 'end'
+  trimEndChrome?: boolean
   regionItems?: PaginatedQuestionRegionItem[]
   layoutEditor?: QuestionLayoutEditor
   resolveFigure?: (asset: FigureAssetRef) => FigureResolution
@@ -655,12 +664,14 @@ export function QuestionRuntimeContent({
   editableQuestionText?: boolean
   onInlineContentChange?: (key: string, content: TeachingInline[]) => void
 }) {
-  const marginClass = {
+  const marginClass = trimEndChrome && continuation === 'single'
+    ? 'mt-4 mb-0'
+    : {
     single: 'my-4',
     start: 'mt-4 mb-0',
     middle: 'my-0',
     end: 'mt-0 mb-4',
-  }[continuation]
+    }[continuation]
   const itemByKey = new Map(regionItems?.map((item) => [item.regionKey, item]))
   const regions = regionItems
     ? regionItems
@@ -793,6 +804,7 @@ export function QuestionFragmentRenderer({
         block={block}
         model={createQuestionRuntimeModel(block, block.localContent ? { ...question, ...block.localContent } : question, { choiceLayoutOverrides, probeChoiceLayouts })}
         continuation={item.continuation}
+        trimEndChrome={item.trimEndChrome}
         regionItems={item.regionItems}
         resolveFigure={resolveFigure}
         choiceLayoutBlockId={block.id}

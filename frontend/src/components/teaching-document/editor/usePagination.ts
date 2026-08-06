@@ -334,6 +334,14 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
 
     setGeneration(handle.generation)
     if (handle.cacheHit) {
+      const cachedSnapshot = coordinator.getSnapshot(coordinatorKey)
+      if (cachedSnapshot) {
+        setPagination(cachedSnapshot.pagination)
+        setReadiness(cachedSnapshot.readiness)
+        setParagraphLineCount(cachedSnapshot.paragraphLineCount)
+        setChoiceLayoutOverrides(cachedSnapshot.choiceLayoutOverrides)
+        setSettled(cachedSnapshot.status === 'settled')
+      }
       const profiler = createLayoutPerformanceProfiler({
         pipeline: 'editor',
         generation: handle.generation,

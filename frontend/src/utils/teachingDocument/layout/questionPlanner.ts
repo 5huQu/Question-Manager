@@ -22,6 +22,9 @@ export const DEFAULT_QUESTION_SPLIT_OPTIONS: QuestionSplitOptions = {
   minOptionItemsOnPage: 2,
 }
 
+/** 仅用于题图在页尾折叠留白后的 CSS 亚像素取整误差。 */
+const TRAILING_FIGURE_FIT_EPSILON = 2
+
 export interface QuestionFragmentPlan {
   fragments: QuestionFragmentPaginationItem[]
   diagnostics: RenderDiagnostic[]
@@ -31,6 +34,7 @@ interface Draft {
   pageOffset: number
   regionItems: PaginatedQuestionRegionItem[]
   contentHeight: number
+  trimEndChrome?: boolean
 }
 
 export function planQuestionFragments(input: {
@@ -102,12 +106,15 @@ export function planQuestionFragments(input: {
   const wholeItem = (
     region: QuestionRuntimeRegion,
     measured: QuestionRegionMeasurement,
+    height = measured.height,
+    trimTrailingSpacing = false,
   ): WholeQuestionRegionPaginationItem => ({
     kind: 'whole-question-region',
     regionKey: region.key,
     regionType: region.type,
     regionIndex: region.index,
-    height: measured.height,
+    height,
+    ...(trimTrailingSpacing ? { trimTrailingSpacing: true } : {}),
     ...(region.kind === 'options-row'
       ? {
           optionStart: region.optionStart,
@@ -127,14 +134,19 @@ export function planQuestionFragments(input: {
   const placeWhole = (
     region: QuestionRuntimeRegion,
     measured: QuestionRegionMeasurement,
+    allowTrailingSpacingTrim = false,
   ) => {
     let draft = ensureDraft(currentOffset)
-    if (measured.height > capacity(draft) + 0.01
+    const trailingSpacing = allowTrailingSpacingTrim ? measured.trailingSpacing || 0 : 0
+    const trimmedHeight = Math.max(0, measured.height - trailingSpacing)
+    const trimFits = trailingSpacing > 0
+      && trimmedHeight <= capacity(draft) + endReserve + TRAILING_FIGURE_FIT_EPSILON
+    if (measured.height > capacity(draft) + 0.01 && !trimFits
       && (draft.regionItems.length > 0 || measured.height <= fullCapacity + 0.01)) {
       currentOffset += 1
       draft = ensureDraft(currentOffset)
     }
-    if (measured.height > fullCapacity + 0.01) {
+    if ((trimFits ? trimmedHeight : measured.height) > fullCapacity + 0.01) {
       diagnostics.push({
         code: overflowCode(region),
         severity: 'error',
@@ -145,8 +157,9 @@ export function planQuestionFragments(input: {
         message: `题目 ${block.questionId} 的 ${region.type} 区域 ${region.key} 超过单页且当前按整体区域保留。`,
       })
     }
-    draft.regionItems.push(wholeItem(region, measured))
-    draft.contentHeight += measured.height
+    draft.regionItems.push(wholeItem(region, measured, trimFits ? trimmedHeight : measured.height, trimFits))
+    draft.contentHeight += trimFits ? trimmedHeight : measured.height
+    if (trimFits) draft.trimEndChrome = true
   }
 
   const placeClippedAnswerSpace = (
@@ -336,7 +349,7 @@ export function planQuestionFragments(input: {
           currentOffset += 1
         }
       }
-      placeWhole(region, measured)
+      placeWhole(region, measured, region.kind === 'figure' && index === regions.length - 1)
     }
     index += 1
   }
@@ -359,8 +372,10 @@ export function planQuestionFragments(input: {
       fragmentIndex,
       pageOffset: draft.pageOffset,
       continuation,
+      ...(draft.trimEndChrome ? { trimEndChrome: true } : {}),
       regionItems: draft.regionItems,
-      height: draft.contentHeight + measurement.fragmentChrome[continuation],
+      height: draft.contentHeight + measurement.fragmentChrome[continuation]
+        - (draft.trimEndChrome ? endReserve : 0),
     }
   })
   if (!fragments.length && regions.length) {

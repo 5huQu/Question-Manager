@@ -137,6 +137,8 @@ export interface WholeQuestionRegionPaginationItem {
   optionStart?: number
   optionEnd?: number
   rowIndex?: number
+  /** 页尾临界放置时折叠题图区域的底部留白。 */
+  trimTrailingSpacing?: boolean
   answerSpaceSegment?: 'single' | 'start' | 'middle' | 'end'
 }
 
@@ -166,6 +168,8 @@ export interface QuestionFragmentPaginationItem {
   fragmentIndex: number
   pageOffset: number
   continuation: FragmentContinuation
+  /** 题图在页尾折叠时，单片段题目同步去掉题目结束边距。 */
+  trimEndChrome?: boolean
   regionItems: PaginatedQuestionRegionItem[]
   height: number
 }
