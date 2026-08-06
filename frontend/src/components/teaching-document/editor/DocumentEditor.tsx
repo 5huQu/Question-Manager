@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import type { Transaction } from '@tiptap/pm/state'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { TeachingDocumentLayoutChangeSet } from '@/utils/teachingDocument/layout/changeSet'
 import { createDocumentEditorExtensions } from './schema'
 import {
   cachedJsonSignature,
@@ -23,6 +24,7 @@ import { PaperProvider, PaginationProvider, ResolverProvider, type DocumentEdito
 import { createDocumentPrintLayout, resolveDocumentPaper, type PaginationResult, type PrintLayoutSpec } from '@/utils/teachingDocument'
 import type { EditorPaginationLayout } from './paginationDecorations'
 import { DOCUMENT_EXTERNAL_SYNC_META, isExternalDocumentSync, TopLevelMultiSelectDecoration } from './selection'
+import { DOCUMENT_LAYOUT_CHANGE_SET_META, mergeStructuralChangeSets } from './structuralActions'
 
 /** 普通键入在编辑器内即时生效；整篇领域模型同步采用短暂合并，避免逐字序列化。 */
 export const DEFAULT_DOCUMENT_MODEL_SYNC_DELAY_MS = 350
@@ -31,7 +33,7 @@ export interface DocumentEditorProps {
   /** 文档数据（唯一事实来源） */
   document: TeachingDocumentV1
   /** 内容变更回调；外部负责 autosave */
-  onChange: (doc: TeachingDocumentV1) => void
+  onChange: (doc: TeachingDocumentV1, changeSet?: TeachingDocumentLayoutChangeSet) => void
   /** 编辑器已有未同步内容时立即通知外层，用于保存状态与离开保护。 */
   onChangePending?: () => void
   /** 暴露强制同步入口；保存、结构操作前调用以避免使用过期的外层快照。 */
@@ -77,6 +79,7 @@ export function DocumentEditor({
   onChangePendingRef.current = onChangePending
   const editorRef = useRef<Editor | null>(null)
   const pendingChangeRef = useRef(false)
+  const pendingChangeSetRef = useRef<TeachingDocumentLayoutChangeSet | null>(null)
   const pendingChangeTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
 
   /** 文档元信息（不经过编辑器，序列化时回填） */
@@ -111,9 +114,11 @@ export function DocumentEditor({
     if (!currentEditor || syncing.current) return
     const json = currentEditor.getJSON()
     const nextDoc = editorDocToTeachingDocument(json, metaRef.current)
+    const changeSet = pendingChangeSetRef.current
+    pendingChangeSetRef.current = null
     lastEmittedContentSig.current = JSON.stringify(nextDoc.content)
     lastEmittedOutlineSig.current = JSON.stringify(nextDoc.outline ?? {})
-    onChangeRef.current(nextDoc)
+    onChangeRef.current(nextDoc, changeSet ?? undefined)
   }, [])
 
   const schedulePendingChanges = useCallback((currentEditor: Editor, transaction: Transaction) => {
@@ -122,6 +127,10 @@ export function DocumentEditor({
     if (syncing.current || isExternalDocumentSync(transaction)) return
     editorRef.current = currentEditor
     pendingChangeRef.current = true
+    const transactionChangeSet = transaction.getMeta(DOCUMENT_LAYOUT_CHANGE_SET_META) as TeachingDocumentLayoutChangeSet | undefined
+    if (transactionChangeSet) {
+      pendingChangeSetRef.current = mergeStructuralChangeSets(pendingChangeSetRef.current, transactionChangeSet)
+    }
     onChangePendingRef.current?.()
     if (modelSyncDelayMs <= 0) {
       flushPendingChanges()

@@ -4,10 +4,14 @@ import type { FigureAssetRef, TeachingDocumentV1 } from '@/types/teachingDocumen
 import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
   resolveDocumentPaper,
+  canUseTeachingDocumentLayoutChangeSetHint,
+  createTeachingDocumentLayoutChangeSet,
+  createTeachingDocumentLayoutSignatures,
   measuredChoiceLayoutOverrides,
-  measureTeachingDocumentAll,
+  measureTeachingDocumentIncrementally,
   paginateTeachingDocument,
   createDefaultPrintLayout,
+  createCountingParagraphRangeGeometryAdapter,
   effectivePaperMetrics,
   isA3LandscapeSpread,
   paperMetrics,
@@ -21,6 +25,7 @@ import {
   type PrintLayoutSpec,
   type RenderReadinessResult,
 } from '@/utils/teachingDocument'
+import { documentForPrintVariant, type TeachingDocumentPrintVariant } from '@/utils/teachingDocument/printVariant'
 import {
   TeachingDocumentRenderer,
   type TeachingDocumentRendererProps,
@@ -31,23 +36,23 @@ import {
 } from './blocks/BlockRenderer'
 import { PaperPageView } from './PaperPageView'
 import { A3TwoColumnSheetView } from './A3TwoColumnSheetView'
+import { createLayoutPerformanceProfiler } from '@/utils/teachingDocument/layout/performance'
+import {
+  INITIAL_LAYOUT_REQUEST,
+  type LayoutRequest,
+} from './editor/useDeferredPaginationDocument'
+import {
+  createLayoutCoordinatorKey,
+  createLayoutCoordinatorMeasurementSignature,
+  TeachingDocumentLayoutCoordinator,
+  type LayoutCoordinatorSnapshot,
+} from './editor/layoutCoordinator'
+import { usePreviewPageWindow } from './usePreviewPageWindow'
 
 const PREPARING_READINESS: RenderReadinessResult = {
   ready: false,
   timedOut: false,
   pendingFonts: true,
-  pendingImages: [],
-  pendingQuestions: [],
-  pendingFigures: [],
-  failedImages: [],
-  diagnostics: [],
-}
-
-/** 资源签名未变化（如教师/学生版切换、页眉页脚调整）时直接使用的就绪态。 */
-const INSTANT_READINESS: RenderReadinessResult = {
-  ready: true,
-  timedOut: false,
-  pendingFonts: false,
   pendingImages: [],
   pendingQuestions: [],
   pendingFigures: [],
@@ -74,6 +79,8 @@ export interface A4PaginationPreviewProps {
   fontVars?: Record<string, string>
   zoom?: number
   selectedBlockId?: string
+  /** 页码导航的显式目标；窗口化时保证该逻辑页及缓冲页已挂载。 */
+  targetPageIndex?: number
   renderVersion?: string
   /**
    * 是否处于激活状态（页面级：a4 预览可见时才测量）。
@@ -93,6 +100,11 @@ export interface A4PaginationPreviewProps {
   boxGeometryAdapter?: BoxChromeGeometryAdapter
   questionGeometryAdapter?: QuestionChromeGeometryAdapter
   readinessWait?: typeof waitForRenderReadiness
+  layoutRequest?: LayoutRequest
+  /** 打印版本作为独立布局策略；源文档本身保持不变。 */
+  variant?: TeachingDocumentPrintVariant
+  /** 文档级布局协调器；省略时使用当前预览实例的本地协调器。 */
+  coordinator?: TeachingDocumentLayoutCoordinator
 }
 
 export function A4PaginationPreview({
@@ -105,6 +117,7 @@ export function A4PaginationPreview({
   fontVars,
   zoom = 1,
   selectedBlockId,
+  targetPageIndex,
   renderVersion = '',
   active = true,
   onBlockSelect,
@@ -117,6 +130,9 @@ export function A4PaginationPreview({
   boxGeometryAdapter,
   questionGeometryAdapter,
   readinessWait = waitForRenderReadiness,
+  layoutRequest = INITIAL_LAYOUT_REQUEST,
+  variant,
+  coordinator: coordinatorOption,
 }: A4PaginationPreviewProps) {
   const paper = useMemo(
     () => paperProp ?? resolveDocumentPaper(document.style),
@@ -124,21 +140,23 @@ export function A4PaginationPreview({
   )
   const sheetPaper = sheetPaperProp ?? paper
   const spread = isA3LandscapeSpread(sheetPaper)
+  const layoutDocument = useMemo(
+    () => variant ? documentForPrintVariant(document, variant) : document,
+    [document, variant],
+  )
   const sheetMetrics = useMemo(() => paperMetrics(sheetPaper), [sheetPaper])
   const measurementRootRef = useRef<HTMLDivElement>(null)
-  const generationRef = useRef(0)
+  const [localCoordinator] = useState(() => new TeachingDocumentLayoutCoordinator())
+  const coordinator = coordinatorOption ?? localCoordinator
   /** 可见页面的展示快照：重测期间保留上一对（文档，分页），避免白屏闪烁。 */
-  const displayDocumentRef = useRef(document)
-  /** 上一轮测量的资源签名；用于跳过与资源装载无关的重测等待。 */
-  const measurementSignatureRef = useRef('')
+  const displayDocumentRef = useRef(layoutDocument)
+  const displayChoiceLayoutOverridesRef = useRef<ChoiceLayoutOverrides>({})
   const [readiness, setReadiness] = useState<RenderReadinessResult>(PREPARING_READINESS)
   const [pagination, setPagination] = useState<PaginationResult | null>(null)
   const [measurementGeneration, setMeasurementGeneration] = useState(0)
   const [paragraphLineCount, setParagraphLineCount] = useState(0)
+  const [reflowing, setReflowing] = useState(false)
   const [choiceLayoutOverrides, setChoiceLayoutOverrides] = useState<ChoiceLayoutOverrides>({})
-  useEffect(() => {
-    setChoiceLayoutOverrides((current) => Object.keys(current).length ? {} : current)
-  }, [document, renderVersion])
   const printLayout = useMemo(
     () => printLayoutProp ?? createDefaultPrintLayout(paper),
     [printLayoutProp, paper],
@@ -146,92 +164,250 @@ export function A4PaginationPreview({
   // 页眉页脚参与分页有效高度。保守统一扣除：即使 showOnFirstPage=false，
   // 首页也扣除页眉高度（已知风险：首页页眉区域留白）。
   const metrics = useMemo(() => effectivePaperMetrics(printLayout), [printLayout])
+  const layoutSignatures = useMemo(() => createTeachingDocumentLayoutSignatures({
+    document,
+    paper,
+    printLayout,
+    fontVars,
+    renderVersion,
+    spread,
+    variant,
+  }), [document, fontVars, paper, printLayout, renderVersion, spread, variant])
+  const geometryDependencies = [
+    geometryAdapter,
+    paragraphGeometryAdapter,
+    boxGeometryAdapter,
+    questionGeometryAdapter,
+  ]
+  const coordinatorKey = createLayoutCoordinatorKey(layoutSignatures.paginationSignature, geometryDependencies)
+  const measurementStyleSignature = createLayoutCoordinatorMeasurementSignature(
+    layoutSignatures.layoutStyleSignature,
+    geometryDependencies,
+  )
   const safeZoom = Math.min(1.5, Math.max(0.35, zoom))
+  const [diagnosticTargetPageIndex, setDiagnosticTargetPageIndex] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (coordinator.getSnapshot(coordinatorKey)) return
+    setChoiceLayoutOverrides((current) => Object.keys(current).length ? {} : current)
+  }, [coordinator, coordinatorKey])
 
   useEffect(() => {
     const root = measurementRootRef.current
     if (!active || !root) return
-    const generation = generationRef.current + 1
-    generationRef.current = generation
-    const controller = new AbortController()
-    setReadiness(PREPARING_READINESS)
-    setMeasurementGeneration(generation)
-    // 新 generation 开始即向父层发布 preparing/null，
-    // 使导出 readiness 在重新测量期间被 stale generation 与空分页阻塞。
-    // 注意：内部渲染保留上一对（文档，分页）快照，避免切换教师/学生版白屏。
-    onPaginationState?.({ pagination: null, readiness: PREPARING_READINESS, measurementGeneration: generation })
-
-    // 资源签名（内容 + 字体变量 + 资源版本）未变化时跳过 waitForRenderReadiness：
-    // 字体、图片、题目的装载状态都没变，等待只会白白耗时（教师/学生版切换、页眉页脚调整即此类）。
-    const nextSignature = `${JSON.stringify(document.content)}|${JSON.stringify(fontVars || {})}|${renderVersion}`
-    const resourcesUnchanged = measurementSignatureRef.current === nextSignature
-    measurementSignatureRef.current = nextSignature
-    const wait = resourcesUnchanged
-      ? Promise.resolve(INSTANT_READINESS)
-      : readinessWait(root, { timeoutMs: 8_000, stableFrames: 2, signal: controller.signal })
-
-    void wait.then((nextReadiness) => {
-      if (controller.signal.aborted || generation !== generationRef.current) return
-      setReadiness(nextReadiness)
-        const measuredLayouts = measuredChoiceLayoutOverrides(root, choiceLayoutOverrides)
-        if (!choiceLayoutOverridesEqual(measuredLayouts, choiceLayoutOverrides)) {
-          setChoiceLayoutOverrides(measuredLayouts)
-          return
-        }
-        const bundle = measureTeachingDocumentAll(
-          root,
-          document,
-          {
-            geometry: geometryAdapter,
-            paragraphGeometry: paragraphGeometryAdapter,
-            boxGeometry: boxGeometryAdapter,
-            questionGeometry: questionGeometryAdapter,
-          },
-          resolveQuestion,
-          choiceLayoutOverrides,
-        )
-        const { measurement, paragraphs: paragraphMeasurements, boxes: boxMeasurements, questions: questionMeasurements, boxChildQuestions: boxChildQuestionMeasurements, boxChildRawMarkdowns: boxChildRawMarkdownMeasurements } = bundle
-        measurement.diagnostics.push(...nextReadiness.diagnostics)
-        if (controller.signal.aborted || generation !== generationRef.current) return
-        setParagraphLineCount(paragraphMeasurements.reduce((total, paragraph) => total + paragraph.lines.length, 0))
-        setMeasurementGeneration(generation)
-        const paginationResult = paginateTeachingDocument({
-          document,
-          measurements: measurement,
-          paragraphMeasurements,
-          boxMeasurements,
-          questionMeasurements,
-          boxChildQuestionMeasurements,
-          boxChildRawMarkdownMeasurements,
-          paper,
-          metrics,
-          documentHeaderSpanColumns: spread ? 2 : 1,
+    let live = true
+    const previousSnapshot = coordinator.getLatestSnapshot(layoutSignatures.variant)
+    const canUseTransactionChangeSet = previousSnapshot
+      && layoutRequest.changeSet
+      && previousSnapshot.layoutStyleSignature === measurementStyleSignature
+      && previousSnapshot.resourceRevision === layoutSignatures.resourceRevision
+      && previousSnapshot.document.title === layoutDocument.title
+      && canUseTeachingDocumentLayoutChangeSetHint(previousSnapshot.document, layoutDocument, layoutRequest.changeSet)
+    const changeSet = canUseTransactionChangeSet
+      ? layoutRequest.changeSet!
+      : createTeachingDocumentLayoutChangeSet({
+          previous: previousSnapshot?.document ?? null,
+          current: layoutDocument,
+          previousLayoutStyleSignature: previousSnapshot?.layoutStyleSignature,
+          currentLayoutStyleSignature: measurementStyleSignature,
+          previousResourceRevision: previousSnapshot?.resourceRevision,
+          currentResourceRevision: layoutSignatures.resourceRevision,
         })
-        setPagination(paginationResult)
-        // 展示快照与分页同步切换，保证可见页面永远渲染一致的一对。
-        displayDocumentRef.current = document
-        onPaginationState?.({ pagination: paginationResult, readiness: nextReadiness, measurementGeneration: generation })
-      })
-      .catch((error) => {
-        // readiness 等待被拒绝（非中断/非过期 generation）时发布稳定失败态：
-        // 清空分页并标记 timedOut，使导出 readiness 被阻塞，避免悬挂的未处理 rejection。
-        if (controller.signal.aborted || generation !== generationRef.current) return
-        const failedReadiness: RenderReadinessResult = {
-          ...PREPARING_READINESS,
-          timedOut: true,
-          diagnostics: [{
-            code: 'resource-timeout',
-            severity: 'error',
-            message: error instanceof Error ? error.message : '排版资源准备失败。',
-          }],
+    const incrementalPagination = previousSnapshot?.pagination
+      && changeSet.firstDirtyTopLevelIndex > 0
+      && !changeSet.paperOrGlobalStyleChanged
+      && changeSet.resourceIdsChanged.length === 0
+      ? {
+          previous: previousSnapshot.pagination,
+          firstDirtyTopLevelIndex: changeSet.firstDirtyTopLevelIndex,
         }
-        setReadiness(failedReadiness)
-        setPagination(null)
-        onPaginationState?.({ pagination: null, readiness: failedReadiness, measurementGeneration: generation })
-      })
+      : undefined
+    const handle = coordinator.request({
+      key: coordinatorKey,
+      documentRevision: layoutSignatures.documentRevision,
+      resourceRevision: layoutSignatures.resourceRevision,
+      layoutStyleSignature: measurementStyleSignature,
+      variant: layoutSignatures.variant,
+      execute: async ({ generation, signal }) => {
+        const profiler = createLayoutPerformanceProfiler({
+          pipeline: 'preview',
+          generation,
+          metadata: {
+            blockCount: layoutDocument.content.length,
+            spread,
+            variant: layoutSignatures.variant,
+            resourceRevision: layoutSignatures.resourceRevision,
+            paginationSignature: layoutSignatures.paginationSignature,
+            cacheHit: false,
+            reason: layoutRequest.reason,
+            priority: layoutRequest.priority,
+            firstDirtyTopLevelIndex: changeSet.firstDirtyTopLevelIndex,
+            incrementalPagination: Boolean(incrementalPagination),
+          },
+        })
+        try {
+          const cachedResourceReadiness = coordinator.getResourceReadiness(layoutSignatures.resourceRevision)
+          profiler.addMetadata({ resourceCacheHit: Boolean(cachedResourceReadiness) })
+          const endResourceWait = profiler.startPhase('resource-wait')
+          let nextReadiness: RenderReadinessResult
+          try {
+            nextReadiness = cachedResourceReadiness
+              ?? await readinessWait(root, { timeoutMs: 8_000, stableFrames: 2, signal })
+          } finally {
+            endResourceWait()
+          }
+          if (signal.aborted) throw new DOMException('Layout request aborted', 'AbortError')
+          coordinator.cacheResourceReadiness(layoutSignatures.resourceRevision, nextReadiness)
 
-    return () => controller.abort()
-  }, [active, boxGeometryAdapter, choiceLayoutOverrides, document, fontVars, geometryAdapter, metrics, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, renderVersion, resolveQuestion, spread])
+          const measuredLayouts = profiler.measure('choice-layout', () => (
+            measuredChoiceLayoutOverrides(root, choiceLayoutOverrides)
+          ))
+          if (!choiceLayoutOverridesEqual(measuredLayouts, choiceLayoutOverrides)) {
+            profiler.finish('retry')
+            return { status: 'retry' as const, choiceLayoutOverrides: measuredLayouts }
+          }
+          const paragraphGeometryCounter = profiler.enabled
+            ? createCountingParagraphRangeGeometryAdapter(paragraphGeometryAdapter)
+            : null
+          const incrementalMeasurement = profiler.measure('dom-measurement', () => (
+            measureTeachingDocumentIncrementally({
+              root,
+              document: layoutDocument,
+              cache: coordinator.getMeasurementCache(),
+              layoutStyleSignature: measurementStyleSignature,
+              variant: layoutSignatures.variant,
+              resourceRevision: layoutSignatures.resourceRevision,
+              adapters: {
+                geometry: geometryAdapter,
+                paragraphGeometry: paragraphGeometryCounter?.adapter ?? paragraphGeometryAdapter,
+                boxGeometry: boxGeometryAdapter,
+                questionGeometry: questionGeometryAdapter,
+              },
+              resolveQuestion,
+              choiceLayoutOverrides,
+              cacheable: nextReadiness.ready && !nextReadiness.timedOut,
+            })
+          ))
+          const bundle = incrementalMeasurement.bundle
+          profiler.addMetadata({
+            measuredBlockCount: incrementalMeasurement.measuredBlockCount,
+            measurementCacheHitBlockCount: incrementalMeasurement.cacheHitBlockCount,
+          })
+          if (paragraphGeometryCounter) {
+            profiler.addMetadata({
+              paragraphTextRangeCalls: paragraphGeometryCounter.stats.textRangeCalls,
+              paragraphTextProbeCalls: paragraphGeometryCounter.stats.textProbeCalls,
+              paragraphAtomicRectCalls: paragraphGeometryCounter.stats.atomicCalls,
+            })
+          }
+          const { measurement, paragraphs: paragraphMeasurements, boxes: boxMeasurements, questions: questionMeasurements, boxChildQuestions: boxChildQuestionMeasurements, boxChildRawMarkdowns: boxChildRawMarkdownMeasurements } = bundle
+          measurement.diagnostics.push(...nextReadiness.diagnostics)
+          if (signal.aborted) throw new DOMException('Layout request aborted', 'AbortError')
+          const nextParagraphLineCount = paragraphMeasurements.reduce((total, paragraph) => total + paragraph.lines.length, 0)
+          const paginationResult = profiler.measure('pagination', () => paginateTeachingDocument({
+            document: layoutDocument,
+            measurements: measurement,
+            paragraphMeasurements,
+            boxMeasurements,
+            questionMeasurements,
+            boxChildQuestionMeasurements,
+            boxChildRawMarkdownMeasurements,
+            paper,
+            metrics,
+            documentHeaderSpanColumns: spread ? 2 : 1,
+            incremental: incrementalPagination,
+          }))
+          const reusedPageCount = incrementalPagination
+            ? paginationResult.pages.findIndex((page, index) => page !== incrementalPagination.previous.pages[index])
+            : 0
+          profiler.addMetadata({
+            reusedPageCount: reusedPageCount < 0 ? paginationResult.pages.length : reusedPageCount,
+          })
+          profiler.finish('settled')
+          return {
+            status: 'settled' as const,
+            document: layoutDocument,
+            pagination: paginationResult,
+            readiness: nextReadiness,
+            paragraphLineCount: nextParagraphLineCount,
+            choiceLayoutOverrides,
+          }
+        } catch (error) {
+          if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+            profiler.finish('aborted')
+            throw error
+          }
+          const failedReadiness: RenderReadinessResult = {
+            ...PREPARING_READINESS,
+            timedOut: true,
+            diagnostics: [{
+              code: 'resource-timeout',
+              severity: 'error',
+              message: error instanceof Error ? error.message : '排版资源准备失败。',
+            }],
+          }
+          profiler.finish('failed')
+          return {
+            status: 'failed' as const,
+            document: layoutDocument,
+            pagination: null,
+            readiness: failedReadiness,
+            paragraphLineCount: 0,
+            choiceLayoutOverrides,
+          }
+        }
+      },
+    })
+
+    setMeasurementGeneration(handle.generation)
+    if (handle.cacheHit) {
+      const profiler = createLayoutPerformanceProfiler({
+        pipeline: 'preview',
+        generation: handle.generation,
+        metadata: {
+          blockCount: layoutDocument.content.length,
+          cacheHit: true,
+          spread,
+          variant: layoutSignatures.variant,
+          resourceRevision: layoutSignatures.resourceRevision,
+          paginationSignature: layoutSignatures.paginationSignature,
+        },
+      })
+      profiler.finish('settled')
+    } else {
+      setReflowing(true)
+      setReadiness(PREPARING_READINESS)
+      // 导出只接受当前 generation 的稳定快照；可见页面仍保留旧的成对快照。
+      onPaginationState?.({ pagination: null, readiness: PREPARING_READINESS, measurementGeneration: handle.generation })
+    }
+    void handle.promise.then((result) => {
+      if (!live) return
+      if (result.status === 'retry') {
+        setChoiceLayoutOverrides(result.choiceLayoutOverrides)
+        return
+      }
+      const snapshot = result as LayoutCoordinatorSnapshot
+      displayDocumentRef.current = snapshot.document
+      displayChoiceLayoutOverridesRef.current = snapshot.choiceLayoutOverrides
+      setReadiness(snapshot.readiness)
+      setPagination(snapshot.pagination)
+      setParagraphLineCount(snapshot.paragraphLineCount)
+      setReflowing(false)
+      onPaginationState?.({
+        pagination: snapshot.pagination,
+        readiness: snapshot.readiness,
+        measurementGeneration: snapshot.generation,
+      })
+    }).catch((error) => {
+      if (!live || (error instanceof DOMException && error.name === 'AbortError')) return
+      setReflowing(false)
+    })
+
+    return () => {
+      live = false
+      handle.release()
+    }
+  }, [active, boxGeometryAdapter, choiceLayoutOverrides, coordinator, coordinatorKey, geometryAdapter, layoutDocument, layoutRequest.changeSet, layoutRequest.priority, layoutRequest.reason, layoutSignatures.documentRevision, layoutSignatures.layoutStyleSignature, layoutSignatures.paginationSignature, layoutSignatures.resourceRevision, layoutSignatures.variant, measurementStyleSignature, metrics, onPaginationState, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, resolveQuestion, spread])
 
   const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure'> = {
     resolveQuestion,
@@ -264,6 +440,36 @@ export function A4PaginationPreview({
     }, 0),
     0,
   ) || 0
+  const selectedTopLevelBlockId = useMemo(() => {
+    if (!selectedBlockId) return null
+    for (const block of displayDocumentRef.current.content) {
+      if (block.id === selectedBlockId) return block.id
+      if (block.type === 'box' && block.children.some((child) => child.id === selectedBlockId)) return block.id
+    }
+    return null
+  }, [pagination, selectedBlockId])
+  const selectedPageIndex = useMemo(() => {
+    if (!selectedTopLevelBlockId) return null
+    return pagination?.pages.find((page) => (
+      page.items.some((item) => item.blockId === selectedTopLevelBlockId)
+    ))?.index ?? null
+  }, [pagination, selectedTopLevelBlockId])
+  const previewUnitCount = spread
+    ? Math.ceil((pagination?.pages.length || 0) / 2)
+    : pagination?.pages.length || 0
+  const pageToUnit = (pageIndex: number | null | undefined) => (
+    pageIndex == null ? null : spread ? Math.floor(pageIndex / 2) : pageIndex
+  )
+  const previewWindowTargets = useMemo(() => [
+    pageToUnit(targetPageIndex),
+    pageToUnit(selectedPageIndex),
+    pageToUnit(diagnosticTargetPageIndex),
+  ], [diagnosticTargetPageIndex, selectedPageIndex, spread, targetPageIndex])
+  const previewWindow = usePreviewPageWindow({
+    unitCount: previewUnitCount,
+    active,
+    targetUnitIndexes: previewWindowTargets,
+  })
   const diagnosticGuide = (diagnostic: import('@/utils/teachingDocument').RenderDiagnostic) => {
     if (diagnostic.code === 'box-overflow') {
       const box = displayDocumentRef.current.content.find((block) => block.id === diagnostic.blockId && block.type === 'box')
@@ -295,7 +501,7 @@ export function A4PaginationPreview({
         <div ref={measurementRootRef}>
           {active ? (
             <TeachingDocumentRenderer
-              document={document}
+              document={layoutDocument}
               {...rendererProps}
               eagerImages
               surface="paper"
@@ -305,6 +511,17 @@ export function A4PaginationPreview({
           ) : null}
         </div>
       </div>
+
+      {active && (reflowing || !pagination) ? (
+        <div
+          role="status"
+          data-teaching-layout-status=""
+          className="sticky top-2 z-10 mx-auto mb-3 flex w-fit items-center gap-1.5 rounded-md border border-zinc-200 bg-white/90 px-2 py-1 text-[11px] text-zinc-500 shadow-sm backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/90 dark:text-zinc-400"
+        >
+          {readiness.timedOut ? <AlertTriangle className="size-3" /> : <LoaderCircle className="size-3 animate-spin" />}
+          {readiness.timedOut ? '排版资源准备失败' : pagination ? '正在重新排版' : '正在准备排版'}
+        </div>
+      ) : null}
 
       <div className="hidden" aria-hidden="true">
         {!pagination ? (
@@ -349,7 +566,11 @@ export function A4PaginationPreview({
               {diagnostic.blockId ? (
                 <button
                   type="button"
-                  onClick={() => (onDiagnosticNavigate || onBlockSelect)?.(diagnostic.blockId!, diagnostic.pageIndex ?? 0)}
+                  onClick={() => {
+                    const pageIndex = diagnostic.pageIndex ?? 0
+                    setDiagnosticTargetPageIndex(pageIndex)
+                    ;(onDiagnosticNavigate || onBlockSelect)?.(diagnostic.blockId!, pageIndex)
+                  }}
                   className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-300 bg-white px-2 py-1 text-[11px] font-medium text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/60"
                 >
                   <MapPin className="size-3" />定位并修复
@@ -367,10 +588,15 @@ export function A4PaginationPreview({
           return (
             <div
               key={`sheet:${sheetIndex}`}
+              ref={previewWindow.refForUnit(sheetIndex)}
+              data-teaching-preview-unit-index={sheetIndex}
+              data-teaching-preview-unit-mounted={previewWindow.mountedUnitIndexes.has(sheetIndex) ? 'true' : 'false'}
               className="relative mx-auto"
               style={{ width: sheetMetrics.pageWidthPx * safeZoom, height: sheetMetrics.pageHeightPx * safeZoom }}
             >
-              <A3TwoColumnSheetView
+              <span data-teaching-page-anchor={leftPage.index} className="pointer-events-none absolute inset-y-0 left-0 w-1/2" />
+              {rightPage ? <span data-teaching-page-anchor={rightPage.index} className="pointer-events-none absolute inset-y-0 right-0 w-1/2" /> : null}
+              {previewWindow.mountedUnitIndexes.has(sheetIndex) ? <A3TwoColumnSheetView
                 pages={[leftPage, rightPage]}
                 sheetIndex={sheetIndex}
                 sheetCount={Math.ceil(pagination!.pages.length / 2)}
@@ -381,7 +607,7 @@ export function A4PaginationPreview({
                 printLayout={printLayout}
                 pageProps={{
                   resolvers: rendererProps,
-                  choiceLayoutOverrides,
+                  choiceLayoutOverrides: displayChoiceLayoutOverridesRef.current,
                   selectedBlockId,
                   overflowBlockIds: overflowIdsByPage.get(leftPage.index),
                   editingChromeSlot,
@@ -394,23 +620,27 @@ export function A4PaginationPreview({
                   transformOrigin: 'top left',
                   contentVisibility: 'auto',
                 }}
-              />
+              /> : null}
             </div>
           )
         }) : (pagination?.pages || []).map((page) => (
           <div
             key={page.index}
+            ref={previewWindow.refForUnit(page.index)}
+            data-teaching-preview-unit-index={page.index}
+            data-teaching-preview-unit-mounted={previewWindow.mountedUnitIndexes.has(page.index) ? 'true' : 'false'}
+            data-teaching-page-anchor={page.index}
             className="relative mx-auto"
             style={{ width: metrics.pageWidthPx * safeZoom, height: metrics.pageHeightPx * safeZoom }}
           >
-            <PaperPageView
+            {previewWindow.mountedUnitIndexes.has(page.index) ? <PaperPageView
               page={page}
               document={displayDocumentRef.current}
               paper={paper}
               printLayout={printLayout}
               totalPages={pagination?.pages.length ?? 0}
               resolvers={rendererProps}
-              choiceLayoutOverrides={choiceLayoutOverrides}
+              choiceLayoutOverrides={displayChoiceLayoutOverridesRef.current}
             selectedBlockId={selectedBlockId}
             overflowBlockIds={overflowIdsByPage.get(page.index)}
             editingChromeSlot={editingChromeSlot}
@@ -423,7 +653,7 @@ export function A4PaginationPreview({
                 contentVisibility: 'auto',
                 '--td-paper-content-height': `${metrics.contentHeightPx}px`,
               } as CSSProperties}
-            />
+            /> : null}
           </div>
         ))}
       </div>

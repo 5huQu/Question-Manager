@@ -370,6 +370,7 @@ export function measureTeachingDocumentQuestions(
   choiceLayoutOverrides?: ChoiceLayoutOverrides,
   /** 编排器传入已查询的顶层块元素，避免同轮重复 querySelectorAll。 */
   topLevelElements?: HTMLElement[],
+  sourceIndexes?: ReadonlySet<number>,
 ) {
   const result: QuestionMeasurement[] = []
   const topElementsResolved = topLevelElements ?? Array.from(
@@ -387,6 +388,7 @@ export function measureTeachingDocumentQuestions(
   )
 
   document.content.forEach((block, sourceIndex) => {
+    if (sourceIndexes && !sourceIndexes.has(sourceIndex)) return
     if (block.type !== 'question') return
     const question = resolveQuestion?.(block.questionId)
     if (!isQuestionItem(question)) return
@@ -456,6 +458,7 @@ export function measureBoxChildQuestions(
   choiceLayoutOverrides?: ChoiceLayoutOverrides,
   /** 编排器传入已查询的顶层块元素，避免同轮重复 querySelectorAll。 */
   topLevelElements?: HTMLElement[],
+  sourceIndexes?: ReadonlySet<number>,
 ): Map<string, QuestionMeasurement> {
   const result = new Map<string, QuestionMeasurement>()
   const topElementsResolved = topLevelElements ?? Array.from(
@@ -468,6 +471,7 @@ export function measureBoxChildQuestions(
   })
 
   document.content.forEach((block, sourceIndex) => {
+    if (sourceIndexes && !sourceIndexes.has(sourceIndex)) return
     if (block.type !== 'box') return
     const boxBlock = block as BoxBlock
     const boxShell = elementBySource.get(sourceIndex)

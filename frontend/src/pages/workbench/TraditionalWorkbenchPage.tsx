@@ -26,7 +26,6 @@ export function TraditionalWorkbenchPage() {
         activityHoursError={activityHours.error}
         activityHoursLoading={activityHours.loading}
         exportRecords={exportRecords.data}
-        exportRecordsLoading={exportRecords.loading}
       />
     </div>
   )

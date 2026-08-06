@@ -21,6 +21,8 @@ import type {
   TableBlock,
   TikzBlock,
   TeachingBlock,
+  TeachingInline,
+  TeachingTextStyle,
   UnknownBlock,
 } from '@/types/teachingDocument'
 import type { QuestionItem } from '@/types'
@@ -30,6 +32,7 @@ import { renderTeachingDocumentKatex } from '@/utils/teachingDocument/katexCache
 import {
   blockDomAttributes,
   inlineCursorLabel,
+  sliceTeachingInlines,
   TEACHING_DOM,
   type BoxFragmentPaginationItem,
   type InlineRange,
@@ -39,6 +42,7 @@ import {
   type QuestionBoxChildFragmentPaginationItem,
   type QuestionFragmentPaginationItem,
 } from '@/utils/teachingDocument/layout'
+import { questionOptionInlineContentKey, stripGeneratedQuestionNumber } from '@/utils/teachingDocument/layout/questionRegions'
 import {
   createQuestionRuntimeModel,
   type QuestionRuntimeModel,
@@ -51,6 +55,7 @@ import { CSS_PIXELS_PER_MM } from '@/utils/teachingDocument/layout/paper'
 import { rawMarkdownSegments } from '@/utils/teachingDocument/layout/rawMarkdownSegments'
 import type { ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import { assetUrl } from '@/utils/questionDisplay'
+import { fontStackById } from '@/utils/teachingDocument/lectureFonts'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import {
   ChoiceOptions,
@@ -58,6 +63,7 @@ import {
   MarkdownWithInlineFigures,
 } from '@/components/questions/QuestionContent'
 import { InlineContent } from './InlineContent'
+import { BlockInlineEditor } from '../BlockInlineEditor/BlockInlineEditor'
 import { ImageResizeOverlay } from '../editor/ResizeHandles'
 
 // ─── Resolver 类型 ───────────────────────────────────────────────────────────
@@ -129,6 +135,7 @@ function HeadingBlockView({ block, numberLabel }: { block: HeadingBlock; numberL
       style={textBlockStyle(block)}
       data-block-id={block.id}
       data-block-type="heading"
+      data-level={block.level}
     >
       {numberLabel ? <span className="td-heading-number" aria-hidden="true">{numberLabel} </span> : null}
       <InlineContent inlines={block.content} />
@@ -407,33 +414,84 @@ function questionLayoutOverride(layout: 'quad' | 'double' | 'single' | 'adaptive
   return layout === 'quad' ? 'four' : layout === 'double' ? 'two' : 'one'
 }
 
+function questionTypographyStyle(style?: TeachingTextStyle): CSSProperties | undefined {
+  if (!style) return undefined
+  const vars: Record<string, string> = {}
+  const stack = fontStackById(style.font)
+  if (stack) vars['--td-question-font'] = stack
+  if (style.fontSize) vars['--td-question-size'] = `${style.fontSize}px`
+  if (style.color) vars['--td-question-color'] = style.color
+  if (style.fontWeight) vars['--td-question-weight'] = String(style.fontWeight)
+  if (style.italic !== undefined) vars['--td-question-style'] = style.italic ? 'italic' : 'normal'
+  return vars as CSSProperties
+}
+
+function replaceInlineRange(inlines: TeachingInline[], range: InlineRange, replacement: TeachingInline[]): TeachingInline[] {
+  const full = { start: { inlineIndex: 0 }, end: { inlineIndex: inlines.length } }
+  const before = sliceTeachingInlines(inlines, { start: full.start, end: range.start }).map((entry) => entry.inline)
+  const after = sliceTeachingInlines(inlines, { start: range.end, end: full.end }).map((entry) => entry.inline)
+  return [...before, ...replacement, ...after]
+}
+
 function QuestionRegionContent({
   region,
   item,
   layoutEditor,
   resolveFigure,
   choiceLayoutBlockId,
+  editableQuestionText = false,
+  onInlineContentChange,
 }: {
   region: QuestionRuntimeRegion
   item?: PaginatedQuestionRegionItem
   layoutEditor?: QuestionLayoutEditor
   resolveFigure?: (asset: FigureAssetRef) => FigureResolution
   choiceLayoutBlockId?: string
+  editableQuestionText?: boolean
+  onInlineContentChange?: (key: string, content: TeachingInline[]) => void
 }) {
   if (region.kind === 'heading') return null
   if (region.kind === 'paragraph') {
     const range = item?.kind === 'question-paragraph-fragment' ? item.range : undefined
+    const inlines = range
+      ? sliceTeachingInlines(region.paragraph.content, range).map((entry) => entry.inline)
+      : region.paragraph.content
+    if (editableQuestionText && inlines.length) {
+      return (
+        <div
+          className="td-question-paragraph td-question-text my-2"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <BlockInlineEditor
+            inlines={inlines}
+            variant="embedded"
+            toolbar="none"
+            editorContext="question"
+            ariaLabel="题目文字"
+            onChange={(content) => {
+              const persistedContent = region.generatedQuestionNumber
+                ? stripGeneratedQuestionNumber(content, region.generatedQuestionNumber)
+                : content
+              onInlineContentChange?.(region.key, range
+                ? replaceInlineRange(region.paragraph.content, range, persistedContent)
+                : persistedContent)
+            }}
+          />
+        </div>
+      )
+    }
     return (
-      <p className="td-question-paragraph my-2 text-sm leading-7 text-zinc-900 dark:text-zinc-100">
+      <p className="td-question-paragraph td-question-text my-2 text-sm leading-7 text-zinc-900 dark:text-zinc-100">
         <InlineContent inlines={region.paragraph.content} range={range} />
       </p>
     )
   }
   if (region.kind === 'markdown') {
-    return <MarkdownContent className="text-sm leading-7" content={region.markdown} />
+    return <MarkdownContent className="td-question-markdown text-sm leading-7" content={region.markdown} />
   }
   if (region.kind === 'math') {
-    return <MarkdownContent className="text-sm leading-7" content={`$$${region.latex}$$`} />
+    return <MarkdownContent className="td-question-markdown text-sm leading-7" content={`$$${region.latex}$$`} />
   }
   if (region.kind === 'figure') {
     const figureRegion = region as QuestionFigureRegion
@@ -494,10 +552,14 @@ function QuestionRegionContent({
           optionIndexOffset={region.optionStart}
           showFigureCaptions={false}
           choiceLayoutBlockId={choiceLayoutBlockId}
+          className="td-question-options"
           optionDomAttributes={(optionIndex) => ({
             [TEACHING_DOM.questionOptionIndex]: optionIndex,
             [TEACHING_DOM.questionOptionRow]: region.rowIndex,
           })}
+          inlineContent={region.inlineContent}
+          editableText={editableQuestionText}
+          onInlineContentChange={(label, content) => onInlineContentChange?.(questionOptionInlineContentKey(region.key, label), content)}
         />
         {region.figures.filter((figure) => !figure.path).map((figure, index) => (
           <div
@@ -517,14 +579,31 @@ function QuestionRegionContent({
   }
   if (region.kind === 'answer') {
     return (
-      <div className="mt-3 rounded-md bg-zinc-50/80 px-3 py-2 dark:bg-zinc-900/40">
+      <div className="td-question-answer mt-3 rounded-md bg-zinc-50/80 px-3 py-2 dark:bg-zinc-900/40">
         <span className="text-xs font-semibold text-zinc-500">参考答案：</span>
-        <MarkdownWithInlineFigures
-          className="mt-1 text-sm text-zinc-800 dark:text-zinc-200"
-          content={region.markdown}
-          figures={region.figures}
-          showFigureCaptions={false}
-        />
+        {editableQuestionText && region.inlineContent ? (
+          <div
+            className="mt-1"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <BlockInlineEditor
+              inlines={region.inlineContent}
+              variant="embedded"
+              toolbar="none"
+              editorContext="question"
+              ariaLabel="参考答案"
+              onChange={(content) => onInlineContentChange?.(region.key, content)}
+            />
+          </div>
+        ) : (
+          <MarkdownWithInlineFigures
+            className="mt-1 text-sm text-zinc-800 dark:text-zinc-200"
+            content={region.markdown}
+            figures={region.figures}
+            showFigureCaptions={false}
+          />
+        )}
       </div>
     )
   }
@@ -561,6 +640,9 @@ export function QuestionRuntimeContent({
   layoutEditor,
   resolveFigure,
   choiceLayoutBlockId,
+  typography,
+  editableQuestionText = false,
+  onInlineContentChange,
 }: {
   block: QuestionBlock
   model: QuestionRuntimeModel
@@ -569,6 +651,9 @@ export function QuestionRuntimeContent({
   layoutEditor?: QuestionLayoutEditor
   resolveFigure?: (asset: FigureAssetRef) => FigureResolution
   choiceLayoutBlockId?: string
+  typography?: TeachingTextStyle
+  editableQuestionText?: boolean
+  onInlineContentChange?: (key: string, content: TeachingInline[]) => void
 }) {
   const marginClass = {
     single: 'my-4',
@@ -586,6 +671,7 @@ export function QuestionRuntimeContent({
   return (
     <div
       className={`td-question ${marginClass}`}
+      style={questionTypographyStyle(typography)}
       data-question-continuation={continuation}
       {...{
         [TEACHING_DOM.questionRoot]: '',
@@ -620,7 +706,15 @@ export function QuestionRuntimeContent({
                 : {}),
             }}
           >
-            <QuestionRegionContent region={region} item={item} layoutEditor={layoutEditor} resolveFigure={resolveFigure} choiceLayoutBlockId={choiceLayoutBlockId} />
+            <QuestionRegionContent
+              region={region}
+              item={item}
+              layoutEditor={layoutEditor}
+              resolveFigure={resolveFigure}
+              choiceLayoutBlockId={choiceLayoutBlockId}
+              editableQuestionText={editableQuestionText}
+              onInlineContentChange={onInlineContentChange}
+            />
           </div>
         )
       })}
@@ -660,7 +754,7 @@ function QuestionBlockView({ block, resolvers }: { block: QuestionBlock; resolve
           <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50/60 px-1.5 py-0.5 text-[11px] font-normal tracking-wide text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">文档本地版本</span>
         </div>
       ) : null}
-      <QuestionRuntimeContent block={block} model={createQuestionRuntimeModel(block, effectiveQuestion, { choiceLayoutOverrides, probeChoiceLayouts })} resolveFigure={resolveFigure} choiceLayoutBlockId={block.id} />
+      <QuestionRuntimeContent block={block} model={createQuestionRuntimeModel(block, effectiveQuestion, { choiceLayoutOverrides, probeChoiceLayouts })} resolveFigure={resolveFigure} choiceLayoutBlockId={block.id} typography={block.display?.typography} />
     </>
   )
 }
@@ -702,6 +796,7 @@ export function QuestionFragmentRenderer({
         regionItems={item.regionItems}
         resolveFigure={resolveFigure}
         choiceLayoutBlockId={block.id}
+        typography={block.display?.typography}
       />
     </div>
   )
@@ -1067,6 +1162,7 @@ export function BoxFragmentRenderer({
                   regionItems={childItem.regionItems}
                   resolveFigure={resolvers.resolveFigure}
                   choiceLayoutBlockId={child.id}
+                  typography={child.display?.typography}
                 />
               </div>
             )

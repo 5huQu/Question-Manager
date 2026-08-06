@@ -74,6 +74,23 @@ function importJobQuestionWhere(jobId: string, documents: Array<Pick<ImportJobDo
   }
 }
 
+function uniqueQuestionFilterValues(values: unknown[]) {
+  return Array.from(new Set(values
+    .map((value) => String(value || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)))
+    .sort((left, right) => left.localeCompare(right, 'zh-CN'))
+}
+
+function importJobQuestionFilterOptions(items: Array<ReturnType<typeof mapQuestion>>) {
+  return {
+    stages: uniqueQuestionFilterValues(items.map((item) => item.stage)),
+    questionTypes: uniqueQuestionFilterValues(items.map((item) => item.questionType)),
+    difficultyLabels: uniqueQuestionFilterValues(items.map((item) => item.difficultyLabel)),
+    knowledgePoints: uniqueQuestionFilterValues(items.flatMap((item) => item.knowledgePoints || [])),
+    solutionMethods: uniqueQuestionFilterValues(items.flatMap((item) => item.solutionMethods || [])),
+  }
+}
+
 function importJobStats(importJob: ImportJob, documents: ImportJobDocumentDetail[]) {
   const sourceIds = sourceDocumentIds(documents)
   const sourceDocumentCount = documents.length
@@ -260,9 +277,11 @@ export function importJobQuestionRows(jobId: string, options: { includeSkipped?:
 export function listImportJobQuestions(jobId: string) {
   const detail = getImportJobDetail(jobId)
   const rows = importJobQuestionRows(jobId, { includeSkipped: false })
+  const items = rows.map(mapQuestion)
   return {
     ...detail,
-    items: rows.map(mapQuestion),
+    items,
+    filterOptions: importJobQuestionFilterOptions(items),
     stats: {
       ...detail.stats,
       totalItems: rows.length,

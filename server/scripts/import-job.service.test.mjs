@@ -194,6 +194,8 @@ try {
   const separatedQuestions = listImportJobQuestions(separatedJob.importJob.id)
   assert.equal(separatedQuestions.items.length, 1)
   assert.equal(separatedQuestions.items[0].id, commitResult.item.id)
+  assert.deepEqual(separatedQuestions.filterOptions.stages, ['高三'])
+  assert.deepEqual(separatedQuestions.filterOptions.questionTypes, ['解答题'])
 
   console.log('4. Verifying direct OCRDocument parsing is unchanged...')
   const directSource = makeSourceDocument('src_direct_parse', 'Direct Parse Source')

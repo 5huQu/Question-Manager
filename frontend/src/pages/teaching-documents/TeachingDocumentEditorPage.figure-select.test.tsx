@@ -112,6 +112,10 @@ describe('TeachingDocumentEditorPage 选中图片弹出属性面板', () => {
     await act(async () => {
       figure!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
     })
+    const propertiesDock = container.querySelector<HTMLElement>('[data-teaching-properties-dock]')
+    expect(propertiesDock?.className).toContain('w-[300px]')
+    expect(propertiesDock?.dataset.teachingDockOccupied).toBe('true')
+    expect(propertiesDock?.style.width).toBe('')
     const aside = container.querySelector('aside')
     expect(aside).toBeTruthy()
     expect(aside?.textContent).toContain('图片')
@@ -120,6 +124,15 @@ describe('TeachingDocumentEditorPage 选中图片弹出属性面板', () => {
       figure!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
     })
     expect(container.querySelector('aside')?.textContent).toContain('图片')
+
+    const close = container.querySelector<HTMLButtonElement>('button[title="关闭属性面板"]')
+    await act(async () => close?.click())
+    expect(propertiesDock?.className).toContain('w-[300px]')
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 350))
+    })
+    expect(propertiesDock?.className).toContain('w-0')
+    expect(propertiesDock?.dataset.teachingDockOccupied).toBe('false')
   })
 
   it('Ctrl+点击顶层对象累积多选集合，批量删除一次性生效', async () => {

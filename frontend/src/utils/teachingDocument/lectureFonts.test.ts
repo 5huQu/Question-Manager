@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { lectureFontCssVars, resolveDocumentFonts, typographyPresetForDocumentType, typographyStyleForPreset } from './lectureFonts'
+import {
+  lectureFontCssVars,
+  resolveDocumentFonts,
+  resolveHeadingStyle,
+  teachingTypographyCssVars,
+  typographyPresetForDocumentType,
+  typographyStyleForPreset,
+} from './lectureFonts'
 
 describe('lecture font resolution', () => {
   it('keeps old documents on their original font stacks when Latin font settings are absent', () => {
@@ -25,5 +32,20 @@ describe('lecture font resolution', () => {
     expect(typographyPresetForDocumentType('lecture')).toBe('lecture')
     expect(typographyStyleForPreset('exam')).toMatchObject({ typographyPreset: 'exam', bodyFont: 'songti', headingFont: 'heiti', marginPreset: 'compact' })
     expect(typographyStyleForPreset('lecture')).toMatchObject({ typographyPreset: 'lecture', bodyFont: 'songti', headingFont: 'heiti', marginPreset: 'normal' })
+  })
+
+  it('resolves per-level heading defaults while emitting only explicit document overrides', () => {
+    expect(resolveHeadingStyle(undefined, 2)).toMatchObject({ fontSize: 20, fontWeight: 600 })
+
+    const vars = teachingTypographyCssVars({
+      headingStyles: { 1: { font: 'heiti', fontSize: 24, fontWeight: 700 } },
+      questionStyle: { font: 'kaiti', fontSize: 16, color: '#2563eb', italic: true },
+    })
+    expect(vars['--td-heading-1-size']).toBe('24px')
+    expect(vars['--td-heading-1-font']).toContain('Noto Sans')
+    expect(vars['--td-heading-2-size']).toBeUndefined()
+    expect(vars['--td-question-size']).toBe('16px')
+    expect(vars['--td-question-color']).toBe('#2563eb')
+    expect(vars['--td-question-style']).toBe('italic')
   })
 })

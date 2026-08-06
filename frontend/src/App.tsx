@@ -36,7 +36,9 @@ const CandidateFixWorkbenchPage = lazy(() => import('@/pages/import-v2/Candidate
 const TeachingDocumentsPage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentsPage'))
 const TeachingDocumentEditorPage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentEditorPage'))
 const QuestionEditorMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/QuestionEditorMockPage')) : null
-const TeachingDocumentMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/TeachingDocumentMockPage')) : null
+const TeachingDocumentMockPage = import.meta.env.DEV || import.meta.env.VITE_TEACHING_DOCUMENT_PERF === '1'
+  ? lazy(() => import('@/pages/mock/TeachingDocumentMockPage'))
+  : null
 const EditorRedesignMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/editor-redesign/EditorRedesignMockPage')) : null
 const ReferenceDocumentEditorDemoPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/ReferenceDocumentEditorDemoPage')) : null
 
@@ -189,9 +191,9 @@ export default function App() {
               : undefined
           } />
         )}
-        <div className="flex-1 overflow-auto" data-slot="app-scroll-container">
+        <div className={`flex-1 ${location.pathname === '/questions' ? 'overflow-hidden flex flex-col h-[calc(100vh-3.5rem)]' : 'overflow-auto'}`} data-slot="app-scroll-container">
           <div
-            className={`flex w-full flex-col gap-6 p-4 md:p-6 ${fluidContent ? 'max-w-none' : 'mx-auto max-w-7xl'}`}
+            className={`flex w-full flex-col ${location.pathname === '/questions' ? 'h-full p-4 md:p-5 pb-2 md:pb-2 gap-0 max-w-none' : fluidContent ? 'gap-6 p-4 md:p-6 max-w-none' : 'gap-6 p-4 md:p-6 mx-auto max-w-7xl'}`}
             data-slot="app-content-container"
           >
             <Suspense fallback={

@@ -28,7 +28,13 @@ import {
 } from '@/utils/teachingDocument'
 import { DocumentEditor } from './DocumentEditor'
 import { usePagination } from './usePagination'
-import { DEFAULT_PAGINATION_LAYOUT_DELAY_MS, useDeferredPaginationDocument } from './useDeferredPaginationDocument'
+import type { TeachingDocumentLayoutCoordinator } from './layoutCoordinator'
+import {
+  DEFAULT_PAGINATION_LAYOUT_DELAY_MS,
+  INITIAL_LAYOUT_REQUEST,
+  useDeferredPaginationDocument,
+  type LayoutRequest,
+} from './useDeferredPaginationDocument'
 import { PrintChrome, type PrintChromeSection } from '../PrintChrome'
 import { TeachingDocumentRenderer } from '../TeachingDocumentRenderer'
 import type {
@@ -121,6 +127,10 @@ export interface TeachingDocumentCanvasProps {
   debounceMs?: number
   /** 输入停顿多久后，才以最新内容重建隐藏测量树并精确分页。 */
   layoutUpdateDelayMs?: number
+  /** 最近一次布局请求的明确来源；只有 typing 使用尾随延迟。 */
+  layoutRequest?: LayoutRequest
+  /** 与打印预览共享的文档级布局协调器。 */
+  layoutCoordinator?: TeachingDocumentLayoutCoordinator
 }
 
 export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
@@ -161,6 +171,8 @@ export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
     readinessWait,
     debounceMs,
     layoutUpdateDelayMs = DEFAULT_PAGINATION_LAYOUT_DELAY_MS,
+    layoutRequest = INITIAL_LAYOUT_REQUEST,
+    layoutCoordinator,
   } = props
 
   const paginated = mode === 'paginated'
@@ -192,6 +204,7 @@ export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
   const { layoutDocument, layoutPending } = useDeferredPaginationDocument(
     document,
     paginated ? layoutUpdateDelayMs : 0,
+    layoutRequest,
   )
 
   // ─── 隐藏测量根（与独立预览共用同一渲染器与管线） ───────────────────────
@@ -211,6 +224,8 @@ export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
     boxGeometryAdapter,
     questionGeometryAdapter,
     readinessWait,
+    layoutRequest,
+    coordinator: layoutCoordinator,
   })
   const { pagination, readiness, generation, settled, choiceLayoutOverrides } = paginationState
   const [documentEditor, setDocumentEditor] = useState<Editor | null>(null)
@@ -331,6 +346,16 @@ export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
           <span className="sr-only" aria-live="polite">
             {layoutPending ? '内容已更新，正在等待重新排版。' : '分页布局已更新。'}
           </span>
+          {layoutPending || !settled ? (
+            <div
+              role="status"
+              data-teaching-layout-status=""
+              className="sticky top-2 z-10 mx-auto mb-2 flex w-fit items-center gap-1.5 rounded-md border border-zinc-200 bg-white/90 px-2 py-1 text-[11px] text-zinc-500 shadow-sm backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/90 dark:text-zinc-400"
+            >
+              <LoaderCircle className="size-3 animate-spin" />
+              {pagination ? '正在重新排版' : '正在准备排版'}
+            </div>
+          ) : null}
           {/* 隐藏测量树：与独立预览同一渲染器，宽度 = 内容区宽，主动加载图片。 */}
           <div
             aria-hidden="true"
@@ -385,6 +410,7 @@ export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
             : 'mx-auto my-0 min-h-[790px] w-[760px] max-w-none bg-white shadow-[0_0_0_1px_rgba(24,24,27,0.08),0_12px_28px_rgba(24,24,27,0.05)] dark:bg-zinc-950'}`}
           style={{
             zoom: displayScale,
+            ...(fontVars as CSSProperties | undefined),
             ...(paginated
               ? {
                   width: `${pageWidthPx}px`,

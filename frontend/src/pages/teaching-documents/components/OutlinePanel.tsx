@@ -4,14 +4,14 @@
  */
 
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
   AlertTriangle, Box, FileCode2, Heading, Image, Minus,
   ChevronDown, ChevronRight, FileQuestion, PanelLeft, PilcrowLeft, ScissorsLineDashed, TextCursorInput, X, ArrowDown, ArrowUp,
 } from 'lucide-react'
 import type { DocumentValidationIssue, TeachingBlock, TeachingDocumentOutlineOptions, TeachingDocumentV1, TeachingInline } from '@/types/teachingDocument'
 import { buildDocumentOutline } from '@/utils/teachingDocument'
-import { springPanel } from '@/components/teaching-document/motion'
+import { springDock, springPanel } from '@/components/teaching-document/motion'
 import { USER_BLOCK_LABEL } from './blockLabels'
 
 const BLOCK_ICONS: Partial<Record<TeachingBlock['type'], typeof Heading>> = {
@@ -100,24 +100,79 @@ export function OutlinePanel(props: {
   onMoveSection?: (headingId: string, direction: -1 | 1) => void
 }) {
   const reduced = useReducedMotion()
+  const [dockedOccupied, setDockedOccupied] = useState(props.open)
+  useLayoutEffect(() => {
+    if (props.variant === 'docked' && props.open) setDockedOccupied(true)
+  }, [props.open, props.variant])
   if (props.variant === 'docked') {
-    return props.open ? <OutlinePanelBody {...props} variant="docked" reduced={reduced} /> : (
-      <aside className="hidden h-full w-11 shrink-0 border-r border-zinc-200 bg-white lg:flex lg:flex-col dark:border-zinc-800 dark:bg-zinc-950">
-        <button type="button" title="展开大纲" aria-label="展开大纲" onClick={props.onOpen} className="mx-auto mt-3 flex size-8 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
-          <PanelLeft className="size-4" />
-        </button>
+    return (
+      <aside
+        data-teaching-outline-dock=""
+        data-teaching-dock-occupied={dockedOccupied ? 'true' : 'false'}
+        className={`question-edit-glass-aside hidden h-full shrink-0 flex-col overflow-hidden border-r border-black/6 lg:flex dark:border-white/8 backdrop-blur-md ${dockedOccupied ? 'w-64' : 'w-11'}`}
+      >
+        <AnimatePresence
+          mode="sync"
+          initial={false}
+          onExitComplete={() => {
+            if (!props.open) setDockedOccupied(false)
+          }}
+        >
+          {props.open ? (
+            <motion.div
+              key="docked-expanded"
+              initial={reduced ? { opacity: 0 } : { opacity: 0, x: -8 }}
+              animate={reduced ? { opacity: 1 } : { opacity: 1, x: 0 }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, x: -8 }}
+              transition={reduced ? { duration: 0.15 } : springDock}
+              className="flex h-full w-64 flex-col overflow-hidden"
+            >
+              <OutlinePanelBodyContent {...props} reduced={reduced} />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="docked-collapsed"
+              initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
+              animate={reduced ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+              exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.15 }}
+              className="flex h-full w-11 flex-col items-center pt-3"
+            >
+              <button
+                type="button"
+                title="展开大纲"
+                aria-label="展开大纲"
+                onClick={props.onOpen}
+                className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+              >
+                <PanelLeft className="size-4" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </aside>
     )
   }
+
   return (
     <AnimatePresence>
-      {props.open ? <OutlinePanelBody key="outline-panel" {...props} reduced={reduced} /> : null}
+      {props.open ? (
+        <motion.aside
+          key="outline-overlay"
+          initial={reduced ? { opacity: 0 } : { x: -280, opacity: 0 }}
+          animate={reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
+          exit={reduced ? { opacity: 0 } : { x: -280, opacity: 0 }}
+          transition={springPanel}
+          className="question-edit-glass-dialog absolute inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-black/6 shadow-[6px_0_20px_-6px_rgba(0,0,0,0.06)] backdrop-blur-2xl backdrop-saturate-150 dark:border-white/8 dark:shadow-[6px_0_20px_-6px_rgba(0,0,0,0.4)]"
+        >
+          <OutlinePanelBodyContent {...props} reduced={reduced} />
+        </motion.aside>
+      ) : null}
     </AnimatePresence>
   )
 }
 
-function OutlinePanelBody(props: {
-  variant?: 'overlay' | 'docked'
+function OutlinePanelBodyContent(props: {
   document: TeachingDocumentV1
   selectedId: string
   activeBlockId?: string
@@ -178,15 +233,7 @@ function OutlinePanelBody(props: {
     )
   }
   return (
-    <motion.aside
-      initial={props.variant === 'docked' || props.reduced ? { opacity: 0 } : { x: -260, opacity: 0 }}
-      animate={props.variant === 'docked' || props.reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
-      exit={props.variant === 'docked' || props.reduced ? { opacity: 0 } : { x: -260, opacity: 0 }}
-      transition={springPanel}
-      className={props.variant === 'docked'
-        ? 'hidden h-full w-64 shrink-0 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 lg:flex'
-        : 'absolute inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-zinc-300/40 bg-zinc-100/80 shadow-[6px_0_20px_-6px_rgba(0,0,0,0.06)] backdrop-blur-2xl backdrop-saturate-150 dark:border-zinc-700/40 dark:bg-zinc-900/80 dark:shadow-[6px_0_20px_-6px_rgba(0,0,0,0.4)]'}
-    >
+    <>
       <div className="flex h-14 items-center justify-between border-b border-zinc-200 px-3 dark:border-zinc-800">
         <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">文档大纲</span>
         <button type="button" onClick={props.onClose} className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="收起大纲">
@@ -246,6 +293,6 @@ function OutlinePanelBody(props: {
           ) : null}
         </div>
       ) : null}
-    </motion.aside>
+    </>
   )
 }

@@ -21,6 +21,7 @@ interface RichMarkdownEditorProps {
   hideHeader?: boolean
   hideToolbar?: boolean
   onSaveRequest?: () => void
+  surface?: 'solid' | 'glass'
 }
 
 const rawPattern = /```|<\/?[a-z][^>]*>|<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->/i
@@ -49,7 +50,7 @@ function IconButton({ label, active, disabled, onClick, children }: { label: str
   )
 }
 
-export function RichMarkdownEditor({ id, label, value, onChange, placeholder = '输入内容…', minHeight = 'min-h-36', compact = false, hideHeader = false, hideToolbar = false, onSaveRequest }: RichMarkdownEditorProps) {
+export function RichMarkdownEditor({ id, label, value, onChange, placeholder = '输入内容…', minHeight = 'min-h-36', compact = false, hideHeader = false, hideToolbar = false, onSaveRequest, surface = 'solid' }: RichMarkdownEditorProps) {
   const [sourceMode, setSourceMode] = useState(() => rawPattern.test(value))
   const [formulaMode, setFormulaMode] = useState<'inline' | 'block' | null>(null)
   const latestValue = useRef(value)
@@ -103,7 +104,9 @@ export function RichMarkdownEditor({ id, label, value, onChange, placeholder = '
     if (current !== value) editor.commands.setContent(markdownToEditorHtml(value), { emitUpdate: false })
   }, [editor, sourceMode, value])
 
-  if (!editor) return <div className={`${minHeight} animate-pulse rounded-lg border border-zinc-200 bg-zinc-50/40 dark:border-zinc-800 dark:bg-zinc-900/20`} />
+  const glass = surface === 'glass'
+
+  if (!editor) return <div className={`${minHeight} animate-pulse rounded-lg border ${glass ? 'question-edit-glass-editor' : 'border-zinc-200 bg-zinc-50/40 dark:border-zinc-800 dark:bg-zinc-900/20'}`} />
 
   return (
     <section aria-label={hideHeader ? label : undefined} aria-labelledby={hideHeader ? undefined : `${id}-label`} className="space-y-1.5">
@@ -119,12 +122,12 @@ export function RichMarkdownEditor({ id, label, value, onChange, placeholder = '
           <span>{containsFigureMarkers ? '该字段包含图片绑定标记。为防止图片位置或绑定关系丢失，请在 Markdown 源码模式中编辑。' : '该字段包含原始 HTML 或代码围栏。为防止内容丢失，请在 Markdown 源码模式中编辑。'}</span>
         </div>
       ) : null}
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white focus-within:border-zinc-500 focus-within:ring-1 focus-within:ring-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:focus-within:border-zinc-500">
+      <div className={`${glass ? 'question-edit-glass-editor' : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950'} overflow-hidden rounded-lg border focus-within:border-zinc-500 focus-within:ring-1 focus-within:ring-zinc-300 dark:focus-within:border-zinc-500`}>
         {sourceMode ? (
           <textarea id={id} aria-label={`${label} Markdown 源码`} value={value} onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); onSaveRequest?.() } }} className={`${minHeight} w-full resize-y bg-transparent px-3 py-2.5 font-mono text-sm leading-6 text-zinc-900 outline-none dark:text-zinc-50`} placeholder={placeholder} />
         ) : (
           <>
-            {!hideToolbar ? <div role="toolbar" aria-label={`${label}格式工具`} className={`flex flex-wrap items-center gap-0.5 border-b border-zinc-100 bg-zinc-50/50 px-2 py-1 dark:border-zinc-900 dark:bg-zinc-900/20 ${compact ? 'max-h-10 overflow-hidden' : ''}`}>
+            {!hideToolbar ? <div role="toolbar" aria-label={`${label}格式工具`} className={`${glass ? 'question-edit-glass-toolbar' : 'border-b border-zinc-100 bg-zinc-50/50 dark:border-zinc-900 dark:bg-zinc-900/20'} flex flex-wrap items-center gap-0.5 px-2 py-1 ${compact ? 'max-h-10 overflow-hidden' : ''}`}>
               <IconButton label="撤销" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()}><Undo2 className="size-4" /></IconButton>
               <IconButton label="重做" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().redo().run()}><Redo2 className="size-4" /></IconButton>
               <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-800" />

@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { QuestionItem } from '@/types'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import type {
@@ -12,6 +12,8 @@ import type {
 } from '@/utils/teachingDocument'
 import { createDefaultPrintLayout, createPaperSpec, DEFAULT_A4_PAPER, logicalPagePaper } from '@/utils/teachingDocument'
 import { A4PaginationPreview, type A4PaginationState } from './A4PaginationPreview'
+
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const ready: RenderReadinessResult = {
   ready: true,
@@ -425,6 +427,7 @@ describe('A4PaginationPreview', () => {
       root?.render(
         <A4PaginationPreview
           document={documentWith(['old-a', 'old-b'])}
+          renderVersion="old-resources"
           geometryAdapter={geometry}
           readinessWait={controlledReadiness}
         />,
@@ -434,6 +437,7 @@ describe('A4PaginationPreview', () => {
       root?.render(
         <A4PaginationPreview
           document={documentWith(['latest'])}
+          renderVersion="latest-resources"
           geometryAdapter={geometry}
           readinessWait={controlledReadiness}
         />,
@@ -446,6 +450,45 @@ describe('A4PaginationPreview', () => {
     expect(container.querySelectorAll('[data-teaching-page-index]')).toHaveLength(1)
     expect(container.querySelector('[data-teaching-block-id="old-a"]')).toBeNull()
     expect(container.querySelector('[data-teaching-block-id="latest"]')).not.toBeNull()
+  })
+
+  it('keeps the previous document and pagination as one visible snapshot while reflowing', async () => {
+    const completions: Array<(value: RenderReadinessResult) => void> = []
+    const controlledReadiness = () => new Promise<RenderReadinessResult>((resolve) => {
+      completions.push(resolve)
+    })
+    const container = document.createElement('div')
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={documentWith(['old-a', 'old-b'])}
+          renderVersion="snapshot-old-resources"
+          geometryAdapter={geometry}
+          readinessWait={controlledReadiness}
+        />,
+      )
+    })
+    await act(async () => completions[0](ready))
+    expect(container.querySelector('[data-teaching-page-index] [data-teaching-block-id="old-a"]')).not.toBeNull()
+
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={documentWith(['latest'])}
+          renderVersion="snapshot-latest-resources"
+          geometryAdapter={geometry}
+          readinessWait={controlledReadiness}
+        />,
+      )
+    })
+    expect(container.querySelector('[data-teaching-layout-status]')?.textContent).toContain('正在重新排版')
+    expect(container.querySelector('[data-teaching-page-index] [data-teaching-block-id="old-a"]')).not.toBeNull()
+    expect(container.querySelector('[data-teaching-page-index] [data-teaching-block-id="latest"]')).toBeNull()
+
+    await act(async () => completions[1](ready))
+    expect(container.querySelector('[data-teaching-page-index] [data-teaching-block-id="old-a"]')).toBeNull()
+    expect(container.querySelector('[data-teaching-page-index] [data-teaching-block-id="latest"]')).not.toBeNull()
   })
 
   it('re-measures when the print layout (header/footer) changes', async () => {
@@ -485,6 +528,201 @@ describe('A4PaginationPreview', () => {
     // printLayout 变化触发新一轮测量：generation 递增，且过程中发布了 preparing/null。
     expect(states[states.length - 1].measurementGeneration).toBe(2)
     expect(states.some((state) => state.measurementGeneration === 2 && state.pagination === null)).toBe(true)
+  })
+
+  it('restores warm student/teacher snapshots and invalidates them on resource revision', async () => {
+    const question: QuestionItem = {
+      id: 'variant-question',
+      serialNo: null,
+      questionNo: '1',
+      stage: '高中',
+      questionType: '解答题',
+      difficultyScore: 3,
+      difficultyScore10: 6,
+      difficultyLabel: '中等',
+      chapter: '',
+      knowledgePoints: [],
+      solutionMethods: [],
+      sourceTitle: '',
+      bankStatus: 'ready',
+      stemMarkdown: '版本缓存题干',
+      answerText: '版本缓存答案',
+      analysisMarkdown: '版本缓存解析',
+      totalScore: 10,
+      scoringRubric: [],
+      sliceImagePath: '',
+      figures: [],
+      sourceRunId: '',
+      updatedAt: 'r1',
+      hasFigures: false,
+    }
+    const source: TeachingDocumentV1 = {
+      ...documentWith([]),
+      content: [{ type: 'question', id: 'variant-block', questionId: question.id }],
+    }
+    let geometryCalls = 0
+    const countedGeometry: GeometryAdapter = {
+      measure(element) {
+        geometryCalls += 1
+        if (element.matches('[data-teaching-document-header]')) return { width: 600, height: 0, top: 0, bottom: 0 }
+        return { width: 600, height: 120, top: 0, bottom: 120 }
+      },
+    }
+    const countedReadiness = vi.fn(async () => ready)
+    const resolveVariantQuestion = () => question
+    const variantQuestionGeometry = { margins: () => ({ marginTop: 10, marginBottom: 10 }) }
+    const container = document.createElement('div')
+    root = createRoot(container)
+    const render = async (variant: 'student' | 'teacher', renderVersion: string) => {
+      await act(async () => {
+        root?.render(
+          <A4PaginationPreview
+            document={source}
+            variant={variant}
+            renderVersion={renderVersion}
+            resolveQuestion={resolveVariantQuestion}
+            geometryAdapter={countedGeometry}
+            paragraphGeometryAdapter={lineGeometry}
+            questionGeometryAdapter={variantQuestionGeometry}
+            readinessWait={countedReadiness}
+          />,
+        )
+      })
+    }
+
+    await render('student', 'r1')
+    const visibleStudent = container.querySelector('[data-teaching-page-index]')?.textContent || ''
+    expect(visibleStudent).toContain('版本缓存题干')
+    expect(visibleStudent).not.toContain('版本缓存答案')
+
+    await render('teacher', 'r1')
+    const visibleTeacher = container.querySelector('[data-teaching-page-index]')?.textContent || ''
+    expect(visibleTeacher).toContain('版本缓存答案')
+    expect(visibleTeacher).toContain('版本缓存解析')
+    const callsAfterTeacher = geometryCalls
+
+    await render('student', 'r1')
+    expect(geometryCalls).toBe(callsAfterTeacher)
+    expect(container.querySelector('[data-teaching-page-index]')?.textContent).not.toContain('版本缓存答案')
+    expect(countedReadiness).toHaveBeenCalledTimes(1)
+
+    await render('student', 'r2')
+    expect(geometryCalls).toBeGreaterThan(callsAfterTeacher)
+    expect(countedReadiness).toHaveBeenCalledTimes(2)
+  })
+
+  it('windows long A4 previews while preserving all page anchors and the full pagination snapshot', async () => {
+    const states: A4PaginationState[] = []
+    const container = document.createElement('div')
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={documentWith(Array.from({ length: 12 }, (_, index) => `block-${index}`))}
+          geometryAdapter={geometry}
+          readinessWait={readinessWait}
+          onPaginationState={(state) => states.push(state)}
+        />,
+      )
+    })
+
+    expect(container.querySelectorAll('[data-teaching-page-anchor]')).toHaveLength(12)
+    expect(container.querySelectorAll('[data-teaching-preview-unit-index]')).toHaveLength(12)
+    expect(container.querySelectorAll('[data-teaching-preview-unit-mounted="true"]')).toHaveLength(3)
+    expect(container.querySelectorAll('[data-teaching-page-index]')).toHaveLength(3)
+    expect(states.at(-1)?.pagination?.pages).toHaveLength(12)
+  })
+
+  it('mounts a distant page and selected block with their surrounding buffer', async () => {
+    const source = documentWith(Array.from({ length: 12 }, (_, index) => `block-${index}`))
+    const container = document.createElement('div')
+    root = createRoot(container)
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={source}
+          geometryAdapter={geometry}
+          readinessWait={readinessWait}
+          targetPageIndex={9}
+        />,
+      )
+    })
+    expect(container.querySelector('[data-teaching-page-index="9"]')).not.toBeNull()
+    expect(container.querySelector('[data-teaching-page-index="9"] [data-teaching-block-id="block-9"]')).not.toBeNull()
+
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={source}
+          geometryAdapter={geometry}
+          readinessWait={readinessWait}
+          selectedBlockId="block-6"
+        />,
+      )
+    })
+    expect(container.querySelector('[data-teaching-page-index="6"] [data-teaching-block-id="block-6"]')).not.toBeNull()
+  })
+
+  it('windows A3 spreads by physical sheet without splitting logical columns', async () => {
+    const container = document.createElement('div')
+    root = createRoot(container)
+    const sheetPaper = createPaperSpec('A3', 'landscape')
+    const pagePaper = logicalPagePaper(sheetPaper)
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={documentWith(Array.from({ length: 20 }, (_, index) => `block-${index}`))}
+          paper={pagePaper}
+          sheetPaper={sheetPaper}
+          printLayout={createDefaultPrintLayout(pagePaper)}
+          geometryAdapter={geometry}
+          readinessWait={readinessWait}
+          targetPageIndex={18}
+        />,
+      )
+    })
+
+    expect(container.querySelectorAll('[data-teaching-preview-unit-index]')).toHaveLength(10)
+    expect(container.querySelectorAll('[data-teaching-page-anchor]')).toHaveLength(20)
+    expect(container.querySelector('[data-teaching-page-index="18"]')).not.toBeNull()
+    const mountedSheets = Array.from(container.querySelectorAll<HTMLElement>('[data-teaching-preview-unit-mounted="true"]'))
+    expect(mountedSheets.length).toBeLessThan(10)
+    expect(mountedSheets.every((sheet) => sheet.querySelectorAll('[data-teaching-page-index]').length === 2)).toBe(true)
+  })
+
+  it('mounts a distant diagnostic target before handing off navigation', async () => {
+    const navigatedPages: number[] = []
+    const container = document.createElement('div')
+    root = createRoot(container)
+    const readinessWithDiagnostic: RenderReadinessResult = {
+      ...ready,
+      diagnostics: [{
+        code: 'resource-timeout',
+        severity: 'error',
+        message: '远端页诊断',
+        blockId: 'block-10',
+        pageIndex: 10,
+      }],
+    }
+    await act(async () => {
+      root?.render(
+        <A4PaginationPreview
+          document={documentWith(Array.from({ length: 12 }, (_, index) => `block-${index}`))}
+          geometryAdapter={geometry}
+          readinessWait={async () => readinessWithDiagnostic}
+          onDiagnosticNavigate={(_blockId, pageIndex) => navigatedPages.push(pageIndex)}
+        />,
+      )
+    })
+
+    const diagnosticButtons = container.querySelectorAll<HTMLButtonElement>('button')
+    expect(diagnosticButtons.length).toBeGreaterThan(0)
+    await act(async () => {
+      diagnosticButtons.item(0).click()
+    })
+    const targetPage = navigatedPages.at(-1)
+    expect(targetPage).toBe(10)
+    expect(container.querySelector(`[data-teaching-page-index="${targetPage}"]`)).not.toBeNull()
   })
 
   it('publishes a stable failed state when readiness waiting rejects', async () => {

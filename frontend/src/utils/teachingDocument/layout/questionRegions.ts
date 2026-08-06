@@ -13,6 +13,8 @@ import type {
   QuestionFigurePlacement,
   QuestionFigureSlot,
   QuestionInsertedFigure,
+  QuestionInlineContent,
+  TeachingInline,
 } from '@/types/teachingDocument'
 import type { FigureLayoutPreset } from '../figureLayoutPresets'
 import { normalizeMarkdownForRender } from '@/components/MarkdownContent'
@@ -55,6 +57,8 @@ export interface QuestionParagraphRegion extends QuestionRegionDescriptor {
   type: 'stem' | 'analysis'
   kind: 'paragraph'
   paragraph: ParagraphBlock
+  /** 题号由运行时生成，不能随题干局部样式一起持久化。 */
+  generatedQuestionNumber?: TeachingInline[]
 }
 
 export interface QuestionMarkdownRegion extends QuestionRegionDescriptor {
@@ -95,6 +99,8 @@ export interface QuestionOptionsRowRegion extends QuestionRegionDescriptor {
   options: ChoiceOption[]
   layout: ChoiceLayout
   figures: QuestionFigure[]
+  /** 可编辑的简单选项内容，key 为选项标签。 */
+  inlineContent?: Record<string, TeachingInline[]>
 }
 
 export interface QuestionAnswerRegion extends QuestionRegionDescriptor {
@@ -102,6 +108,7 @@ export interface QuestionAnswerRegion extends QuestionRegionDescriptor {
   kind: 'answer'
   markdown: string
   figures: QuestionFigure[]
+  inlineContent?: TeachingInline[]
 }
 
 export interface QuestionLabelRegion extends QuestionRegionDescriptor {
@@ -153,6 +160,10 @@ function stableRegionKey(
   return `${blockId}:question:${type}:${index}`
 }
 
+export function questionOptionInlineContentKey(regionKey: string, label: string) {
+  return `${regionKey}:option:${label}`
+}
+
 function figureIds(figure: QuestionFigure) {
   return [figure.id, figure.blockId]
     .map((value) => String(value || '').trim())
@@ -165,6 +176,16 @@ function simpleParagraph(markdown: string) {
     && !/(?:^|\n)\s*(?:#{1,6}\s|[-+*]\s|\d+[.)]\s|>|```|~~~|\|)|<\/?[A-Za-z]|!\[[^\]]*\]\(|(?<!!)\[[^\]]+\]\(|(?<!\\)[*_]|~~|`/.test(source)
 }
 
+/** 复杂 Markdown 仍由原渲染器负责；简单文本与行内公式可进入可编辑文字编辑器。 */
+export function isEditableQuestionText(value: string) {
+  return Boolean(value.trim()) && !/[#*_~`[\]<>|]/.test(value)
+}
+
+function inlineContentOrFallback(inlineContent: QuestionInlineContent | undefined, key: string, value: string) {
+  if (inlineContent && Object.prototype.hasOwnProperty.call(inlineContent, key)) return inlineContent[key]
+  return isEditableQuestionText(value) ? parseInlineMarkdown(value) : undefined
+}
+
 function contentRegions(input: {
   blockId: string
   type: 'stem' | 'analysis'
@@ -172,6 +193,7 @@ function contentRegions(input: {
   figures: QuestionFigure[]
   startIndex: number
   figureOverrides?: QuestionDisplayOptions['figureOverrides']
+  inlineContent?: QuestionInlineContent
 }) {
   const regions: QuestionRuntimeRegion[] = []
   const usedFigures = new Set<QuestionFigure>()
@@ -195,7 +217,7 @@ function contentRegions(input: {
             paragraph: {
               type: 'paragraph',
               id: key,
-              content: parseInlineMarkdown(part),
+              content: inlineContentOrFallback(input.inlineContent, key, part) || parseInlineMarkdown(part),
             },
           })
         } else {
@@ -233,7 +255,7 @@ function contentRegions(input: {
           paragraph: {
             type: 'paragraph',
             id: key,
-            content: parseInlineMarkdown(part),
+              content: inlineContentOrFallback(input.inlineContent, key, part) || parseInlineMarkdown(part),
           },
         })
       } else {
@@ -385,6 +407,45 @@ function questionNumberInlines(displayNumber: string, score: number, showScore: 
   return [{ type: 'text', text: `${displayNumber}. `, marks: ['bold'] }]
 }
 
+function sameTeachingInline(left: TeachingInline, right: TeachingInline) {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function sameInlinePresentation(left: TeachingInline, right: TeachingInline) {
+  if (left.type !== 'text' || right.type !== 'text') return false
+  return JSON.stringify({ ...left, text: undefined }) === JSON.stringify({ ...right, text: undefined })
+}
+
+/** 去掉题号运行时前缀，兼容早期版本已将题号写入 inlineContent 的数据。 */
+export function stripGeneratedQuestionNumber(inlines: TeachingInline[], prefix: TeachingInline[]) {
+  if (!prefix.length) return inlines
+  let offset = 0
+  while (offset + prefix.length <= inlines.length
+    && prefix.every((inline, index) => sameTeachingInline(inlines[offset + index], inline))) {
+    offset += prefix.length
+  }
+  let next = offset ? inlines.slice(offset) : inlines
+
+  // Tiptap merges adjacent text nodes that have the same marks. In that case
+  // several legacy prefixes may arrive as one text node such as "1. 1. 1. ".
+  // Strip those repetitions at text level as well.
+  const firstPrefix = prefix[0]
+  const first = next[0]
+  if (prefix.length === 1 && first && firstPrefix
+    && first.type === 'text' && firstPrefix.type === 'text') {
+    let text = first.text
+    let repetitions = 0
+    while (text.startsWith(firstPrefix.text)) {
+      text = text.slice(firstPrefix.text.length)
+      repetitions += 1
+    }
+    if (text !== first.text && (repetitions >= 2 || sameInlinePresentation(first, firstPrefix))) {
+      next = text ? [{ ...first, text }, ...next.slice(1)] : next.slice(1)
+    }
+  }
+  return next
+}
+
 /**
  * 将题号内联到首个题干区域，实现“题号.题干”同行显示：
  * - 首区域为段落：题号作为加粗行内内容前置；
@@ -401,9 +462,11 @@ function inlineQuestionNumber(
   if (!displayNumber) return
   const first = regions[0]
   if (first && first.kind === 'paragraph' && first.type === 'stem') {
+    const prefix = questionNumberInlines(displayNumber, score, showScore)
+    first.generatedQuestionNumber = prefix
     first.paragraph.content = [
-      ...questionNumberInlines(displayNumber, score, showScore),
-      ...first.paragraph.content,
+      ...prefix,
+      ...stripGeneratedQuestionNumber(first.paragraph.content, prefix),
     ]
     return
   }
@@ -439,6 +502,7 @@ export function createQuestionRuntimeModel(
   const score = block.display?.scoreOverride ?? question.totalScore
   const showScore = block.display?.showScore === true
   const figureOverrides = block.display?.figureOverrides
+  const inlineContent = block.display?.inlineContent
   const parsedChoice = parseChoiceQuestion(question.stemMarkdown)
   const stemMarkdown = parsedChoice?.stem || question.stemMarkdown || '题干为空'
   const stemFigures = figuresByUsage(question.figures, 'stem')
@@ -473,6 +537,7 @@ export function createQuestionRuntimeModel(
     figures: stemFigures,
     startIndex: 0,
     figureOverrides,
+    inlineContent,
   }))
 
   inlineQuestionNumber(regions, block.id, displayNumber, score, showScore)
@@ -495,8 +560,14 @@ export function createQuestionRuntimeModel(
       const optionEnd = Math.min(parsedChoice.options.length, optionStart + columns)
       const rowOptions = parsedChoice.options.slice(optionStart, optionEnd)
       const rowLabels = new Set(rowOptions.map((option) => option.label))
+      const rowKey = stableRegionKey(block.id, 'options', rowIndex)
+      const rowInlineContent = Object.fromEntries(rowOptions.flatMap((option) => {
+        const key = questionOptionInlineContentKey(rowKey, option.label)
+        const value = inlineContentOrFallback(inlineContent, key, option.content)
+        return value ? [[option.label, value] as const] : []
+      }))
       regions.push({
-        key: stableRegionKey(block.id, 'options', rowIndex),
+        key: rowKey,
         type: 'options',
         index: rowIndex,
         kind: 'options-row',
@@ -506,9 +577,10 @@ export function createQuestionRuntimeModel(
         optionEnd,
         options: rowOptions,
         layout,
-          figures: optionFigures.filter((figure) => !figureOverrides?.[figure.id || figure.blockId || '']?.slot && (
+        figures: optionFigures.filter((figure) => !figureOverrides?.[figure.id || figure.blockId || '']?.slot && (
           figure.optionLabel ? rowLabels.has(figure.optionLabel) : rowIndex === 0
         )),
+        inlineContent: Object.keys(rowInlineContent).length ? rowInlineContent : undefined,
       })
     }
     if (parsedChoice.remainder) {
@@ -519,19 +591,22 @@ export function createQuestionRuntimeModel(
         figures: [],
         startIndex: regions.filter((region) => region.type === 'stem').length,
         figureOverrides,
+        inlineContent,
       }))
     }
   }
 
   if (block.display?.showAnswer && question.answerText.trim()) {
+    const key = stableRegionKey(block.id, 'answer', 0)
     regions.push({
-      key: stableRegionKey(block.id, 'answer', 0),
+      key,
       type: 'answer',
       index: 0,
       kind: 'answer',
       splitPolicy: 'never',
       markdown: question.answerText,
       figures: question.figures,
+      inlineContent: inlineContentOrFallback(inlineContent, key, question.answerText),
     })
   }
   if (block.display?.showAnalysis && question.analysisMarkdown.trim()) {
@@ -551,6 +626,7 @@ export function createQuestionRuntimeModel(
       figures: analysisFigures,
       startIndex: 0,
       figureOverrides,
+      inlineContent,
     }))
   }
 

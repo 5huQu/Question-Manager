@@ -12,10 +12,11 @@ import { BlockInlineEditor } from '@/components/teaching-document/BlockInlineEdi
 import { FormulaLiveInput } from '@/components/questions/editor/FormulaLiveInput'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
 import { MarkdownContent } from '@/components/MarkdownContent'
-import { springPanel } from '@/components/teaching-document/motion'
+import { springDock, springPanel } from '@/components/teaching-document/motion'
 import { BUILTIN_BOX_TEMPLATES, hasProtectedInlineContent, protectedInlineReason } from '@/utils/teachingDocument'
 import { figureDisplayLabels } from '@/utils/questionDisplay'
 import { FIGURE_LAYOUT_PRESETS, resolveFigureLayout } from '@/utils/teachingDocument/figureLayoutPresets'
+import { InspectorSlider } from '@/components/ui/InspectorSlider'
 import { CARD_CHILD_TYPES, USER_BLOCK_LABEL } from './blockLabels'
 import { BoxAppearanceSettings, BoxSettings } from './settings/boxSettings'
 import { RichTextMarkdownSettings } from './settings/rawMarkdownSettings'
@@ -60,15 +61,13 @@ export function PropertiesSheet(props: {
   onEditQuestion?: (blockId: string) => void
   onOpenFormula?: (blockId: string) => void
   onOpenQuestionPicker?: (blockId: string, boxId?: string) => void
+  onExitComplete?: () => void
 }) {
   const reduced = useReducedMotion()
-  if (props.variant === 'docked') {
-    return props.open && props.selected ? <PropertiesSheetPanel {...props} selected={props.selected} variant="docked" reduced={reduced} /> : null
-  }
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="wait" onExitComplete={props.onExitComplete}>
       {props.open && props.selected ? (
-        <PropertiesSheetPanel key="properties-sheet" {...props} selected={props.selected} reduced={reduced} />
+        <PropertiesSheetPanel key={props.selected.block.id || 'properties-sheet'} {...props} selected={props.selected} reduced={reduced} />
       ) : null}
     </AnimatePresence>
   )
@@ -108,23 +107,34 @@ function PropertiesSheetPanel(props: {
 
   return (
     <motion.aside
-      initial={props.variant === 'docked' || props.reduced ? { opacity: 0 } : { x: 432, opacity: 0 }}
-      animate={props.variant === 'docked' || props.reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
-      exit={props.variant === 'docked' || props.reduced ? { opacity: 0 } : { x: 432, opacity: 0 }}
-      transition={springPanel}
+      initial={props.reduced ? { opacity: 0 } : { x: 20, opacity: 0 }}
+      animate={props.reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
+      exit={props.reduced ? { opacity: 0 } : { x: 20, opacity: 0 }}
+      transition={props.reduced ? { duration: 0.15 } : props.variant === 'docked' ? springDock : springPanel}
       className={props.variant === 'docked'
-        ? 'flex h-full w-full flex-col bg-white dark:bg-zinc-950'
-        : 'absolute inset-y-0 right-0 z-30 flex w-[min(26rem,calc(100vw-2rem))] flex-col border-l border-zinc-200/50 bg-white/90 shadow-[-8px_0_24px_-6px_rgba(0,0,0,0.08)] backdrop-blur-2xl backdrop-saturate-150 dark:border-zinc-800/50 dark:bg-zinc-950/90 dark:shadow-[-8px_0_24px_-6px_rgba(0,0,0,0.5)]'}
+        ? 'question-edit-glass-aside flex h-full w-[300px] flex-col border-l border-black/6 dark:border-white/8'
+        : 'question-edit-glass-dialog absolute inset-y-0 right-0 z-30 flex w-[min(26rem,calc(100vw-2rem))] flex-col border-l border-black/6 dark:border-white/8 shadow-[-8px_0_24px_-6px_rgba(0,0,0,0.08)] backdrop-blur-2xl backdrop-saturate-150'}
     >
-      <div className="flex h-14 items-center justify-between border-b border-zinc-200 px-4 dark:border-zinc-800">
+      <div className="flex h-12 items-center justify-between border-b border-black/6 px-4 dark:border-white/8">
         <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{USER_BLOCK_LABEL[displayBlock.type]}</span>
-        <button type="button" onClick={props.onClose} className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="关闭属性面板">
+        <button type="button" onClick={props.onClose} className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-zinc-100" title="关闭属性面板">
           <X className="size-3.5" />
         </button>
       </div>
 
-      <div className="flex border-b border-zinc-200 px-3 dark:border-zinc-800">
-        {([['content', '内容'], ['style', '样式'], ['layout', '布局']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setTab(value)} className={`flex-1 border-b-2 px-2 py-3 text-xs font-medium transition-colors ${tab === value ? 'border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300' : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'}`}>{label}</button>)}
+      <div role="tablist" aria-label="属性分组" className="question-edit-glass-tabs flex items-center gap-0.5 p-1 m-3 shrink-0">
+        {([['content', '内容'], ['style', '样式'], ['layout', '布局']] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={tab === value}
+            onClick={() => setTab(value)}
+            className="flex-1 h-7 rounded-md text-xs font-medium transition-all"
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="flex-1 space-y-4 overflow-auto p-4">
@@ -328,9 +338,16 @@ function SheetBody(props: {
 
   if (block.type === 'spacer') {
     return (
-      <Field label={`高度 ${block.heightEm} em`}>
-        <input type="range" min={0.5} max={8} step={0.5} className="mt-2 w-full" value={block.heightEm} onChange={(event) => props.onUpdate({ heightEm: Number(event.target.value) })} />
-      </Field>
+      <InspectorSlider
+        label="留空高度"
+        value={block.heightEm}
+        min={0.5}
+        max={8}
+        step={0.5}
+        unit="em"
+        presets={[0.5, 1, 2, 4]}
+        onChange={(val) => props.onUpdate({ heightEm: val })}
+      />
     )
   }
 

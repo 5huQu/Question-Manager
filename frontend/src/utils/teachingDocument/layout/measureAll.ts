@@ -43,21 +43,32 @@ export interface TeachingDocumentMeasurementBundle {
   boxChildRawMarkdowns: RawMarkdownMeasurement[]
 }
 
+export interface MeasureTeachingDocumentAllOptions {
+  sourceIndexes?: ReadonlySet<number>
+}
+
 export function measureTeachingDocumentAll(
   root: HTMLElement,
   document: TeachingDocumentV1,
   adapters: MeasurementAdapters = {},
   resolveQuestion?: (questionId: string) => QuestionResolutionLike,
   choiceLayoutOverrides?: ChoiceLayoutOverrides,
+  options: MeasureTeachingDocumentAllOptions = {},
 ): TeachingDocumentMeasurementBundle {
   // 单次块元素查询；顶层/段落子集由过滤器派生，与各测量函数内部的查询语义一致。
   const allBlocks = Array.from(root.querySelectorAll<HTMLElement>(TEACHING_DOM_SELECTORS.block))
-  const topLevelBlocks = allBlocks.filter((element) => !element.parentElement?.closest(TEACHING_DOM_SELECTORS.block))
-  const paragraphBlocks = allBlocks.filter((element) => element.getAttribute(TEACHING_DOM.blockType) === 'paragraph')
+  const selectedBlocks = options.sourceIndexes
+    ? allBlocks.filter((element) => options.sourceIndexes!.has(Number(element.getAttribute(TEACHING_DOM.sourceIndex))))
+    : allBlocks
+  const topLevelBlocks = selectedBlocks.filter((element) => !element.parentElement?.closest(TEACHING_DOM_SELECTORS.block))
+  const paragraphBlocks = selectedBlocks.filter((element) => element.getAttribute(TEACHING_DOM.blockType) === 'paragraph')
 
-  const documentMeasurement = measureTeachingDocument(root, document, adapters.geometry)
-  const paragraphs = measureTeachingDocumentParagraphs(root, document, adapters.paragraphGeometry, paragraphBlocks)
-  const boxes = measureTeachingDocumentBoxes(root, document, documentMeasurement, adapters.boxGeometry, topLevelBlocks)
+  const documentMeasurement = measureTeachingDocument(root, document, adapters.geometry, {
+    elements: selectedBlocks,
+    sourceIndexes: options.sourceIndexes,
+  })
+  const paragraphs = measureTeachingDocumentParagraphs(root, document, adapters.paragraphGeometry, paragraphBlocks, options.sourceIndexes)
+  const boxes = measureTeachingDocumentBoxes(root, document, documentMeasurement, adapters.boxGeometry, topLevelBlocks, options.sourceIndexes)
   const questions = measureTeachingDocumentQuestions(
     root,
     document,
@@ -68,6 +79,7 @@ export function measureTeachingDocumentAll(
     adapters.questionGeometry,
     choiceLayoutOverrides,
     topLevelBlocks,
+    options.sourceIndexes,
   )
   const boxChildQuestions = measureBoxChildQuestions(
     root,
@@ -79,7 +91,8 @@ export function measureTeachingDocumentAll(
     adapters.questionGeometry,
     choiceLayoutOverrides,
     topLevelBlocks,
+    options.sourceIndexes,
   )
-  const boxChildRawMarkdowns = measureBoxChildRawMarkdowns(root, document)
+  const boxChildRawMarkdowns = measureBoxChildRawMarkdowns(root, document, options.sourceIndexes)
   return { measurement: documentMeasurement, paragraphs, boxes, questions, boxChildQuestions, boxChildRawMarkdowns }
 }

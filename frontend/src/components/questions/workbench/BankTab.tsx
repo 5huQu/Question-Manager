@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, LoaderCircle, Plus, PlusSquare, Search, ShoppingBag, Tag, Trash2, X } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { AlertTriangle, CheckCircle2, LoaderCircle, PanelLeft, Plus, PlusSquare, Search, ShoppingBag, Tag, Trash2, X } from 'lucide-react'
 import { questionBankApi } from '@/api/questionBank'
 import { learningTagsApi } from '@/api/learningTags'
 import { Button, Empty } from '@/components/ui'
@@ -54,6 +55,7 @@ export function BankTab({
 }) {
   const tagLibraries = useAsync<TagLibraries>(() => learningTagsApi.getQuestionBankTagLibraries(), [])
   const libraries = useAsync(() => learningTagsApi.listLibraries(), [])
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [classifying, setClassifying] = useState(false)
   const [classificationStatus, setClassificationStatus] = useState('')
@@ -214,60 +216,97 @@ export function BankTab({
       : AlertTriangle
 
   return (
-    <div className="mock-page-root flex h-[calc(100vh-7rem)] overflow-hidden rounded-lg border border-zinc-200 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50">
-      <BankFilterSidebar
-        stage={stage}
-        setStage={setStage}
-        questionType={questionType}
-        setQuestionType={setQuestionType}
-        difficulty={difficulty}
-        setDifficulty={setDifficulty}
-        knowledgePoint={knowledgePoint}
-        setKnowledgePoint={setKnowledgePoint}
-        solutionMethod={solutionMethod}
-        setSolutionMethod={setSolutionMethod}
-        setPage={setPage}
-        stageOptions={stageOptions}
-        questionTypeOptions={questionTypeOptions}
-        difficultyOptions={difficultyOptions}
-        kpChapters={kpChapters}
-        smGroups={smGroups}
-        activeFiltersCount={activeFiltersCount}
-        onClearAll={handleClearAllFilters}
-      />
-
-      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-zinc-50/10">
-        <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <Search className="size-3.5 shrink-0 text-zinc-400" />
-            <input
-              className="w-full border-none bg-transparent p-0 text-xs text-zinc-700 outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-zinc-300"
-              placeholder="搜索题干、来源、标签..."
-              value={query}
-              onChange={(e) => updateFilter(setQuery, e.target.value)}
+    <div className="relative flex h-full min-h-0 w-full flex-1 gap-4 overflow-hidden text-zinc-950 dark:text-zinc-50">
+      <AnimatePresence initial={false}>
+        {sidebarOpen ? (
+          <motion.div
+            key="bank-filter-sidebar-animated"
+            initial={{ opacity: 0, width: 0, x: -12 }}
+            animate={{ opacity: 1, width: 'auto', x: 0 }}
+            exit={{ opacity: 0, width: 0, x: -12 }}
+            transition={{ type: 'spring', damping: 26, stiffness: 280, opacity: { duration: 0.18 } }}
+            className="hidden shrink-0 lg:block overflow-hidden h-full"
+          >
+            <BankFilterSidebar
+              stage={stage}
+              setStage={setStage}
+              questionType={questionType}
+              setQuestionType={setQuestionType}
+              difficulty={difficulty}
+              setDifficulty={setDifficulty}
+              knowledgePoint={knowledgePoint}
+              setKnowledgePoint={setKnowledgePoint}
+              solutionMethod={solutionMethod}
+              setSolutionMethod={setSolutionMethod}
+              setPage={setPage}
+              stageOptions={stageOptions}
+              questionTypeOptions={questionTypeOptions}
+              difficultyOptions={difficultyOptions}
+              kpChapters={kpChapters}
+              smGroups={smGroups}
+              activeFiltersCount={activeFiltersCount}
+              onClearAll={handleClearAllFilters}
             />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="question-edit-glass-toolbar flex h-11 shrink-0 items-center justify-between gap-3 rounded-2xl px-3 border border-black/6 dark:border-white/8 backdrop-blur-md shadow-xs mb-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen((v) => !v)}
+              className={`relative flex size-7 items-center justify-center rounded-lg transition-all duration-150 ${
+                sidebarOpen
+                  ? 'bg-black/10 text-zinc-900 dark:bg-white/15 dark:text-zinc-100 shadow-xs'
+                  : 'text-zinc-500 hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100'
+              }`}
+              title={sidebarOpen ? "收起筛选栏" : "展开筛选栏"}
+            >
+              <PanelLeft className="size-4" />
+              {!sidebarOpen && activeFiltersCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex size-2 items-center justify-center rounded-full bg-zinc-900 dark:bg-zinc-100 ring-2 ring-white dark:ring-zinc-950" />
+              )}
+            </button>
+            <div className="flex flex-1 items-center gap-2 px-2.5 py-1 rounded-lg bg-black/4 dark:bg-white/6 border border-black/5 dark:border-white/8 max-w-md">
+              <Search className="size-3.5 shrink-0 text-zinc-400" />
+              <input
+                className="w-full border-none bg-transparent p-0 text-xs text-zinc-800 outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-zinc-200"
+                placeholder="搜索题干、来源、标签..."
+                value={query}
+                onChange={(e) => updateFilter(setQuery, e.target.value)}
+              />
+              {query ? (
+                <button type="button" onClick={() => updateFilter(setQuery, '')} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+                  <X className="size-3" />
+                </button>
+              ) : null}
+            </div>
           </div>
-          <div className="hidden max-w-[220px] shrink-0 items-center gap-1.5 overflow-x-auto py-1 md:flex">
+
+          <div className="hidden max-w-[240px] shrink-0 items-center gap-1.5 overflow-x-auto py-1 md:flex">
             {stage && (
-              <span className="inline-flex items-center gap-0.5 rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+              <span className="inline-flex items-center gap-0.5 rounded-full border border-black/6 bg-black/4 dark:border-white/8 dark:bg-white/6 px-2 py-0.5 text-[10px] font-medium text-zinc-700 dark:text-zinc-300">
                 {stage}
                 <X className="size-2.5 cursor-pointer text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200" onClick={() => updateFilter(setStage, '')} />
               </span>
             )}
             {questionType && (
-              <span className="inline-flex items-center gap-0.5 rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+              <span className="inline-flex items-center gap-0.5 rounded-full border border-black/6 bg-black/4 dark:border-white/8 dark:bg-white/6 px-2 py-0.5 text-[10px] font-medium text-zinc-700 dark:text-zinc-300">
                 {questionType}
                 <X className="size-2.5 cursor-pointer text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200" onClick={() => updateFilter(setQuestionType, '')} />
               </span>
             )}
             {difficulty && (
-              <span className="inline-flex items-center gap-0.5 rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+              <span className="inline-flex items-center gap-0.5 rounded-full border border-black/6 bg-black/4 dark:border-white/8 dark:bg-white/6 px-2 py-0.5 text-[10px] font-medium text-zinc-700 dark:text-zinc-300">
                 {difficulty}
                 <X className="size-2.5 cursor-pointer text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200" onClick={() => updateFilter(setDifficulty, '')} />
               </span>
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-2 border-l border-zinc-200 pl-3 dark:border-zinc-800">
+
+          <div className="flex shrink-0 items-center gap-2 border-l border-black/6 pl-3 dark:border-white/8">
             <Button size="sm" asLink to="/questions/new" icon={Plus}>新增题目</Button>
             <Button size="sm" variant="outline" asLink to="/questions/basket" icon={ShoppingBag}>试题篮 ({basketCount})</Button>
           </div>
@@ -369,7 +408,7 @@ export function BankTab({
         ) : null}
 
         {/* Unified Bottom Footer Control Center */}
-        <footer className="absolute bottom-0 left-0 right-0 z-10 flex h-12 items-center border-t border-zinc-200/80 bg-white/70 px-4 backdrop-blur-md dark:border-zinc-800/80 dark:bg-zinc-950/70 select-none text-xs">
+        <footer className="question-edit-glass-footer absolute bottom-0 left-0 right-0 z-20 flex h-12 items-center justify-between rounded-xl border border-black/8 dark:border-white/10 px-4 backdrop-blur-xl shadow-md select-none text-xs bg-white/85 dark:bg-zinc-950/85">
           <div className="flex-1 flex items-center justify-start">
             {selectedIds.length === 0 ? (
               <span className="text-zinc-500 dark:text-zinc-400 font-medium">找到 {totalItems} 道试题 · 每页 20 条</span>
@@ -383,7 +422,7 @@ export function BankTab({
               <button
                 type="button"
                 onClick={addSelectedToBasket}
-                className="inline-flex items-center gap-1 rounded bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200 transition-colors cursor-pointer"
               >
                 <PlusSquare className="size-3.5 shrink-0" />
                 加入试题篮
@@ -392,7 +431,7 @@ export function BankTab({
                 type="button"
                 disabled
                 title="后端暂未提供批量标记接口"
-                className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-[11px] font-medium text-zinc-400 opacity-60 cursor-not-allowed"
+                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium text-zinc-400 opacity-60 cursor-not-allowed"
               >
                 <Tag className="size-3.5 shrink-0" />
                 批量标记
@@ -401,12 +440,12 @@ export function BankTab({
                 type="button"
                 disabled
                 title="后端暂未提供批量删除接口"
-                className="inline-flex items-center gap-1 rounded px-2.5 py-1 text-[11px] font-medium text-red-400 opacity-60 cursor-not-allowed"
+                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium text-red-400 opacity-60 cursor-not-allowed"
               >
                 <Trash2 className="size-3.5 shrink-0" />
                 批量删除
               </button>
-              <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" />
+              <div className="h-4 w-px bg-black/10 dark:bg-white/10 mx-1" />
               <button
                 type="button"
                 onClick={() => setSelectedIds([])}

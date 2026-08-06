@@ -1,0 +1,4 @@
+interface:
+  display_name: "教学文档编写"
+  short_description: "Build structured teaching documents through the system API"
+  default_prompt: "Use $teaching-document-authoring to turn these materials into a structured teaching document and save a draft in Question Manager."

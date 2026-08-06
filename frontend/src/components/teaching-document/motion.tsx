@@ -26,6 +26,13 @@ export const springPanel: Transition = {
   duration: 0.3,
 }
 
+/** Docked sidebars are button-triggered, so they settle without momentum bounce. */
+export const springDock: Transition = {
+  type: 'spring',
+  bounce: 0,
+  duration: 0.24,
+}
+
 /** 快速反馈 spring */
 export const springQuick: Transition = {
   type: 'spring',

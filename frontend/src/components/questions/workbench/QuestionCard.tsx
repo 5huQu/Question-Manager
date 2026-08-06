@@ -47,7 +47,7 @@ export function QuestionCardFrame({
       layout={animateLayout && !reducedMotion ? 'position' : undefined}
       transition={animateLayout && !reducedMotion ? { layout: { type: 'spring', bounce: 0, duration: 0.34 } } : undefined}
       className={cn(
-        'question-card group relative flex flex-col gap-3 rounded-lg border bg-white p-5 text-left dark:bg-zinc-950',
+        'question-card question-edit-glass-preview group relative flex flex-col gap-3 rounded-2xl p-5 text-left transition-all duration-200 hover:shadow-lg dark:hover:shadow-black/40',
         interactive && 'question-card--interactive',
         active && !selected && 'question-card--active',
         selected && 'question-card--selected',

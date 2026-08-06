@@ -29,5 +29,12 @@ export {
 export type { TeachingDocumentCommand, TeachingDocumentHistory } from './editorState'
 export { TeachingDocumentAutosave } from './autosave'
 export type { AutosaveState } from './autosave'
-export { TYPOGRAPHY_PRESETS, typographyPresetForDocumentType, typographyStyleForPreset } from './lectureFonts'
+export {
+  TYPOGRAPHY_PRESETS,
+  typographyPresetForDocumentType,
+  typographyStyleForPreset,
+  resolveHeadingStyle,
+  resolveQuestionStyle,
+  teachingTypographyCssVars,
+} from './lectureFonts'
 export * from './layout'

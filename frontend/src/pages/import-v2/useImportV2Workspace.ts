@@ -4,6 +4,7 @@ import { importV2Api, type ImportParserPreset, type ImportV2ImportJob, type Impo
 import { settingsApi } from '@/api/settings'
 import { unsupportedImportReason } from '@/utils/importFiles'
 import { type MarkdownPreviewDocumentOption } from '@/components/import-v2/MarkdownStructurePreviewDialog'
+import type { WatermarkCleanupDraft } from '@/components/import-v2/WatermarkCleanupDialog'
 import { useAsync } from '@/hooks/useAsync'
 import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling'
 import {
@@ -46,6 +47,8 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
   const [savingQuestionType, setSavingQuestionType] = useState('')
   const [metadataDraft, setMetadataDraft] = useState<SourceMetadataDraft>(() => metadataDraftFromDoc())
   const [showMetadataEditor, setShowMetadataEditor] = useState(false)
+  const [watermarkCleanupDraft, setWatermarkCleanupDraft] = useState<WatermarkCleanupDraft>({ enabled: false, terms: '' })
+  const [showWatermarkCleanupEditor, setShowWatermarkCleanupEditor] = useState(false)
   const [uploadDocumentMode, setUploadDocumentMode] = useState<UploadDocumentMode>('single_document')
   const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null)
   const [questionUploadFile, setQuestionUploadFile] = useState<File | null>(null)
@@ -767,6 +770,56 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     setShowMetadataEditor(true)
   }
 
+  function openWatermarkCleanupModal() {
+    if (!selectedDoc) return
+    const watermark = selectedDoc.metadata && typeof selectedDoc.metadata.watermark === 'object' && !Array.isArray(selectedDoc.metadata.watermark)
+      ? selectedDoc.metadata.watermark as { enabled?: unknown; terms?: unknown }
+      : {}
+    const terms = Array.isArray(watermark.terms)
+      ? watermark.terms.map((item) => String(item || '')).filter(Boolean).join('\n')
+      : typeof watermark.terms === 'string' ? watermark.terms : ''
+    setWatermarkCleanupDraft({ enabled: Boolean(watermark.enabled), terms })
+    setShowWatermarkCleanupEditor(true)
+  }
+
+  async function handleSaveWatermarkCleanup() {
+    if (!activeImportJob || !selectedDoc) return
+    const terms = watermarkCleanupDraft.terms.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)
+    if (watermarkCleanupDraft.enabled && !terms.length) {
+      setError('启用水印清洗时，请至少填写一个排除词。')
+      return
+    }
+    const targetIds = activeImportJobDocuments.length
+      ? activeImportJobDocuments.map((document) => document.sourceDocumentId)
+      : [selectedDoc.id]
+    const targets = targetIds.map((id) => sourceDocuments.find((document) => document.id === id)).filter(Boolean) as ImportV2SourceDocument[]
+    if (!targets.length) {
+      setError('未找到本批次关联的资料，无法保存水印清洗设置。')
+      return
+    }
+
+    setBusy(`watermark-${activeImportJob.id}`); setError('')
+    try {
+      await Promise.all(targets.map((document) => importV2Api.updateSourceDocument(document.id, {
+        metadata: {
+          ...document.metadata,
+          watermark: { enabled: watermarkCleanupDraft.enabled, terms },
+        },
+      })))
+      setShowWatermarkCleanupEditor(false)
+      await loadLists()
+      if (canRecleanSelectedDoc) {
+        await handleRecleanCandidates(selectedDoc, {}, {
+          skipConfirm: true,
+          label: '水印清洗设置已保存，并已重新生成候选题',
+        })
+      } else {
+        showNotice('水印清洗设置已保存。已有入库题目未重新处理。')
+      }
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    finally { setBusy('') }
+  }
+
   async function handleSaveSourceMetadata() {
     if (!activeImportJob) return
     setBusy(`metadata-${activeImportJob.id}`); setError('')
@@ -1260,6 +1313,10 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     setMetadataDraft,
     showMetadataEditor,
     setShowMetadataEditor,
+    watermarkCleanupDraft,
+    setWatermarkCleanupDraft,
+    showWatermarkCleanupEditor,
+    setShowWatermarkCleanupEditor,
     uploadDocumentMode,
     setUploadDocumentMode,
     pendingUploadFile,
@@ -1338,6 +1395,8 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     handleDeleteSourceDoc,
     openEditModal,
     handleSaveSourceMetadata,
+    openWatermarkCleanupModal,
+    handleSaveWatermarkCleanup,
     commitSingleQuestion,
     startManualFix,
     handleSaveQuestionNo,

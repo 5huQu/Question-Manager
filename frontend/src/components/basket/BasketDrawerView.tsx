@@ -1,8 +1,21 @@
-import { ChevronDown, ChevronRight, ChevronUp, FileStack, GripVertical, Hash, Award, Clock, Maximize2, NotebookPen, ShoppingBag, Trash2 } from 'lucide-react'
-import { collectionsApi } from '../../api/collections'
-import { Badge, Empty } from '../ui'
+import { useMemo } from 'react'
+import { createPortal } from 'react-dom'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import {
+  ChevronDown,
+  ChevronUp,
+  FileStack,
+  GripVertical,
+  Maximize2,
+  NotebookPen,
+  ShoppingBag,
+  Trash2,
+  X,
+} from 'lucide-react'
+import { springPanel } from '@/components/teaching-document/motion'
 import { QuestionMarkdownContent } from '../questions/QuestionContent'
-import { getDefaultScore, notifyBasketUpdated, stripLeadingQuestionNo } from './constants'
+import { Empty } from '../ui'
+import { getDefaultScore, stripLeadingQuestionNo } from './constants'
 import type { BasketState } from './useBasketState'
 
 export function BasketDrawerView({
@@ -12,46 +25,40 @@ export function BasketDrawerView({
   state: BasketState
   onSnapshotsOpenChange: (open: boolean) => void
 }) {
+  const reduced = useReducedMotion()
   const {
     navigate,
     collapsed, setCollapsed,
     draggedIndex, setDraggedIndex,
-    localTitle, setLocalTitle,
-    localSubtitle, setLocalSubtitle,
-    localTimeLimit, setLocalTimeLimit,
     active,
     totalScore, activeQuestions,
-    patchCollection, patchItem, removeItem, clearCollection, moveItem,
+    patchItem, removeItem, clearCollection, moveItem,
     importToTeachingDocument,
     handleDragDrop,
   } = state
 
+  if (typeof document === 'undefined') return null
+
   return (
     <>
-      {/* Background Backdrop Overlay */}
-      {!collapsed && (
-        <div
-          onClick={() => setCollapsed(true)}
-          className="fixed inset-0 z-40 bg-zinc-950/20 dark:bg-black/40 backdrop-blur-sm transition-opacity duration-300 opacity-100"
-        />
-      )}
-
+      {/* 折叠时在屏幕右侧显示的悬浮按钮 */}
       {collapsed && (
         <button
+          type="button"
           onClick={() => setCollapsed(false)}
-          className="fixed right-0 top-1/2 -translate-y-1/2 bg-white dark:bg-zinc-900 border border-r-0 border-zinc-200 dark:border-zinc-800 shadow-xl hover:shadow-2xl rounded-l-2xl px-2.5 py-4 flex flex-col items-center gap-3 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all z-40 group cursor-pointer animate-in slide-in-from-right duration-250"
+          className="question-edit-glass-dialog fixed right-0 top-1/2 z-40 flex -translate-y-1/2 flex-col items-center gap-2.5 rounded-l-2xl border-r-0 border-black/10 bg-white/90 px-2.5 py-4 shadow-xl backdrop-blur-xl transition-transform hover:scale-105 hover:bg-white active:scale-95 dark:border-white/12 dark:bg-zinc-900/90 dark:hover:bg-zinc-900"
           title="展开试题篮"
         >
           <div className="relative">
-            <ShoppingBag className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <ShoppingBag className="size-5 text-zinc-700 transition-transform group-hover:scale-110 dark:text-zinc-200" />
             {active.data?.questionCount ? (
-              <span className="absolute -top-1.5 -right-2 w-[18px] h-[18px] bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-white dark:ring-zinc-900">
+              <span className="absolute -right-2 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-zinc-900 px-1 font-mono text-[10px] font-bold text-white shadow-xs dark:bg-zinc-100 dark:text-zinc-900">
                 {active.data.questionCount}
               </span>
             ) : null}
           </div>
           <div
-            className="text-[11px] font-bold tracking-widest uppercase text-zinc-400 dark:text-zinc-500 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 transition-colors"
+            className="text-[11px] font-bold tracking-widest text-zinc-500 transition-colors dark:text-zinc-400"
             style={{ writingMode: 'vertical-rl' }}
           >
             试题篮
@@ -59,270 +66,237 @@ export function BasketDrawerView({
         </button>
       )}
 
-      <aside
-        className={`fixed right-0 top-0 bottom-0 w-full sm:w-[440px] bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 shadow-2xl z-50 flex flex-col transform transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
-          collapsed ? 'translate-x-full' : 'translate-x-0'
-        }`}
-      >
-        {/* Drawer Header */}
-        <div className="h-14 flex items-center justify-between px-5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 z-20 shrink-0">
-          <div className="flex items-center gap-2.5 select-none">
-            <div className="p-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-lg border border-zinc-200 dark:border-zinc-700">
-              <ShoppingBag className="w-4 h-4" />
-            </div>
-            <span className="font-bold text-zinc-800 dark:text-zinc-200 text-sm">试题篮工作台</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <button
-              className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
-              title="查看组卷快照"
-              onClick={() => onSnapshotsOpenChange(true)}
-            >
-              <FileStack className="w-4 h-4" />
-            </button>
-            <button
-              className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
-              title="全屏独立编辑"
-              onClick={() => {
-                setCollapsed(true)
-                navigate('/questions/basket')
-              }}
-            >
-              <Maximize2 className="w-4 h-4" />
-            </button>
-            <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-700 mx-1"></div>
-            <button
-              className="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
-              onClick={() => setCollapsed(true)}
-              title="收起抽屉"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
+      {/* 展开时使用 createPortal 渲染置顶抽屉 */}
+      {createPortal(
+        <AnimatePresence>
+          {!collapsed ? (
+            <div className="fixed inset-0 z-[100] overflow-hidden">
+              {/* 全屏高斯模糊背景遮罩 */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                onClick={() => setCollapsed(true)}
+                className="fixed inset-0 bg-black/35 backdrop-blur-md transition-opacity dark:bg-black/55"
+              />
 
-        {/* Drawer Scrollable Content */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col relative bg-zinc-50/30 dark:bg-zinc-950/30 min-h-0">
-          {/* Sticky Context Actions */}
-          <div className="sticky top-0 z-10 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 p-4 space-y-3 shrink-0">
-            <div className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/60 dark:bg-zinc-950/40 px-3 py-2">
-              <ShoppingBag className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
-              <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">试题篮</span>
-              <span className="truncate text-[10px] text-zinc-400 dark:text-zinc-500">唯一暂存区 · "加入试题篮"的题目都到这里</span>
-            </div>
-
-            {/* Editable Title/Subtitle Row in Drawer */}
-            <div className="flex items-center justify-between gap-1.5 min-w-0 pt-1">
-              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <input
-                  className="w-1/2 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/50 px-2 py-1 text-xs font-semibold text-zinc-800 dark:text-zinc-200 focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 outline-none min-w-0"
-                  value={localTitle}
-                  onChange={(event) => setLocalTitle(event.target.value)}
-                  onBlur={() => localTitle !== active.data?.title && patchCollection({ title: localTitle })}
-                  placeholder="组卷标题"
-                />
-                <span className="text-zinc-300 dark:text-zinc-700 select-none shrink-0 font-medium text-xs">/</span>
-                <input
-                  className="w-1/2 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/50 px-2 py-1 text-xs text-zinc-500 dark:text-zinc-400 focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 outline-none min-w-0"
-                  value={localSubtitle}
-                  onChange={(event) => setLocalSubtitle(event.target.value)}
-                  onBlur={() => localSubtitle !== (active.data?.subtitle || '') && patchCollection({ subtitle: localSubtitle })}
-                  placeholder="副标题..."
-                />
-              </div>
-              {active.data?.questions.length ? (
-                <button
-                  onClick={clearCollection}
-                  className="text-[10px] font-bold text-destructive hover:bg-destructive/10 hover:text-destructive px-2 py-1 rounded-md transition-colors cursor-pointer shrink-0 select-none border border-transparent hover:border-destructive/20"
-                  title="清空所有题目"
-                >
-                  清空
-                </button>
-              ) : null}
-            </div>
-
-            {/* Stats Cards Row */}
-            <div className="grid grid-cols-3 gap-2.5">
-              <div className="bg-zinc-50/40 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2 flex flex-col justify-center select-none">
-                <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500 mb-0.5">
-                  <Hash className="w-3 h-3" />
-                  <span className="text-[10px] font-semibold">题数</span>
-                </div>
-                <div className="font-bold text-base text-zinc-900 dark:text-zinc-100 leading-none">{active.data?.questionCount ?? 0}</div>
-              </div>
-              <div className="bg-zinc-50/40 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2 flex flex-col justify-center select-none">
-                <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500 mb-0.5">
-                  <Award className="w-3 h-3" />
-                  <span className="text-[10px] font-semibold">总分</span>
-                </div>
-                <div className="font-bold text-base text-zinc-900 dark:text-zinc-100 leading-none">{totalScore}</div>
-              </div>
-              <div className="bg-zinc-50/40 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2 flex flex-col justify-center focus-within:ring-1 ring-zinc-400 dark:ring-zinc-600 transition-all">
-                <div className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500 mb-0.5 select-none">
-                  <Clock className="w-3 h-3" />
-                  <span className="text-[10px] font-semibold">时长(分)</span>
-                </div>
-                <input
-                  type="number"
-                  value={localTimeLimit}
-                  onChange={(event) => setLocalTimeLimit(event.target.value)}
-                  onBlur={() => Number(localTimeLimit) !== (active.data?.timeLimit || 0) && patchCollection({ timeLimit: Number(localTimeLimit || 0) })}
-                  className="w-full bg-transparent font-bold text-base text-zinc-900 dark:text-zinc-100 leading-none outline-none p-0 border-none focus:ring-0"
-                  placeholder="-"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Items List */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-28">
-            {active.loading && !active.data ? (
-              <Empty text="读取中..." />
-            ) : active.error ? (
-              <Empty text={active.error} />
-            ) : !activeQuestions.length ? (
-              <Empty text={'还没有题目。在题库中点击"加入试题篮"即可加入。'} />
-            ) : (
-              activeQuestions.map((entry, index) => (
-                <div key={entry.relationId || entry.item.id} className="space-y-2">
-                  {entry.sectionName ? (
-                    <div className="flex items-center gap-3 py-1 select-none">
-                      <div className="h-px flex-1 bg-border/60"></div>
-                      <div className="px-3 py-1 rounded-full border border-border bg-card text-[10px] font-bold text-muted-foreground shadow-sm">
-                        {entry.sectionName}
-                      </div>
-                      <div className="h-px flex-1 bg-border/60"></div>
+              {/* 屏幕右侧直达滑出面板（宽度加宽至 580px，!rounded-none 贴合边缘） */}
+              <motion.aside
+                initial={reduced ? { opacity: 0 } : { x: 580, opacity: 0 }}
+                animate={reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
+                exit={reduced ? { opacity: 0 } : { x: 580, opacity: 0 }}
+                transition={springPanel}
+                style={{ borderRadius: 0 }}
+                className="question-edit-glass-dialog fixed inset-y-0 right-0 z-[100] flex w-[min(580px,100vw)] flex-col !rounded-none border-l border-black/10 bg-white/95 shadow-2xl backdrop-blur-2xl backdrop-saturate-150 dark:border-white/12 dark:bg-zinc-950/95"
+              >
+                {/* 顶栏 Header */}
+                <div className="flex h-13 shrink-0 items-center justify-between border-b border-black/6 px-4 dark:border-white/8">
+                  <div className="flex items-center gap-2.5">
+                    <div className="rounded-lg border border-black/6 bg-black/3 p-1.5 text-zinc-700 dark:border-white/8 dark:bg-white/5 dark:text-zinc-200">
+                      <ShoppingBag className="size-4" />
                     </div>
-                  ) : null}
-
-                  <div
-                    draggable
-                    onDragStart={(e) => {
-                      setDraggedIndex(index)
-                      e.dataTransfer.effectAllowed = 'move'
-                    }}
-                    onDragOver={(e) => {
-                      e.preventDefault()
-                    }}
-                    onDrop={async (e) => {
-                      e.preventDefault()
-                      if (draggedIndex === null || draggedIndex === index) return
-                      await handleDragDrop(draggedIndex, index)
-                    }}
-                    onDragEnd={() => setDraggedIndex(null)}
-                    className={`group bg-card rounded-lg border border-border p-3.5 shadow-sm hover:border-zinc-400 dark:hover:border-zinc-600 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden flex gap-3 cursor-grab active:cursor-grabbing ${
-                      draggedIndex === index ? 'opacity-40 border-dashed border-border bg-muted/30' : ''
-                    }`}
-                  >
-                    {/* Left vertical marker line on hover */}
-                    <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-transparent group-hover:bg-zinc-900 dark:group-hover:bg-zinc-100 transition-colors"></div>
-
-                    {/* Grab handle indicator */}
-                    <div className="mt-0.5 text-muted-foreground/30 group-hover:text-muted-foreground/70 transition-colors shrink-0 select-none">
-                      <GripVertical className="w-4 h-4" />
-                    </div>
-
-                    <div className="flex-1 min-w-0 flex flex-col gap-3">
-                      <div className="flex items-start gap-1.5">
-                        <span className="font-semibold text-muted-foreground/70 text-xs mt-0.5 shrink-0">{index + 1}.</span>
-                        <div className="min-w-0 flex-1 overflow-hidden">
-                          <QuestionMarkdownContent
-                            content={stripLeadingQuestionNo(entry.item.stemMarkdown || '未命名题目', entry.item.questionNo)}
-                            className="line-clamp-2 text-xs text-foreground leading-relaxed font-medium pointer-events-none select-none overflow-hidden max-w-full"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between border-t border-border/60 pt-2.5 w-full">
-                        <div className="flex items-center gap-2">
-                          {entry.item.questionType && (
-                            <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] font-medium border border-border select-none">
-                              {entry.item.questionType}
-                            </span>
-                          )}
-
-                          {entry.item.difficultyLabel && (
-                            <Badge
-                              variant={
-                                entry.item.difficultyLabel.includes('难')
-                                  ? 'danger'
-                                  : entry.item.difficultyLabel.includes('中') || entry.item.difficultyLabel.includes('较')
-                                    ? 'warning'
-                                    : 'success'
-                              }
-                              className="rounded px-1.5 py-0.5"
-                            >
-                              {entry.item.difficultyLabel}
-                            </Badge>
-                          )}
-
-                          <div className="flex items-center gap-1 border border-input rounded-md px-1.5 py-0.5 bg-background focus-within:border-ring transition-colors">
-                            <input
-                              type="number"
-                              value={entry.score || ''}
-                              placeholder={String(getDefaultScore(entry.item.questionType))}
-                              onChange={(event) => entry.relationId && patchItem(entry.relationId, { score: Number(event.target.value || 0) })}
-                              className="w-8 text-center text-xs font-bold outline-none text-foreground bg-transparent border-none p-0 focus:ring-0"
-                            />
-                            <span className="text-[10px] text-muted-foreground select-none">分</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-0.5 bg-muted border border-border rounded-md p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => entry.relationId && moveItem(entry.relationId, -1)}
-                            disabled={index === 0}
-                            className="p-1 text-muted-foreground hover:bg-background hover:text-foreground rounded transition-colors disabled:opacity-20 cursor-pointer"
-                            title="上移"
-                          >
-                            <ChevronUp className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => entry.relationId && moveItem(entry.relationId, 1)}
-                            disabled={index === activeQuestions.length - 1}
-                            className="p-1 text-muted-foreground hover:bg-background hover:text-foreground rounded transition-colors disabled:opacity-20 cursor-pointer"
-                            title="下移"
-                          >
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          </button>
-                          <div className="w-px h-3 bg-border mx-0.5 my-auto"></div>
-                          <button
-                            onClick={() => entry.relationId && removeItem(entry.relationId)}
-                            className="p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive rounded transition-colors cursor-pointer"
-                            title="移除"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">试题篮</span>
+                    <span className="rounded-full border border-black/5 bg-black/3 px-2.5 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-white/8 dark:bg-white/5 dark:text-zinc-300">
+                      {activeQuestions.length} 道题目 · 共 {totalScore} 分
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="rounded-full p-1.5 text-zinc-500 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+                      title="查看组卷快照"
+                      onClick={() => onSnapshotsOpenChange(true)}
+                    >
+                      <FileStack className="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full p-1.5 text-zinc-500 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+                      title="全屏独立工作台"
+                      onClick={() => {
+                        setCollapsed(true)
+                        navigate('/questions/basket')
+                      }}
+                    >
+                      <Maximize2 className="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full p-1.5 text-zinc-500 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+                      onClick={() => setCollapsed(true)}
+                      title="收起试题篮"
+                    >
+                      <X className="size-4" />
+                    </button>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
 
-        {/* Drawer Footer */}
-        {active.data?.questions.length ? (
-          <div className="absolute bottom-0 left-0 right-0 z-20 flex gap-2 border-t border-border bg-card/95 p-4 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] backdrop-blur-md">
-            <button
-              onClick={() => void importToTeachingDocument()}
-              className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90"
-            >
-              <NotebookPen className="w-4 h-4" />
-              生成试卷文档
-            </button>
-            <button
-              onClick={() => { setCollapsed(true); navigate('/questions/basket') }}
-              className="rounded-md border border-border px-3 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-              title="打开完整组卷工作台"
-            >
-              完整工作台
-            </button>
-          </div>
-        ) : null}
-      </aside>
+                {/* 清空操作与提示行 */}
+                {activeQuestions.length > 0 && (
+                  <div className="flex shrink-0 items-center justify-between border-b border-black/6 bg-zinc-50/40 px-4 py-2 dark:border-white/8 dark:bg-zinc-900/40">
+                    <span className="text-[11px] font-medium text-zinc-400">已加入试题篮的题目可拖拽排序，生成讲义或试卷</span>
+                    <button
+                      type="button"
+                      onClick={clearCollection}
+                      className="rounded px-2 py-0.5 text-[11px] font-medium text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                      title="清空试题篮"
+                    >
+                      清空试题篮
+                    </button>
+                  </div>
+                )}
+
+                {/* 题目列表 */}
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+                  {active.loading && !active.data ? (
+                    <Empty text="读取中…" />
+                  ) : active.error ? (
+                    <Empty text={active.error} />
+                  ) : !activeQuestions.length ? (
+                    <Empty text={'试题篮为空。在题库中点击“加入试题篮”即可添加题目。'} />
+                  ) : (
+                    activeQuestions.map((entry, index) => (
+                      <div key={entry.relationId || entry.item.id} className="space-y-2">
+                        {entry.sectionName ? (
+                          <div className="flex items-center gap-3 py-1 select-none">
+                            <div className="h-px flex-1 bg-black/6 dark:bg-white/8" />
+                            <div className="rounded-full border border-black/6 bg-white px-3 py-0.5 text-[10px] font-bold text-zinc-500 shadow-2xs dark:border-white/8 dark:bg-zinc-900 dark:text-zinc-400">
+                              {entry.sectionName}
+                            </div>
+                            <div className="h-px flex-1 bg-black/6 dark:bg-white/8" />
+                          </div>
+                        ) : null}
+
+                        <div
+                          draggable
+                          onDragStart={(e) => {
+                            setDraggedIndex(index)
+                            e.dataTransfer.effectAllowed = 'move'
+                          }}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={async (e) => {
+                            e.preventDefault()
+                            if (draggedIndex === null || draggedIndex === index) return
+                            await handleDragDrop(draggedIndex, index)
+                          }}
+                          onDragEnd={() => setDraggedIndex(null)}
+                          className={`group relative flex cursor-grab items-start gap-3 rounded-2xl p-3.5 transition-all duration-200 active:cursor-grabbing ${
+                            draggedIndex === index
+                              ? 'border border-dashed border-black/10 bg-black/2 opacity-40 dark:border-white/10 dark:bg-white/2'
+                              : 'question-edit-glass-preview border border-black/6 bg-white/80 hover:bg-white hover:shadow-md hover:border-black/12 dark:border-white/8 dark:bg-zinc-900/80 dark:hover:bg-zinc-900 dark:hover:border-white/16'
+                          }`}
+                        >
+                          {/* 拖拽手柄 */}
+                          <div className="mt-1 text-zinc-300 transition-colors group-hover:text-zinc-500 dark:text-zinc-600 dark:group-hover:text-zinc-400">
+                            <GripVertical className="size-4" />
+                          </div>
+
+                          <div className="min-w-0 flex-1 space-y-2">
+                            {/* 元信息行与分值设置 */}
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                                {index + 1}.
+                              </span>
+                              {entry.item.questionType && (
+                                <span className="rounded-full border border-black/5 bg-black/3 px-2 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-white/8 dark:bg-white/5 dark:text-zinc-300">
+                                  {entry.item.questionType}
+                                </span>
+                              )}
+                              {entry.item.difficultyLabel && (
+                                <span className="rounded-full border border-black/5 bg-black/3 px-2 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-white/8 dark:bg-white/5 dark:text-zinc-300">
+                                  {entry.item.difficultyLabel}
+                                </span>
+                              )}
+
+                              {/* 分值输入框 */}
+                              <div className="ml-auto flex items-center gap-1 rounded-md border border-zinc-200 bg-white/80 px-1.5 py-0.5 dark:border-zinc-800 dark:bg-zinc-900/80">
+                                <input
+                                  type="number"
+                                  value={entry.score || ''}
+                                  placeholder={String(getDefaultScore(entry.item.questionType))}
+                                  onChange={(event) => entry.relationId && patchItem(entry.relationId, { score: Number(event.target.value || 0) })}
+                                  className="w-8 text-right font-mono text-xs font-semibold text-zinc-800 outline-none dark:text-zinc-200"
+                                />
+                                <span className="text-[10px] font-medium text-zinc-400">分</span>
+                              </div>
+
+                              {/* 动作按钮 (上移/下移/删除) */}
+                              <div className="flex items-center gap-0.5 rounded-lg border border-black/6 bg-black/3 p-0.5 dark:border-white/8 dark:bg-white/5">
+                                <button
+                                  type="button"
+                                  onClick={() => entry.relationId && moveItem(entry.relationId, -1)}
+                                  disabled={index === 0}
+                                  className="rounded p-1 text-zinc-500 transition-colors hover:bg-white hover:text-zinc-900 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                                  title="上移"
+                                >
+                                  <ChevronUp className="size-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => entry.relationId && moveItem(entry.relationId, 1)}
+                                  disabled={index === activeQuestions.length - 1}
+                                  className="rounded p-1 text-zinc-500 transition-colors hover:bg-white hover:text-zinc-900 disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                                  title="下移"
+                                >
+                                  <ChevronDown className="size-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => entry.relationId && removeItem(entry.relationId)}
+                                  className="rounded p-1 text-red-500 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
+                                  title="移除"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* 题干预览 */}
+                            <div className="line-clamp-2 text-xs leading-5 text-zinc-600 dark:text-zinc-300">
+                              <QuestionMarkdownContent
+                                content={stripLeadingQuestionNo(entry.item.stemMarkdown || '未命名题目', entry.item.questionNo)}
+                                className="picker-card-stem"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* 底部生成试卷按钮栏 */}
+                {activeQuestions.length > 0 && (
+                  <div className="flex shrink-0 items-center gap-2.5 border-t border-black/8 bg-white/95 px-4 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/95">
+                    <button
+                      type="button"
+                      onClick={() => void importToTeachingDocument()}
+                      className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-900 text-xs font-semibold text-white shadow-xs transition-all hover:bg-zinc-800 active:scale-[0.98] dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                    >
+                      <NotebookPen className="size-4" />
+                      生成讲义/试卷文档
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCollapsed(true)
+                        navigate('/questions/basket')
+                      }}
+                      className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-zinc-300/80 bg-zinc-100 px-3.5 text-xs font-semibold text-zinc-800 shadow-2xs transition-all hover:border-zinc-400 hover:bg-zinc-200 active:scale-[0.98] dark:border-zinc-700/80 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-700"
+                      title="打开完整组卷工作台"
+                    >
+                      <Maximize2 className="size-3.5" />
+                      完整工作台
+                    </button>
+                  </div>
+                )}
+              </motion.aside>
+            </div>
+          ) : null}
+        </AnimatePresence>,
+        document.body,
+      )}
     </>
   )
 }

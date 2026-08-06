@@ -85,6 +85,58 @@ describe('createQuestionRuntimeModel', () => {
       .toEqual([[0, 2], [2, 4]])
   })
 
+  it('uses document-local inline content for question text and options', () => {
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'question-block',
+      questionId: 'question-1',
+      display: {
+        showAnswer: true,
+        inlineContent: {
+          'question-block:question:stem:0': [{ type: 'text', text: '局部题干', color: '#2563eb', fontSize: 18 }],
+          'question-block:question:options:0:option:A': [{ type: 'text', text: '局部选项 A', marks: ['bold'] }],
+          'question-block:question:answer:0': [{ type: 'text', text: '局部答案' }],
+        },
+      },
+    }
+    const model = createQuestionRuntimeModel(block, question({ stemMarkdown: '原题干。\n\nA. 原选项 A\nB. 原选项 B\nC. 原选项 C\nD. 原选项 D' }))
+    const stemContent = (model.regions.find((region) => region.key === 'question-block:question:stem:0') as Extract<typeof model.regions[number], { kind: 'paragraph' }>).paragraph.content
+    expect(stemContent).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'text', text: '局部题干', color: '#2563eb', fontSize: 18 }),
+    ]))
+    expect(model.regions.find((region) => region.kind === 'options-row')).toMatchObject({
+      inlineContent: { A: [{ type: 'text', text: '局部选项 A', marks: ['bold'] }] },
+    })
+    expect(model.regions.find((region) => region.kind === 'answer')).toMatchObject({
+      inlineContent: [{ type: 'text', text: '局部答案' }],
+    })
+  })
+
+  it('keeps generated question numbers out of persisted inline content', () => {
+    const prefix = { type: 'text' as const, text: '8. ', marks: ['bold' as const] }
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'question-block',
+      questionId: 'question-1',
+      display: {
+        displayNumber: '8',
+        inlineContent: {
+          'question-block:question:stem:0': [
+            { type: 'text', text: '8. 8. 8. ', marks: ['bold'] },
+            { type: 'text', text: '局部题干' },
+          ],
+        },
+      },
+    }
+    const model = createQuestionRuntimeModel(block, question({ stemMarkdown: '原题干。' }))
+    const stem = model.regions.find((region) => region.kind === 'paragraph')
+    expect(stem && 'paragraph' in stem ? stem.paragraph.content : []).toEqual([
+      prefix,
+      { type: 'text', text: '局部题干' },
+    ])
+    expect(stem && 'generatedQuestionNumber' in stem ? stem.generatedQuestionNumber : undefined).toEqual([prefix])
+  })
+
   it('keeps complex markdown whole instead of cutting its source string', () => {
     const block: QuestionBlock = {
       type: 'question',

@@ -12,11 +12,14 @@ import { revalidateAllCandidatesForSourceDocument } from '../candidate-validatio
 import { figuresForQuestionBank } from '../figure-mapping.js'
 import { importJobContextForSource, maybeClassifyCommittedImportJobs, sourceTitle } from './source-metadata.js'
 import { withImmediateTransaction } from './helpers.js'
+import { cleanupOriginalPdfsForCompletedImportJob } from '../source-cleanup.service.js'
 
 export async function commitQuestionCandidate(id: string, options: { skipAutoClassification?: boolean } = {}) {
   const candidate = candidateRepo.getQuestionCandidate(id)
   if (!candidate) throw new RouteError(404, '候选题不存在。')
+  const importJobContext = importJobContextForSource(candidate.sourceDocumentId)
   if (candidate.status === 'committed') {
+    if (importJobContext?.importJobId) cleanupOriginalPdfsForCompletedImportJob(importJobContext.importJobId)
     if (!candidate.committedQuestionId) {
       throw new RouteError(409, '候选题已标记为已入库，但缺少已入库题目 ID。')
     }
@@ -32,7 +35,6 @@ export async function commitQuestionCandidate(id: string, options: { skipAutoCla
   const questionType = candidate.questionType === '单选题' && inferredQuestionType === '多选题'
     ? inferredQuestionType
     : normalizeQuestionType(candidate.questionType || inferredQuestionType, candidate.stemMarkdown, candidate.answerText)
-  const importJobContext = importJobContextForSource(candidate.sourceDocumentId)
   const { item, committedCandidate } = withImmediateTransaction(() => {
     const createdItem = createQuestion({
       questionNo: candidate.questionNo,
@@ -71,6 +73,7 @@ export async function commitQuestionCandidate(id: string, options: { skipAutoCla
     if (!updatedCandidate) throw new RouteError(500, '题目已创建，但候选题入库状态更新失败。')
     return { item: createdItem, committedCandidate: updatedCandidate }
   })
+  if (importJobContext?.importJobId) cleanupOriginalPdfsForCompletedImportJob(importJobContext.importJobId)
   const classificationReports = options.skipAutoClassification ? null : await maybeClassifyCommittedImportJobs([item])
   return { candidate: committedCandidate, item, classificationReports }
 }

@@ -42,48 +42,6 @@ export function draftAnalysisText(draft: Partial<QuestionItem>) {
   return String(draft.analysisMarkdown ?? richBlocksPlainText(draft.analysisBlocks ?? []))
 }
 
-const legalJsonEscapeChars = new Set(['"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u'])
-
-export function shouldDoubleJsonBackslash(escapedChar: string, followingText: string) {
-  if (!legalJsonEscapeChars.has(escapedChar)) return true
-  if (escapedChar === 'u') return !/^[0-9a-fA-F]{4}/.test(followingText)
-  if (!['b', 'f', 'n', 'r', 't'].includes(escapedChar)) return false
-  return /^[a-z]/.test(followingText)
-}
-
-export function cleanJsonBackslashes(text: string) {
-  let cleaned = ''
-  let changed = 0
-  let inString = false
-  let escaped = false
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index]
-    if (!inString) {
-      cleaned += char
-      if (char === '"') inString = true
-      continue
-    }
-    if (escaped) {
-      if (shouldDoubleJsonBackslash(char, text.slice(index + 1))) {
-        cleaned += `\\${char}`
-        changed += 1
-      } else {
-        cleaned += char
-      }
-      escaped = false
-      continue
-    }
-    if (char === '\\') {
-      cleaned += char
-      escaped = true
-      continue
-    }
-    cleaned += char
-    if (char === '"') inString = false
-  }
-  return { cleaned, changed }
-}
-
 export function getTextLocation(text: string, position: number) {
   const safePosition = Math.max(0, Math.min(position, text.length))
   const before = text.slice(0, safePosition)
@@ -131,104 +89,6 @@ export function jsonErrorSnippet(text: string, position: number | null) {
   }
 }
 
-export function extractLikelyJsonText(text: string) {
-  const trimmed = text.trim().replace(/^\uFEFF/, '')
-  const fencedBlocks = Array.from(trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)).map((match) => match[1]?.trim()).filter(Boolean)
-  if (fencedBlocks.length) {
-    return {
-      text: fencedBlocks.join('\n'),
-      changed: true,
-      note: fencedBlocks.length > 1 ? `已提取 ${fencedBlocks.length} 个代码块中的 JSON。` : '已提取代码块中的 JSON。',
-    }
-  }
-  const firstObject = trimmed.search(/[\[{]/)
-  if (firstObject < 0) return { text: trimmed, changed: trimmed !== text, note: trimmed !== text ? '已去除前后空白。' : '' }
-  const firstChar = trimmed[firstObject]
-  const lastIndex = firstChar === '{' ? trimmed.lastIndexOf('}') : trimmed.lastIndexOf(']')
-  if (lastIndex > firstObject) {
-    const sliced = trimmed.slice(firstObject, lastIndex + 1)
-    const changed = sliced !== trimmed
-    return { text: sliced, changed, note: changed ? '已忽略 JSON 前后的额外文字。' : '' }
-  }
-  return { text: trimmed, changed: trimmed !== text, note: trimmed !== text ? '已去除前后空白。' : '' }
-}
-
-export function mergeQuestionPayloadSegments(text: string) {
-  const segments = splitTopLevelJsonSegments(text)
-  if (segments.length <= 1) return null
-  try {
-    const payloads = segments.map((segment) => JSON.parse(segment))
-    const questions = payloads.flatMap(questionsFromPayload)
-    if (!questions.length) return null
-    return {
-      cleaned: JSON.stringify({ questions }, null, 2),
-      count: segments.length,
-      questionCount: questions.length,
-    }
-  } catch {
-    return null
-  }
-}
-
-export function cleanAiJsonText(text: string) {
-  const changes: string[] = []
-  const extracted = extractLikelyJsonText(text)
-  let cleaned = extracted.text
-  if (extracted.note) changes.push(extracted.note)
-  const backslashCleaned = cleanJsonBackslashes(cleaned)
-  cleaned = backslashCleaned.cleaned
-  if (backslashCleaned.changed > 0) changes.push(`已清洗 ${backslashCleaned.changed} 处 LaTeX 反斜杠。`)
-  const withoutTrailingCommas = cleaned.replace(/,\s*([}\]])/g, '$1')
-  if (withoutTrailingCommas !== cleaned) {
-    cleaned = withoutTrailingCommas
-    changes.push('已移除对象或数组结尾前的多余逗号。')
-  }
-  const merged = mergeQuestionPayloadSegments(cleaned)
-  if (merged) {
-    cleaned = merged.cleaned
-    changes.push(`已识别到 ${merged.count} 段 JSON，并合并为 ${merged.questionCount} 道题。`)
-  }
-  return { cleaned, changes }
-}
-
-export function splitTopLevelJsonSegments(text: string) {
-  const segments: string[] = []
-  let start = -1
-  let depth = 0
-  let inString = false
-  let escaped = false
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index]
-    if (inString) {
-      if (escaped) {
-        escaped = false
-      } else if (char === '\\') {
-        escaped = true
-      } else if (char === '"') {
-        inString = false
-      }
-      continue
-    }
-    if (char === '"') {
-      inString = true
-      continue
-    }
-    if (char === '{' || char === '[') {
-      if (depth === 0) start = index
-      depth += 1
-      continue
-    }
-    if (char === '}' || char === ']') {
-      if (depth > 0) depth -= 1
-      if (depth === 0 && start >= 0) {
-        segments.push(text.slice(start, index + 1))
-        start = -1
-      }
-    }
-  }
-  return segments
-}
-
 export function questionsFromPayload(payload: unknown) {
   if (Array.isArray(payload)) return payload
   if (payload && typeof payload === 'object') {
@@ -260,15 +120,6 @@ type PaperQuestionPreview = {
   issues: string[]
 }
 
-export function comparableQuestionNo(value: string) {
-  return String(value || '')
-    .trim()
-    .replace(/^\s*第\s*/u, '')
-    .replace(/\s*题\s*$/u, '')
-    .replace(/\s+/g, '')
-    .replace(/[.．、:：）)]$/u, '')
-}
-
 export function buildPaperQuestionPreview(question: unknown, index: number): PaperQuestionPreview {
   const questionNo = questionField(question, ['question_no', 'questionNo']) || String(index + 1)
   const problemText = questionField(question, ['problem_text', 'stemMarkdown', 'problemText'])
@@ -280,24 +131,6 @@ export function buildPaperQuestionPreview(question: unknown, index: number): Pap
   if (!answerText.trim()) issues.push('答案为空')
   if (!analysisText.trim()) issues.push('解析为空')
   return { index, questionNo, problemText, answerText, analysisText, needsHumanReview, issues }
-}
-
-export function parsePaperQuestionsFromJsonText(text: string) {
-  const prepared = cleanAiJsonText(text)
-  let payload: unknown
-  let questions: unknown[]
-  try {
-    payload = JSON.parse(prepared.cleaned)
-    questions = questionsFromPayload(payload)
-  } catch (error) {
-    const merged = mergeQuestionPayloadSegments(prepared.cleaned)
-    if (!merged) throw error
-    prepared.cleaned = merged.cleaned
-    prepared.changes.push(`已识别到 ${merged.count} 段 JSON，并合并为 ${merged.questionCount} 道题。`)
-    payload = JSON.parse(prepared.cleaned)
-    questions = questionsFromPayload(payload)
-  }
-  return { ...prepared, payload, questions, previews: questions.map(buildPaperQuestionPreview) }
 }
 
 export function parseStrictQuestionsFromJsonText(text: string) {

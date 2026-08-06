@@ -1,5 +1,7 @@
+import { createPortal } from 'react-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
+import { useFloatingMenuPosition } from '@/hooks/useFloatingMenuPosition'
 
 type SearchableSelectProps = {
   value: string
@@ -27,6 +29,9 @@ export function SearchableSelect({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const uniqueOptions = useMemo(() => Array.from(new Set(options.filter(Boolean))), [options])
   const filteredOptions = useMemo(() => {
     const keyword = query.trim().toLowerCase()
@@ -37,10 +42,22 @@ export function SearchableSelect({
   useEffect(() => {
     if (!open) return
     function handlePointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false)
     }
     document.addEventListener('pointerdown', handlePointerDown)
     return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [open])
+
+  const menuPosition = useFloatingMenuPosition(open, triggerRef, menuRef, { contentKey: filteredOptions.length })
+
+  useEffect(() => {
+    if (!open) return
+    const input = searchInputRef.current
+    if (!input) return
+    input.focus()
+    const cursorPosition = input.value.length
+    input.setSelectionRange(cursorPosition, cursorPosition)
   }, [open])
 
   function selectOption(option: string) {
@@ -54,6 +71,7 @@ export function SearchableSelect({
       <button
         type="button"
         disabled={disabled}
+        ref={triggerRef}
         onClick={() => setOpen((current) => !current)}
         className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-zinc-200 bg-background px-3 text-left text-sm shadow-sm outline-none transition-colors hover:bg-zinc-50 focus:ring-1 focus:ring-zinc-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
       >
@@ -77,11 +95,21 @@ export function SearchableSelect({
           <ChevronDown className={`size-4 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
         </span>
       </button>
-      {open ? (
-        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
+      {open ? createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-[110] max-h-[calc(100vh-1rem)] overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-950"
+          style={{
+            top: menuPosition?.top ?? 0,
+            left: menuPosition?.left ?? 0,
+            width: menuPosition?.width ?? 0,
+            visibility: menuPosition ? 'visible' : 'hidden',
+          }}
+        >
           <div className="flex items-center gap-2 border-b border-zinc-100 px-2.5 py-2 dark:border-zinc-900">
             <Search className="size-3.5 text-zinc-400" />
             <input
+              ref={searchInputRef}
               autoFocus
               className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-zinc-400"
               value={query}
@@ -104,7 +132,8 @@ export function SearchableSelect({
               <div className="px-2.5 py-6 text-center text-xs text-zinc-400">{emptyText}</div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   )

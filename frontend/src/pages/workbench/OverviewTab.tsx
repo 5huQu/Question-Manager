@@ -32,6 +32,7 @@ import {
   questionCardPrimaryButtonClass,
 } from '@/components/questions/workbench/QuestionCard'
 import type { ExportRecord, OcrSettings, QuestionBankResponse, QuestionItem } from '@/types'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { addQuestionToBasket } from '@/utils/questionBasket'
 import { QuickActionDialog } from '@/components/dialogs/QuickActionDialog'
 
@@ -46,7 +47,6 @@ export function OverviewTab({
   activityHoursError,
   activityHoursLoading,
   exportRecords,
-  exportRecordsLoading,
 }: {
   questionBank: QuestionBankResponse | null
   questionBankLoading?: boolean
@@ -58,7 +58,6 @@ export function OverviewTab({
   activityHoursError?: string
   activityHoursLoading?: boolean
   exportRecords: ExportRecordsResponse | null
-  exportRecordsLoading?: boolean
 }) {
   const navigate = useNavigate()
   const [quickAction, setQuickAction] = useState<'daily' | 'random' | null>(null)
@@ -66,7 +65,7 @@ export function OverviewTab({
   const exports = exportRecords?.items.slice(0, 4) ?? []
   const basketIds = new Set((questionBank?.basket?.questions ?? []).map((entry) => entry.item.id))
   const heatmapDays = activityHeatmap?.days ?? []
-  const stats = useMemo(() => buildStats(heatmapDays, questionBank?.totalItems ?? 0, exports), [exports, heatmapDays, questionBank?.totalItems])
+  const stats = useMemo(() => buildStats(heatmapDays, questionBank?.totalItems ?? 0), [heatmapDays, questionBank?.totalItems])
   const weeks = useMemo(() => buildHeatmapWeeks(heatmapDays), [heatmapDays])
   const ocrReady = getOcrReady(ocrSettings)
   const peakHoursData = useMemo(() => buildPeakHoursData(activityHours), [activityHours])
@@ -101,8 +100,8 @@ export function OverviewTab({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="题库总量" value={questionBankLoading ? '--' : stats.totalQuestions} unit="道" desc="累计入库试题记录" />
         <StatCard label="本月新增" value={stats.currentMonthNew} unit="道" desc={`本月录入较上月 ${stats.monthDeltaLabel}`} />
-        <StatCard label="今日复核" value={stats.todayReviewed} unit="道" desc="今日完成 OCR 识别校对" />
-        <StatCard label="最近导出" value={exportRecordsLoading ? '--' : stats.weeklyExports} unit="份" desc="本周生成 Word/PDF 试卷" />
+        <StatCard label="今日复核" value={stats.todayReviewed} unit="批次" desc="今日完成 OCR 识别的文档批次" />
+        <StatCard label="最近文档" value={activityHeatmapLoading ? '--' : stats.recentDocuments} unit="份" desc="近 7 天新建导入文档" />
       </div>
 
       <div className="rounded-xl border border-zinc-200 bg-card p-6 text-left text-card-foreground shadow-sm dark:border-zinc-800">
@@ -371,11 +370,24 @@ function HeatmapCell({ day }: { day: ActivityHeatmapDay }) {
   }
   const colorClass = getHeatmapColor(day.count)
   return (
-    <div className={`group relative size-3 cursor-pointer rounded-[1px] ${colorClass} transition-all duration-100 hover:ring-1 hover:ring-zinc-950 dark:hover:ring-zinc-100`}>
-      <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 scale-0 whitespace-nowrap rounded bg-zinc-950 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-white shadow transition-all group-hover:scale-100 dark:bg-zinc-500 dark:text-zinc-900">
-        {day.date}: 处理 {day.count} 题
-      </div>
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`${day.date}：处理 ${day.count} 题`}
+          className={`block size-3 cursor-pointer rounded-[1px] ${colorClass} transition-all duration-100 hover:ring-1 hover:ring-zinc-950 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-950 dark:hover:ring-zinc-100 dark:focus-visible:ring-zinc-100`}
+        />
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        align="center"
+        sideOffset={8}
+        collisionPadding={16}
+        className="z-[100] whitespace-nowrap px-2.5 py-1 font-mono text-[10px] font-semibold"
+      >
+        {day.date}：处理 {day.count} 题
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -495,6 +507,7 @@ function buildHeatmapWeeks(days: ActivityHeatmapDay[]): ActivityHeatmapDay[][] {
           questionsBanked: 0,
           exportsCreated: 0,
           ocrCompleted: 0,
+          documentsCreated: 0,
         },
       }))
     )
@@ -517,6 +530,7 @@ function buildHeatmapWeeks(days: ActivityHeatmapDay[]): ActivityHeatmapDay[][] {
         questionsBanked: 0,
         exportsCreated: 0,
         ocrCompleted: 0,
+        documentsCreated: 0,
       },
     })
   }
@@ -535,6 +549,7 @@ function buildHeatmapWeeks(days: ActivityHeatmapDay[]): ActivityHeatmapDay[][] {
         questionsBanked: 0,
         exportsCreated: 0,
         ocrCompleted: 0,
+        documentsCreated: 0,
       },
     }))
     resultDays = [...startPadding, ...resultDays]
@@ -590,7 +605,7 @@ function getMonthLabel(week: ActivityHeatmapDay[]) {
   return `${date.getMonth() + 1}月`
 }
 
-function buildStats(days: ActivityHeatmapDay[], totalQuestions: number, exports: ExportRecord[]) {
+function buildStats(days: ActivityHeatmapDay[], totalQuestions: number) {
   const now = new Date()
   const currentMonth = now.getMonth()
   const currentYear = now.getFullYear()
@@ -609,10 +624,11 @@ function buildStats(days: ActivityHeatmapDay[], totalQuestions: number, exports:
   const todayReviewed = days.find((day) => day.date === today)?.breakdown.ocrCompleted ?? 0
   const weekStart = new Date(now)
   weekStart.setDate(now.getDate() - 7)
-  const weeklyExports = exports.filter((record) => {
-    const date = parseDay(record.createdAt)
-    return date ? date >= weekStart : false
-  }).length
+  const recentDocuments = days.reduce((sum, day) => {
+    const date = parseDay(day.date)
+    if (!date || date < weekStart) return sum
+    return sum + (day.breakdown.documentsCreated || 0)
+  }, 0)
   const activeDays = days.filter((day) => day.count > 0).length
   const activeRatio = days.length ? Math.round((activeDays / days.length) * 100) : 0
   return {
@@ -620,7 +636,7 @@ function buildStats(days: ActivityHeatmapDay[], totalQuestions: number, exports:
     currentMonthNew,
     monthDeltaLabel: formatDelta(currentMonthNew, previousMonthNew),
     todayReviewed,
-    weeklyExports,
+    recentDocuments,
     activeRatio,
   }
 }

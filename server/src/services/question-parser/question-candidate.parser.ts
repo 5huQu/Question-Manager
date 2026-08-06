@@ -14,10 +14,12 @@ import {
 } from './document-layout.classifier.js'
 import { maskStructuralMarkdown, maskLectureNonQuestionSections } from './structural-detection.js'
 import { duplicateQuestionNos, mergeDuplicateContinuationChunks } from './chunk-processing.js'
-import { attachImageBlocks } from './figure-extraction.js'
+import { attachImageBlocks, reassignStandaloneFigureBlocks } from './figure-extraction.js'
 import { cleanQuestionMatchesForLayout, extractAppendixSolutionMatches } from './solution-extraction.js'
 import type { SolutionMatch } from './solution-matcher.js'
 import { candidateFromChunk, fallbackCandidate, fillDoc2xFigures, removeDoc2xFigureMarkers } from './candidate-builder.js'
+import { appendixSplitLeavesQuestionContent } from './appendix-safety.js'
+import { pairLectureQuestionSolutionRuns } from './lecture-variant-pairing.js'
 
 export type ParseQuestionCandidatesOptions = {
   now?: string
@@ -33,6 +35,22 @@ function alignDocumentBlockOffsets(document: OCRDocument, markdown: string): OCR
     pages: document.pages.map((page) => ({
       ...page,
       blocks: page.blocks.map((block) => {
+        // GLM image blocks carry a signed URL as content, while the markdown
+        // contains the stable DOC2X_FIGURE marker instead. Align to that
+        // marker first; stale provider offsets can otherwise make a figure
+        // overlap the following question.
+        if (block.assetId) {
+          const marker = `<!-- DOC2X_FIGURE:${block.assetId} -->`
+          const markerIndex = markdown.indexOf(marker, cursor)
+          if (markerIndex >= 0) {
+            cursor = markerIndex + marker.length
+            return {
+              ...block,
+              markdownStart: markerIndex,
+              markdownEnd: cursor,
+            }
+          }
+        }
         const content = String(block.content || '')
         if (!content.trim()) return block
         const index = markdown.indexOf(content, cursor)
@@ -58,7 +76,13 @@ export function parseQuestionCandidates(document: OCRDocument, options: ParseQue
   const maskedMarkdown = maskStructuralMarkdown(lectureAwareMarkdown, config)
   const classification = classifyQuestionDocumentLayout(markdown, config, { detectionMarkdown: maskedMarkdown })
   const solutionSections = findSolutionSections(markdown, config)
-  const useAppendixSolutions = classification.cleaningRule === 'same_document_appendix' && classification.solutionStart !== undefined
+  const proposedAppendix = classification.cleaningRule === 'same_document_appendix' && classification.solutionStart !== undefined
+  const unsafeAppendix = proposedAppendix
+    && appendixSplitLeavesQuestionContent(maskedMarkdown, classification.solutionStart!, config)
+  // Lecture packages often repeat a question-only run followed by an answered
+  // run several times. Parse the complete document first and pair local runs;
+  // a single global appendix split cannot represent that structure safely.
+  const useAppendixSolutions = proposedAppendix && paperKind !== 'lecture' && !unsafeAppendix
   const questionMarkdown = classification.cleaningRule === 'solution_document_only'
     ? ''
     : useAppendixSolutions
@@ -80,6 +104,8 @@ export function parseQuestionCandidates(document: OCRDocument, options: ParseQue
     const duplicateNos = duplicateQuestionNos(chunks)
     candidates = chunks.map((chunk) => candidateFromChunk(alignedDocument, chunk, solutions.get(chunk.questionNo), duplicateNos, timestamp, config, paperKind))
     attachImageBlocks(alignedDocument, chunks, candidates, config)
+    reassignStandaloneFigureBlocks(alignedDocument, candidates)
+    if (paperKind === 'lecture') candidates = pairLectureQuestionSolutionRuns(chunks, candidates)
   }
 
   if (paperKind === 'lecture') {

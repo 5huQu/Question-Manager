@@ -84,11 +84,11 @@ export function EditorTopBar(props: {
   }, [insertOpen, reposition])
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white/80 px-3 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/80">
+    <header className="question-edit-glass-inner-header flex h-12 shrink-0 items-center gap-2 border-b border-black/6 dark:border-white/8 px-3 backdrop-blur-md">
       <button
         type="button"
         onClick={props.onBack}
-        className="rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
+        className="rounded-md p-2 text-zinc-500 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:hover:bg-white/10 dark:hover:text-zinc-100"
         title="返回文档列表"
       >
         <ArrowLeft className="size-4" />
@@ -96,26 +96,26 @@ export function EditorTopBar(props: {
       <input
         value={props.documentTitle}
         onChange={(event) => props.onTitleChange(event.target.value)}
-        className="h-8 min-w-32 flex-1 rounded-md border border-transparent bg-transparent px-2 text-[15px] font-semibold tracking-tight text-zinc-900 outline-none transition-colors hover:border-zinc-200 focus:border-zinc-300 dark:text-zinc-100 dark:hover:border-zinc-800 dark:focus:border-zinc-700"
+        className="h-8 min-w-32 flex-1 rounded-md border border-transparent bg-transparent px-2 text-[15px] font-semibold tracking-tight text-zinc-900 outline-none transition-colors hover:border-black/10 focus:border-black/20 dark:text-zinc-100 dark:hover:border-white/15 dark:focus:border-white/25"
         aria-label="文档标题"
         placeholder="未命名文档"
       />
 
       <div
-        className="hidden h-8 shrink-0 items-center gap-0.5 rounded-md border border-zinc-200 bg-white px-1 lg:flex dark:border-zinc-800 dark:bg-zinc-950"
+        className="question-edit-glass-tabs hidden h-7.5 shrink-0 items-center gap-1 rounded-lg px-1.5 lg:flex border border-black/6 dark:border-white/8"
         aria-label="视图缩放"
       >
         <button
           type="button"
           onClick={() => props.onZoomChange(Math.max(0.5, Math.round((props.zoom - 0.05) * 100) / 100))}
-          className="flex size-6 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
+          className="flex size-5 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-black/5 hover:text-zinc-900 active:scale-95 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
           aria-label="缩小视图"
           title="缩小视图"
         >
-          <Minus className="size-3.5" />
+          <Minus className="size-3" />
         </button>
         <input
-          className="h-1 w-20 cursor-pointer appearance-none rounded-full bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-zinc-100"
+          className="apple-slider h-1 w-16 cursor-pointer"
           type="range"
           min={50}
           max={150}
@@ -127,17 +127,21 @@ export function EditorTopBar(props: {
         <button
           type="button"
           onClick={() => props.onZoomChange(Math.min(1.5, Math.round((props.zoom + 0.05) * 100) / 100))}
-          className="flex size-6 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
+          className="flex size-5 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-black/5 hover:text-zinc-900 active:scale-95 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
           aria-label="放大视图"
           title="放大视图"
         >
-          <Plus className="size-3.5" />
+          <Plus className="size-3" />
         </button>
         <button
           type="button"
-          onClick={() => props.onZoomChange(1)}
-          className="w-10 rounded px-1 py-1 text-center text-[11px] font-medium tabular-nums text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
-          title="恢复到 100%"
+          onClick={() => {
+            const nextZooms = [1, 1.25, 1.5, 0.75, 1]
+            const currentIdx = nextZooms.findIndex((z) => Math.abs(z - props.zoom) < 0.05)
+            props.onZoomChange(nextZooms[(currentIdx + 1) % nextZooms.length])
+          }}
+          className="rounded px-1.5 py-0.5 text-center text-[11px] font-medium tabular-nums text-zinc-600 transition-colors hover:bg-black/5 dark:text-zinc-300 dark:hover:bg-white/10"
+          title="切换常见比例 (100% / 125% / 150% / 75%)"
         >
           {Math.round(props.zoom * 100)}%
         </button>
@@ -148,13 +152,13 @@ export function EditorTopBar(props: {
         {indicator.label}
       </span>
 
-      <span className="mx-1 hidden h-5 w-px bg-zinc-200 dark:bg-zinc-800 sm:block" />
+      <span className="mx-1 hidden h-5 w-px bg-black/6 dark:bg-white/8 sm:block" />
 
       <button
         type="button"
         disabled={!props.canUndo}
         onClick={props.onUndo}
-        className="rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-900"
+        className="rounded-md p-2 text-zinc-500 transition-colors hover:bg-black/5 disabled:opacity-30 dark:hover:bg-white/10"
         title="撤销"
       >
         <Undo2 className="size-4" />
@@ -163,15 +167,15 @@ export function EditorTopBar(props: {
         type="button"
         disabled={!props.canRedo}
         onClick={props.onRedo}
-        className="rounded-md p-2 text-zinc-500 transition-colors hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-900"
+        className="rounded-md p-2 text-zinc-500 transition-colors hover:bg-black/5 disabled:opacity-30 dark:hover:bg-white/10"
         title="重做"
       >
         <Redo2 className="size-4" />
       </button>
 
-      <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-800" />
+      <span className="mx-1 h-5 w-px bg-black/6 dark:bg-white/8" />
 
-      <div className="inline-flex rounded-lg border border-zinc-200 bg-zinc-100/80 p-0.5 dark:border-zinc-800 dark:bg-zinc-900/80">
+      <div role="tablist" aria-label="视图模式" className="question-edit-glass-tabs inline-flex items-center gap-0.5 rounded-lg p-0.5">
         {([
           { mode: 'paginated' as const, label: '页面编辑', Icon: FileText },
           { mode: 'continuous' as const, label: '连续流', Icon: AlignLeft },
@@ -180,12 +184,10 @@ export function EditorTopBar(props: {
           <button
             key={mode}
             type="button"
+            role="tab"
+            aria-selected={props.canvasMode === mode}
             onClick={() => props.onCanvasModeChange(mode)}
-            className={`inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-[11px] font-normal tracking-wide transition-colors ${
-              props.canvasMode === mode
-                ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50'
-                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-            }`}
+            className="inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-[11px] font-medium tracking-wide transition-all"
           >
             <Icon className="size-3.5" />
             {label}

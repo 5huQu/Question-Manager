@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ArrowDown, ArrowUp, ImagePlus, Trash2 } from 'lucide-react'
 import type { TeachingBlock } from '@/types/teachingDocument'
+import { InspectorSlider } from '@/components/ui/InspectorSlider'
 import { Field, fieldClass } from './common'
 
 export function FigureSettings(props: {
@@ -109,14 +110,20 @@ export function FigureSettings(props: {
               ))}
             </div>
           </Field>
-          <Field label={`图片间距 ${Math.round(block.groupGapMm ?? 4)} mm`}>
-            <input type="range" min={0} max={12} step={1} className="mt-2 w-full" value={block.groupGapMm ?? 4} onChange={(event) => props.onUpdate({ groupGapMm: Number(event.target.value) }, `figure-group-gap:${block.id}`)} />
-          </Field>
-          <div className="space-y-2">
+          <InspectorSlider
+            label="图片间距"
+            value={block.groupGapMm ?? 4}
+            min={0}
+            max={12}
+            step={1}
+            unit="mm"
+            onChange={(val) => props.onUpdate({ groupGapMm: val }, `figure-group-gap:${block.id}`)}
+          />
+          <div className="space-y-2 pt-1">
             {groupItems.map((item, index) => (
-              <div key={item.id} className="space-y-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-800">
+              <div key={item.id} className="space-y-1.5 border-b border-zinc-200/60 pb-3 dark:border-zinc-800/60 last:border-b-0">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-zinc-500">图片 {index + 1}</span>
+                  <span className="text-[11px] font-medium text-zinc-500">图片 {index + 1}</span>
                   <div className="flex items-center gap-0.5">
                     <button type="button" title="上移" aria-label={`图片 ${index + 1} 上移`} disabled={index === 0} onClick={() => {
                       const next = [...groupItems]
@@ -151,9 +158,16 @@ export function FigureSettings(props: {
           <option value="right">右对齐</option>
         </select>
       </Field>
-      <Field label={`宽度 ${Math.round(block.widthMm || 80)} mm`}>
-        <input type="range" min={10} max={400} step={1} className="mt-2 w-full" value={block.widthMm || 80} onChange={(event) => props.onUpdate({ widthMm: Number(event.target.value), widthRatio: undefined })} />
-      </Field>
+      <InspectorSlider
+        label="图片宽度"
+        value={block.widthMm || 80}
+        min={10}
+        max={400}
+        step={1}
+        unit="mm"
+        presets={[60, 80, 120, 160]}
+        onChange={(val) => props.onUpdate({ widthMm: val, widthRatio: undefined })}
+      />
     </div>
   )
 }

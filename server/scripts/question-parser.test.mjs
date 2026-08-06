@@ -541,6 +541,69 @@ assert.match(appendixSolutionWithLooseNumberMarkersCandidates.find((candidate) =
 assert.match(appendixSolutionWithLooseNumberMarkersCandidates.find((candidate) => candidate.questionNo === '19')?.analysisMarkdown || '', /第十九题分析/)
 assert.doesNotMatch(appendixSolutionWithLooseNumberMarkersCandidates.find((candidate) => candidate.questionNo === '19')?.stemMarkdown || '', /参考答案|第一题分析/)
 
+const appendixSolutionEarlyRestartWithTrailingAdsDocument = {
+  ...ocrDocument,
+  id: 'ocr_appendix_solution_early_restart_with_trailing_ads_test',
+  markdown: [
+    '<!-- GLM_PAGE:1 -->',
+    '# 数学试卷',
+    '## 一、单选题',
+    '1. 第一题题干。',
+    '',
+    '2. 第二题题干。',
+    '',
+    '3. 第三题题干。',
+    '',
+    '4. 第四题题干。',
+    '',
+    '<!-- GLM_PAGE:2 -->',
+    '1. A',
+    '',
+    '2. B',
+    '',
+    '3. C',
+    '',
+    '4. D',
+    '',
+    '<!-- GLM_PAGE:3 -->',
+    '## QQ数学资料群简介',
+    '本资料群与公众号互联，致力于为大家提供资源分享、实时资料试题更新。',
+    '目前收费为21.68一位。',
+    '购书赠送资料群，需要联系微信。',
+    '高考资讯（高考最新资讯以及选科与大学专业等）',
+    '数学专题课件（备课必备高中数学专题ppt）',
+    '学习软件（PDF去除密码软件）',
+    '本资料群与公众号互联，致力于为大家提供资源分享、实时资料试题更新。',
+    '目前收费为21.68一位。',
+    '购书赠送资料群，需要联系微信。',
+    '高考资讯（高考最新资讯以及选科与大学专业等）',
+    '数学专题课件（备课必备高中数学专题ppt）',
+    '学习软件（PDF去除密码软件）',
+    '本资料群与公众号互联，致力于为大家提供资源分享、实时资料试题更新。',
+    '目前收费为21.68一位。',
+    '购书赠送资料群，需要联系微信。',
+    '高考资讯（高考最新资讯以及选科与大学专业等）',
+    '数学专题课件（备课必备高中数学专题ppt）',
+    '学习软件（PDF去除密码软件）',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const appendixSolutionEarlyRestartWithTrailingAdsClassification = classifyQuestionDocumentLayout(
+  appendixSolutionEarlyRestartWithTrailingAdsDocument.markdown,
+  { ...defaultParserConfig, documentLayout: 'appendix' },
+)
+assert.equal(appendixSolutionEarlyRestartWithTrailingAdsClassification.layout, 'appendix_solution')
+assert.match(appendixSolutionEarlyRestartWithTrailingAdsDocument.markdown.slice(appendixSolutionEarlyRestartWithTrailingAdsClassification.solutionStart), /^1\. A/)
+const appendixSolutionEarlyRestartWithTrailingAdsCandidates = parseQuestionCandidates(
+  appendixSolutionEarlyRestartWithTrailingAdsDocument,
+  { config: { ...defaultParserConfig, documentLayout: 'appendix' }, now: '2026-06-24T00:00:00.000Z' },
+)
+assert.deepEqual(appendixSolutionEarlyRestartWithTrailingAdsCandidates.map((candidate) => candidate.questionNo), ['1', '2', '3', '4'])
+assert.deepEqual(appendixSolutionEarlyRestartWithTrailingAdsCandidates.map((candidate) => candidate.answerText), ['A', 'B', 'C', 'D'])
+assert.equal(appendixSolutionEarlyRestartWithTrailingAdsCandidates.some((candidate) => candidate.issues.some((issue) => issue.code === 'duplicate_question_no')), false)
+assert.doesNotMatch(appendixSolutionEarlyRestartWithTrailingAdsCandidates[0].stemMarkdown, /^A$/)
+
 const appendixSolutionWithMissingSolutionNoDocument = {
   ...ocrDocument,
   id: 'ocr_appendix_solution_missing_solution_no_test',
@@ -779,6 +842,46 @@ const imageBetweenDocument = {
 const imageBetweenCandidates = parseQuestionCandidates(imageBetweenDocument, { now: '2026-06-24T00:00:00.000Z' })
 assert.equal(imageBetweenCandidates[0].figures.some((figure) => figure.sourceBlockId === 'b_image_between'), true)
 
+const rawAnswerTableFigureMarkdown = '1. 第一题题干。\n参考答案\n<table border="1"><tr><td>题号</td><td>1</td></tr><tr><td>答案</td><td>A</td></tr></table>'
+const rawAnswerTableFigureDocument = {
+  ...ocrDocument,
+  id: 'ocr_raw_answer_table_figure_test',
+  markdown: rawAnswerTableFigureMarkdown,
+  pages: [{ pageNo: 1, width: 800, height: 1100, blocks: [
+    block(rawAnswerTableFigureMarkdown, '1. 第一题题干。', 1, 'b_raw_table_q1'),
+    block(rawAnswerTableFigureMarkdown, '<table border="1"><tr><td>题号</td><td>1</td></tr><tr><td>答案</td><td>A</td></tr></table>', 1, 'b_raw_answer_table', 'table'),
+  ] }],
+  assets: [],
+}
+const rawAnswerTableFigureCandidates = parseQuestionCandidates(rawAnswerTableFigureDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.equal(rawAnswerTableFigureCandidates[0].figures.some((figure) => figure.path.startsWith('<table')), false)
+
+const misplacedFigureMarkdown = [
+  '12. 向量 a、b 在网格中的位置如图。',
+  '13. 已知抛物线的焦点为 F。',
+  '<!-- DOC2X_FIGURE:grid_misplaced -->',
+  '14. 已知奇函数 f(x)。',
+].join('\n')
+const misplacedFigureDocument = {
+  ...ocrDocument,
+  id: 'ocr_misplaced_figure_test',
+  markdown: misplacedFigureMarkdown,
+  pages: [{ pageNo: 1, width: 800, height: 1100, blocks: [
+    { ...block(misplacedFigureMarkdown, '12. 向量 a、b 在网格中的位置如图。', 1, 'b_misplaced_q12'), bbox: [10, 100, 400, 150] },
+    { ...block(misplacedFigureMarkdown, '13. 已知抛物线的焦点为 F。', 1, 'b_misplaced_q13'), bbox: [10, 200, 400, 250] },
+    { id: 'b_misplaced_grid', pageNo: 1, type: 'image', content: 'grid.png', assetId: 'grid_misplaced', markdownStart: 999, markdownEnd: 1000, bbox: [500, 110, 760, 300] },
+    { ...block(misplacedFigureMarkdown, '14. 已知奇函数 f(x)。', 1, 'b_misplaced_q14'), bbox: [10, 300, 400, 350] },
+  ] }],
+  assets: [{ id: 'grid_misplaced', type: 'image', path: 'grid.png', pageNo: 1, bbox: [500, 110, 760, 300], sourceBlockId: 'b_misplaced_grid' }],
+}
+const misplacedFigureCandidates = parseQuestionCandidates(misplacedFigureDocument, { now: '2026-06-24T00:00:00.000Z' })
+const misplacedQ12 = misplacedFigureCandidates.find((candidate) => candidate.questionNo === '12')
+const misplacedQ13 = misplacedFigureCandidates.find((candidate) => candidate.questionNo === '13')
+assert.equal(misplacedQ12?.figures.some((figure) => figure.id === 'grid_misplaced'), true)
+assert.equal(misplacedQ13?.figures.some((figure) => figure.id === 'grid_misplaced'), false)
+assert.match(misplacedQ12?.stemMarkdown || '', /DOC2X_FIGURE:grid_misplaced/)
+assert.doesNotMatch(misplacedQ13?.stemMarkdown || '', /DOC2X_FIGURE:grid_misplaced/)
+
 const unplacedImageDocument = { ...imageBetweenDocument, id: 'ocr_unplaced_image_test', pages: [{ pageNo: 2, width: 800, height: 1100, blocks: [{ id: 'b_unplaced', pageNo: 2, type: 'image', content: 'orphan.png' }] }] }
 const unplacedImageCandidates = parseQuestionCandidates(unplacedImageDocument, { now: '2026-06-24T00:00:00.000Z' })
 assert.equal(unplacedImageCandidates.some((candidate) => candidate.issues.some((issue) => issue.code === 'unplaced_figure')), true)
@@ -792,6 +895,24 @@ const resolvedUnplacedCandidate = {
   parseDiagnostics: [{ code: 'unplaced_figure', severity: 'warning', message: unplacedImageIssue.message }],
 }
 assert.equal(refreshCandidateParseDiagnostics(resolvedUnplacedCandidate, []).some((diagnostic) => diagnostic.code === 'unplaced_figure'), false)
+
+const overflowingUnplacedImageDocument = {
+  ...imageBetweenDocument,
+  id: 'ocr_overflowing_unplaced_images_test',
+  pages: Array.from({ length: 6 }, (_, index) => ({
+    pageNo: index + 2,
+    width: 800,
+    height: 1100,
+    blocks: [{ id: `b_unplaced_overflow_${index + 1}`, pageNo: index + 2, type: 'image', content: `orphan-${index + 1}.png` }],
+  })),
+}
+const overflowingUnplacedCandidates = parseQuestionCandidates(overflowingUnplacedImageDocument, { now: '2026-08-05T00:00:00.000Z' })
+const overflowingUnplacedIssues = overflowingUnplacedCandidates.flatMap((candidate) => candidate.issues).filter((issue) => issue.code === 'unplaced_figure')
+assert.equal(overflowingUnplacedIssues.length, 1)
+assert.equal(overflowingUnplacedIssues[0].severity, 'error')
+assert.equal(overflowingUnplacedIssues[0].relatedBlockIds.length, 6)
+assert.equal(overflowingUnplacedIssues[0].relatedFigures.length, 6)
+assert.match(overflowingUnplacedIssues[0].message, /文档级图片归属异常|阻止直接入库/)
 
 const inlineMarkdownImageDocument = {
   ...ocrDocument,
@@ -1274,6 +1395,116 @@ assert.match(ocrSpacedFormulaCandidates[0].stemMarkdown, /x _ \{1\} \+ x _ \{2\}
     markdown: '## 方法技巧\n1. 先求导。\n2. 再判断符号。',
   }, { paperKind: 'lecture' })
   assert.deepEqual(notesOnlyLecture, [])
+}
+
+// Lecture materials may repeat a question-only run followed by an answered
+// edition. Pair adjacent runs by local question number and OCR-tolerant stem
+// similarity instead of treating the first “解析:” line as one global split.
+{
+  const repeatedLectureVariant = {
+    ...ocrDocument,
+    id: 'ocr_repeated_lecture_variant_test',
+    markdown: [
+      '1. 如图，在正方体 $ABCD-A_1B_1C_1D_1$ 中，求直线与平面所成角。',
+      '2. 已知三棱锥 $P-ABC$，证明 $PA\\perp BC$。',
+      '3. 在圆柱中，求截面面积。',
+      '',
+      '1. 如图,在正方体 $ABCD-A_1B_1C_1D_1$ 中,求直线与平面所成角。',
+      '【答案】$\\frac{\\sqrt2}{2}$',
+      '【解析】建立空间直角坐标系计算。',
+      '2. 已知三棱锥 $P-ABC$,证明 $PA\\perp BC$。',
+      '【答案】证明见解析',
+      '【解析】由线面垂直的判定定理可证。',
+      '3. 在圆柱中,求截面面积。',
+      '【答案】$4\\pi$',
+      '【解析】代入面积公式。',
+    ].join('\n'),
+    pages: [],
+    assets: [],
+  }
+  const appendixPreset = { ...defaultParserConfig, documentLayout: 'appendix', solutionBindingStrategy: 'heading_then_question' }
+  const pairedCandidates = parseQuestionCandidates(repeatedLectureVariant, {
+    config: appendixPreset,
+    paperKind: 'lecture',
+    now: '2026-08-05T00:00:00.000Z',
+  })
+  assert.deepEqual(pairedCandidates.map((candidate) => candidate.questionNo), ['1', '2', '3'])
+  assert.deepEqual(pairedCandidates.map((candidate) => candidate.status), ['ready', 'ready', 'ready'])
+  assert.match(pairedCandidates[0].answerText, /sqrt2/)
+  assert.match(pairedCandidates[1].analysisMarkdown, /线面垂直/)
+  assert.equal(pairedCandidates.every((candidate) => candidate.parseDiagnostics.some((item) => item.code === 'paired_lecture_variant')), true)
+}
+
+// A missing OCR question number in the answered run must leave only that item
+// for review; neighboring questions still align without positional shifting.
+{
+  const repeatedLectureVariantWithGap = {
+    ...ocrDocument,
+    id: 'ocr_repeated_lecture_variant_gap_test',
+    markdown: [
+      '1. 已知函数 $f(x)=x^2$，求 $f(1)$。',
+      '2. 已知函数 $f(x)=x^2$，求 $f(2)$。',
+      '3. 已知函数 $f(x)=x^2$，求 $f(3)$。',
+      '4. 已知函数 $f(x)=x^2$，求 $f(4)$。',
+      '1. 已知函数 $f(x)=x^2$,求 $f(1)$。',
+      '【答案】1',
+      '【解析】代入计算。',
+      '2. 已知函数 $f(x)=x^2$,求 $f(2)$。',
+      '【答案】4',
+      '【解析】代入计算。',
+      '4. 已知函数 $f(x)=x^2$,求 $f(4)$。',
+      '【答案】16',
+      '【解析】代入计算。',
+    ].join('\n'),
+    pages: [],
+    assets: [],
+  }
+  const pairedCandidates = parseQuestionCandidates(repeatedLectureVariantWithGap, {
+    config: { ...defaultParserConfig, documentLayout: 'appendix' },
+    paperKind: 'lecture',
+    now: '2026-08-05T00:00:00.000Z',
+  })
+  assert.equal(pairedCandidates.length, 4)
+  assert.deepEqual(pairedCandidates.map((candidate) => candidate.answerText), ['1', '4', '', '16'])
+  assert.equal(pairedCandidates[2].issues.some((issue) => issue.code === 'missing_answer'), true)
+  assert.equal(pairedCandidates[3].analysisMarkdown, '代入计算。')
+}
+
+// Even if layout classification sees a repeated-number appendix, reject the
+// split when the tail still contains a substantial run of full inline items.
+{
+  const falseAppendixBoundaryDocument = {
+    ...ocrDocument,
+    id: 'ocr_false_appendix_boundary_safety_test',
+    markdown: [
+      '1. 第一组第一题题干，已知 $a=1$，求 $a+1$。',
+      '【答案】2',
+      '【解析】直接计算。',
+      '2. 第一组第二题题干，已知 $b=2$，求 $b+1$。',
+      '【答案】3',
+      '【解析】直接计算。',
+      '3. 第一组第三题题干，已知 $c=3$，求 $c+1$。',
+      '【答案】4',
+      '方案二：换一种写法。',
+      '解析: 这里仍然只是第三题内部的解析字段。',
+      '1. 第二组第一题题干，已知 $x=4$，求 $x+1$。',
+      '【答案】5',
+      '【解析】直接计算。',
+      '2. 第二组第二题题干，已知 $y=5$，求 $y+1$。',
+      '【答案】6',
+      '【解析】直接计算。',
+      '3. 第二组第三题题干，已知 $z=6$，求 $z+1$。',
+      '【答案】7',
+      '【解析】直接计算。',
+    ].join('\n'),
+    pages: [],
+    assets: [],
+  }
+  assert.equal(classifyQuestionDocumentLayout(falseAppendixBoundaryDocument.markdown).layout, 'appendix_solution')
+  const safeCandidates = parseQuestionCandidates(falseAppendixBoundaryDocument, { now: '2026-08-05T00:00:00.000Z' })
+  assert.equal(safeCandidates.length, 6)
+  assert.match(safeCandidates[3].stemMarkdown, /第二组第一题/)
+  assert.equal(safeCandidates[5].answerText, '7')
 }
 
 // “题干答案混排 · 无答案表” must bypass answer-table detection completely.

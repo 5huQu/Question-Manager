@@ -3,26 +3,37 @@ import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui'
 
-export function Modal({ title, desc, children, onClose, wide, locked, actions }: { title: string; desc?: string; children: ReactNode; onClose: () => void; wide?: boolean; locked?: boolean; actions?: ReactNode }) {
+export function Modal({ title, desc, children, onClose, wide, locked, actions, footer, surface = 'solid' }: { title: string; desc?: string; children: ReactNode; onClose: () => void; wide?: boolean; locked?: boolean; actions?: ReactNode; footer?: ReactNode; surface?: 'solid' | 'glass' }) {
   const widthClass = locked && wide ? 'w-full max-w-[calc(100vw-2rem)]' : wide ? 'w-full max-w-7xl' : 'w-full max-w-2xl'
-  const frameClass = `${locked ? 'flex h-[92vh] flex-col overflow-hidden' : 'max-h-[92vh] overflow-auto'} rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950 ${widthClass} text-zinc-950 dark:text-zinc-50`
+  const isGlass = surface === 'glass'
+  const frameClass = isGlass
+    ? `question-edit-glass-dialog ${locked ? 'flex h-[92vh] flex-col overflow-hidden' : 'max-h-[92vh] overflow-auto'} ${widthClass}`
+    : `${locked ? 'flex h-[92vh] flex-col overflow-hidden' : 'max-h-[92vh] overflow-auto'} rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950 ${widthClass} text-zinc-950 dark:text-zinc-50`
+  const headerClass = isGlass
+    ? 'flex flex-none items-start justify-between gap-4 border-b border-black/6 dark:border-white/8 px-5 py-4 question-edit-glass-inner-header'
+    : 'flex flex-none items-start justify-between gap-4 border-b border-zinc-100 dark:border-zinc-900 px-4 py-3'
   const bodyClass = locked ? 'min-h-0 flex-1 overflow-hidden p-4' : 'p-4'
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+    <div className={`${isGlass ? 'question-edit-glass-backdrop' : 'bg-black/40 backdrop-blur-sm'} fixed inset-0 z-50 flex items-center justify-center p-4`}>
       <div className={frameClass}>
-        <div className="flex flex-none items-start justify-between gap-4 border-b border-zinc-100 dark:border-zinc-900 px-4 py-3">
+        <div className={headerClass}>
           <div>
             <h3 className="text-base font-semibold">{title}</h3>
             {desc ? <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{desc}</p> : null}
           </div>
           <div className="flex items-center gap-2">
             {actions}
-            <button className="rounded-md border border-zinc-200 dark:border-zinc-800 p-2 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-50" onClick={onClose}>
+            <button
+              className={isGlass ? 'rounded-lg border border-black/10 dark:border-white/12 p-2 hover:bg-black/5 dark:hover:bg-white/10 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors' : 'rounded-md border border-zinc-200 dark:border-zinc-800 p-2 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-50'}
+              onClick={onClose}
+            >
               <X className="size-4" />
             </button>
           </div>
         </div>
         <div className={bodyClass}>{children}</div>
+        {footer ? <div className="flex-none">{footer}</div> : null}
       </div>
     </div>
   )

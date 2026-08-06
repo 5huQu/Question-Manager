@@ -32,6 +32,11 @@ export function registerCardEditorFocus(editor: Editor | null) {
   for (const listener of listeners) listener(editor)
 }
 
+/** 仅当仍由指定编辑器占用焦点时清除，避免相邻编辑器切换时误清空新焦点。 */
+export function clearCardEditorFocus(editor: Editor) {
+  if (activeEditor === editor) registerCardEditorFocus(null)
+}
+
 /**
  * 在卡片流编辑器光标处插入子块。
  * 光标位于段落内部时，ProseMirror 会自动把段落拆成两段，文字环绕对象；

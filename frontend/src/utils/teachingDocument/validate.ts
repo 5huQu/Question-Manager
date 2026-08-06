@@ -22,6 +22,7 @@ import type {
   FigureBlock,
   QuestionBlock,
   QuestionDisplayOptions,
+  QuestionInlineContent,
   QuestionFigurePlacement,
   QuestionInsertedFigure,
   QuestionFigureSlot,
@@ -43,6 +44,7 @@ import type {
   InlineMark,
   TeachingMarginPreset,
   TeachingQuestionSpacing,
+  TeachingTextStyle,
 } from '@/types/teachingDocument'
 import { getBoxTemplate } from './boxTemplates'
 import { TEXT_FONT_OPTIONS } from './lectureFonts'
@@ -63,6 +65,7 @@ const BOX_CHILD_TYPES = new Set([
 
 const VALID_MARKS = new Set<string>(['bold', 'italic', 'underline', 'strikethrough', 'code'])
 const VALID_INLINE_FONT_SIZES = new Set([12, 14, 16, 18, 20, 24])
+const VALID_TEXT_WEIGHTS = new Set([400, 500, 600, 700])
 const VALID_TEXT_ALIGNMENTS = new Set(['left', 'center', 'right', 'justify'])
 const VALID_LIST_STYLES = new Set(['bullet', 'ordered'])
 const VALID_INDENT_LEVELS = new Set([0, 1, 2, 3, 4])
@@ -278,6 +281,17 @@ function parseInsertedFigures(raw: unknown): QuestionInsertedFigure[] | undefine
   return result.length ? result : undefined
 }
 
+function parseQuestionInlineContent(raw: unknown, issues: DocumentValidationIssue[], blockId: string): QuestionInlineContent | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const result: QuestionInlineContent = {}
+  for (const [key, value] of Object.entries(raw).slice(0, 200)) {
+    if (!key || key.length > 240 || !Array.isArray(value)) continue
+    const inlines = parseInlineArray(value, issues, `${blockId}:${key}`)
+    if (inlines.length) result[key] = inlines
+  }
+  return Object.keys(result).length ? result : undefined
+}
+
 // ─── 块解析 ──────────────────────────────────────────────────────────────────
 
 function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue[]): TeachingBlock | null {
@@ -437,6 +451,8 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
           answerSpace: parseAnswerSpace(display.answerSpace),
           figureOverrides: parseFigureOverrides(display.figureOverrides),
           insertedFigures: parseInsertedFigures(display.insertedFigures),
+          inlineContent: parseQuestionInlineContent(display.inlineContent, issues, extractId(node, 'q', index)),
+          typography: parseTextStyle(display.typography),
         } : undefined,
       } satisfies QuestionBlock
     }
@@ -613,6 +629,8 @@ function parseDocumentStyle(raw: unknown): TeachingDocumentStyle | undefined {
   const headingFont = typeof node.headingFont === 'string' && node.headingFont ? node.headingFont : undefined
   const headingLatinFont = typeof node.headingLatinFont === 'string' && node.headingLatinFont ? node.headingLatinFont : undefined
   const headingNumberFont = typeof node.headingNumberFont === 'string' && node.headingNumberFont ? node.headingNumberFont : undefined
+  const headingStyles = parseHeadingStyles(node.headingStyles)
+  const questionStyle = parseTextStyle(node.questionStyle)
   const marginPreset = typeof node.marginPreset === 'string' && VALID_MARGIN_PRESETS.has(node.marginPreset)
     ? node.marginPreset as TeachingMarginPreset
     : undefined
@@ -620,8 +638,30 @@ function parseDocumentStyle(raw: unknown): TeachingDocumentStyle | undefined {
     ? node.questionSpacing as TeachingQuestionSpacing
     : undefined
   const print = parseDocumentPrintOptions(node.print)
-  if (!typographyPreset && !bodyFont && !bodyLatinFont && !bodyNumberFont && !headingFont && !headingLatinFont && !headingNumberFont && !marginPreset && !questionSpacing && !print) return undefined
-  return { typographyPreset, bodyFont, bodyLatinFont, bodyNumberFont, headingFont, headingLatinFont, headingNumberFont, marginPreset, questionSpacing, print }
+  if (!typographyPreset && !bodyFont && !bodyLatinFont && !bodyNumberFont && !headingFont && !headingLatinFont && !headingNumberFont && !headingStyles && !questionStyle && !marginPreset && !questionSpacing && !print) return undefined
+  return { typographyPreset, bodyFont, bodyLatinFont, bodyNumberFont, headingFont, headingLatinFont, headingNumberFont, headingStyles, questionStyle, marginPreset, questionSpacing, print }
+}
+
+function parseTextStyle(raw: unknown): TeachingTextStyle | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const node = raw as Record<string, unknown>
+  const font = typeof node.font === 'string' && TEXT_FONT_OPTIONS.some((option) => option.id === node.font) ? node.font : undefined
+  const fontSize = VALID_INLINE_FONT_SIZES.has(Number(node.fontSize)) ? Number(node.fontSize) as TeachingTextStyle['fontSize'] : undefined
+  const color = typeof node.color === 'string' && /^#[0-9a-f]{6}$/i.test(node.color) ? node.color : undefined
+  const fontWeight = VALID_TEXT_WEIGHTS.has(Number(node.fontWeight)) ? Number(node.fontWeight) as TeachingTextStyle['fontWeight'] : undefined
+  const italic = typeof node.italic === 'boolean' ? node.italic : undefined
+  if (!font && !fontSize && !color && !fontWeight && italic === undefined) return undefined
+  return { font, fontSize, color, fontWeight, italic }
+}
+
+function parseHeadingStyles(raw: unknown): TeachingDocumentStyle['headingStyles'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const result: TeachingDocumentStyle['headingStyles'] = {}
+  for (const level of [1, 2, 3, 4] as const) {
+    const parsed = parseTextStyle((raw as Record<string, unknown>)[String(level)])
+    if (parsed) result[level] = parsed
+  }
+  return Object.keys(result).length ? result : undefined
 }
 
 function parseDocumentPrintOptions(raw: unknown): TeachingDocumentPrintOptions | undefined {

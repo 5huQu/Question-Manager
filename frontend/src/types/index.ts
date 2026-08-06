@@ -163,6 +163,10 @@ export type QuestionFigure = {
   bbox?: Record<string, number>
   sourcePath?: string
   path?: string
+  tikzSource?: string
+  sourceHash?: string
+  width?: number
+  height?: number
 }
 
 export type ReviewFigure = {
@@ -340,8 +344,6 @@ export type OcrSettings = {
   cleanupUserPrompt: string
   classificationSystemPrompt: string
   classificationUserPrompt: string
-  assistantCleanSystemPrompt: string
-  assistantCleanUserPrompt: string
 }
 
 export type SlicerRuleEntry = {

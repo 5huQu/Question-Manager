@@ -81,6 +81,7 @@ export function attachImageBlocks(document: OCRDocument, chunks: QuestionMarkdow
   const imageBlocks = document.pages.flatMap((page) => page.blocks)
     .filter((block) => block.type === 'image' || block.assetId)
   const attached = new Set(candidates.flatMap((candidate) => candidate.figures.map((figure) => figure.sourceBlockId).filter(Boolean)))
+  const unplaced: Array<{ blockId: string; figure?: CandidateFigure }> = []
   for (const block of imageBlocks) {
     if (!isLikelyStandaloneFigureBlock(document, block)) continue
     if (attached.has(block.id)) continue
@@ -105,16 +106,8 @@ export function attachImageBlocks(document: OCRDocument, chunks: QuestionMarkdow
       if (likelyFigureCandidates.length) index = likelyFigureCandidates[likelyFigureCandidates.length - 1].candidateIndex
     }
     if (index < 0) {
-      const fallback = candidates[candidates.length - 1]
       const relatedFigure = figureForBlock(document, block, 'unknown')
-      fallback.issues.push({
-        code: 'unplaced_figure',
-        severity: 'warning',
-        message: `有一张图片（${block.id}）未能可靠归属到题目，请核对。`,
-        relatedBlockIds: [block.id],
-        relatedFigures: relatedFigure ? [relatedFigure] : [],
-      })
-      fallback.status = statusForIssues(fallback.issues)
+      unplaced.push({ blockId: block.id, figure: relatedFigure || undefined })
       continue
     }
     const figure = figureForBlock(document, block, 'stem')
@@ -128,5 +121,145 @@ export function attachImageBlocks(document: OCRDocument, chunks: QuestionMarkdow
       kind: 'figure',
     }])
     attached.add(block.id)
+  }
+
+  if (!unplaced.length || !candidates.length) return
+  const fallback = candidates[candidates.length - 1]
+  const figures = unplaced.flatMap((item) => item.figure ? [item.figure] : [])
+  const pages = figures.map((figure) => figure.pageNo).filter((pageNo): pageNo is number => pageNo !== undefined)
+  const firstPage = pages.length ? Math.min(...pages) : undefined
+  const lastPage = pages.length ? Math.max(...pages) : undefined
+  const pageSpan = firstPage !== undefined && lastPage !== undefined ? lastPage - firstPage : 0
+  const unsafeOverflow = unplaced.length > 5 || pageSpan > 2
+  const pageLabel = firstPage === undefined
+    ? ''
+    : firstPage === lastPage
+      ? `，位于第 ${firstPage} 页`
+      : `，跨第 ${firstPage}-${lastPage} 页`
+  fallback.issues.push({
+    code: 'unplaced_figure',
+    severity: unsafeOverflow ? 'error' : 'warning',
+    message: unsafeOverflow
+      ? `文档级图片归属异常：有 ${unplaced.length} 张图片${pageLabel}未能可靠归属。解析结果已阻止直接入库，请先核对题目边界。`
+      : unplaced.length === 1
+        ? `有一张图片（${unplaced[0].blockId}）未能可靠归属到题目，请核对。`
+        : `有 ${unplaced.length} 张图片${pageLabel}未能可靠归属到题目，请核对。`,
+    relatedBlockIds: unplaced.map((item) => item.blockId),
+    relatedFigures: figures,
+  })
+  fallback.status = statusForIssues(fallback.issues)
+}
+
+type OCRBlock = OCRDocument['pages'][number]['blocks'][number]
+
+function unionBBox(boxes: NonNullable<OCRBlock['bbox']>[]) {
+  if (!boxes.length) return undefined
+  return [
+    Math.min(...boxes.map((box) => box[0])),
+    Math.min(...boxes.map((box) => box[1])),
+    Math.max(...boxes.map((box) => box[2])),
+    Math.max(...boxes.map((box) => box[3])),
+  ] as NonNullable<OCRBlock['bbox']>
+}
+
+function figureIdsForBlock(block: OCRBlock) {
+  return new Set([block.id, block.assetId].filter(Boolean).map(String))
+}
+
+function figureMatchesBlock(figure: CandidateFigure, block: OCRBlock) {
+  if (block.assetId && (figure.id === block.assetId || figure.blockId === block.assetId)) return true
+  if (figure.pageNo !== undefined && figure.pageNo !== block.pageNo) return false
+  const ids = figureIdsForBlock(block)
+  return [figure.blockId, figure.sourceBlockId].filter(Boolean).some((id) => ids.has(String(id)))
+}
+
+function removeFigureMarker(markdown: string, figureId: string) {
+  const escaped = figureId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return String(markdown || '')
+    .replace(new RegExp(`\\n?\\s*<!--\\s*DOC2X_FIGURE:${escaped}\\s*-->\\s*\\n?`, 'g'), '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function appendFigureMarker(markdown: string, figureId: string) {
+  const escaped = figureId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  if (new RegExp(`<!--\\s*DOC2X_FIGURE:${escaped}\\s*-->`).test(markdown)) return markdown
+  return `${String(markdown || '').trim()}\n\n<!-- DOC2X_FIGURE:${figureId} -->`.trim()
+}
+
+function candidatePageTop(document: OCRDocument, candidate: QuestionCandidate, pageNo: number) {
+  const refs = candidate.sourceRefs.filter((ref) => ref.pageNo === pageNo && ref.bbox)
+  if (!refs.length) return undefined
+  const stemRefs = refs.filter((ref) => ref.kind === 'stem')
+  const selected = stemRefs.length ? stemRefs : refs
+  const blocksById = new Map((document.pages.find((page) => page.pageNo === pageNo)?.blocks || []).map((block) => [block.id, block]))
+  const textBoxes = selected.flatMap((ref) => ref.blockIds
+    .map((id) => blocksById.get(id))
+    .filter((block): block is OCRBlock => Boolean(block && block.bbox && block.type !== 'image' && !block.assetId))
+    .map((block) => block.bbox!))
+  return Math.min(...(textBoxes.length ? textBoxes : selected.map((ref) => ref.bbox!)).map((bbox) => bbox[1]))
+}
+
+function candidateIndexForFigure(document: OCRDocument, candidates: QuestionCandidate[], block: OCRBlock) {
+  if (!block.bbox) return -1
+  const samePage = candidates
+    .map((candidate, candidateIndex) => ({ candidate, candidateIndex, top: candidatePageTop(document, candidate, block.pageNo) }))
+    .filter((item): item is { candidate: QuestionCandidate; candidateIndex: number; top: number } => item.top !== undefined)
+  if (!samePage.length) return -1
+  const preceding = samePage.filter((item) => item.top <= block.bbox![1])
+  if (preceding.length) return preceding.sort((left, right) => right.top - left.top)[0].candidateIndex
+  return samePage.sort((left, right) => left.top - right.top)[0].candidateIndex
+}
+
+function removeFigureFromSourceRefs(document: OCRDocument, candidate: QuestionCandidate, block: OCRBlock) {
+  candidate.sourceRefs = dedupeSourceRefs(candidate.sourceRefs.flatMap((ref) => {
+    const blockIds = ref.blockIds.filter((id) => id !== block.id)
+    if (!blockIds.length) return []
+    const bbox = unionBBox((document.pages.find((page) => page.pageNo === ref.pageNo)?.blocks || [])
+      .filter((item) => blockIds.includes(item.id))
+      .map((item) => item.bbox)
+      .filter(Boolean) as NonNullable<OCRBlock['bbox']>[])
+    return [{ ...ref, blockIds, bbox }]
+  }))
+}
+
+/**
+ * Corrects provider reading-order mistakes for standalone figures. Some OCR
+ * providers emit a figure marker after the next text block even though the
+ * figure is visually beside the preceding question. Assign by the nearest
+ * same-page question top boundary and move the marker/figure together.
+ */
+export function reassignStandaloneFigureBlocks(document: OCRDocument, candidates: QuestionCandidate[]) {
+  const figureBlocks = document.pages.flatMap((page) => page.blocks)
+    .filter((block) => (block.type === 'image' || block.assetId) && !isLikelyPageChromeBlock(document, block))
+  for (const block of figureBlocks) {
+    const targetIndex = candidateIndexForFigure(document, candidates, block)
+    if (targetIndex < 0) continue
+    const currentOwners = candidates
+      .map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
+      .filter(({ candidate }) => candidate.figures.some((figure) => figureMatchesBlock(figure, block)))
+    const targetAlreadyOwns = currentOwners.some(({ candidateIndex }) => candidateIndex === targetIndex)
+    if (targetAlreadyOwns && currentOwners.length === 1) continue
+
+    const figure = figureForBlock(document, block, 'stem')
+    if (!figure) continue
+    for (const { candidate } of currentOwners) {
+      candidate.figures = candidate.figures.filter((item) => !figureMatchesBlock(item, block))
+      removeFigureFromSourceRefs(document, candidate, block)
+      const figureId = figure.id
+      candidate.stemMarkdown = removeFigureMarker(candidate.stemMarkdown, figureId)
+      candidate.answerText = removeFigureMarker(candidate.answerText, figureId)
+      candidate.analysisMarkdown = removeFigureMarker(candidate.analysisMarkdown, figureId)
+    }
+    const target = candidates[targetIndex]
+    target.figures = dedupeFigures([...target.figures, figure])
+    target.sourceRefs = dedupeSourceRefs([...target.sourceRefs, {
+      sourceDocumentId: document.sourceDocumentId,
+      pageNo: block.pageNo,
+      blockIds: [block.id],
+      bbox: block.bbox,
+      kind: 'figure',
+    }])
+    target.stemMarkdown = appendFigureMarker(target.stemMarkdown, figure.id)
   }
 }

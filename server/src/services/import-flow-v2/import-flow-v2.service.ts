@@ -1,6 +1,7 @@
 export * from './import-flow-v2.paths.js'
 export * from './figure-mapping.js'
 export * from './source-document.service.js'
+export * from './source-cleanup.service.js'
 export * from './ocr-document.service.js'
 export * from './ocr-task.service.js'
 export * from './candidate.service.js'

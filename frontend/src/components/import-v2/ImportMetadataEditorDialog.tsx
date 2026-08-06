@@ -1,7 +1,9 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { Modal } from '@/components/dialogs/Modal'
+import { SearchableSelect } from '@/components/SearchableSelect'
 import { Button } from '@/components/ui'
 import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
+import { cityOptionsForProvince, provinceForCity, provinceOptions } from '@/utils/metadataOptions'
 import {
   gaokaoRegionOptions,
   isGaokaoRegion,
@@ -30,6 +32,10 @@ export function ImportMetadataEditorDialog({ draft, setDraft, teachingStages, sa
   const visibleSubjectOptions = subjectOptions.includes(selectedSubject)
     ? subjectOptions
     : [selectedSubject, ...subjectOptions]
+  const cityOptions = cityOptionsForProvince(draft.province)
+  const visibleCityOptions = draft.city && !cityOptions.includes(draft.city)
+    ? [draft.city, ...cityOptions]
+    : cityOptions
 
   return (
     <Modal
@@ -128,11 +134,29 @@ export function ImportMetadataEditorDialog({ draft, setDraft, teachingStages, sa
                 <div className="grid grid-cols-2 gap-3">
                   <label className="block space-y-1.5">
                     <span className="text-[13px] font-medium text-zinc-500">省份</span>
-                    <input className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none transition-all focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800" value={draft.province} onChange={(event) => setDraft((current) => ({ ...current, province: event.target.value }))} />
+                    <SearchableSelect
+                      value={draft.province}
+                      options={provinceOptions}
+                      onChange={(province) => setDraft((current) => ({
+                        ...current,
+                        province,
+                        city: cityOptionsForProvince(province).includes(current.city) ? current.city : '',
+                      }))}
+                      placeholder="请选择省份"
+                      searchPlaceholder="搜索省份"
+                      allowClear
+                    />
                   </label>
                   <label className="block space-y-1.5">
                     <span className="text-[13px] font-medium text-zinc-500">城市</span>
-                    <input className="h-9 w-full rounded-md border border-zinc-200 bg-background px-3 text-sm outline-none transition-all focus:ring-1 focus:ring-zinc-955 dark:border-zinc-800" value={draft.city} onChange={(event) => setDraft((current) => ({ ...current, city: event.target.value }))} />
+                    <SearchableSelect
+                      value={draft.city}
+                      options={visibleCityOptions}
+                      onChange={(city) => setDraft((current) => ({ ...current, city, province: provinceForCity(city) || current.province }))}
+                      placeholder={draft.province ? '请选择城市' : '可先选择省份'}
+                      searchPlaceholder="搜索城市"
+                      allowClear
+                    />
                   </label>
                 </div>
                 <label className="block space-y-1.5">

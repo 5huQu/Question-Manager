@@ -36,6 +36,7 @@ import {
 import { ResizeCommands } from './resizeCommands'
 import { PaginationDecorations } from './paginationDecorations'
 import { ActiveTextBlockDecoration, DocumentSelectionSafety } from './selection'
+import { DocumentStructuralChangeSet } from './structuralActions'
 
 function createPageBreakId() {
   const uuid = globalThis.crypto?.randomUUID?.()
@@ -465,6 +466,7 @@ export function createDocumentEditorExtensions(options: { textBlockSelectionRing
     // 尺寸调整 commands（setFigureWidth / setSpacerHeight + undo 合并）
     ResizeCommands,
     PaginationDecorations,
+    DocumentStructuralChangeSet,
     ...(textBlockSelectionRing ? [ActiveTextBlockDecoration] : []),
     DocumentSelectionSafety,
   ]

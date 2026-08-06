@@ -36,6 +36,23 @@ export function ActionButton({ children, label, danger, onClick }: {
   )
 }
 
+export function Section({ title, children }: { title?: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-3">
+      {title && (
+        <h4 className="text-[11px] font-semibold tracking-wider text-zinc-400 dark:text-zinc-500 uppercase px-0.5">
+          {title}
+        </h4>
+      )}
+      <div className="space-y-3">{children}</div>
+    </div>
+  )
+}
+
+export function Divider() {
+  return <div className="h-px w-full bg-zinc-200/60 dark:bg-zinc-800/60 my-4" />
+}
+
 export function inlineContentOf(block: TeachingBlock): TeachingInline[] {
   if (block.type !== 'heading' && block.type !== 'paragraph') return []
   return block.content

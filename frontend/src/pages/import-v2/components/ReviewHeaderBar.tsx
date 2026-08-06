@@ -1,4 +1,4 @@
-import { ChevronLeft, FileText, LoaderCircle, RefreshCcw, PencilLine } from 'lucide-react'
+import { ChevronLeft, FileText, LoaderCircle, RefreshCcw, PencilLine, Eraser } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { ReviewActionMenu } from '@/components/import-v2/ReviewActionMenu'
 import type { ImportV2WorkspaceState } from '../useImportV2Workspace'
@@ -86,12 +86,19 @@ export function ReviewHeaderBar({ ws }: { ws: ImportV2WorkspaceState }) {
               onSelect: ws.openEditModal,
             },
             {
+              label: '设置水印清洗',
+              hint: '配置排除词并重新清洗未入库候选题',
+              icon: Eraser,
+              disabled: Boolean(ws.busy) || !ws.selectedDoc,
+              onSelect: ws.openWatermarkCleanupModal,
+              separatorBefore: true,
+            },
+            {
               label: '按当前预设重解析',
               hint: '替换本批次尚未入库的候选题',
               icon: RefreshCcw,
               disabled: Boolean(ws.busy) || !ws.selectedParserPresetId || !ws.canRecleanSelectedDoc,
               onSelect: ws.handleApplySelectedParserPreset,
-              separatorBefore: true,
             },
             {
               label: ws.busy === `ocr-${selectedDoc?.id}` ? '识别中...' : '重新识别',
