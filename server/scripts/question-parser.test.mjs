@@ -620,6 +620,7 @@ const explicitAppendixWithAnswerTableDocument = {
     '4. 第四题题干。',
     '5. 第五题题干。',
     '6. 第六题题干。',
+    '参考公式：这是第六题末尾的公式。',
     '<!-- GLM_PAGE:2 -->',
     '# 数学试卷参考答案',
     '## 一、选择题',
@@ -997,6 +998,23 @@ assert.doesNotMatch(notesAndFormulaCandidates[0].stemMarkdown, /答卷前|作答
 assert.doesNotMatch(notesAndFormulaCandidates[1].stemMarkdown, /参考公式|q\^n|E\(X\+Y\)/)
 assert.match(notesAndFormulaCandidates[1].answerText, /第十九题答案/)
 assert.match(notesAndFormulaCandidates[1].analysisMarkdown, /第十九题解析/)
+
+const notesAndFormulaScoreBoundaryDocument = {
+  ...ocrDocument,
+  id: 'ocr_notes_and_formula_score_boundary_test',
+  markdown: [
+    '1. 正常的第一题。',
+    '参考公式：',
+    '1. 若 $0 < q < 1$，则 $q^n$ 收敛。',
+    '2. $E(X+Y)=E(X)+E(Y)$。',
+    '19. （17分）',
+    '已知函数题干，求函数结论。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const notesAndFormulaScoreBoundaryCandidates = parseQuestionCandidates(notesAndFormulaScoreBoundaryDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.deepEqual(notesAndFormulaScoreBoundaryCandidates.map((candidate) => candidate.questionNo), ['1', '19'])
 
 const numberedNotesAndHeadingNumbersDocument = {
   ...ocrDocument,

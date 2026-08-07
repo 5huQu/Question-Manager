@@ -162,6 +162,10 @@ export function maskStructuralMarkdown(value: string, config: ImportFlowV2Parser
   let sawQuestion = false
   return markdown.split(/(?<=\n)/).map((lineWithNewline) => {
     const line = lineWithNewline.replace(/\n$/, '')
+    const startsSubstantialQuestion = /^\s*(?:#{1,6}\s*)?[0-9０-９]{1,3}\s*[.．、·•]\s*[（(]\s*[0-9０-９]+\s*分/u.test(line)
+    if (inReferenceFormula && sawQuestion && startsSubstantialQuestion && hasPrimaryQuestionMarker(line, config)) {
+      inReferenceFormula = false
+    }
     if (inReferenceFormula && isAnswerOrAnalysisMarker(line)) {
       inReferenceFormula = false
       return lineWithNewline
