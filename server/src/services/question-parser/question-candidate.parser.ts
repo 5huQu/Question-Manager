@@ -77,7 +77,7 @@ export function parseQuestionCandidates(document: OCRDocument, options: ParseQue
   const classification = classifyQuestionDocumentLayout(markdown, config, { detectionMarkdown: maskedMarkdown })
   const solutionSections = findSolutionSections(markdown, config)
   const proposedAppendix = classification.cleaningRule === 'same_document_appendix' && classification.solutionStart !== undefined
-  const unsafeAppendix = proposedAppendix
+  const unsafeAppendix = config.documentLayout === 'auto' && proposedAppendix
     && appendixSplitLeavesQuestionContent(maskedMarkdown, classification.solutionStart!, config)
   // Lecture packages often repeat a question-only run followed by an answered
   // run several times. Parse the complete document first and pair local runs;

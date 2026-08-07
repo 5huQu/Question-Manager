@@ -49,7 +49,7 @@ export type InlineAnswerTableBlock = {
 }
 
 const PAGE_MARKER_RE = /<!--\s*(?:GLM|DOC2X)_PAGE:\d+\s*-->/g
-const ANSWER_MARKER_RE = /<!--\s*QM:ANSWER\s*-->|【\s*答案\s*】|答案\s*[:：]/
+const ANSWER_MARKER_RE = /<!--\s*QM:ANSWER\s*-->|【\s*(?:参考答案|答案)\s*】|(?:参考答案|答案)\s*[:：]/
 const ANALYSIS_MARKER_RE = /<!--\s*QM:ANALYSIS\s*-->|【\s*(?:解析|分析|详解)\s*】|(?:解析|分析|详解)\s*[:：]/
 const ANSWER_TABLE_RE = /<table\b[^>]*>[\s\S]*?<\/table>/gi
 const INLINE_ANSWER_MARKER_RE = /(?:^|\s)([0-9０-９]{1,3})\s*(?:\\cdot|[、:：]|[.．](?![0-9０-９]))\s*/g
@@ -507,6 +507,7 @@ export function findSolutionSections(markdown: string, config: ImportFlowV2Parse
   let offset = 0
   for (const lineWithNewline of lines) {
     const line = lineWithNewline.replace(/\n$/, '')
+    const explicitHeading = /^\s*(?:#{1,6}\s*|【)/.test(line)
     const clean = line
       .replace(/^\s*(?:#{1,6}\s*)?/, '')
       .replace(/^\s*【\s*/, '')
@@ -514,8 +515,8 @@ export function findSolutionSections(markdown: string, config: ImportFlowV2Parse
       .replace(/\s*[:：]?\s*$/, '')
     const title = config.solutionSectionKeywords.find((keyword) => {
       if (clean === keyword) return true
-      if (!clean.startsWith(keyword)) return false
-      return /^[：:（(]/.test(clean.slice(keyword.length))
+      if (clean.startsWith(keyword) && /^[：:（(]/.test(clean.slice(keyword.length))) return true
+      return explicitHeading && clean.endsWith(keyword)
     })
     if (!title) { offset += lineWithNewline.length; continue }
     const start = offset

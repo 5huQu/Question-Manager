@@ -604,6 +604,48 @@ assert.deepEqual(appendixSolutionEarlyRestartWithTrailingAdsCandidates.map((cand
 assert.equal(appendixSolutionEarlyRestartWithTrailingAdsCandidates.some((candidate) => candidate.issues.some((issue) => issue.code === 'duplicate_question_no')), false)
 assert.doesNotMatch(appendixSolutionEarlyRestartWithTrailingAdsCandidates[0].stemMarkdown, /^A$/)
 
+// An explicit appendix layout is a user override. A long markdown answer
+// heading and complete repeated solution stems must not cause the safety
+// fallback to discard the answer table and appendix solutions.
+const explicitAppendixWithAnswerTableDocument = {
+  ...ocrDocument,
+  id: 'ocr_explicit_appendix_answer_table_override_test',
+  markdown: [
+    '<!-- GLM_PAGE:1 -->',
+    '# 数学试卷',
+    '## 一、选择题',
+    '1. 第一题题干。',
+    '2. 第二题题干。',
+    '3. 第三题题干。',
+    '4. 第四题题干。',
+    '5. 第五题题干。',
+    '6. 第六题题干。',
+    '<!-- GLM_PAGE:2 -->',
+    '# 数学试卷参考答案',
+    '## 一、选择题',
+    '<table border="1"><tr><td>题号</td><td>1</td><td>2</td><td>3</td></tr><tr><td>答案</td><td>A</td><td>B</td><td>C</td></tr></table>',
+    '4. 第四题题干。',
+    '【参考答案】D',
+    '【详解】第四题解析。',
+    '5. 第五题题干。',
+    '【参考答案】5',
+    '【详解】第五题解析。',
+    '6. 第六题题干。',
+    '【参考答案】6',
+    '【详解】第六题解析。',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const explicitAppendixCandidates = parseQuestionCandidates(explicitAppendixWithAnswerTableDocument, {
+  config: { ...defaultParserConfig, documentLayout: 'appendix', solutionBindingStrategy: 'heading_then_question' },
+  now: '2026-08-07T00:00:00.000Z',
+})
+assert.deepEqual(explicitAppendixCandidates.map((candidate) => candidate.questionNo), ['1', '2', '3', '4', '5', '6'])
+assert.deepEqual(explicitAppendixCandidates.slice(0, 3).map((candidate) => candidate.answerText), ['A', 'B', 'C'])
+assert.deepEqual(explicitAppendixCandidates.slice(3).map((candidate) => candidate.answerText), ['D', '5', '6'])
+assert.equal(explicitAppendixCandidates.some((candidate) => candidate.issues.some((issue) => issue.code === 'duplicate_question_no')), false)
+
 const appendixSolutionWithMissingSolutionNoDocument = {
   ...ocrDocument,
   id: 'ocr_appendix_solution_missing_solution_no_test',
