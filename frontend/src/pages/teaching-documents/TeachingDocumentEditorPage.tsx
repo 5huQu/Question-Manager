@@ -3,31 +3,25 @@
  * 状态协调 + 布局骨架；具体 UI 委托给 components/ 子组件
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { AlertTriangle, Bold, Check, ChevronLeft, ChevronRight, Download, FileUp, Italic, LoaderCircle, RefreshCcw, Settings2, X } from 'lucide-react'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { springPanel } from '@/components/teaching-document/motion'
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, LoaderCircle, RefreshCcw, Settings2, X } from 'lucide-react'
+import { AnimatePresence } from 'motion/react'
 import type { QuestionItem } from '@/types'
 import type {
   BoxBlock,
   BoxChildBlock,
-  FigureAssetRef,
   QuestionBlock,
   TeachingBlock,
   TeachingInline,
   TeachingDocumentV1,
-  TeachingMarginPreset,
   TeachingDocumentPrintOptions,
   TeachingDocumentStyle,
-  PrintChromeContentType,
   PrintChromeSlot,
   PrintChromeSlotPosition,
   TeachingTextStyle,
 } from '@/types/teachingDocument'
-import { questionBankApi } from '@/api/questionBank'
-import { teachingDocumentsApi } from '@/api/teachingDocuments'
-import { ApiError, type PdfExportVariant } from '@/api/client'
+import { type PdfExportVariant } from '@/api/client'
 import { A4PaginationPreview, type A4PaginationState } from '@/components/teaching-document/A4PaginationPreview'
 import {
   deleteTopLevelTeachingBlock,
@@ -52,7 +46,6 @@ import {
 import {
   CJK_FONT_OPTIONS,
   LATIN_FONT_OPTIONS,
-  TEXT_FONT_OPTIONS,
   lectureFontFaceCss,
   lectureFontCssVars,
   teachingTypographyCssVars,
@@ -62,9 +55,9 @@ import {
   TYPOGRAPHY_PRESETS,
   typographyStyleForPreset,
 } from '@/utils/teachingDocument/lectureFonts'
-import { assetUrl } from '@/utils/questionDisplay'
 import type { PrintChromeTemplate } from '@/api/teachingDocuments'
 import { useTeachingDocumentEditor } from './useTeachingDocumentEditor'
+import { useTeachingDocumentQuestions } from './useTeachingDocumentQuestions'
 import { getFocusedCardEditor, insertCardBlockAtCaret, subscribeFocusedCardEditor } from '@/components/teaching-document/editor/cardEditorRegistry'
 import {
   BOX_CHILD_MULTI_SELECT_EVENT,
@@ -74,6 +67,9 @@ import {
   type TopLevelMultiSelectDetail,
 } from '@/components/teaching-document/editor/selection'
 import { EditorTopBar, type TeachingCanvasMode } from './components/EditorTopBar'
+import { PageSettingsDrawer } from './components/PageSettingsDrawer'
+import { ChromeSettingsPanel, FontSelect, paperFieldClass } from './components/DocumentSettingsPanels'
+import { PaperSettingsControl } from './components/PaperSettingsControl'
 import type { HeadingLevel } from './components/BlockInsertMenu'
 import { OutlinePanel } from './components/OutlinePanel'
 import { PropertiesSheet, type SelectedLocation } from './components/PropertiesSheet'
@@ -86,30 +82,6 @@ import { useCanvasViewportAnchor } from './components/useCanvasViewportAnchor'
 import { InspectorSlider } from '@/components/ui/InspectorSlider'
 import { activePageFromPageRects, activePageFromPageTransitions } from './pageNavigation'
 import '@/components/teaching-document/teaching-document.css'
-
-const CHROME_CONTENT_OPTIONS: Array<{ value: PrintChromeContentType; label: string }> = [
-  { value: 'none', label: '留空' },
-  { value: 'customText', label: '自定义文字' },
-  { value: 'documentTitle', label: '文档标题' },
-  { value: 'pageNumber', label: '当前页码' },
-  { value: 'totalPages', label: '总页数' },
-  { value: 'date', label: '日期' },
-]
-
-const PAGE_NUMBER_FORMAT_OPTIONS = [
-  { value: 'number', label: '3' },
-  { value: 'page', label: '第 3 页' },
-  { value: 'fraction', label: '3 / 4' },
-  { value: 'page-total', label: '第 3 页，共 4 页' },
-  { value: 'dash', label: '- 3 -' },
-] as const
-
-const CHROME_FONT_OPTIONS = [
-  { id: 'inherit', label: '跟随正文' },
-  ...TEXT_FONT_OPTIONS,
-] as const
-
-const CHROME_FONT_SIZE_OPTIONS = [8, 9, 10, 11, 12, 14] as const
 
 const PROSEMIRROR_FAST_INSERT_TYPES = new Set<TeachingBlock['type']>([
   'pageBreak',
@@ -141,565 +113,6 @@ function mergeTextStyle(current: TeachingTextStyle | undefined, patch: Partial<T
   return Object.keys(next).length ? next : undefined
 }
 
-function PageSettingsDrawer(props: {
-  open: boolean
-  onClose: () => void
-  printSettings: ReactNode
-  fontSettings: ReactNode
-  answerSettings: ReactNode
-}) {
-  const [tab, setTab] = useState<'print' | 'typography' | 'answers'>('print')
-  const reduced = useReducedMotion()
-  const tabs: Array<{ id: typeof tab; label: string }> = [
-    { id: 'print', label: '页眉页脚' },
-    { id: 'typography', label: '字体与题距' },
-    { id: 'answers', label: '解答题' },
-  ]
-  return (
-    <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true" aria-label="页面设置">
-      <motion.button
-        type="button"
-        aria-label="关闭页面设置"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.2 }}
-        className="fixed inset-0 cursor-default bg-black/35 backdrop-blur-md dark:bg-black/55"
-        onClick={props.onClose}
-      />
-      <motion.aside
-        initial={reduced ? { opacity: 0 } : { x: '100%', opacity: 0.8 }}
-        animate={reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
-        exit={reduced ? { opacity: 0 } : { x: '100%', opacity: 0 }}
-        transition={reduced ? { duration: 0.15 } : springPanel}
-        style={{ borderRadius: 0 }}
-        className="question-edit-glass-dialog fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col !rounded-none border-l border-black/10 bg-white/95 shadow-2xl backdrop-blur-2xl backdrop-saturate-150 dark:border-white/12 dark:bg-zinc-950/95"
-      >
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-black/6 px-5 dark:border-white/8">
-          <div>
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">页面设置</h2>
-            <p className="mt-0.5 text-[11px] text-zinc-500">整份文档同步更新，不按页保存。</p>
-          </div>
-          <button
-            type="button"
-            onClick={props.onClose}
-            className="rounded-full bg-zinc-900 px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition-all hover:bg-zinc-800 active:scale-95 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            完成
-          </button>
-        </div>
-        <div className="border-b border-black/6 bg-zinc-50/40 px-5 py-2.5 dark:border-white/8 dark:bg-zinc-900/40">
-          <div role="tablist" aria-label="页面设置分类" className="question-edit-glass-tabs inline-flex items-center gap-1">
-            {tabs.map((item) => (
-              <button
-                key={item.id}
-                role="tab"
-                aria-selected={tab === item.id}
-                type="button"
-                onClick={() => setTab(item.id)}
-                className="inline-flex h-7.5 items-center justify-center whitespace-nowrap rounded-lg px-3.5 text-xs font-medium cursor-pointer transition-all active:scale-95"
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={tab}
-              initial={reduced ? { opacity: 0 } : { opacity: 0, y: 6 }}
-              animate={reduced ? { opacity: 1 } : { opacity: 1, y: 0 }}
-              exit={reduced ? { opacity: 0 } : { opacity: 0, y: -4 }}
-              transition={{ duration: 0.15 }}
-            >
-              {tab === 'print' ? props.printSettings : null}
-              {tab === 'typography' ? props.fontSettings : null}
-              {tab === 'answers' ? props.answerSettings : null}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </motion.aside>
-    </div>
-  )
-}
-
-function FontSelect(props: {
-  label: string
-  ariaLabel: string
-  value: string
-  options: Array<{ id: string; label: string }>
-  onChange: (value: string) => void
-}) {
-  return (
-    <label className="block text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-      {props.label}
-      <select
-        aria-label={props.ariaLabel}
-        value={props.value}
-        onChange={(event) => props.onChange(event.target.value)}
-        className={paperFieldClass}
-      >
-        {props.options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  )
-}
-
-function ChromeSettingsPanel(props: {
-  printLayout: PrintLayoutSpec
-  activeSlot: { section: PrintChromeSection; slot: PrintChromeSlotPosition } | null
-  onPrintOptionChange: (patch: Partial<TeachingDocumentPrintOptions>) => void
-  onSlotChange: (section: PrintChromeSection, slot: PrintChromeSlotPosition, patch: Partial<PrintChromeSlot>) => void
-  onApplyTemplate: (template: PrintChromeTemplate) => void
-}) {
-  const sectionTitle: Record<PrintChromeSection, string> = { header: '页眉', footer: '页脚' }
-  const [templates, setTemplates] = useState<PrintChromeTemplate[]>([])
-  const [templateName, setTemplateName] = useState('')
-  const [selectedTemplateId, setSelectedTemplateId] = useState('')
-  const [templateBusy, setTemplateBusy] = useState(false)
-  useEffect(() => {
-    void teachingDocumentsApi.listPrintTemplates().then((response) => setTemplates(response.items)).catch(() => setTemplates([]))
-  }, [])
-  async function saveTemplate() {
-    const options = {
-      headerEnabled: props.printLayout.header.enabled,
-      headerShowOnFirstPage: props.printLayout.header.showOnFirstPage,
-      footerEnabled: props.printLayout.footer.enabled,
-      header: props.printLayout.header.slots,
-      footer: props.printLayout.footer.slots,
-      pageNumber: props.printLayout.pageNumber,
-    }
-    const template = selectedTemplateId
-      ? await teachingDocumentsApi.updatePrintTemplate(selectedTemplateId, { name: templateName, options })
-      : await teachingDocumentsApi.createPrintTemplate({ name: templateName, options })
-    setTemplates((current) => (selectedTemplateId ? current.map((item) => (item.id === template.id ? template : item)) : [template, ...current]))
-    setSelectedTemplateId(template.id)
-    setTemplateName(template.name)
-  }
-  async function removeTemplate() {
-    if (!selectedTemplateId) return
-    await teachingDocumentsApi.deletePrintTemplate(selectedTemplateId)
-    setTemplates((current) => current.filter((item) => item.id !== selectedTemplateId))
-    setSelectedTemplateId('')
-    setTemplateName('')
-  }
-  function exportTemplates() {
-    const payload = JSON.stringify({ version: 1, templates: templates.map(({ name, options }) => ({ name, options })) }, null, 2)
-    const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }))
-    const anchor = window.document.createElement('a')
-    anchor.href = url
-    anchor.download = '页眉页脚模板.json'
-    anchor.click()
-    URL.revokeObjectURL(url)
-  }
-  async function importTemplates(file: File | undefined) {
-    if (!file) return
-    setTemplateBusy(true)
-    try {
-      const parsed = JSON.parse(await file.text()) as { templates?: Array<{ name?: unknown; options?: unknown }> }
-      const incoming = Array.isArray(parsed.templates) ? parsed.templates : []
-      const created: PrintChromeTemplate[] = []
-      for (const item of incoming) {
-        if (typeof item.name !== 'string' || !item.name.trim() || !item.options || typeof item.options !== 'object' || Array.isArray(item.options)) continue
-        created.push(await teachingDocumentsApi.createPrintTemplate({ name: item.name, options: item.options as PrintChromeTemplate['options'] }))
-      }
-      setTemplates((current) => [...created, ...current])
-    } catch {
-      window.alert('模板文件无效，未能导入。')
-    } finally {
-      setTemplateBusy(false)
-    }
-  }
-  return (
-    <div className="space-y-5">
-      {/* Checkbox Section */}
-      <div className="question-edit-glass-preview grid grid-cols-2 gap-3 rounded-2xl border border-black/8 bg-white/80 p-4 dark:border-white/10 dark:bg-zinc-900/80">
-        <label className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-          <input
-            type="checkbox"
-            className="size-4 rounded border-black/10 dark:border-white/12"
-            checked={props.printLayout.header.enabled}
-            onChange={(event) => props.onPrintOptionChange({ headerEnabled: event.target.checked })}
-          />
-          显示页眉
-        </label>
-        <label className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-          <input
-            type="checkbox"
-            className="size-4 rounded border-black/10 dark:border-white/12"
-            checked={props.printLayout.header.showOnFirstPage}
-            onChange={(event) => props.onPrintOptionChange({ headerShowOnFirstPage: event.target.checked })}
-          />
-          首页显示页眉
-        </label>
-        <label className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-          <input
-            type="checkbox"
-            className="size-4 rounded border-black/10 dark:border-white/12"
-            checked={props.printLayout.footer.enabled}
-            onChange={(event) => props.onPrintOptionChange({ footerEnabled: event.target.checked })}
-          />
-          显示页脚
-        </label>
-      </div>
-
-      {/* Templates Card */}
-      <div className="question-edit-glass-preview rounded-2xl border border-black/8 bg-white/80 p-4 dark:border-white/10 dark:bg-zinc-900/80 space-y-3">
-        <div className="flex items-center justify-between border-b border-black/6 pb-2 dark:border-white/8">
-          <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">页眉页脚模板</p>
-          <span className="text-[10px] font-medium text-zinc-400">本机复用</span>
-        </div>
-        <div className="flex gap-2">
-          <select
-            aria-label="选择页眉页脚模板"
-            value={selectedTemplateId}
-            onChange={(event) => {
-              const id = event.target.value
-              setSelectedTemplateId(id)
-              const item = templates.find((template) => template.id === id)
-              setTemplateName(item?.name || '')
-            }}
-            className="h-8.5 min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-2.5 text-xs font-medium text-zinc-900 shadow-2xs outline-none focus:border-zinc-900 dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
-          >
-            <option value="">选择预设模板…</option>
-            {templates.map((template) => (
-              <option key={template.id} value={template.id}>
-                {template.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="h-8.5 rounded-xl border border-black/10 bg-white/90 px-3 text-xs font-semibold text-zinc-800 shadow-2xs transition-all hover:bg-white active:scale-95 disabled:opacity-30 dark:border-white/12 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-            disabled={!selectedTemplateId}
-            onClick={() => {
-              const item = templates.find((template) => template.id === selectedTemplateId)
-              if (item) props.onApplyTemplate(item)
-            }}
-          >
-            应用
-          </button>
-          <button
-            type="button"
-            title="删除模板"
-            className="h-8.5 rounded-xl border border-red-200 bg-red-50/60 px-3 text-xs font-semibold text-red-600 transition-all hover:bg-red-100 active:scale-95 disabled:opacity-30 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400"
-            disabled={!selectedTemplateId}
-            onClick={() => void removeTemplate()}
-          >
-            删除
-          </button>
-        </div>
-        <div className="flex gap-2 pt-1">
-          <input
-            value={templateName}
-            onChange={(event) => setTemplateName(event.target.value)}
-            placeholder="自定义模板名称"
-            className="h-8.5 min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-3 text-xs font-medium text-zinc-900 shadow-2xs outline-none placeholder:text-zinc-400 focus:border-zinc-900 dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
-          />
-          <button
-            type="button"
-            className="h-8.5 rounded-xl bg-zinc-900 px-3.5 text-xs font-semibold text-white shadow-2xs transition-all hover:bg-zinc-800 active:scale-95 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            onClick={() => void saveTemplate()}
-          >
-            {selectedTemplateId ? '更新模板' : '保存模板'}
-          </button>
-        </div>
-        <div className="flex items-center gap-2 border-t border-black/6 pt-2.5 dark:border-white/8">
-          <button
-            type="button"
-            title="导出模板包"
-            className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100"
-            onClick={exportTemplates}
-          >
-            <Download className="size-3.5" />
-            导出
-          </button>
-          <label
-            title="导入模板包"
-            className={`inline-flex h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100 ${
-              templateBusy ? 'pointer-events-none opacity-40' : ''
-            }`}
-          >
-            <FileUp className="size-3.5" />
-            导入
-            <input
-              type="file"
-              accept="application/json,.json"
-              className="sr-only"
-              disabled={templateBusy}
-              onChange={(event) => {
-                void importTemplates(event.target.files?.[0])
-                event.currentTarget.value = ''
-              }}
-            />
-          </label>
-          <span className="ml-auto text-[10px] text-zinc-400">可在其他设备导入</span>
-        </div>
-      </div>
-
-      {/* Header and Footer Slots Grid */}
-      {(['header', 'footer'] as PrintChromeSection[]).map((section) => (
-        <div key={section} className="space-y-2">
-          <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{sectionTitle[section]}三栏内容设置</p>
-          <div className="space-y-2.5">
-            {(['left', 'center', 'right'] as PrintChromeSlotPosition[]).map((position) => {
-              const slot = props.printLayout[section].slots[position]
-              const active = props.activeSlot?.section === section && props.activeSlot.slot === position
-              const positionLabel = { left: '左栏', center: '中栏', right: '右栏' }[position]
-              return (
-                <div
-                  key={position}
-                  className={`grid grid-cols-[38px_minmax(0,1fr)_80px] gap-2.5 rounded-2xl border p-3 transition-all ${
-                    active
-                      ? 'border-zinc-900 bg-white shadow-sm ring-1 ring-zinc-900 dark:border-zinc-100 dark:bg-zinc-900 dark:ring-zinc-100'
-                      : 'border-black/6 bg-white/70 dark:border-white/8 dark:bg-zinc-900/70 shadow-2xs'
-                  }`}
-                >
-                  <span className="self-center text-xs font-bold text-zinc-900 dark:text-zinc-100">{positionLabel}</span>
-                  <div className="space-y-1.5 min-w-0">
-                    <select
-                      value={slot.type}
-                      onChange={(event) => props.onSlotChange(section, position, { type: event.target.value as PrintChromeContentType })}
-                      className="h-8 w-full rounded-xl border border-black/10 bg-white px-2.5 text-xs font-medium text-zinc-900 shadow-2xs outline-none dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
-                    >
-                      {CHROME_CONTENT_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    {slot.type === 'customText' ? (
-                      <input
-                        value={slot.text ?? ''}
-                        onChange={(event) => props.onSlotChange(section, position, { text: event.target.value })}
-                        placeholder="输入自定义内容"
-                        className="h-8 w-full rounded-xl border border-black/10 bg-white px-2.5 text-xs font-medium text-zinc-900 shadow-2xs outline-none placeholder:text-zinc-400 dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
-                      />
-                    ) : null}
-                    <div className="grid grid-cols-[minmax(0,1fr)_62px_auto_auto] gap-1.5">
-                      <select
-                        aria-label={`${sectionTitle[section]}${positionLabel}字体`}
-                        value={slot.font ?? 'inherit'}
-                        onChange={(event) => props.onSlotChange(section, position, { font: event.target.value as PrintChromeSlot['font'] })}
-                        className="h-8 min-w-0 rounded-xl border border-black/10 bg-white px-2 text-xs text-zinc-900 shadow-2xs outline-none dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
-                      >
-                        {CHROME_FONT_OPTIONS.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        aria-label={`${sectionTitle[section]}${positionLabel}字号`}
-                        value={slot.fontSize ?? 9}
-                        onChange={(event) => props.onSlotChange(section, position, { fontSize: Number(event.target.value) as PrintChromeSlot['fontSize'] })}
-                        className="h-8 rounded-xl border border-black/10 bg-white px-1.5 text-xs text-zinc-900 shadow-2xs outline-none dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
-                      >
-                        {CHROME_FONT_SIZE_OPTIONS.map((size) => (
-                          <option key={size} value={size}>
-                            {size}px
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        title="粗体"
-                        aria-label={`${sectionTitle[section]}${positionLabel}粗体`}
-                        aria-pressed={Boolean(slot.bold)}
-                        onClick={() => props.onSlotChange(section, position, { bold: !slot.bold })}
-                        className={`flex size-8 items-center justify-center rounded-xl border text-xs transition-all shadow-2xs ${
-                          slot.bold
-                            ? 'bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100'
-                            : 'bg-white border-black/10 text-zinc-700 hover:bg-zinc-50 dark:bg-zinc-900 dark:border-white/12 dark:text-zinc-300'
-                        }`}
-                      >
-                        <Bold className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        title="斜体"
-                        aria-label={`${sectionTitle[section]}${positionLabel}斜体`}
-                        aria-pressed={Boolean(slot.italic)}
-                        onClick={() => props.onSlotChange(section, position, { italic: !slot.italic })}
-                        className={`flex size-8 items-center justify-center rounded-xl border text-xs transition-all shadow-2xs ${
-                          slot.italic
-                            ? 'bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100'
-                            : 'bg-white border-black/10 text-zinc-700 hover:bg-zinc-50 dark:bg-zinc-900 dark:border-white/12 dark:text-zinc-300'
-                        }`}
-                      >
-                        <Italic className="size-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <select
-                    value={slot.align ?? position}
-                    onChange={(event) => props.onSlotChange(section, position, { align: event.target.value as PrintChromeSlot['align'] })}
-                    className="h-8 self-start rounded-xl border border-black/10 bg-white px-1.5 text-xs text-zinc-900 shadow-2xs outline-none dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
-                  >
-                    <option value="left">左对齐</option>
-                    <option value="center">居中</option>
-                    <option value="right">右对齐</option>
-                  </select>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      ))}
-
-      {/* Page Number Format Card */}
-      <div className="question-edit-glass-preview rounded-2xl border border-black/8 bg-white/80 p-4 dark:border-white/10 dark:bg-zinc-900/80 space-y-3">
-        <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">页码格式</p>
-        <div className="grid grid-cols-2 gap-3">
-          <select
-            value={props.printLayout.pageNumber.format}
-            onChange={(event) =>
-              props.onPrintOptionChange({
-                pageNumber: { ...props.printLayout.pageNumber, format: event.target.value as typeof props.printLayout.pageNumber.format },
-              })
-            }
-            className="h-8.5 rounded-xl border border-black/10 bg-white px-2.5 text-xs font-medium text-zinc-900 shadow-2xs outline-none dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
-          >
-            {PAGE_NUMBER_FORMAT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <label className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-            <input
-              type="checkbox"
-              className="size-4 rounded border-black/10 dark:border-white/12"
-              checked={props.printLayout.pageNumber.showTotalPages}
-              onChange={(event) => props.onPrintOptionChange({ pageNumber: { ...props.printLayout.pageNumber, showTotalPages: event.target.checked } })}
-            />
-            显示总页数
-          </label>
-          <input
-            value={props.printLayout.pageNumber.prefix}
-            onChange={(event) => props.onPrintOptionChange({ pageNumber: { ...props.printLayout.pageNumber, prefix: event.target.value } })}
-            placeholder="页码前缀"
-            className="h-8.5 rounded-xl border border-black/10 bg-white px-3 text-xs font-medium text-zinc-900 shadow-2xs outline-none placeholder:text-zinc-400 dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
-          />
-          <input
-            value={props.printLayout.pageNumber.suffix}
-            onChange={(event) => props.onPrintOptionChange({ pageNumber: { ...props.printLayout.pageNumber, suffix: event.target.value } })}
-            placeholder="页码后缀"
-            className="h-8.5 rounded-xl border border-black/10 bg-white px-3 text-xs font-medium text-zinc-900 shadow-2xs outline-none placeholder:text-zinc-400 dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function PaperSettingsControl({
-  paper,
-  marginPreset,
-  style,
-  onChange,
-}: {
-  paper: PaperSpec
-  marginPreset: TeachingMarginPreset
-  style?: TeachingDocumentStyle
-  onChange: (patch: Partial<TeachingDocumentStyle>) => void
-}) {
-  const updateMargins = (key: 'topMm' | 'rightMm' | 'bottomMm' | 'leftMm', value: number) => {
-    onChange({
-      paper: {
-        ...style?.paper,
-        margins: {
-          topMm: style?.paper?.margins?.topMm ?? paper.marginTopMm,
-          rightMm: style?.paper?.margins?.rightMm ?? paper.marginRightMm,
-          bottomMm: style?.paper?.margins?.bottomMm ?? paper.marginBottomMm,
-          leftMm: style?.paper?.margins?.leftMm ?? paper.marginLeftMm,
-          [key]: Math.max(0, Number.isFinite(value) ? value : 0),
-        },
-      },
-    })
-  }
-
-  const selectPreset = (preset: TeachingMarginPreset) => {
-    const nextPaper = { ...style?.paper }
-    delete nextPaper.margins
-    onChange({ paper: nextPaper, marginPreset: preset })
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-          纸张大小
-          <select
-            className={paperFieldClass}
-            value={paper.size}
-            onChange={(event) => onChange({ paper: { ...style?.paper, size: event.target.value as 'A3' | 'A4' } })}
-          >
-            <option value="A4">A4 (210 × 297 mm)</option>
-            <option value="A3">A3 (297 × 420 mm)</option>
-          </select>
-        </label>
-        <label className="block text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-          纸张方向
-          <select
-            className={paperFieldClass}
-            value={paper.orientation}
-            onChange={(event) => onChange({ paper: { ...style?.paper, orientation: event.target.value as 'portrait' | 'landscape' } })}
-          >
-            <option value="portrait">纵向 (Portrait)</option>
-            <option value="landscape">横向 (Landscape)</option>
-          </select>
-        </label>
-      </div>
-
-      <label className="block text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-        页边距预设
-        <select
-          className={paperFieldClass}
-          value={style?.paper?.margins ? 'custom' : marginPreset}
-          onChange={(event) => {
-            if (event.target.value !== 'custom') selectPreset(event.target.value as TeachingMarginPreset)
-          }}
-        >
-          <option value="compact">紧凑边距 (Compact)</option>
-          <option value="normal">标准边距 (Normal)</option>
-          <option value="relaxed">宽松边距 (Relaxed)</option>
-          <option value="custom">自定义边距 (Custom)</option>
-        </select>
-      </label>
-
-      <div className="grid grid-cols-4 gap-2 pt-1">
-        {([
-          ['topMm', '上边距'],
-          ['rightMm', '右边距'],
-          ['bottomMm', '下边距'],
-          ['leftMm', '左边距'],
-        ] as const).map(([key, label]) => (
-          <label key={key} className="block text-[11px] font-semibold text-zinc-900 dark:text-zinc-100">
-            {label} (mm)
-            <input
-              className={paperFieldClass}
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={paper[`margin${key.slice(0, 1).toUpperCase()}${key.slice(1, -2)}Mm` as 'marginTopMm' | 'marginRightMm' | 'marginBottomMm' | 'marginLeftMm']}
-              onChange={(event) => updateMargins(key, Number(event.target.value))}
-            />
-          </label>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-const paperFieldClass =
-  'mt-1.5 h-9 w-full rounded-xl border border-black/10 bg-white/90 px-3 text-xs font-medium text-zinc-900 shadow-2xs outline-none transition-all focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 dark:border-white/12 dark:bg-zinc-900/90 dark:text-zinc-100 dark:focus:border-zinc-100 dark:focus:ring-zinc-100'
 
 export default function TeachingDocumentEditorPage() {
   const { documentId = '' } = useParams()
@@ -710,7 +123,16 @@ export default function TeachingDocumentEditorPage() {
   const [viewportBlockId, setViewportBlockId] = useState('')
   const [canvasScrollRoot, setCanvasScrollRoot] = useState<HTMLElement | null>(null)
   const { captureViewportAnchor } = useCanvasViewportAnchor(canvasScrollRoot)
-  const [questionMap, setQuestionMap] = useState<Record<string, QuestionResolution>>({})
+  const {
+    questionIds,
+    questionMap,
+    setQuestionMap,
+    resolveQuestion,
+    resolveFigure,
+  } = useTeachingDocumentQuestions({
+    document: editor.document,
+    assets: editor.record?.assets,
+  })
   // 连续流是正文撰写面：卡片正文以一个连续文本区编辑；页面编辑保留给版式核对。
   const [canvasMode, setCanvasMode] = useState<TeachingCanvasMode>('continuous')
   // 编辑画布实际模式：a4 打印预览期间画布保持挂载（隐藏）以保留编辑器与撤销历史。
@@ -823,14 +245,6 @@ export default function TeachingDocumentEditorPage() {
     [documentFonts],
   )
 
-  const questionIds = useMemo(() => {    const ids = new Set<string>()
-    for (const block of editor.document?.content || []) {
-      if (block.type === 'question' && block.questionId) ids.add(block.questionId)
-      if (block.type === 'box') for (const child of block.children) if (child.type === 'question' && child.questionId) ids.add(child.questionId)
-    }
-    return [...ids]
-  }, [editor.document])
-
   /** 选中位置索引：id → { block, topLevel, boxId }，随文档变化重建。 */
   const selectedLocationIndex = useMemo(
     () => editor.document ? buildSelectedLocationIndex(editor.document) : new Map<string, SelectedLocation>(),
@@ -841,48 +255,6 @@ export default function TeachingDocumentEditorPage() {
     [selectedLocationIndex],
   )
 
-  useEffect(() => {
-    const missing = questionIds.filter((id) => !questionMap[id])
-    if (!missing.length) return
-    setQuestionMap((current) => Object.fromEntries([
-      ...Object.entries(current),
-      ...missing.map((id) => [id, { status: 'loading' as const }]),
-    ]))
-    for (const id of missing) {
-      questionBankApi.getItem(id)
-        .then((question) => setQuestionMap((current) => ({ ...current, [id]: question })))
-        .catch((error) => setQuestionMap((current) => ({
-          ...current,
-          [id]: error instanceof ApiError && error.status === 404
-            ? { status: 'missing', message: `题目不存在（ID: ${id}）` }
-            : { status: 'error', message: error instanceof Error ? error.message : String(error) },
-        })))
-    }
-  }, [questionIds, questionMap])
-
-  // resolver 与回调必须保持稳定引用：A4PaginationPreview 的测量 effect 依赖 resolveQuestion，
-  // 若每次 render 重建，会形成 onPaginationState 回写父状态 → 父 render → resolver 引用变化
-  // → effect 重跑 → measurement generation 无限增长的循环（实测 g15716 + resource-timeout）。
-  // useCallback/useMemo 仅依赖真实数据源（questionMap/assetMap），题目或素材变化仍会正确触发重测。
-  const assetMap = useMemo(
-    () => new Map((editor.record?.assets ?? []).map((asset) => [asset.id, asset.url])),
-    [editor.record?.assets],
-  )
-  const resolveQuestion = useCallback(
-    (id: string) => questionMap[id] || { status: 'missing' as const, message: `题目不可用（ID: ${id || '未设置'}）` },
-    [questionMap],
-  )
-  const resolveFigure = useCallback((asset: FigureAssetRef) => {
-    if (asset.type === 'documentAsset') return assetMap.get(asset.assetId) || { status: 'missing' as const }
-    if (asset.type === 'legacyPath') return asset.path ? assetUrl(asset.path) : { status: 'missing' as const }
-    const question = questionMap[asset.questionId]
-    if (!question || ('status' in question && question.status === 'loading')) return { status: 'loading' as const }
-    if ('status' in question) return question.status === 'error'
-      ? { status: 'error' as const, message: question.message }
-      : { status: 'missing' as const, message: question.message }
-    const figure = question.figures?.find((item) => String(item.id || item.blockId || '') === asset.figureId)
-    return figure?.path ? assetUrl(figure.path) : { status: 'missing' as const }
-  }, [assetMap, questionMap])
   const openProperties = useCallback((blockId: string) => {
     if (!propertiesOpen) captureViewportAnchor(blockId)
     setChromePanelOpen(false)
