@@ -244,7 +244,7 @@ export function BlockInsertPoint(props: {
         {createPortal(
           <div
             ref={anchorRef}
-            className="group/anchored-insert fixed z-40 flex h-7 items-center justify-center"
+            className="group/anchored-insert fixed z-30 flex h-7 items-center justify-center"
             style={{ left: blockAnchor.left, top: blockAnchor.centerY - 14, width: blockAnchor.width }}
           >
             <span className="pointer-events-none absolute inset-x-2 top-1/2 border-t border-dashed border-zinc-300 transition-colors group-hover/anchored-insert:border-zinc-400 dark:border-zinc-700 dark:group-hover/anchored-insert:border-zinc-600" />

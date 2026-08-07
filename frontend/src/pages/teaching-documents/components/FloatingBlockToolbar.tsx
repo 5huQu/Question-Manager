@@ -96,7 +96,7 @@ export function FloatingBlockToolbar(props: {
               animate={reduced ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
               exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: 2 }}
               transition={springQuick}
-              className="fixed z-50 flex -translate-x-1/2 -translate-y-full items-center gap-0.5 rounded-lg border border-zinc-200 bg-white px-1 py-0.5 shadow-md dark:border-zinc-700 dark:bg-zinc-900"
+              className="fixed z-30 flex -translate-x-1/2 -translate-y-full items-center gap-0.5 rounded-lg border border-zinc-200 bg-white px-1 py-0.5 shadow-md dark:border-zinc-700 dark:bg-zinc-900"
               style={position}
               onClick={(event) => event.stopPropagation()}
             >

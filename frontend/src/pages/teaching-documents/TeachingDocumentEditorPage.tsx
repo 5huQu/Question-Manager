@@ -83,6 +83,7 @@ import { QuestionPickerDrawer } from './components/QuestionPickerDrawer'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
 import { USER_BLOCK_LABEL, CARD_CHILD_TYPES } from './components/blockLabels'
 import { useCanvasViewportAnchor } from './components/useCanvasViewportAnchor'
+import { InspectorSlider } from '@/components/ui/InspectorSlider'
 import { activePageFromPageRects, activePageFromPageTransitions } from './pageNavigation'
 import '@/components/teaching-document/teaching-document.css'
 
@@ -155,7 +156,7 @@ function PageSettingsDrawer(props: {
     { id: 'answers', label: '解答题' },
   ]
   return (
-    <div className="absolute inset-0 z-40 overflow-hidden" role="dialog" aria-modal="true" aria-label="页面设置">
+    <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true" aria-label="页面设置">
       <motion.button
         type="button"
         aria-label="关闭页面设置"
@@ -163,7 +164,7 @@ function PageSettingsDrawer(props: {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="absolute inset-0 cursor-default bg-black/40 backdrop-blur-xs"
+        className="fixed inset-0 cursor-default bg-black/35 backdrop-blur-md dark:bg-black/55"
         onClick={props.onClose}
       />
       <motion.aside
@@ -171,18 +172,39 @@ function PageSettingsDrawer(props: {
         animate={reduced ? { opacity: 1 } : { x: 0, opacity: 1 }}
         exit={reduced ? { opacity: 0 } : { x: '100%', opacity: 0 }}
         transition={reduced ? { duration: 0.15 } : springPanel}
-        className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+        style={{ borderRadius: 0 }}
+        className="question-edit-glass-dialog fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col !rounded-none border-l border-black/10 bg-white/95 shadow-2xl backdrop-blur-2xl backdrop-saturate-150 dark:border-white/12 dark:bg-zinc-950/95"
       >
-        <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
-          <div><h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">页面设置</h2><p className="mt-0.5 text-[11px] text-zinc-500">整份文档同步更新，不按页保存。</p></div>
-          <button type="button" onClick={props.onClose} className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900">完成</button>
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-black/6 px-5 dark:border-white/8">
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">页面设置</h2>
+            <p className="mt-0.5 text-[11px] text-zinc-500">整份文档同步更新，不按页保存。</p>
+          </div>
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="rounded-full bg-zinc-900 px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition-all hover:bg-zinc-800 active:scale-95 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            完成
+          </button>
         </div>
-        <div className="border-b border-zinc-200 px-5 py-2 dark:border-zinc-800">
-          <div className="inline-flex rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-900">
-            {tabs.map((item) => <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`rounded-md px-3 py-1.5 text-[11px] transition-colors ${tab === item.id ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'}`}>{item.label}</button>)}
+        <div className="border-b border-black/6 bg-zinc-50/40 px-5 py-2.5 dark:border-white/8 dark:bg-zinc-900/40">
+          <div role="tablist" aria-label="页面设置分类" className="question-edit-glass-tabs inline-flex items-center gap-1">
+            {tabs.map((item) => (
+              <button
+                key={item.id}
+                role="tab"
+                aria-selected={tab === item.id}
+                type="button"
+                onClick={() => setTab(item.id)}
+                className="inline-flex h-7.5 items-center justify-center whitespace-nowrap rounded-lg px-3.5 text-xs font-medium cursor-pointer transition-all active:scale-95"
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={tab}
@@ -209,11 +231,23 @@ function FontSelect(props: {
   options: Array<{ id: string; label: string }>
   onChange: (value: string) => void
 }) {
-  return <label className="block text-[12px] font-medium text-zinc-600 dark:text-zinc-300">{props.label}
-    <select aria-label={props.ariaLabel} value={props.value} onChange={(event) => props.onChange(event.target.value)} className={paperFieldClass}>
-      {props.options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-    </select>
-  </label>
+  return (
+    <label className="block text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+      {props.label}
+      <select
+        aria-label={props.ariaLabel}
+        value={props.value}
+        onChange={(event) => props.onChange(event.target.value)}
+        className={paperFieldClass}
+      >
+        {props.options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
 }
 
 function ChromeSettingsPanel(props: {
@@ -228,7 +262,9 @@ function ChromeSettingsPanel(props: {
   const [templateName, setTemplateName] = useState('')
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [templateBusy, setTemplateBusy] = useState(false)
-  useEffect(() => { void teachingDocumentsApi.listPrintTemplates().then((response) => setTemplates(response.items)).catch(() => setTemplates([])) }, [])
+  useEffect(() => {
+    void teachingDocumentsApi.listPrintTemplates().then((response) => setTemplates(response.items)).catch(() => setTemplates([]))
+  }, [])
   async function saveTemplate() {
     const options = {
       headerEnabled: props.printLayout.header.enabled,
@@ -241,7 +277,7 @@ function ChromeSettingsPanel(props: {
     const template = selectedTemplateId
       ? await teachingDocumentsApi.updatePrintTemplate(selectedTemplateId, { name: templateName, options })
       : await teachingDocumentsApi.createPrintTemplate({ name: templateName, options })
-    setTemplates((current) => selectedTemplateId ? current.map((item) => item.id === template.id ? template : item) : [template, ...current])
+    setTemplates((current) => (selectedTemplateId ? current.map((item) => (item.id === template.id ? template : item)) : [template, ...current]))
     setSelectedTemplateId(template.id)
     setTemplateName(template.name)
   }
@@ -255,7 +291,11 @@ function ChromeSettingsPanel(props: {
   function exportTemplates() {
     const payload = JSON.stringify({ version: 1, templates: templates.map(({ name, options }) => ({ name, options })) }, null, 2)
     const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }))
-    const anchor = window.document.createElement('a'); anchor.href = url; anchor.download = '页眉页脚模板.json'; anchor.click(); URL.revokeObjectURL(url)
+    const anchor = window.document.createElement('a')
+    anchor.href = url
+    anchor.download = '页眉页脚模板.json'
+    anchor.click()
+    URL.revokeObjectURL(url)
   }
   async function importTemplates(file: File | undefined) {
     if (!file) return
@@ -271,70 +311,239 @@ function ChromeSettingsPanel(props: {
       setTemplates((current) => [...created, ...current])
     } catch {
       window.alert('模板文件无效，未能导入。')
-    } finally { setTemplateBusy(false) }
+    } finally {
+      setTemplateBusy(false)
+    }
   }
   return (
-    <div className="space-y-4">
-
-      <div className="grid grid-cols-2 gap-2 border-y border-zinc-100 py-3 text-[11px] dark:border-zinc-800">
-        <label className="flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><input type="checkbox" className="size-3.5" checked={props.printLayout.header.enabled} onChange={(event) => props.onPrintOptionChange({ headerEnabled: event.target.checked })} />显示页眉</label>
-        <label className="flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><input type="checkbox" className="size-3.5" checked={props.printLayout.header.showOnFirstPage} onChange={(event) => props.onPrintOptionChange({ headerShowOnFirstPage: event.target.checked })} />首页显示页眉</label>
-        <label className="flex items-center gap-2 text-zinc-700 dark:text-zinc-200"><input type="checkbox" className="size-3.5" checked={props.printLayout.footer.enabled} onChange={(event) => props.onPrintOptionChange({ footerEnabled: event.target.checked })} />显示页脚</label>
+    <div className="space-y-5">
+      {/* Checkbox Section */}
+      <div className="question-edit-glass-preview grid grid-cols-2 gap-3 rounded-2xl border border-black/8 bg-white/80 p-4 dark:border-white/10 dark:bg-zinc-900/80">
+        <label className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+          <input
+            type="checkbox"
+            className="size-4 rounded border-black/10 dark:border-white/12"
+            checked={props.printLayout.header.enabled}
+            onChange={(event) => props.onPrintOptionChange({ headerEnabled: event.target.checked })}
+          />
+          显示页眉
+        </label>
+        <label className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+          <input
+            type="checkbox"
+            className="size-4 rounded border-black/10 dark:border-white/12"
+            checked={props.printLayout.header.showOnFirstPage}
+            onChange={(event) => props.onPrintOptionChange({ headerShowOnFirstPage: event.target.checked })}
+          />
+          首页显示页眉
+        </label>
+        <label className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+          <input
+            type="checkbox"
+            className="size-4 rounded border-black/10 dark:border-white/12"
+            checked={props.printLayout.footer.enabled}
+            onChange={(event) => props.onPrintOptionChange({ footerEnabled: event.target.checked })}
+          />
+          显示页脚
+        </label>
       </div>
 
-      <div className="mt-3 rounded-md border border-dashed border-zinc-200 p-2.5 dark:border-zinc-700">
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">页眉页脚模板</p>
-          <span className="text-[10px] text-zinc-400">本机复用</span>
+      {/* Templates Card */}
+      <div className="question-edit-glass-preview rounded-2xl border border-black/8 bg-white/80 p-4 dark:border-white/10 dark:bg-zinc-900/80 space-y-3">
+        <div className="flex items-center justify-between border-b border-black/6 pb-2 dark:border-white/8">
+          <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">页眉页脚模板</p>
+          <span className="text-[10px] font-medium text-zinc-400">本机复用</span>
         </div>
-        <div className="flex gap-1.5">
-          <select aria-label="选择页眉页脚模板" value={selectedTemplateId} onChange={(event) => { const id = event.target.value; setSelectedTemplateId(id); const item = templates.find((template) => template.id === id); setTemplateName(item?.name || '') }} className="h-7 min-w-0 flex-1 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] dark:border-zinc-700 dark:bg-zinc-950">
-            <option value="">选择模板…</option>
-            {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+        <div className="flex gap-2">
+          <select
+            aria-label="选择页眉页脚模板"
+            value={selectedTemplateId}
+            onChange={(event) => {
+              const id = event.target.value
+              setSelectedTemplateId(id)
+              const item = templates.find((template) => template.id === id)
+              setTemplateName(item?.name || '')
+            }}
+            className="h-8.5 min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-2.5 text-xs font-medium text-zinc-900 shadow-2xs outline-none focus:border-zinc-900 dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
+          >
+            <option value="">选择预设模板…</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.name}
+              </option>
+            ))}
           </select>
-          <button type="button" className="h-7 rounded-md border border-zinc-200 px-2 text-[11px] text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800" disabled={!selectedTemplateId} onClick={() => { const item = templates.find((template) => template.id === selectedTemplateId); if (item) props.onApplyTemplate(item) }}>应用</button>
-          <button type="button" title="删除模板" className="h-7 rounded-md border border-red-200 px-2 text-[11px] text-red-600 hover:bg-red-50 disabled:opacity-40" disabled={!selectedTemplateId} onClick={() => void removeTemplate()}>删除</button>
+          <button
+            type="button"
+            className="h-8.5 rounded-xl border border-black/10 bg-white/90 px-3 text-xs font-semibold text-zinc-800 shadow-2xs transition-all hover:bg-white active:scale-95 disabled:opacity-30 dark:border-white/12 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+            disabled={!selectedTemplateId}
+            onClick={() => {
+              const item = templates.find((template) => template.id === selectedTemplateId)
+              if (item) props.onApplyTemplate(item)
+            }}
+          >
+            应用
+          </button>
+          <button
+            type="button"
+            title="删除模板"
+            className="h-8.5 rounded-xl border border-red-200 bg-red-50/60 px-3 text-xs font-semibold text-red-600 transition-all hover:bg-red-100 active:scale-95 disabled:opacity-30 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400"
+            disabled={!selectedTemplateId}
+            onClick={() => void removeTemplate()}
+          >
+            删除
+          </button>
         </div>
-        <div className="mt-2 flex gap-1.5">
-          <input value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="模板名称" className="h-7 min-w-0 flex-1 rounded-md border border-zinc-200 px-2 text-[11px] dark:border-zinc-700 dark:bg-zinc-950" />
-          <button type="button" className="h-7 rounded-md bg-zinc-900 px-2.5 text-[11px] text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900" onClick={() => void saveTemplate()}>{selectedTemplateId ? '更新模板' : '保存模板'}</button>
+        <div className="flex gap-2 pt-1">
+          <input
+            value={templateName}
+            onChange={(event) => setTemplateName(event.target.value)}
+            placeholder="自定义模板名称"
+            className="h-8.5 min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-3 text-xs font-medium text-zinc-900 shadow-2xs outline-none placeholder:text-zinc-400 focus:border-zinc-900 dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
+          />
+          <button
+            type="button"
+            className="h-8.5 rounded-xl bg-zinc-900 px-3.5 text-xs font-semibold text-white shadow-2xs transition-all hover:bg-zinc-800 active:scale-95 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            onClick={() => void saveTemplate()}
+          >
+            {selectedTemplateId ? '更新模板' : '保存模板'}
+          </button>
         </div>
-        <div className="mt-2 flex items-center gap-1.5 border-t border-zinc-100 pt-2 dark:border-zinc-800">
-          <button type="button" title="导出模板包" className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800" onClick={exportTemplates}><Download className="size-3.5" />导出</button>
-          <label title="导入模板包" className={`inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${templateBusy ? 'pointer-events-none opacity-40' : ''}`}><FileUp className="size-3.5" />导入<input type="file" accept="application/json,.json" className="sr-only" disabled={templateBusy} onChange={(event) => { void importTemplates(event.target.files?.[0]); event.currentTarget.value = '' }} /></label>
+        <div className="flex items-center gap-2 border-t border-black/6 pt-2.5 dark:border-white/8">
+          <button
+            type="button"
+            title="导出模板包"
+            className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+            onClick={exportTemplates}
+          >
+            <Download className="size-3.5" />
+            导出
+          </button>
+          <label
+            title="导入模板包"
+            className={`inline-flex h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100 ${
+              templateBusy ? 'pointer-events-none opacity-40' : ''
+            }`}
+          >
+            <FileUp className="size-3.5" />
+            导入
+            <input
+              type="file"
+              accept="application/json,.json"
+              className="sr-only"
+              disabled={templateBusy}
+              onChange={(event) => {
+                void importTemplates(event.target.files?.[0])
+                event.currentTarget.value = ''
+              }}
+            />
+          </label>
           <span className="ml-auto text-[10px] text-zinc-400">可在其他设备导入</span>
         </div>
       </div>
 
+      {/* Header and Footer Slots Grid */}
       {(['header', 'footer'] as PrintChromeSection[]).map((section) => (
-        <div key={section} className="mt-4">
-          <p className="mb-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">{sectionTitle[section]}三栏</p>
-          <div className="space-y-2">
+        <div key={section} className="space-y-2">
+          <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{sectionTitle[section]}三栏内容设置</p>
+          <div className="space-y-2.5">
             {(['left', 'center', 'right'] as PrintChromeSlotPosition[]).map((position) => {
               const slot = props.printLayout[section].slots[position]
               const active = props.activeSlot?.section === section && props.activeSlot.slot === position
-              const positionLabel = { left: '左', center: '中', right: '右' }[position]
+              const positionLabel = { left: '左栏', center: '中栏', right: '右栏' }[position]
               return (
-                <div key={position} className={`grid grid-cols-[32px_minmax(0,1fr)_76px] gap-2 rounded-md p-1.5 ${active ? 'bg-zinc-100 dark:bg-zinc-800' : ''}`}>
-                  <span className="self-center text-[11px] text-zinc-500">{positionLabel}</span>
-                  <div className="space-y-1">
-                    <select value={slot.type} onChange={(event) => props.onSlotChange(section, position, { type: event.target.value as PrintChromeContentType })} className="h-7 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-                      {CHROME_CONTENT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                <div
+                  key={position}
+                  className={`grid grid-cols-[38px_minmax(0,1fr)_80px] gap-2.5 rounded-2xl border p-3 transition-all ${
+                    active
+                      ? 'border-zinc-900 bg-white shadow-sm ring-1 ring-zinc-900 dark:border-zinc-100 dark:bg-zinc-900 dark:ring-zinc-100'
+                      : 'border-black/6 bg-white/70 dark:border-white/8 dark:bg-zinc-900/70 shadow-2xs'
+                  }`}
+                >
+                  <span className="self-center text-xs font-bold text-zinc-900 dark:text-zinc-100">{positionLabel}</span>
+                  <div className="space-y-1.5 min-w-0">
+                    <select
+                      value={slot.type}
+                      onChange={(event) => props.onSlotChange(section, position, { type: event.target.value as PrintChromeContentType })}
+                      className="h-8 w-full rounded-xl border border-black/10 bg-white px-2.5 text-xs font-medium text-zinc-900 shadow-2xs outline-none dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
+                    >
+                      {CHROME_CONTENT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
-                    {slot.type === 'customText' ? <input value={slot.text ?? ''} onChange={(event) => props.onSlotChange(section, position, { text: event.target.value })} placeholder="输入文字" className="h-7 w-full rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] text-zinc-700 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200" /> : null}
-                    <div className="grid grid-cols-[minmax(0,1fr)_58px_auto_auto] gap-1">
-                      <select aria-label={`${sectionTitle[section]}${positionLabel}栏字体`} value={slot.font ?? 'inherit'} onChange={(event) => props.onSlotChange(section, position, { font: event.target.value as PrintChromeSlot['font'] })} className="h-7 min-w-0 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-                        {CHROME_FONT_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                    {slot.type === 'customText' ? (
+                      <input
+                        value={slot.text ?? ''}
+                        onChange={(event) => props.onSlotChange(section, position, { text: event.target.value })}
+                        placeholder="输入自定义内容"
+                        className="h-8 w-full rounded-xl border border-black/10 bg-white px-2.5 text-xs font-medium text-zinc-900 shadow-2xs outline-none placeholder:text-zinc-400 dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
+                      />
+                    ) : null}
+                    <div className="grid grid-cols-[minmax(0,1fr)_62px_auto_auto] gap-1.5">
+                      <select
+                        aria-label={`${sectionTitle[section]}${positionLabel}字体`}
+                        value={slot.font ?? 'inherit'}
+                        onChange={(event) => props.onSlotChange(section, position, { font: event.target.value as PrintChromeSlot['font'] })}
+                        className="h-8 min-w-0 rounded-xl border border-black/10 bg-white px-2 text-xs text-zinc-900 shadow-2xs outline-none dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
+                      >
+                        {CHROME_FONT_OPTIONS.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
                       </select>
-                      <select aria-label={`${sectionTitle[section]}${positionLabel}栏字号`} value={slot.fontSize ?? 9} onChange={(event) => props.onSlotChange(section, position, { fontSize: Number(event.target.value) as PrintChromeSlot['fontSize'] })} className="h-7 rounded-md border border-zinc-200 bg-white px-1 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-                        {CHROME_FONT_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size}px</option>)}
+                      <select
+                        aria-label={`${sectionTitle[section]}${positionLabel}字号`}
+                        value={slot.fontSize ?? 9}
+                        onChange={(event) => props.onSlotChange(section, position, { fontSize: Number(event.target.value) as PrintChromeSlot['fontSize'] })}
+                        className="h-8 rounded-xl border border-black/10 bg-white px-1.5 text-xs text-zinc-900 shadow-2xs outline-none dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
+                      >
+                        {CHROME_FONT_SIZE_OPTIONS.map((size) => (
+                          <option key={size} value={size}>
+                            {size}px
+                          </option>
+                        ))}
                       </select>
-                      <button type="button" title="粗体" aria-label={`${sectionTitle[section]}${positionLabel}栏粗体`} aria-pressed={Boolean(slot.bold)} onClick={() => props.onSlotChange(section, position, { bold: !slot.bold })} className={`flex size-7 items-center justify-center rounded-md border text-zinc-600 transition-colors dark:border-zinc-700 dark:text-zinc-300 ${slot.bold ? 'border-zinc-400 bg-zinc-100 text-zinc-950 dark:bg-zinc-700 dark:text-zinc-50' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:bg-zinc-950 dark:hover:bg-zinc-800'}`}><Bold className="size-3.5" /></button>
-                      <button type="button" title="斜体" aria-label={`${sectionTitle[section]}${positionLabel}栏斜体`} aria-pressed={Boolean(slot.italic)} onClick={() => props.onSlotChange(section, position, { italic: !slot.italic })} className={`flex size-7 items-center justify-center rounded-md border text-zinc-600 transition-colors dark:border-zinc-700 dark:text-zinc-300 ${slot.italic ? 'border-zinc-400 bg-zinc-100 text-zinc-950 dark:bg-zinc-700 dark:text-zinc-50' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:bg-zinc-950 dark:hover:bg-zinc-800'}`}><Italic className="size-3.5" /></button>
+                      <button
+                        type="button"
+                        title="粗体"
+                        aria-label={`${sectionTitle[section]}${positionLabel}粗体`}
+                        aria-pressed={Boolean(slot.bold)}
+                        onClick={() => props.onSlotChange(section, position, { bold: !slot.bold })}
+                        className={`flex size-8 items-center justify-center rounded-xl border text-xs transition-all shadow-2xs ${
+                          slot.bold
+                            ? 'bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100'
+                            : 'bg-white border-black/10 text-zinc-700 hover:bg-zinc-50 dark:bg-zinc-900 dark:border-white/12 dark:text-zinc-300'
+                        }`}
+                      >
+                        <Bold className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        title="斜体"
+                        aria-label={`${sectionTitle[section]}${positionLabel}斜体`}
+                        aria-pressed={Boolean(slot.italic)}
+                        onClick={() => props.onSlotChange(section, position, { italic: !slot.italic })}
+                        className={`flex size-8 items-center justify-center rounded-xl border text-xs transition-all shadow-2xs ${
+                          slot.italic
+                            ? 'bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100'
+                            : 'bg-white border-black/10 text-zinc-700 hover:bg-zinc-50 dark:bg-zinc-900 dark:border-white/12 dark:text-zinc-300'
+                        }`}
+                      >
+                        <Italic className="size-3.5" />
+                      </button>
                     </div>
                   </div>
-                  <select value={slot.align ?? position} onChange={(event) => props.onSlotChange(section, position, { align: event.target.value as PrintChromeSlot['align'] })} className="h-7 self-start rounded-md border border-zinc-200 bg-white px-1 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-                    <option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option>
+                  <select
+                    value={slot.align ?? position}
+                    onChange={(event) => props.onSlotChange(section, position, { align: event.target.value as PrintChromeSlot['align'] })}
+                    className="h-8 self-start rounded-xl border border-black/10 bg-white px-1.5 text-xs text-zinc-900 shadow-2xs outline-none dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
+                  >
+                    <option value="left">左对齐</option>
+                    <option value="center">居中</option>
+                    <option value="right">右对齐</option>
                   </select>
                 </div>
               )
@@ -343,15 +552,46 @@ function ChromeSettingsPanel(props: {
         </div>
       ))}
 
-      <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-        <p className="mb-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">页码格式</p>
-        <div className="grid grid-cols-2 gap-2">
-          <select value={props.printLayout.pageNumber.format} onChange={(event) => props.onPrintOptionChange({ pageNumber: { ...props.printLayout.pageNumber, format: event.target.value as typeof props.printLayout.pageNumber.format } })} className="h-7 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
-            {PAGE_NUMBER_FORMAT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      {/* Page Number Format Card */}
+      <div className="question-edit-glass-preview rounded-2xl border border-black/8 bg-white/80 p-4 dark:border-white/10 dark:bg-zinc-900/80 space-y-3">
+        <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">页码格式</p>
+        <div className="grid grid-cols-2 gap-3">
+          <select
+            value={props.printLayout.pageNumber.format}
+            onChange={(event) =>
+              props.onPrintOptionChange({
+                pageNumber: { ...props.printLayout.pageNumber, format: event.target.value as typeof props.printLayout.pageNumber.format },
+              })
+            }
+            className="h-8.5 rounded-xl border border-black/10 bg-white px-2.5 text-xs font-medium text-zinc-900 shadow-2xs outline-none dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
+          >
+            {PAGE_NUMBER_FORMAT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
-          <label className="flex items-center gap-2 text-[11px] text-zinc-700 dark:text-zinc-200"><input type="checkbox" className="size-3.5" checked={props.printLayout.pageNumber.showTotalPages} onChange={(event) => props.onPrintOptionChange({ pageNumber: { ...props.printLayout.pageNumber, showTotalPages: event.target.checked } })} />显示总页数</label>
-          <input value={props.printLayout.pageNumber.prefix} onChange={(event) => props.onPrintOptionChange({ pageNumber: { ...props.printLayout.pageNumber, prefix: event.target.value } })} placeholder="页码前缀" className="h-7 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] text-zinc-700 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200" />
-          <input value={props.printLayout.pageNumber.suffix} onChange={(event) => props.onPrintOptionChange({ pageNumber: { ...props.printLayout.pageNumber, suffix: event.target.value } })} placeholder="页码后缀" className="h-7 rounded-md border border-zinc-200 bg-white px-1.5 text-[11px] text-zinc-700 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200" />
+          <label className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+            <input
+              type="checkbox"
+              className="size-4 rounded border-black/10 dark:border-white/12"
+              checked={props.printLayout.pageNumber.showTotalPages}
+              onChange={(event) => props.onPrintOptionChange({ pageNumber: { ...props.printLayout.pageNumber, showTotalPages: event.target.checked } })}
+            />
+            显示总页数
+          </label>
+          <input
+            value={props.printLayout.pageNumber.prefix}
+            onChange={(event) => props.onPrintOptionChange({ pageNumber: { ...props.printLayout.pageNumber, prefix: event.target.value } })}
+            placeholder="页码前缀"
+            className="h-8.5 rounded-xl border border-black/10 bg-white px-3 text-xs font-medium text-zinc-900 shadow-2xs outline-none placeholder:text-zinc-400 dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
+          />
+          <input
+            value={props.printLayout.pageNumber.suffix}
+            onChange={(event) => props.onPrintOptionChange({ pageNumber: { ...props.printLayout.pageNumber, suffix: event.target.value } })}
+            placeholder="页码后缀"
+            className="h-8.5 rounded-xl border border-black/10 bg-white px-3 text-xs font-medium text-zinc-900 shadow-2xs outline-none placeholder:text-zinc-400 dark:border-white/12 dark:bg-zinc-900 dark:text-zinc-100"
+          />
         </div>
       </div>
     </div>
@@ -391,70 +631,75 @@ function PaperSettingsControl({
   }
 
   return (
-    <details className="relative">
-      <summary className="inline-flex h-7 cursor-pointer list-none items-center gap-1 rounded-md px-2 text-[11px] text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
-        <span className="font-medium">{paper.size}</span>
-        <span className="text-zinc-400">{paper.orientation === 'portrait' ? '纵向' : '横向'}</span>
-      </summary>
-      <div className="absolute right-0 top-9 z-50 w-64 space-y-3 rounded-lg border border-zinc-200 bg-white p-3 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="grid grid-cols-2 gap-2">
-          <label className="text-[11px] text-zinc-500">纸张
-            <select
-              className={paperFieldClass}
-              value={paper.size}
-              onChange={(event) => onChange({ paper: { ...style?.paper, size: event.target.value as 'A3' | 'A4' } })}
-            >
-              <option value="A4">A4</option>
-              <option value="A3">A3</option>
-            </select>
-          </label>
-          <label className="text-[11px] text-zinc-500">方向
-            <select
-              className={paperFieldClass}
-              value={paper.orientation}
-              onChange={(event) => onChange({ paper: { ...style?.paper, orientation: event.target.value as 'portrait' | 'landscape' } })}
-            >
-              <option value="portrait">纵向</option>
-              <option value="landscape">横向</option>
-            </select>
-          </label>
-        </div>
-        <label className="block text-[11px] text-zinc-500">边距预设
-          <select className={paperFieldClass} value={style?.paper?.margins ? 'custom' : marginPreset} onChange={(event) => {
-            if (event.target.value !== 'custom') selectPreset(event.target.value as TeachingMarginPreset)
-          }}>
-            <option value="compact">紧凑</option>
-            <option value="normal">标准</option>
-            <option value="relaxed">宽松</option>
-            <option value="custom">自定义</option>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+          纸张大小
+          <select
+            className={paperFieldClass}
+            value={paper.size}
+            onChange={(event) => onChange({ paper: { ...style?.paper, size: event.target.value as 'A3' | 'A4' } })}
+          >
+            <option value="A4">A4 (210 × 297 mm)</option>
+            <option value="A3">A3 (297 × 420 mm)</option>
           </select>
         </label>
-        <div className="grid grid-cols-2 gap-2">
-          {([
-            ['topMm', '上'],
-            ['rightMm', '右'],
-            ['bottomMm', '下'],
-            ['leftMm', '左'],
-          ] as const).map(([key, label]) => (
-            <label key={key} className="text-[11px] text-zinc-500">{label} mm
-              <input
-                className={paperFieldClass}
-                type="number"
-                min={0}
-                max={100}
-                step={1}
-                value={paper[`margin${key.slice(0, 1).toUpperCase()}${key.slice(1, -2)}Mm` as 'marginTopMm' | 'marginRightMm' | 'marginBottomMm' | 'marginLeftMm']}
-                onChange={(event) => updateMargins(key, Number(event.target.value))}
-              />
-            </label>
-          ))}
-        </div>
+        <label className="block text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+          纸张方向
+          <select
+            className={paperFieldClass}
+            value={paper.orientation}
+            onChange={(event) => onChange({ paper: { ...style?.paper, orientation: event.target.value as 'portrait' | 'landscape' } })}
+          >
+            <option value="portrait">纵向 (Portrait)</option>
+            <option value="landscape">横向 (Landscape)</option>
+          </select>
+        </label>
       </div>
-    </details>
+
+      <label className="block text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+        页边距预设
+        <select
+          className={paperFieldClass}
+          value={style?.paper?.margins ? 'custom' : marginPreset}
+          onChange={(event) => {
+            if (event.target.value !== 'custom') selectPreset(event.target.value as TeachingMarginPreset)
+          }}
+        >
+          <option value="compact">紧凑边距 (Compact)</option>
+          <option value="normal">标准边距 (Normal)</option>
+          <option value="relaxed">宽松边距 (Relaxed)</option>
+          <option value="custom">自定义边距 (Custom)</option>
+        </select>
+      </label>
+
+      <div className="grid grid-cols-4 gap-2 pt-1">
+        {([
+          ['topMm', '上边距'],
+          ['rightMm', '右边距'],
+          ['bottomMm', '下边距'],
+          ['leftMm', '左边距'],
+        ] as const).map(([key, label]) => (
+          <label key={key} className="block text-[11px] font-semibold text-zinc-900 dark:text-zinc-100">
+            {label} (mm)
+            <input
+              className={paperFieldClass}
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={paper[`margin${key.slice(0, 1).toUpperCase()}${key.slice(1, -2)}Mm` as 'marginTopMm' | 'marginRightMm' | 'marginBottomMm' | 'marginLeftMm']}
+              onChange={(event) => updateMargins(key, Number(event.target.value))}
+            />
+          </label>
+        ))}
+      </div>
+    </div>
   )
 }
 
-const paperFieldClass = 'mt-1 h-8 w-full rounded-md border border-zinc-200 bg-white px-2 text-xs text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100'
+const paperFieldClass =
+  'mt-1.5 h-9 w-full rounded-xl border border-black/10 bg-white/90 px-3 text-xs font-medium text-zinc-900 shadow-2xs outline-none transition-all focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900 dark:border-white/12 dark:bg-zinc-900/90 dark:text-zinc-100 dark:focus:border-zinc-100 dark:focus:ring-zinc-100'
 
 export default function TeachingDocumentEditorPage() {
   const { documentId = '' } = useParams()
@@ -640,11 +885,21 @@ export default function TeachingDocumentEditorPage() {
   }, [assetMap, questionMap])
   const openProperties = useCallback((blockId: string) => {
     if (!propertiesOpen) captureViewportAnchor(blockId)
+    setChromePanelOpen(false)
+    setEditingChromeSlot(null)
     setPropertiesOpen(true)
   }, [captureViewportAnchor, propertiesOpen])
   const closeProperties = useCallback(() => {
     if (propertiesOpen) captureViewportAnchor(selectedId)
     setPropertiesOpen(false)
+  }, [captureViewportAnchor, propertiesOpen, selectedId])
+  const openPageSettings = useCallback((slot?: { section: PrintChromeSection; slot: PrintChromeSlotPosition }) => {
+    if (propertiesOpen) {
+      if (selectedId) captureViewportAnchor(selectedId)
+      setPropertiesOpen(false)
+    }
+    if (slot) setEditingChromeSlot(slot)
+    setChromePanelOpen(true)
   }, [captureViewportAnchor, propertiesOpen, selectedId])
   useLayoutEffect(() => {
     if (propertiesOpen && selectedId) setPropertiesDockOccupied(true)
@@ -900,8 +1155,7 @@ export default function TeachingDocumentEditorPage() {
   }
 
   function openChromeSlot(section: PrintChromeSection, slot: PrintChromeSlotPosition) {
-    setEditingChromeSlot({ section, slot })
-    setChromePanelOpen(true)
+    openPageSettings({ section, slot })
   }
 
   function deleteSelected() {
@@ -1107,43 +1361,61 @@ export default function TeachingDocumentEditorPage() {
   const fontSettings = (
     <div className="space-y-5">
       <section>
-        <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">排版预设</h3>
+        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">排版预设</h3>
         <p className="mt-1 text-[11px] text-zinc-500">预设会一次设置字体、页边距和题目间距；继续手动调整后将显示为自定义。</p>
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           {(Object.entries(TYPOGRAPHY_PRESETS) as Array<[keyof typeof TYPOGRAPHY_PRESETS, typeof TYPOGRAPHY_PRESETS[keyof typeof TYPOGRAPHY_PRESETS]]>).map(([preset, option]) => (
             <button
               key={preset}
               type="button"
               aria-pressed={typographyPreset === preset}
               onClick={() => applyTypographyPreset(preset)}
-              className={`rounded-lg border p-3 text-left transition-colors ${typographyPreset === preset
-                ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900/40'
-                : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900/30'}`}
+              className={`rounded-2xl border p-3.5 text-left transition-all ${
+                typographyPreset === preset
+                  ? 'border-zinc-900 bg-zinc-900 text-white shadow-sm dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900'
+                  : 'border-black/8 bg-white/80 text-zinc-900 hover:bg-white dark:border-white/10 dark:bg-zinc-900/80 dark:text-zinc-100 shadow-2xs'
+              }`}
             >
-              <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">{option.label}</span>
-              <span className="mt-1 block text-[11px] leading-4 text-zinc-500">{option.description}</span>
+              <span className={`block text-xs font-semibold ${typographyPreset === preset ? 'text-white dark:text-zinc-900' : 'text-zinc-900 dark:text-zinc-100'}`}>
+                {option.label}
+              </span>
+              <span className={`mt-1 block text-[11px] leading-relaxed ${typographyPreset === preset ? 'text-zinc-300 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                {option.description}
+              </span>
             </button>
           ))}
         </div>
-        {!typographyPreset ? <p className="mt-2 text-[11px] text-zinc-500">当前为自定义排版。</p> : null}
+        {!typographyPreset ? <p className="mt-2 text-[11px] font-medium text-zinc-500">当前为自定义排版。</p> : null}
       </section>
-      <section><h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">正文</h3><p className="mt-1 text-[11px] text-zinc-500">中文、英文和数字分别设置；数字字体覆盖阿拉伯数字。</p>
+      <section className="border-t border-black/6 pt-5 dark:border-white/8">
+        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">正文字体</h3>
+        <p className="mt-1 text-[11px] text-zinc-500">中文、英文和数字分别设置；数字字体覆盖阿拉伯数字。</p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <FontSelect label="中文字体" ariaLabel="正文中文字体" value={documentFonts.body.id} options={CJK_FONT_OPTIONS} onChange={(value) => applyCustomTypography({ bodyFont: value })} />
           <FontSelect label="英文字体" ariaLabel="正文英文字体" value={documentFonts.bodyLatin.id} options={LATIN_FONT_OPTIONS} onChange={(value) => applyCustomTypography({ bodyLatinFont: value })} />
           <FontSelect label="数字字体" ariaLabel="正文数字字体" value={documentFonts.bodyNumber.id} options={LATIN_FONT_OPTIONS} onChange={(value) => applyCustomTypography({ bodyNumberFont: value })} />
         </div>
       </section>
-      <section className="border-t border-zinc-100 pt-5 dark:border-zinc-800"><h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">章节</h3><p className="mt-1 text-[11px] text-zinc-500">章节编号会跟随这里的数字字体。</p>
+      <section className="border-t border-black/6 pt-5 dark:border-white/8">
+        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">章节标题字体</h3>
+        <p className="mt-1 text-[11px] text-zinc-500">章节编号会跟随这里的数字字体。</p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <FontSelect label="中文字体" ariaLabel="章节中文字体" value={documentFonts.heading.id} options={CJK_FONT_OPTIONS} onChange={(value) => applyCustomTypography({ headingFont: value })} />
           <FontSelect label="英文字体" ariaLabel="章节英文字体" value={documentFonts.headingLatin.id} options={LATIN_FONT_OPTIONS} onChange={(value) => applyCustomTypography({ headingLatinFont: value })} />
           <FontSelect label="数字字体" ariaLabel="章节数字字体" value={documentFonts.headingNumber.id} options={LATIN_FONT_OPTIONS} onChange={(value) => applyCustomTypography({ headingNumberFont: value })} />
         </div>
       </section>
-      <section className="border-t border-zinc-100 pt-5 dark:border-zinc-800"><h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">题目间距</h3>
-        <select aria-label="题目间距" value={questionSpacing} onChange={(event) => applyCustomTypography({ questionSpacing: event.target.value as 'compact' | 'normal' | 'relaxed' })} className={paperFieldClass}>
-          <option value="compact">紧凑</option><option value="normal">标准</option><option value="relaxed">宽松</option>
+      <section className="border-t border-black/6 pt-5 dark:border-white/8">
+        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">题目间距</h3>
+        <select
+          aria-label="题目间距"
+          value={questionSpacing}
+          onChange={(event) => applyCustomTypography({ questionSpacing: event.target.value as 'compact' | 'normal' | 'relaxed' })}
+          className={paperFieldClass}
+        >
+          <option value="compact">紧凑间距 (Compact)</option>
+          <option value="normal">标准间距 (Normal)</option>
+          <option value="relaxed">宽松间距 (Relaxed)</option>
         </select>
       </section>
     </div>
@@ -1151,10 +1423,52 @@ export default function TeachingDocumentEditorPage() {
 
   const answerSettings = (
     <div className="space-y-5">
-      <section><h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">解答题批量留空</h3><p className="mt-1 text-[11px] text-zinc-500">仅作用于当前文档中已加载的解答题。</p>
-        <button type="button" onClick={() => applyBatchAnswerSpace(!batchBlankEnabled)} className={`mt-3 inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${batchBlankEnabled ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'border border-zinc-200 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900'}`}>{batchBlankEnabled ? <Check className="size-3.5" /> : null}{batchBlankEnabled ? '已启用批量留空' : '启用批量留空'}</button>
+      <section>
+        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">解答题批量留空</h3>
+        <p className="mt-1 text-[11px] text-zinc-500">仅作用于当前文档中已加载的解答题。</p>
+        <button
+          type="button"
+          onClick={() => applyBatchAnswerSpace(!batchBlankEnabled)}
+          className={`mt-3 inline-flex h-8 items-center gap-1.5 rounded-xl px-3.5 text-xs font-medium transition-all ${
+            batchBlankEnabled
+              ? 'bg-zinc-900 text-white shadow-2xs dark:bg-zinc-100 dark:text-zinc-900'
+              : 'border border-black/8 bg-white/80 text-zinc-700 hover:bg-white dark:border-white/10 dark:bg-zinc-900/80 dark:text-zinc-300'
+          }`}
+        >
+          {batchBlankEnabled ? <Check className="size-3.5" /> : null}
+          {batchBlankEnabled ? '已启用批量留空' : '启用批量留空'}
+        </button>
       </section>
-      {batchBlankEnabled ? <section className="border-t border-zinc-100 pt-5 dark:border-zinc-800"><label className="block text-[12px] font-medium text-zinc-700 dark:text-zinc-200">留空高度 {batchBlankHeightMm} mm<input className="mt-3 w-full" type="range" min={5} max={200} step={1} value={batchBlankHeightMm} onChange={(event) => setBatchBlankHeightMm(Number(event.target.value))} onPointerUp={(event) => applyBatchAnswerSpace(true, Number(event.currentTarget.value))} onKeyUp={(event) => applyBatchAnswerSpace(true, Number(event.currentTarget.value))} /></label><label className="mt-4 flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300"><input type="checkbox" checked={batchBlankSplitAcrossPages} onChange={(event) => { const split = event.target.checked; setBatchBlankSplitAcrossPages(split); applyBatchAnswerSpace(true, batchBlankHeightMm, split) }} />跨页时不延续留空</label></section> : null}
+      {batchBlankEnabled ? (
+        <section className="border-t border-black/6 pt-5 space-y-4 dark:border-white/8">
+          <InspectorSlider
+            label="解答题留空高度"
+            value={batchBlankHeightMm}
+            min={5}
+            max={200}
+            step={1}
+            unit="mm"
+            presets={[15, 30, 50, 80, 120]}
+            onChange={(val: number) => {
+              setBatchBlankHeightMm(val)
+              applyBatchAnswerSpace(true, val)
+            }}
+          />
+          <label className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300">
+            <input
+              type="checkbox"
+              className="size-3.5 rounded border-black/10 dark:border-white/12"
+              checked={batchBlankSplitAcrossPages}
+              onChange={(event) => {
+                const split = event.target.checked
+                setBatchBlankSplitAcrossPages(split)
+                applyBatchAnswerSpace(true, batchBlankHeightMm, split)
+              }}
+            />
+            跨页时不延续留空
+          </label>
+        </section>
+      ) : null}
     </div>
   )
 
@@ -1217,7 +1531,7 @@ export default function TeachingDocumentEditorPage() {
   })() : null
 
   const quickControls = (
-    <footer data-teaching-editor-quick-controls className="pointer-events-none absolute bottom-0 inset-x-0 z-20 shrink-0" aria-label="文档快捷操作">
+    <footer data-teaching-editor-quick-controls className="pointer-events-none absolute bottom-0 inset-x-0 z-50 shrink-0" aria-label="文档快捷操作">
       <div className="pointer-events-auto relative h-10 border-t border-zinc-200/50 bg-white/45 px-3 text-[11px] text-zinc-600 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur-md backdrop-saturate-180 dark:border-zinc-800/50 dark:bg-zinc-900/50 dark:text-zinc-300 dark:shadow-[0_-4px_16px_rgba(0,0,0,0.3)]">
         <div data-quick-controls-side="left" className="absolute inset-y-0 left-3 flex max-w-[calc(50%-5.5rem)] min-w-0 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex min-w-max items-center gap-1.5 pr-2">
@@ -1225,6 +1539,21 @@ export default function TeachingDocumentEditorPage() {
             <span className={`inline-flex shrink-0 items-center gap-1 font-medium ${editor.saveState === 'saved' ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}><span className={`size-1.5 rounded-full ${editor.saveState === 'saved' ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]' : 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]'}`} />{editor.saveState === 'saved' ? '已保存' : '待保存'}</span>
             <span className="mx-0.5 h-3 w-px shrink-0 bg-zinc-300/70 dark:bg-zinc-700/70" />
             <button type="button" onClick={() => applyBatchAnswerSpace(!batchBlankEnabled)} className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-all ${batchBlankEnabled ? 'bg-zinc-900 text-white shadow-xs dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-600 hover:bg-zinc-200/50 dark:text-zinc-300 dark:hover:bg-zinc-800/50'}`} title="对全部解答题批量设置或取消留空">{batchBlankEnabled ? <Check className="size-3.5" /> : null}解答题留空</button>
+            {batchBlankEnabled ? (
+              <label className="inline-flex shrink-0 items-center gap-1 cursor-pointer text-[11px] font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100 ml-0.5" title="留空跨页时不延续留空">
+                <input
+                  type="checkbox"
+                  className="size-3.5 rounded border-zinc-300 dark:border-zinc-700 accent-zinc-900 dark:accent-zinc-100"
+                  checked={batchBlankSplitAcrossPages}
+                  onChange={(event) => {
+                    const split = event.target.checked
+                    setBatchBlankSplitAcrossPages(split)
+                    applyBatchAnswerSpace(true, batchBlankHeightMm, split)
+                  }}
+                />
+                不跨页
+              </label>
+            ) : null}
           </div>
         </div>
 
@@ -1236,7 +1565,7 @@ export default function TeachingDocumentEditorPage() {
 
         <div data-quick-controls-side="right" className="absolute inset-y-0 right-3 flex max-w-[calc(50%-5.5rem)] min-w-0 items-center justify-end overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex min-w-max items-center justify-end gap-1.5 pl-2">
-            <button type="button" onClick={() => setChromePanelOpen(true)} className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-200/50 dark:text-zinc-300 dark:hover:bg-zinc-800/50"><Settings2 className="size-3.5" />页面设置</button>
+            <button type="button" onClick={() => openPageSettings()} className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:bg-zinc-200/50 dark:text-zinc-300 dark:hover:bg-zinc-800/50"><Settings2 className="size-3.5" />页面设置</button>
             <span className="mx-0.5 h-3 w-px shrink-0 bg-zinc-300/70 dark:bg-zinc-700/70" />
             <div role="group" aria-label="打印版本" className="flex shrink-0 items-center gap-0.5 rounded-lg border border-zinc-200/50 bg-zinc-100/40 p-0.5 backdrop-blur-sm dark:border-zinc-700/40 dark:bg-zinc-800/40"><button type="button" aria-pressed={printVariant === 'student'} onClick={() => selectPrintVariant('student')} className={`h-5 rounded px-2 text-[10px] font-medium transition-all ${printVariant === 'student' ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>学生版</button><button type="button" aria-pressed={printVariant === 'teacher'} onClick={() => selectPrintVariant('teacher')} className={`h-5 rounded px-2 text-[10px] font-medium transition-all ${printVariant === 'teacher' ? 'bg-white text-zinc-900 shadow-xs dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>教师版</button></div>
             <ExportPdfPanel documentId={editor.record.id} revision={editor.record.revision} saveState={editor.saveState} hasRevisionConflict={Boolean(editor.conflict)} paginationState={paginationState} variant={printVariant} paper={sheetPaper} />
