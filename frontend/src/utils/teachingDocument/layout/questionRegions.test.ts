@@ -85,6 +85,19 @@ describe('createQuestionRuntimeModel', () => {
       .toEqual([[0, 2], [2, 4]])
   })
 
+  it('uses the persisted per-question choice layout', () => {
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'question-block',
+      questionId: 'question-1',
+      display: { choiceLayout: 'two' },
+    }
+    const model = createQuestionRuntimeModel(block, question())
+    expect(model.regions.filter((region) => region.kind === 'options-row')).toHaveLength(2)
+    expect(model.regions.filter((region) => region.kind === 'options-row').map((region) => region.layout))
+      .toEqual(['double', 'double'])
+  })
+
   it('uses document-local inline content for question text and options', () => {
     const block: QuestionBlock = {
       type: 'question',

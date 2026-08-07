@@ -248,6 +248,8 @@ export interface TeachingTextStyle {
 }
 
 export interface QuestionDisplayOptions {
+  /** 当前文档内本题选项排布；auto 根据实际渲染宽度自适应。 */
+  choiceLayout?: 'auto' | 'four' | 'two' | 'one'
   showAnswer?: boolean
   showAnalysis?: boolean
   /** 是否显示每题分数（默认不显示） */

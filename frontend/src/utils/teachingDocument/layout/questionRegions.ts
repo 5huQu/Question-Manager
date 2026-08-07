@@ -551,7 +551,16 @@ export function createQuestionRuntimeModel(
     )
     // 纸张排版的首轮由真实 KaTeX 宽度探测列数；首轮完成后固定结果，
     // 使选项行模型、测量高度和最终分页使用同一个列数。
-    const layout = options.choiceLayoutOverrides?.[block.id]
+    const configuredLayout = block.display?.choiceLayout || 'auto'
+    const explicitLayout = configuredLayout === 'four'
+      ? 'quad'
+      : configuredLayout === 'two'
+        ? 'double'
+        : configuredLayout === 'one'
+          ? 'single'
+          : undefined
+    const layout = explicitLayout
+      || options.choiceLayoutOverrides?.[block.id]
       || (options.probeChoiceLayouts && !optionFigures.length && parsedChoice.options.length === 4
         ? 'adaptive'
         : heuristicLayout)

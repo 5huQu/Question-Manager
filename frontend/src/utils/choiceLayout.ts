@@ -23,7 +23,9 @@ function requiresSingleColumn(value: string) {
   // KaTeX keeps expressions such as unions of intervals on a single line.
   // They are technically short in Markdown but cannot safely share a narrow
   // two-column cell without colliding with the neighbouring option.
-  return /\\(?:cup|cap|infty|sum|prod|int|lim)\b|[∪∩∞]/.test(source)
+  // 无穷符号本身通常很短，不应单独阻止四栏；区间并集、积分等结构化
+  // 表达式才需要保守地退回单栏，避免窄栏中的公式碰撞。
+  return /\\(?:cup|cap|sum|prod|int|lim)\b|[∪∩]/.test(source)
 }
 
 function visualChoiceWidth(value: string) {

@@ -442,6 +442,9 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
         questionId: typeof node.questionId === 'string' ? node.questionId : '',
         breakBehavior,
         display: display ? {
+          choiceLayout: ['auto', 'four', 'two', 'one'].includes(String(display.choiceLayout))
+            ? display.choiceLayout as QuestionDisplayOptions['choiceLayout']
+            : undefined,
           showAnswer: typeof display.showAnswer === 'boolean' ? display.showAnswer : undefined,
           showAnalysis: typeof display.showAnalysis === 'boolean' ? display.showAnalysis : undefined,
           showScore: typeof display.showScore === 'boolean' ? display.showScore : undefined,

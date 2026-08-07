@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { ArrowDown, ArrowUp, Database, ImagePlus, Pencil, Trash2 } from 'lucide-react'
 import type { QuestionItem } from '@/types'
-import type { TeachingBlock } from '@/types/teachingDocument'
-import { figureDisplayLabels } from '@/utils/questionDisplay'
+import type { QuestionBlock, TeachingBlock } from '@/types/teachingDocument'
+import { figureDisplayLabels, parseChoiceQuestion } from '@/utils/questionDisplay'
 import { InspectorSlider } from '@/components/ui/InspectorSlider'
 import { Divider, Field, fieldClass, Section } from './common'
 
@@ -19,6 +19,7 @@ export function QuestionSettings(props: {
   const { block } = props
   const answerSpace = block.display?.answerSpace
   const figureLabels = figureDisplayLabels(props.question?.figures || [])
+  const hasChoices = Boolean(props.question && parseChoiceQuestion(props.question.stemMarkdown)?.options.length)
 
   return (
     <div className="space-y-3">
@@ -61,6 +62,27 @@ export function QuestionSettings(props: {
       <Field label="显示编号">
         <input className={fieldClass} value={block.display?.displayNumberAuto ? '' : (block.display?.displayNumber || '')} onChange={(event) => props.onUpdate({ display: { ...block.display, displayNumber: event.target.value, displayNumberAuto: false } })} placeholder="如 1、例 2" />
       </Field>
+      {hasChoices ? (
+        <Section title="选项布局">
+          <Field label="本题选项排布">
+            <select
+              className={fieldClass}
+              aria-label="本题选项排布"
+              value={block.display?.choiceLayout || 'auto'}
+              onChange={(event) => props.onUpdate({ display: {
+                ...block.display,
+                choiceLayout: event.target.value as NonNullable<NonNullable<QuestionBlock['display']>['choiceLayout']>,
+              } })}
+            >
+              <option value="auto">自动</option>
+              <option value="four">1×4（四栏）</option>
+              <option value="two">2×2（两栏）</option>
+              <option value="one">4×1（单栏）</option>
+            </select>
+          </Field>
+          <p className="text-[11px] leading-4 text-zinc-500">自动会按当前纸张宽度和选项实际内容测量；固定布局会同时作用于预览、分页和打印。</p>
+        </Section>
+      ) : null}
       <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
         <input type="checkbox" className="size-3.5 rounded border-zinc-300" checked={Boolean(block.display?.showAnswer)} onChange={(event) => props.onUpdate({ display: { ...block.display, showAnswer: event.target.checked } })} />
         显示答案

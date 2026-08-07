@@ -242,6 +242,10 @@ export function inspectTeachingDocument(value: unknown) {
     if (type === 'question' && (typeof raw.questionId !== 'string' || !raw.questionId.trim())) {
       issues.push({ level: 'error', code: 'invalid-question-ref', blockId: id, message: '题目引用必须是字符串。' })
     }
+    if (type === 'question' && isObject(raw.display) && raw.display.choiceLayout !== undefined
+      && !['auto', 'four', 'two', 'one'].includes(String(raw.display.choiceLayout))) {
+      issues.push({ level: 'error', code: 'invalid-question-layout', blockId: id, message: '题目选项布局只能是 auto、four、two 或 one。' })
+    }
     if (type === 'figure') {
       const asset = raw.asset
       if (!isObject(asset) || !['questionFigure', 'documentAsset', 'legacyPath'].includes(String(asset.type || ''))) {

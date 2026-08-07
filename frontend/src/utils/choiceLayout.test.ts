@@ -23,4 +23,13 @@ describe('choiceLayoutForTexts', () => {
       '$-\\frac{1}{2}\\overrightarrow{CA}$',
     ])).toBe('quad')
   })
+
+  it('does not force short infinity intervals into one column', () => {
+    expect(choiceLayoutForTexts([
+      '$(-\\infty, 1)$',
+      '$[1, 3]$',
+      '$(1, 3]$',
+      '$[3, +\\infty)$',
+    ])).toBe('quad')
+  })
 })
