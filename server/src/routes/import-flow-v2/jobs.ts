@@ -24,7 +24,7 @@ import {
   resolveImportJobForLegacyRunId,
   resolveImportJobForSourceDocument,
 } from '../../services/import-flow-v2/import-batch.service.js'
-import { applyModelSplitPreview, createModelSplitPreview } from '../../services/import-flow-v2/model-split.service.js'
+import { applyModelSplitPreview, createModelSplitPreview, createModelSplitPreviewStream } from '../../services/import-flow-v2/model-split.service.js'
 import { sendRouteError } from '../errors.js'
 import { API_BASE, routeId } from './common.js'
 
@@ -92,9 +92,31 @@ export function mountImportJobRoutes(app: Express) {
     try { res.json(await createModelSplitPreview(routeId(req))) }
     catch (error) { sendRouteError(res, error) }
   })
+  app.post(`${API_BASE}/jobs/:id/model-split/stream`, async (req, res) => {
+    const controller = new AbortController()
+    res.on('close', () => {
+      if (!res.writableEnded) controller.abort()
+    })
+    res.status(200)
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-cache, no-transform')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders()
+    const write = (event: string, data: unknown) => {
+      if (!res.writableEnded && !res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+    }
+    try {
+      await createModelSplitPreviewStream(routeId(req), ({ event, data }) => write(event, data), controller.signal)
+    } catch (error) {
+      write('error', { message: error instanceof Error ? error.message : '模型辅助拆题失败。' })
+    } finally {
+      if (!res.writableEnded && !res.destroyed) res.end()
+    }
+  })
   app.post(`${API_BASE}/jobs/:id/model-split/:runId/apply`, (req, res) => {
     try {
-      const preview = applyModelSplitPreview(routeId(req), routeId(req, 'runId'))
+      const preview = applyModelSplitPreview(routeId(req), routeId(req, 'runId'), req.body)
       res.json(preview)
     } catch (error) { sendRouteError(res, error) }
   })

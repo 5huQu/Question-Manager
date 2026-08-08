@@ -108,6 +108,24 @@ function apiUrl(url: string) {
   return `${baseUrl}${url.startsWith('/') ? url : `/${url}`}`
 }
 
+export async function apiStream(url: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers || {})
+  if (csrfToken && WRITE_METHODS.has((init?.method || 'GET').toUpperCase())) {
+    headers.set('X-QM-CSRF', csrfToken)
+  }
+  const response = await fetch(apiUrl(url), { ...init, headers })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as Record<string, unknown>
+    if (response.status === 401 && !isAuthEndpoint(url)) {
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT, {
+        detail: { next: window.location.pathname + window.location.search },
+      }))
+    }
+    throw new ApiError(String(payload.message || payload.error || `HTTP ${response.status}`), response.status, payload)
+  }
+  return response
+}
+
 /**
  * Session-bound CSRF token supplied by the auth state. The client attaches it
  * to every state-changing request so pages never handle it themselves.

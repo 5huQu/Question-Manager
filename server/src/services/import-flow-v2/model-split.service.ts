@@ -45,6 +45,12 @@ type ModelSplitPayload = {
   warnings?: unknown
 }
 
+export type ModelSplitStreamEvent =
+  | { event: 'started'; data: { mode: ImportJob['mode']; documents: Array<{ role: ModelSplitRole; totalSegments: number }> } }
+  | { event: 'item'; data: { role: ModelSplitRole; index: number; item: ModelSplitPreviewItem } }
+  | { event: 'warning'; data: { role?: ModelSplitRole; message: string } }
+  | { event: 'done'; data: ModelSplitPreview }
+
 export type ModelSplitPreviewItem = {
   questionNo: string
   rawQuestionNo?: string
@@ -77,6 +83,12 @@ const FIXED_SYSTEM_PROMPT = `你是题目结构拆分器，只负责识别题目
 2. 推理答案，补写缺失内容，或进行题型、知识点、解题方法、难度分类。
 3. 创建、删除、修改或重排任何图片标识符。
 4. 输出题目正文。正文只能通过输入片段 ID 归属来恢复。
+
+片段归属规则：
+1. 每个片段 ID 在整个 items 数组中最多出现一次，不得把同一片段重复分给多道题。
+2. 同时汇总多道题答案的答案表、跨题说明、页眉页脚等内容，不属于任何单题；必须放入 unassigned_segment_ids，并在 warnings 中简要说明。
+3. answer_segment_ids 只能包含当前单题独有的答案内容；analysis_segment_ids 只能包含当前单题独有的解析内容。
+4. 为便于增量处理，顶层 JSON 必须先输出 schema_version、document_role、items，并按题号顺序逐个输出完整 item；最后再输出 unassigned_segment_ids 和 warnings。
 
 允许的唯一修复是题号元数据：如果 OCR 题号明显漏字，且前后题号、解析稿或其他上下文提供了充分证据，可以把原始题号归一化为正确题号；必须同时返回 raw_question_no、normalized_question_no、number_repair.reason 和 number_repair.confidence。没有充分证据时不得猜测。
 
@@ -137,6 +149,107 @@ function extractMessageContent(body: any) {
   return ''
 }
 
+function extractDeltaContent(body: any) {
+  const content = body?.choices?.[0]?.delta?.content ?? body?.choices?.[0]?.message?.content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) return content.map((item) => typeof item === 'string' ? item : item?.text || '').join('')
+  return ''
+}
+
+function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: boolean) {
+  const payload = {
+    document_role: role,
+    instructions: role === 'solutions'
+      ? '这是答案解析文档。只把片段分配到 answer_segment_ids 或 analysis_segment_ids。不要生成 stem。'
+      : role === 'questions'
+        ? '这是原卷文档。只把片段分配到 stem_segment_ids。不要生成答案或解析。'
+        : '这是同一份原卷与答案解析文档。按题号把片段分配到题干、答案或解析。',
+    output_schema: {
+      schema_version: 'model-split-v1',
+      items: [{
+        question_no: 'string',
+        raw_question_no: 'string',
+        normalized_question_no: 'string',
+        number_repair: { applied: 'boolean', reason: 'string', confidence: 'number 0..1' },
+        stem_segment_ids: 'string[]',
+        answer_segment_ids: 'string[]',
+        analysis_segment_ids: 'string[]',
+      }],
+      unassigned_segment_ids: 'string[]',
+      warnings: 'string[]',
+    },
+    segments: segments.map(({ id, text, pageNo, blockIds }) => ({ id, text, pageNo, blockIds })),
+  }
+  return {
+    model: readAiAssistantConfig().model,
+    messages: [
+      { role: 'system', content: FIXED_SYSTEM_PROMPT },
+      { role: 'user', content: JSON.stringify(payload, null, 2) },
+    ],
+    temperature: 0,
+    top_p: 0.1,
+    stream,
+    response_format: { type: 'json_object' },
+  }
+}
+
+class StreamingItemsParser {
+  private text = ''
+  private scanIndex = 0
+  private arrayStarted = false
+  private objectStart = -1
+  private depth = 0
+  private inString = false
+  private escaped = false
+
+  push(delta: string) {
+    this.text += delta
+    const items: SplitItem[] = []
+    if (!this.arrayStarted) {
+      const keyMatch = /["']items["']\s*:\s*\[/.exec(this.text)
+      if (!keyMatch) return items
+      this.arrayStarted = true
+      this.scanIndex = keyMatch.index + keyMatch[0].length
+    }
+    for (; this.scanIndex < this.text.length; this.scanIndex += 1) {
+      const char = this.text[this.scanIndex]
+      if (this.objectStart < 0) {
+        if (char === '{') {
+          this.objectStart = this.scanIndex
+          this.depth = 1
+          this.inString = false
+          this.escaped = false
+        } else if (char === ']') {
+          break
+        }
+        continue
+      }
+      if (this.inString) {
+        if (this.escaped) this.escaped = false
+        else if (char === '\\') this.escaped = true
+        else if (char === '"') this.inString = false
+        continue
+      }
+      if (char === '"') this.inString = true
+      else if (char === '{' || char === '[') this.depth += 1
+      else if (char === '}' || char === ']') {
+        this.depth -= 1
+        if (this.depth === 0) {
+          const candidate = this.text.slice(this.objectStart, this.scanIndex + 1)
+          this.objectStart = -1
+          const parsed = JSON.parse(candidate)
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) items.push(parsed as SplitItem)
+        }
+      }
+    }
+    return items
+  }
+
+  payload() {
+    return parseModelJson(this.text)
+  }
+}
+
 function parseModelJson(text: string): ModelSplitPayload {
   let candidate = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
   try {
@@ -162,40 +275,7 @@ async function callModel(role: ModelSplitRole, segments: SplitSegment[]) {
   if (!settings.apiBaseUrl || !settings.apiKey || !settings.model) {
     throw new RouteError(400, '缺少模型辅助拆题配置，请先配置 AI 助手 API 地址、密钥和模型。')
   }
-  const payload = {
-    document_role: role,
-    instructions: role === 'solutions'
-      ? '这是答案解析文档。只把片段分配到 answer_segment_ids 或 analysis_segment_ids。不要生成 stem。'
-      : role === 'questions'
-        ? '这是原卷文档。只把片段分配到 stem_segment_ids。不要生成答案或解析。'
-        : '这是同一份原卷与答案解析文档。按题号把片段分配到题干、答案或解析。',
-    output_schema: {
-      schema_version: 'model-split-v1',
-      items: [{
-        question_no: 'string',
-        raw_question_no: 'string',
-        normalized_question_no: 'string',
-        number_repair: { applied: 'boolean', reason: 'string', confidence: 'number 0..1' },
-        stem_segment_ids: 'string[]',
-        answer_segment_ids: 'string[]',
-        analysis_segment_ids: 'string[]',
-      }],
-      unassigned_segment_ids: 'string[]',
-      warnings: 'string[]',
-    },
-    segments: segments.map(({ id, text, pageNo, blockIds }) => ({ id, text, pageNo, blockIds })),
-  }
-  const requestBody = {
-    model: settings.model,
-    messages: [
-      { role: 'system', content: FIXED_SYSTEM_PROMPT },
-      { role: 'user', content: JSON.stringify(payload, null, 2) },
-    ],
-    temperature: 0,
-    top_p: 0.1,
-    stream: false,
-    response_format: { type: 'json_object' },
-  }
+  const requestBody = modelRequest(role, segments, false)
   let lastError = ''
   for (const endpoint of endpoints(settings.apiBaseUrl)) {
     try {
@@ -215,8 +295,106 @@ async function callModel(role: ModelSplitRole, segments: SplitSegment[]) {
   throw new RouteError(502, `模型辅助拆题失败：${lastError}`)
 }
 
+async function callModelStream(role: ModelSplitRole, segments: SplitSegment[], onItem: (item: SplitItem) => void, signal?: AbortSignal) {
+  const settings = readAiAssistantConfig()
+  if (!settings.apiBaseUrl || !settings.apiKey || !settings.model) {
+    throw new RouteError(400, '缺少模型辅助拆题配置，请先配置 AI 助手 API 地址、密钥和模型。')
+  }
+  let lastError = ''
+  let emittedAny = false
+  for (const endpoint of endpoints(settings.apiBaseUrl)) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(modelRequest(role, segments, true)),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(300_000)]) : AbortSignal.timeout(300_000),
+      })
+      if (!response.ok) {
+        const raw = await response.text()
+        throw new Error(`模型服务返回 HTTP ${response.status}: ${raw.slice(0, 300)}`)
+      }
+      if (!response.body) throw new Error('模型服务没有返回可读取的数据流。')
+      const parser = new StreamingItemsParser()
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let sseBuffer = ''
+      let emittedItems = 0
+      const consumeEvent = (rawEvent: string) => {
+        const data = rawEvent.split(/\r?\n/)
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart())
+          .join('\n')
+          .trim()
+        if (!data || data === '[DONE]') return
+        const delta = extractDeltaContent(JSON.parse(data))
+        if (!delta) return
+        for (const item of parser.push(delta)) {
+          emittedItems += 1
+          emittedAny = true
+          onItem(item)
+        }
+      }
+      while (true) {
+        const { done, value } = await reader.read()
+        sseBuffer += decoder.decode(value, { stream: !done })
+        const events = sseBuffer.split(/\r?\n\r?\n/)
+        sseBuffer = events.pop() || ''
+        for (const event of events) consumeEvent(event)
+        if (done) break
+      }
+      if (sseBuffer.trim()) consumeEvent(sseBuffer)
+      const payload = parser.payload()
+      const items = Array.isArray(payload.items) ? payload.items as SplitItem[] : []
+      if (!items.length) throw new Error('拆题模型没有返回题目。')
+      // Some OpenAI-compatible gateways buffer or omit intermediate deltas. Ensure
+      // callers still receive every item exactly once when the completed JSON arrives.
+      for (const item of items.slice(emittedItems)) {
+        emittedAny = true
+        onItem(item)
+      }
+      return payload
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+      if (emittedAny) throw new RouteError(502, `模型辅助拆题流中断：${lastError}`)
+    }
+  }
+  throw new RouteError(502, `模型辅助拆题失败：${lastError}`)
+}
+
 function stringList(value: unknown) {
   return Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : []
+}
+
+const SEGMENT_FIELDS = ['stem_segment_ids', 'answer_segment_ids', 'analysis_segment_ids'] as const
+
+function sanitizeSharedAggregateSegments(items: SplitItem[]) {
+  const normalized = items.map((item) => ({
+    ...item,
+    stem_segment_ids: [...new Set(stringList(item.stem_segment_ids))],
+    answer_segment_ids: [...new Set(stringList(item.answer_segment_ids))],
+    analysis_segment_ids: [...new Set(stringList(item.analysis_segment_ids))],
+  }))
+  const uses = new Map<string, Array<{ index: number; field: typeof SEGMENT_FIELDS[number] }>>()
+  normalized.forEach((item, index) => {
+    for (const field of SEGMENT_FIELDS) {
+      for (const id of stringList(item[field])) uses.set(id, [...(uses.get(id) || []), { index, field }])
+    }
+  })
+  const sharedAggregateIds = new Set<string>()
+  for (const [id, references] of uses) {
+    const questionIndexes = new Set(references.map((reference) => reference.index))
+    if (questionIndexes.size > 1 && references.every((reference) => reference.field !== 'stem_segment_ids')) sharedAggregateIds.add(id)
+  }
+  if (!sharedAggregateIds.size) return { items: normalized, warnings: [] as string[] }
+  for (const item of normalized) {
+    item.answer_segment_ids = stringList(item.answer_segment_ids).filter((id) => !sharedAggregateIds.has(id))
+    item.analysis_segment_ids = stringList(item.analysis_segment_ids).filter((id) => !sharedAggregateIds.has(id))
+  }
+  return {
+    items: normalized,
+    warnings: [`检测到 ${sharedAggregateIds.size} 个跨题答案或解析片段被重复引用，已保留为未分配内容，未强行归入某一道题。`],
+  }
 }
 
 function normalizeQuestionNo(value: unknown) {
@@ -351,7 +529,8 @@ function mergeSeparatedCandidates(questionCandidates: QuestionCandidate[], solut
 async function splitDocument(role: ModelSplitRole, document: OCRDocument, metadata: ReturnType<typeof normalizeImportMetadata>) {
   const segments = segmentsForDocument(document)
   const result = await callModel(role, segments)
-  const items = Array.isArray(result.items) ? result.items as SplitItem[] : []
+  const sanitized = sanitizeSharedAggregateSegments(Array.isArray(result.items) ? result.items as SplitItem[] : [])
+  const items = sanitized.items
   if (!items.length) throw new RouteError(502, '拆题模型没有返回题目。')
   const used = new Set<string>()
   const diagnostics: string[] = []
@@ -380,10 +559,148 @@ async function splitDocument(role: ModelSplitRole, document: OCRDocument, metada
   }
   const sourceMarkerIds = new Set(figureMarkerIds(document.markdown))
   const assignedMarkerIds = new Set(candidates.flatMap((candidate) => figureMarkerIds(`${candidate.stemMarkdown}\n${candidate.answerText}\n${candidate.analysisMarkdown}`)))
+  const markerWarnings: string[] = []
   for (const markerId of sourceMarkerIds) {
-    if (!assignedMarkerIds.has(markerId)) diagnostics.push(`图片标识符 ${markerId} 未被模型分配到任何题目，已保留在 OCR 原文中。`)
+    if (!assignedMarkerIds.has(markerId)) markerWarnings.push(`图片标识符 ${markerId} 未被模型分配到单题，已原样保留在 OCR 识别稿中，请按需人工确认归属。`)
   }
-  return { candidates, previews, diagnostics, warnings: Array.isArray(result.warnings) ? result.warnings.map((value) => String(value || '')).filter(Boolean) : [] }
+  return { candidates, previews, diagnostics, warnings: [...(Array.isArray(result.warnings) ? result.warnings.map((value) => String(value || '')).filter(Boolean) : []), ...sanitized.warnings, ...markerWarnings] }
+}
+
+async function splitDocumentStream(
+  role: ModelSplitRole,
+  document: OCRDocument,
+  segments: SplitSegment[],
+  metadata: ReturnType<typeof normalizeImportMetadata>,
+  onItem: (index: number, item: ModelSplitPreviewItem) => void,
+  signal?: AbortSignal,
+) {
+  const used = new Set<string>()
+  const diagnostics: string[] = []
+  const candidates: QuestionCandidate[] = []
+  const itemPreviews: ModelSplitPreviewItem[] = []
+  const result = await callModelStream(role, segments, (item) => {
+    const built = candidateFromModelItem(item, role, document, segments, metadata, used, diagnostics)
+    const index = itemPreviews.length
+    candidates.push(built.candidate)
+    itemPreviews.push(built.preview)
+    onItem(index, built.preview)
+  }, signal)
+  const sanitized = sanitizeSharedAggregateSegments(Array.isArray(result.items) ? result.items as SplitItem[] : [])
+  if (!sanitized.items.length) throw new RouteError(502, '拆题模型没有返回题目。')
+  const finalUsed = new Set<string>()
+  const finalDiagnostics: string[] = []
+  const finalCandidates: QuestionCandidate[] = []
+  const finalPreviews: ModelSplitPreviewItem[] = []
+  for (const item of sanitized.items) {
+    const built = candidateFromModelItem(item, role, document, segments, metadata, finalUsed, finalDiagnostics)
+    finalCandidates.push(built.candidate)
+    finalPreviews.push(built.preview)
+  }
+  used.clear()
+  for (const id of finalUsed) used.add(id)
+  diagnostics.splice(0, diagnostics.length, ...finalDiagnostics)
+  candidates.splice(0, candidates.length, ...finalCandidates)
+  itemPreviews.splice(0, itemPreviews.length, ...finalPreviews)
+  const questionNos = new Map<string, number>()
+  for (const candidate of candidates) {
+    if (!candidate.questionNo) continue
+    questionNos.set(candidate.questionNo, (questionNos.get(candidate.questionNo) || 0) + 1)
+  }
+  for (const candidate of candidates) {
+    if (candidate.questionNo && (questionNos.get(candidate.questionNo) || 0) > 1) {
+      const message = `检测到重复题号 ${candidate.questionNo}，请人工确认。`
+      diagnostics.push(message)
+      candidate.issues.push({ code: 'duplicate_question_no', severity: 'error', message })
+      candidate.parseDiagnostics.push({ code: 'model_duplicate_question_no', severity: 'error', questionNo: candidate.questionNo, message })
+      candidate.status = statusForIssues(candidate.issues)
+      const item = itemPreviews.find((preview) => preview.questionNo === candidate.questionNo && preview.stemMarkdown === candidate.stemMarkdown)
+      if (item && !item.issues.some((issue) => issue.code === 'duplicate_question_no')) item.issues.push({ code: 'duplicate_question_no', severity: 'error', message })
+    }
+  }
+  const sourceMarkerIds = new Set(figureMarkerIds(document.markdown))
+  const assignedMarkerIds = new Set(candidates.flatMap((candidate) => figureMarkerIds(`${candidate.stemMarkdown}\n${candidate.answerText}\n${candidate.analysisMarkdown}`)))
+  const markerWarnings: string[] = []
+  for (const markerId of sourceMarkerIds) {
+    if (!assignedMarkerIds.has(markerId)) markerWarnings.push(`图片标识符 ${markerId} 未被模型分配到单题，已原样保留在 OCR 识别稿中，请按需人工确认归属。`)
+  }
+  return {
+    candidates,
+    previews: itemPreviews,
+    diagnostics,
+    warnings: [...(Array.isArray(result.warnings) ? result.warnings.map((value) => String(value || '')).filter(Boolean) : []), ...sanitized.warnings, ...markerWarnings],
+  }
+}
+
+export async function createModelSplitPreviewStream(jobId: string, emit: (event: ModelSplitStreamEvent) => void, signal?: AbortSignal) {
+  const job = requireImportJob(jobId)
+  const documents = importJobRepo.listImportJobDocuments(jobId)
+  if (documents.length === 0) throw new RouteError(400, '导入批次没有关联资料。')
+  const committed = documents.some((document) => (sourceRepo.getSourceDocument(document.sourceDocumentId)?.importStats?.committedCount || 0) > 0)
+  if (committed) throw new RouteError(409, '该批次已有题目入库，暂不支持模型辅助拆题。')
+  const questionDocument = firstDocumentByRole(documents, job.mode === 'single_document' ? 'full' : 'questions')
+  if (!questionDocument) throw new RouteError(400, '导入批次缺少原卷 OCR 文档。')
+  const questionSource = requireSourceDocument(questionDocument.sourceDocumentId)
+  const questionOcr = loadOcrDocument(latestOcrDocumentForSource(questionSource.id).id)
+  const questionRole = roleForJobDocument(job, questionDocument)
+  const questionSegments = segmentsForDocument(questionOcr)
+  const metadata = metadataForCandidates(job, questionSource)
+
+  if (job.mode === 'single_document') {
+    emit({ event: 'started', data: { mode: job.mode, documents: [{ role: questionRole, totalSegments: questionSegments.length }] } })
+    const result = await splitDocumentStream(questionRole, questionOcr, questionSegments, metadata, (index, item) => {
+      emit({ event: 'item', data: { role: questionRole, index, item } })
+    }, signal)
+    for (const message of result.warnings) emit({ event: 'warning', data: { role: questionRole, message } })
+    const preview: ModelSplitPreview = { id: randomUUID(), importJobId: job.id, mode: job.mode, items: result.previews, diagnostics: result.diagnostics, warnings: result.warnings, candidates: result.candidates, createdAt: nowIso() }
+    previews.set(preview.id, preview)
+    emit({ event: 'done', data: preview })
+    return preview
+  }
+
+  const solutionDocument = firstDocumentByRole(documents, 'solutions')
+  if (!solutionDocument) throw new RouteError(400, '导入批次缺少解析 OCR 文档。')
+  const solutionSource = requireSourceDocument(solutionDocument.sourceDocumentId)
+  const solutionOcr = loadOcrDocument(latestOcrDocumentForSource(solutionSource.id).id)
+  const solutionSegments = segmentsForDocument(solutionOcr)
+  emit({
+    event: 'started',
+    data: {
+      mode: job.mode,
+      documents: [
+        { role: questionRole, totalSegments: questionSegments.length },
+        { role: 'solutions', totalSegments: solutionSegments.length },
+      ],
+    },
+  })
+  const parallelController = new AbortController()
+  const parallelSignal = signal ? AbortSignal.any([signal, parallelController.signal]) : parallelController.signal
+  let results: [Awaited<ReturnType<typeof splitDocumentStream>>, Awaited<ReturnType<typeof splitDocumentStream>>]
+  try {
+    results = await Promise.all([
+      splitDocumentStream(questionRole, questionOcr, questionSegments, metadata, (index, item) => {
+        emit({ event: 'item', data: { role: questionRole, index, item } })
+      }, parallelSignal),
+      splitDocumentStream('solutions', solutionOcr, solutionSegments, metadata, (index, item) => {
+        emit({ event: 'item', data: { role: 'solutions', index, item } })
+      }, parallelSignal),
+    ])
+  } catch (error) {
+    parallelController.abort()
+    throw error
+  }
+  const [questionResult, solutionResult] = results
+  for (const message of questionResult.warnings) emit({ event: 'warning', data: { role: questionRole, message } })
+  for (const message of solutionResult.warnings) emit({ event: 'warning', data: { role: 'solutions', message } })
+  const mergeDiagnostics = mergeSeparatedCandidates(questionResult.candidates, solutionResult.candidates)
+  const solutionByNo = new Map(solutionResult.previews.map((item) => [item.questionNo, item]))
+  const mergedPreviews = questionResult.previews.map((item) => {
+    const solution = solutionByNo.get(item.questionNo)
+    return solution ? { ...item, answerText: solution.answerText, analysisMarkdown: solution.analysisMarkdown, sourceRefs: [...item.sourceRefs, ...solution.sourceRefs], issues: [...item.issues, ...solution.issues] } : item
+  })
+  const preview: ModelSplitPreview = { id: randomUUID(), importJobId: job.id, mode: job.mode, items: mergedPreviews, diagnostics: [...questionResult.diagnostics, ...solutionResult.diagnostics, ...mergeDiagnostics], warnings: [...questionResult.warnings, ...solutionResult.warnings], candidates: questionResult.candidates, createdAt: nowIso() }
+  previews.set(preview.id, preview)
+  emit({ event: 'done', data: preview })
+  return preview
 }
 
 export async function createModelSplitPreview(jobId: string) {
@@ -420,11 +737,53 @@ export async function createModelSplitPreview(jobId: string) {
   return preview
 }
 
-export function applyModelSplitPreview(jobId: string, previewId: string) {
+type ModelSplitApplyEdit = {
+  questionNo?: unknown
+  stemMarkdown?: unknown
+  answerText?: unknown
+  analysisMarkdown?: unknown
+}
+
+function editableItemsFromRequest(body: unknown, preview: ModelSplitPreview) {
+  if (body == null || typeof body !== 'object' || Array.isArray(body)) return preview.items.map((item) => ({
+    questionNo: item.questionNo,
+    stemMarkdown: item.stemMarkdown,
+    answerText: item.answerText,
+    analysisMarkdown: item.analysisMarkdown,
+  }))
+  const rawItems = (body as { items?: unknown }).items
+  if (rawItems === undefined) return preview.items.map((item) => ({
+    questionNo: item.questionNo,
+    stemMarkdown: item.stemMarkdown,
+    answerText: item.answerText,
+    analysisMarkdown: item.analysisMarkdown,
+  }))
+  if (!Array.isArray(rawItems) || rawItems.length !== preview.items.length) throw new RouteError(400, '模型拆题编辑结果数量已变化，请重新生成预览。')
+  return rawItems.map((value, index) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new RouteError(400, `第 ${index + 1} 题编辑结果格式不正确。`)
+    const item = value as ModelSplitApplyEdit
+    const questionNo = normalizeQuestionNo(item.questionNo)
+    if (!questionNo) throw new RouteError(400, `第 ${index + 1} 题缺少有效题号。`)
+    const text = (field: keyof Pick<ModelSplitApplyEdit, 'stemMarkdown' | 'answerText' | 'analysisMarkdown'>) => {
+      if (typeof item[field] !== 'string') throw new RouteError(400, `第 ${index + 1} 题的内容字段不正确。`)
+      return item[field] as string
+    }
+    const edited = { questionNo, stemMarkdown: text('stemMarkdown'), answerText: text('answerText'), analysisMarkdown: text('analysisMarkdown') }
+    const originalMarkers = new Set(figureMarkerIds(`${preview.items[index].stemMarkdown}\n${preview.items[index].answerText}\n${preview.items[index].analysisMarkdown}`))
+    const editedMarkers = new Set(figureMarkerIds(`${edited.stemMarkdown}\n${edited.answerText}\n${edited.analysisMarkdown}`))
+    if (originalMarkers.size !== editedMarkers.size || [...originalMarkers].some((marker) => !editedMarkers.has(marker))) {
+      throw new RouteError(400, `第 ${index + 1} 题的图片标识符被修改，请保留 OCR 图片标识符后再应用。`)
+    }
+    return edited
+  })
+}
+
+export function applyModelSplitPreview(jobId: string, previewId: string, body?: unknown) {
   const preview = previews.get(previewId)
   if (!preview) throw new RouteError(404, '模型拆题预览已过期，请重新生成。')
   if (preview.importJobId !== jobId) throw new RouteError(404, '模型拆题预览不属于当前导入批次。')
   if (preview.diagnostics.length) throw new RouteError(409, '模型拆题结果存在无法自动修复的结构错误，请重新生成或人工处理。')
+  const edits = editableItemsFromRequest(body, preview)
   const job = requireImportJob(preview.importJobId)
   const documents = importJobRepo.listImportJobDocuments(job.id)
   const committed = documents.some((document) => (sourceRepo.getSourceDocument(document.sourceDocumentId)?.importStats?.committedCount || 0) > 0)
@@ -432,7 +791,12 @@ export function applyModelSplitPreview(jobId: string, previewId: string) {
   const questionDocument = firstDocumentByRole(documents, job.mode === 'single_document' ? 'full' : 'questions')
   if (!questionDocument) throw new RouteError(400, '导入批次缺少原卷资料。')
   const questionSource = requireSourceDocument(questionDocument.sourceDocumentId)
-  const result = saveParsedCandidates(job, questionSource, latestOcrDocumentForSource(questionSource.id).id, preview.candidates)
+  const candidates = preview.candidates.map((candidate, index) => {
+    const edit = edits[index]
+    if (!edit) return candidate
+    return { ...candidate, questionNo: edit.questionNo, stemMarkdown: edit.stemMarkdown, answerText: edit.answerText, analysisMarkdown: edit.analysisMarkdown, updatedAt: nowIso() }
+  })
+  const result = saveParsedCandidates(job, questionSource, latestOcrDocumentForSource(questionSource.id).id, candidates)
   if (job.mode === 'separated_documents') {
     const solutionDocument = firstDocumentByRole(documents, 'solutions')
     if (solutionDocument) {

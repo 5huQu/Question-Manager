@@ -67,6 +67,13 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     title?: string
   } | null>(null)
   const [modelSplitPreview, setModelSplitPreview] = useState<ModelSplitPreview | null>(null)
+  const [modelSplitStream, setModelSplitStream] = useState<{
+    phase: 'idle' | 'connecting' | 'streaming' | 'completed' | 'error'
+    receivedItems: number
+    totalItems?: number
+    totalSegments?: number
+    message: string
+  }>({ phase: 'idle', receivedItems: 0, message: '' })
   const [showModelSplitDialog, setShowModelSplitDialog] = useState(false)
 
   const [uploading, setUploading] = useState(false)
@@ -91,10 +98,13 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
   const candidateListRef = useRef<HTMLDivElement>(null)
   const candidateItemRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const lastRouteSyncKeyRef = useRef('')
+  const modelSplitAbortRef = useRef<AbortController | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const ocrSettings = useAsync(() => settingsApi.getOcrSettings(), [])
   const currentOcrProvider = normalizeSourceOcrProvider(ocrSettings.data?.ocrProvider)
   const currentOcrProviderLabel = sourceOcrProviderLabel(currentOcrProvider)
+
+  useEffect(() => () => modelSplitAbortRef.current?.abort(), [])
 
   // --- Derived state ---
   const selectedOcr = useMemo(() => ocrDocuments.find((item) => item.id === selectedOcrId) || null, [ocrDocuments, selectedOcrId])
@@ -1167,25 +1177,115 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
 
   function openModelSplitDialog() {
     setModelSplitPreview(null)
+    setModelSplitStream({ phase: 'idle', receivedItems: 0, message: '' })
     setShowModelSplitDialog(true)
     setError('')
   }
 
   async function handleStartModelSplit() {
     if (!activeImportJob || !canModelSplit) return
+    modelSplitAbortRef.current?.abort()
+    const controller = new AbortController()
+    modelSplitAbortRef.current = controller
     setBusy(`model-split-${activeImportJob.id}`); setError('')
+    setModelSplitPreview(null)
+    setModelSplitStream({ phase: 'connecting', receivedItems: 0, message: '正在连接模型服务…' })
+    const job = activeImportJob
+    const emptyPreview = (): ModelSplitPreview => ({
+      id: '',
+      importJobId: job.id,
+      mode: job.mode,
+      items: [],
+      diagnostics: [],
+      warnings: [],
+      createdAt: new Date().toISOString(),
+    })
+    let didFinish = false
     try {
-      const preview = await importV2Api.createModelSplitPreview(activeImportJob.id)
-      setModelSplitPreview(preview)
-    } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
-    finally { setBusy('') }
+      await importV2Api.streamModelSplitPreview(job.id, (event) => {
+        if (event.type === 'started') {
+          setModelSplitPreview((current) => ({
+            ...emptyPreview(),
+            mode: event.mode || job.mode,
+            id: current?.id || '',
+            items: current?.items || [],
+            diagnostics: current?.diagnostics || [],
+            warnings: current?.warnings || [],
+          }))
+          setModelSplitStream((current) => ({
+            ...current,
+            phase: 'streaming',
+            totalSegments: event.totalSegments,
+            message: event.message || '模型正在逐题拆分，已完成的题目会立即显示。',
+          }))
+          return
+        }
+        if (event.type === 'item') {
+          if (!event.role || event.role === 'full' || event.role === 'questions') {
+            setModelSplitPreview((current) => {
+              const preview = current || emptyPreview()
+              const items = [...preview.items]
+              const index = Number.isInteger(event.index) && Number(event.index) >= 0 ? Number(event.index) : items.length
+              items[index] = event.item
+              return { ...preview, items: items.filter(Boolean) }
+            })
+          }
+          setModelSplitStream((current) => ({
+            ...current,
+            phase: 'streaming',
+            receivedItems: event.receivedItems ?? Math.max(current.receivedItems + 1, (event.index ?? -1) + 1),
+            totalItems: event.totalItems ?? current.totalItems,
+            message: '模型正在继续识别，你可以先核对已出现的题目。',
+          }))
+          return
+        }
+        if (event.type === 'warning') {
+          setModelSplitPreview((current) => {
+            const preview = current || emptyPreview()
+            return preview.warnings.includes(event.warning) ? preview : { ...preview, warnings: [...preview.warnings, event.warning] }
+          })
+          return
+        }
+        if (event.type === 'done') {
+          didFinish = true
+          setModelSplitPreview(event.preview)
+          setModelSplitStream((current) => ({
+            ...current,
+            phase: 'completed',
+            receivedItems: event.preview.items.length,
+            totalItems: event.preview.items.length,
+            message: '模型拆题完成，可以继续核对并应用结果。',
+          }))
+          return
+        }
+        if (event.type === 'error') throw new Error(event.message || '模型拆题失败。')
+      }, controller.signal)
+      if (!didFinish) throw new Error('模型拆题连接提前结束，请重新生成。')
+    } catch (err) {
+      if (controller.signal.aborted) return
+      const message = err instanceof Error ? err.message : String(err)
+      setError(message)
+      setModelSplitStream((current) => ({ ...current, phase: 'error', message }))
+    }
+    finally {
+      if (modelSplitAbortRef.current === controller) modelSplitAbortRef.current = null
+      setBusy('')
+    }
   }
 
-  async function handleApplyModelSplit() {
+  function handleCloseModelSplitDialog() {
+    if (busy.startsWith('model-split-apply-')) return
+    modelSplitAbortRef.current?.abort()
+    modelSplitAbortRef.current = null
+    setBusy('')
+    setShowModelSplitDialog(false)
+  }
+
+  async function handleApplyModelSplit(items?: Parameters<typeof importV2Api.applyModelSplitPreview>[2]) {
     if (!activeImportJob || !selectedDoc || !modelSplitPreview) return
     setBusy(`model-split-apply-${activeImportJob.id}`); setError('')
     try {
-      await importV2Api.applyModelSplitPreview(activeImportJob.id, modelSplitPreview.id)
+      await importV2Api.applyModelSplitPreview(activeImportJob.id, modelSplitPreview.id, items || modelSplitPreview.items.map(({ questionNo, stemMarkdown, answerText, analysisMarkdown }) => ({ questionNo, stemMarkdown, answerText, analysisMarkdown })))
       setShowModelSplitDialog(false)
       setModelSplitPreview(null)
       await loadCandidatesForSourceDocument(selectedDoc, { showLoadedNotice: false })
@@ -1362,6 +1462,7 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     markdownPreviewTarget,
     setMarkdownPreviewTarget,
     modelSplitPreview,
+    modelSplitStream,
     showModelSplitDialog,
     setShowModelSplitDialog,
     uploading,
@@ -1446,6 +1547,7 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     handleApplyPreviewParserRequest,
     openModelSplitDialog,
     handleStartModelSplit,
+    handleCloseModelSplitDialog,
     handleApplyModelSplit,
     openActiveQuestionMarkdownPreview,
     handleBulkConfirm,

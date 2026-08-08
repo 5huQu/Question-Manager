@@ -123,9 +123,10 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
       {ws.showModelSplitDialog ? (
         <ModelSplitDialog
           preview={ws.modelSplitPreview}
+          stream={ws.modelSplitStream}
           loading={ws.busy === `model-split-${ws.activeImportJob?.id || ''}`}
           applying={ws.busy === `model-split-apply-${ws.activeImportJob?.id || ''}`}
-          onClose={() => { if (!ws.busy) ws.setShowModelSplitDialog(false) }}
+          onClose={ws.handleCloseModelSplitDialog}
           onStart={ws.handleStartModelSplit}
           onApply={ws.handleApplyModelSplit}
         />

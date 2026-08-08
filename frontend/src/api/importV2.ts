@@ -1,4 +1,4 @@
-import { api, jsonHeaders } from './client'
+import { api, apiStream, jsonHeaders } from './client'
 import type { ExportRecord, QuestionItem } from '@/types'
 import type {
   ImportV2ImportJobDocumentRole,
@@ -310,6 +310,74 @@ export type ModelSplitPreview = {
   diagnostics: string[]
   warnings: string[]
   createdAt: string
+}
+
+export type ModelSplitApplyItem = Pick<ModelSplitPreviewItem, 'questionNo' | 'stemMarkdown' | 'answerText' | 'analysisMarkdown'>
+
+export type ModelSplitStreamEvent =
+  | { type: 'started'; mode?: ImportV2ImportJobMode; documents?: Array<{ role: string; totalSegments: number }>; totalSegments?: number; message?: string }
+  | { type: 'item'; role?: string; item: ModelSplitPreviewItem; index?: number; receivedItems?: number; totalItems?: number }
+  | { type: 'warning'; role?: string; warning: string }
+  | { type: 'done'; preview: ModelSplitPreview }
+  | { type: 'error'; message: string }
+
+async function readModelSplitEventStream(response: Response, onEvent: (event: ModelSplitStreamEvent) => void) {
+  if (!response.body) throw new Error('浏览器无法读取模型拆题响应流。')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  function consumeEventBlock(block: string) {
+    let eventName = 'message'
+    const dataLines: string[] = []
+    for (const line of block.split(/\r?\n/)) {
+      if (!line || line.startsWith(':')) continue
+      const colon = line.indexOf(':')
+      const field = colon < 0 ? line : line.slice(0, colon)
+      const value = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '')
+      if (field === 'event') eventName = value
+      if (field === 'data') dataLines.push(value)
+    }
+    if (!dataLines.length) return
+    const rawData = dataLines.join('\n')
+    let data: unknown
+    try { data = JSON.parse(rawData) } catch { throw new Error('模型拆题返回了无法解析的流式数据。') }
+    const payload = data && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : {}
+    const type = eventName === 'message' && typeof payload.type === 'string' ? payload.type : eventName
+    if (type === 'done') {
+      onEvent({ type: 'done', preview: payload as unknown as ModelSplitPreview })
+      return
+    }
+    if (type === 'warning') {
+      onEvent({ type: 'warning', role: typeof payload.role === 'string' ? payload.role : undefined, warning: String(payload.message || payload.warning || '') })
+      return
+    }
+    if (type === 'started') {
+      const documents = Array.isArray(payload.documents) ? payload.documents as Array<{ role: string; totalSegments: number }> : undefined
+      onEvent({
+        ...payload,
+        type: 'started',
+        documents,
+        totalSegments: documents?.reduce((sum, item) => sum + (Number(item.totalSegments) || 0), 0),
+      } as ModelSplitStreamEvent)
+      return
+    }
+    onEvent({ ...payload, type } as ModelSplitStreamEvent)
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n')
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary >= 0) {
+      const block = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+      if (block.trim()) consumeEventBlock(block)
+      boundary = buffer.indexOf('\n\n')
+    }
+    if (done) break
+  }
+  if (buffer.trim()) consumeEventBlock(buffer)
 }
 
 export type ImportV2ImportJob = {
@@ -663,10 +731,23 @@ export const importV2Api = {
       body: JSON.stringify({}),
     })
   },
-  applyModelSplitPreview(importJobId: string, previewId: string) {
+  async streamModelSplitPreview(
+    importJobId: string,
+    onEvent: (event: ModelSplitStreamEvent) => void,
+    signal?: AbortSignal,
+  ) {
+    const response = await apiStream(`/api/import-flow-v2/jobs/${encodeURIComponent(importJobId)}/model-split/stream`, {
+      method: 'POST',
+      headers: { ...jsonHeaders, Accept: 'text/event-stream' },
+      body: JSON.stringify({}),
+      signal,
+    })
+    await readModelSplitEventStream(response, onEvent)
+  },
+  applyModelSplitPreview(importJobId: string, previewId: string, items: ModelSplitApplyItem[]) {
     return api<{ previewId: string; finalCandidates?: ImportV2Candidate[] }>(
       `/api/import-flow-v2/jobs/${encodeURIComponent(importJobId)}/model-split/${encodeURIComponent(previewId)}/apply`,
-      { method: 'POST', headers: jsonHeaders, body: JSON.stringify({}) },
+      { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ items }) },
     )
   },
   listImportJobExportRecords(importJobId: string) {
