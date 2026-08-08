@@ -24,6 +24,7 @@ import {
   resolveImportJobForLegacyRunId,
   resolveImportJobForSourceDocument,
 } from '../../services/import-flow-v2/import-batch.service.js'
+import { applyModelSplitPreview, createModelSplitPreview } from '../../services/import-flow-v2/model-split.service.js'
 import { sendRouteError } from '../errors.js'
 import { API_BASE, routeId } from './common.js'
 
@@ -86,6 +87,16 @@ export function mountImportJobRoutes(app: Express) {
   app.post(`${API_BASE}/jobs/:id/classify`, async (req, res) => {
     try { res.json(await classifyImportJobQuestions(routeId(req))) }
     catch (error) { sendRouteError(res, error) }
+  })
+  app.post(`${API_BASE}/jobs/:id/model-split`, async (req, res) => {
+    try { res.json(await createModelSplitPreview(routeId(req))) }
+    catch (error) { sendRouteError(res, error) }
+  })
+  app.post(`${API_BASE}/jobs/:id/model-split/:runId/apply`, (req, res) => {
+    try {
+      const preview = applyModelSplitPreview(routeId(req), routeId(req, 'runId'))
+      res.json(preview)
+    } catch (error) { sendRouteError(res, error) }
   })
   app.get(`${API_BASE}/jobs/:id/export-records`, (req, res) => {
     try { res.json(assertWithSchema(listImportJobExportRecords(routeId(req), req.query), exportRecordListResponseSchema)) }

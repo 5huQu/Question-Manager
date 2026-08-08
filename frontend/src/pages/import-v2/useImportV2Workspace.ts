@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { importV2Api, type ImportParserPreset, type ImportV2ImportJob, type ImportV2ImportJobDocumentDetail, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics, type ParseCandidatesRequest, type ParseCandidatesResult } from '@/api/importV2'
+import { importV2Api, type ImportParserPreset, type ImportV2ImportJob, type ImportV2ImportJobDocumentDetail, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics, type ParseCandidatesRequest, type ParseCandidatesResult, type ModelSplitPreview } from '@/api/importV2'
 import { settingsApi } from '@/api/settings'
 import { unsupportedImportReason } from '@/utils/importFiles'
 import { type MarkdownPreviewDocumentOption } from '@/components/import-v2/MarkdownStructurePreviewDialog'
@@ -66,6 +66,8 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     focusKind?: 'stem' | 'answer' | 'analysis'
     title?: string
   } | null>(null)
+  const [modelSplitPreview, setModelSplitPreview] = useState<ModelSplitPreview | null>(null)
+  const [showModelSplitDialog, setShowModelSplitDialog] = useState(false)
 
   const [uploading, setUploading] = useState(false)
   const [runningSourceDocumentId, setRunningSourceDocumentId] = useState('')
@@ -148,6 +150,7 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
   const selectedDocIsImportJobSolution = activeImportJob?.mode === 'separated_documents' && selectedImportJobDocument?.role === 'solutions'
   const activeImportJobSolutionReady = !activeImportJobSolutionSource || ['ocr_succeeded', 'parsed', 'partially_parsed'].includes(activeImportJobSolutionSource.status)
   const selectedDocCommittedCount = selectedDoc?.importStats?.committedCount || 0
+  const canModelSplit = Boolean(activeImportJob && selectedDoc && selectedDocCommittedCount === 0 && (selectedDocOcr || activeImportJobQuestionOcr))
   const canReidentifySelectedDoc = Boolean(
     selectedDoc &&
     ['pdf', 'image'].includes(selectedDoc.fileType) &&
@@ -1162,6 +1165,35 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     await handleRecleanCandidates(selectedDoc, { presetId: preset.id }, { skipConfirm: true, label: `已使用预设「${preset.name}」重新生成待核对题目` })
   }
 
+  function openModelSplitDialog() {
+    setModelSplitPreview(null)
+    setShowModelSplitDialog(true)
+    setError('')
+  }
+
+  async function handleStartModelSplit() {
+    if (!activeImportJob || !canModelSplit) return
+    setBusy(`model-split-${activeImportJob.id}`); setError('')
+    try {
+      const preview = await importV2Api.createModelSplitPreview(activeImportJob.id)
+      setModelSplitPreview(preview)
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    finally { setBusy('') }
+  }
+
+  async function handleApplyModelSplit() {
+    if (!activeImportJob || !selectedDoc || !modelSplitPreview) return
+    setBusy(`model-split-apply-${activeImportJob.id}`); setError('')
+    try {
+      await importV2Api.applyModelSplitPreview(activeImportJob.id, modelSplitPreview.id)
+      setShowModelSplitDialog(false)
+      setModelSplitPreview(null)
+      await loadCandidatesForSourceDocument(selectedDoc, { showLoadedNotice: false })
+      showNotice('模型辅助拆题结果已应用，候选题已重新加载。')
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    finally { setBusy('') }
+  }
+
   async function handleApplyPreviewParserRequest(payload: ParseCandidatesRequest) {
     if (!selectedDoc) { setError('请先选择要重解析的资料。'); return }
     const preset = payload.presetId ? parserPresets.find((item) => item.id === payload.presetId) : undefined
@@ -1329,6 +1361,9 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     setSelectedParserPresetId,
     markdownPreviewTarget,
     setMarkdownPreviewTarget,
+    modelSplitPreview,
+    showModelSplitDialog,
+    setShowModelSplitDialog,
     uploading,
     sourceOcrErrors,
     activeTab,
@@ -1364,6 +1399,7 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     activeImportJobQuestionSource,
     activeImportJobSolutionSource,
     selectedDocCommittedCount,
+    canModelSplit,
     canReidentifySelectedDoc,
     canRecleanSelectedDoc,
     currentOcrProviderLabel,
@@ -1408,6 +1444,9 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     openSelectedDocMarkdownPreview,
     handleApplySelectedParserPreset,
     handleApplyPreviewParserRequest,
+    openModelSplitDialog,
+    handleStartModelSplit,
+    handleApplyModelSplit,
     openActiveQuestionMarkdownPreview,
     handleBulkConfirm,
     handleBulkSkip,

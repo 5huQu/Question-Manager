@@ -3,6 +3,7 @@ import { importJobQuestionsPath } from './importV2Routes'
 import { MarkdownStructurePreviewDialog } from '@/components/import-v2/MarkdownStructurePreviewDialog'
 import { ImportMetadataEditorDialog } from '@/components/import-v2/ImportMetadataEditorDialog'
 import { WatermarkCleanupDialog } from '@/components/import-v2/WatermarkCleanupDialog'
+import { ModelSplitDialog } from '@/components/import-v2/ModelSplitDialog'
 import { PageTitle, Button } from '@/components/ui'
 import { useImportV2Workspace } from './useImportV2Workspace'
 import { ReviewHeaderBar } from './components/ReviewHeaderBar'
@@ -116,6 +117,17 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
           canReclean={ws.canRecleanSelectedDoc}
           onClose={() => ws.setShowWatermarkCleanupEditor(false)}
           onSave={ws.handleSaveWatermarkCleanup}
+        />
+      ) : null}
+
+      {ws.showModelSplitDialog ? (
+        <ModelSplitDialog
+          preview={ws.modelSplitPreview}
+          loading={ws.busy === `model-split-${ws.activeImportJob?.id || ''}`}
+          applying={ws.busy === `model-split-apply-${ws.activeImportJob?.id || ''}`}
+          onClose={() => { if (!ws.busy) ws.setShowModelSplitDialog(false) }}
+          onStart={ws.handleStartModelSplit}
+          onApply={ws.handleApplyModelSplit}
         />
       ) : null}
 

@@ -291,6 +291,27 @@ export type ParseCandidatesResult = {
   diagnostics?: OcrFigureDiagnostics
 }
 
+export type ModelSplitPreviewItem = {
+  questionNo: string
+  rawQuestionNo?: string
+  numberRepair?: { reason: string; confidence: number }
+  stemMarkdown: string
+  answerText: string
+  analysisMarkdown: string
+  sourceRefs: Array<{ sourceDocumentId?: string; pageNo: number; blockIds: string[]; kind: string }>
+  issues: Array<{ code: string; severity: 'warning' | 'error'; message: string }>
+}
+
+export type ModelSplitPreview = {
+  id: string
+  importJobId: string
+  mode: ImportV2ImportJobMode
+  items: ModelSplitPreviewItem[]
+  diagnostics: string[]
+  warnings: string[]
+  createdAt: string
+}
+
 export type ImportV2ImportJob = {
   id: string
   title: string
@@ -634,6 +655,19 @@ export const importV2Api = {
       headers: jsonHeaders,
       body: JSON.stringify({}),
     })
+  },
+  createModelSplitPreview(importJobId: string) {
+    return api<ModelSplitPreview>(`/api/import-flow-v2/jobs/${encodeURIComponent(importJobId)}/model-split`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({}),
+    })
+  },
+  applyModelSplitPreview(importJobId: string, previewId: string) {
+    return api<{ previewId: string; finalCandidates?: ImportV2Candidate[] }>(
+      `/api/import-flow-v2/jobs/${encodeURIComponent(importJobId)}/model-split/${encodeURIComponent(previewId)}/apply`,
+      { method: 'POST', headers: jsonHeaders, body: JSON.stringify({}) },
+    )
   },
   listImportJobExportRecords(importJobId: string) {
     return api<{ items: ExportRecord[] }>('/api/import-flow-v2/jobs/' + encodeURIComponent(importJobId) + '/export-records')

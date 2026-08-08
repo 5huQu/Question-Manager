@@ -1,4 +1,4 @@
-import { ChevronLeft, FileText, LoaderCircle, RefreshCcw, PencilLine, Eraser } from 'lucide-react'
+import { ChevronLeft, FileText, LoaderCircle, RefreshCcw, PencilLine, Eraser, WandSparkles } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { ReviewActionMenu } from '@/components/import-v2/ReviewActionMenu'
 import type { ImportV2WorkspaceState } from '../useImportV2Workspace'
@@ -70,6 +70,17 @@ export function ReviewHeaderBar({ ws }: { ws: ImportV2WorkspaceState }) {
         >
           模型识别稿
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          icon={WandSparkles}
+          disabled={Boolean(ws.busy) || !ws.canModelSplit}
+          onClick={ws.openModelSplitDialog}
+          title={ws.selectedDocCommittedCount > 0 ? '该批次已有题目入库，暂不支持模型辅助拆题。' : '调用模型拆分题目并预览结果。'}
+          className="hidden 2xl:inline-flex"
+        >
+          模型辅助拆题
+        </Button>
         <ReviewActionMenu
           label="批次操作"
           actions={[
@@ -79,6 +90,13 @@ export function ReviewHeaderBar({ ws }: { ws: ImportV2WorkspaceState }) {
               icon: FileText,
               disabled: !ws.selectedDocOcr && !ws.selectedOcr,
               onSelect: ws.openSelectedDocMarkdownPreview,
+            },
+            {
+              label: '模型辅助拆题',
+              hint: '先生成预览，确认后替换未入库候选题',
+              icon: WandSparkles,
+              disabled: Boolean(ws.busy) || !ws.canModelSplit,
+              onSelect: ws.openModelSplitDialog,
             },
             {
               label: '编辑批次信息',

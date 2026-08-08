@@ -73,11 +73,11 @@ function normalizeSortOrder(value: unknown) {
   return Math.max(0, Math.floor(numeric))
 }
 
-function firstDocumentByRole(documents: ImportJobDocument[], role: ImportJobDocumentRole) {
+export function firstDocumentByRole(documents: ImportJobDocument[], role: ImportJobDocumentRole) {
   return documents.find((document) => document.role === role)
 }
 
-function latestOcrDocumentForSource(sourceDocumentId: string) {
+export function latestOcrDocumentForSource(sourceDocumentId: string) {
   const [ocrDocument] = ocrRepo.listOcrDocuments({ sourceDocumentId, limit: 1 })
   if (!ocrDocument) throw new RouteError(400, `资料 ${sourceDocumentId} 尚未生成 OCRDocument。`)
   return ocrDocument
@@ -108,7 +108,7 @@ function detachExportRecordsForDeletedImportJob(importJobId: string) {
   }
 }
 
-function metadataForCandidates(importJob: ImportJob, questionSource: SourceDocument) {
+export function metadataForCandidates(importJob: ImportJob, questionSource: SourceDocument) {
   return {
     province: importJob.province || questionSource.province,
     city: importJob.city || questionSource.city,
@@ -128,7 +128,7 @@ function parseBodyMetadata(body: Record<string, unknown>) {
     : undefined
 }
 
-function saveParsedCandidates(
+export function saveParsedCandidates(
   importJob: ImportJob,
   questionSource: SourceDocument,
   questionOcrDocumentId: string,

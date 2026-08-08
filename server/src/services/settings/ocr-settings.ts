@@ -29,6 +29,15 @@ function readOcrEnvValues() {
   return values
 }
 
+export function readAiAssistantConfig() {
+  const values = readOcrEnvValues()
+  return {
+    apiBaseUrl: values.OCR_CLEANUP_API_BASE_URL || 'https://api.deepseek.com',
+    apiKey: process.env.OCR_CLEANUP_API_KEY || values.OCR_CLEANUP_API_KEY || '',
+    model: values.OCR_CLEANUP_MODEL || 'deepseek-v4-flash',
+  }
+}
+
 // Python OCR runners load this file through QUESTION_OCR_ENV_PATH.  The app
 // settings are deliberately stored outside the process environment, so simply
 // inheriting process.env would otherwise make a saved API key invisible to the
