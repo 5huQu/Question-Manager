@@ -315,7 +315,7 @@ export type ModelSplitPreview = {
 export type ModelSplitApplyItem = Pick<ModelSplitPreviewItem, 'questionNo' | 'stemMarkdown' | 'answerText' | 'analysisMarkdown'>
 
 export type ModelSplitStreamEvent =
-  | { type: 'started'; mode?: ImportV2ImportJobMode; documents?: Array<{ role: string; totalSegments: number }>; totalSegments?: number; message?: string }
+  | { type: 'started'; mode?: ImportV2ImportJobMode; documents?: Array<{ role: string; totalLines: number }>; totalLines?: number; message?: string }
   | { type: 'item'; role?: string; item: ModelSplitPreviewItem; index?: number; receivedItems?: number; totalItems?: number }
   | { type: 'warning'; role?: string; warning: string }
   | { type: 'done'; preview: ModelSplitPreview }
@@ -353,12 +353,12 @@ async function readModelSplitEventStream(response: Response, onEvent: (event: Mo
       return
     }
     if (type === 'started') {
-      const documents = Array.isArray(payload.documents) ? payload.documents as Array<{ role: string; totalSegments: number }> : undefined
+      const documents = Array.isArray(payload.documents) ? payload.documents as Array<{ role: string; totalLines: number }> : undefined
       onEvent({
         ...payload,
         type: 'started',
         documents,
-        totalSegments: documents?.reduce((sum, item) => sum + (Number(item.totalSegments) || 0), 0),
+        totalLines: documents?.reduce((sum, item) => sum + (Number(item.totalLines) || 0), 0),
       } as ModelSplitStreamEvent)
       return
     }

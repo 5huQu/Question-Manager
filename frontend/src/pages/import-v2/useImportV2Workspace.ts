@@ -71,7 +71,7 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     phase: 'idle' | 'connecting' | 'streaming' | 'completed' | 'error'
     receivedItems: number
     totalItems?: number
-    totalSegments?: number
+    totalLines?: number
     message: string
   }>({ phase: 'idle', receivedItems: 0, message: '' })
   const [showModelSplitDialog, setShowModelSplitDialog] = useState(false)
@@ -1215,7 +1215,7 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
           setModelSplitStream((current) => ({
             ...current,
             phase: 'streaming',
-            totalSegments: event.totalSegments,
+            totalLines: event.totalLines,
             message: event.message || '模型正在逐题拆分，已完成的题目会立即显示。',
           }))
           return

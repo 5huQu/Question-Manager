@@ -35,6 +35,9 @@ type SplitItem = {
   stem_segment_ids?: unknown
   answer_segment_ids?: unknown
   analysis_segment_ids?: unknown
+  stem_line_ranges?: unknown
+  answer_line_ranges?: unknown
+  analysis_line_ranges?: unknown
 }
 
 type ModelSplitPayload = {
@@ -42,11 +45,12 @@ type ModelSplitPayload = {
   document_role?: unknown
   items?: unknown
   unassigned_segment_ids?: unknown
+  unassigned_line_ranges?: unknown
   warnings?: unknown
 }
 
 export type ModelSplitStreamEvent =
-  | { event: 'started'; data: { mode: ImportJob['mode']; documents: Array<{ role: ModelSplitRole; totalSegments: number }> } }
+  | { event: 'started'; data: { mode: ImportJob['mode']; documents: Array<{ role: ModelSplitRole; totalLines: number }> } }
   | { event: 'item'; data: { role: ModelSplitRole; index: number; item: ModelSplitPreviewItem } }
   | { event: 'warning'; data: { role?: ModelSplitRole; message: string } }
   | { event: 'done'; data: ModelSplitPreview }
@@ -74,7 +78,7 @@ export type ModelSplitPreview = {
 }
 
 const previews = new Map<string, ModelSplitPreview>()
-const MAX_SEGMENT_CHARS = 240_000
+const MAX_MARKDOWN_CHARS = 240_000
 
 const FIXED_SYSTEM_PROMPT = `你是题目结构拆分器，只负责识别题目边界、字段归属和题号元数据。
 
@@ -82,13 +86,15 @@ const FIXED_SYSTEM_PROMPT = `你是题目结构拆分器，只负责识别题目
 1. 改写、润色、翻译或校正 OCR 正文、公式、表格和图片引用。
 2. 推理答案，补写缺失内容，或进行题型、知识点、解题方法、难度分类。
 3. 创建、删除、修改或重排任何图片标识符。
-4. 输出题目正文。正文只能通过输入片段 ID 归属来恢复。
+4. 输出题目正文。正文只能由本地根据你返回的 Markdown 行号范围恢复。
 
-片段归属规则：
-1. 每个片段 ID 在整个 items 数组中最多出现一次，不得把同一片段重复分给多道题。
-2. 同时汇总多道题答案的答案表、跨题说明、页眉页脚等内容，不属于任何单题；必须放入 unassigned_segment_ids，并在 warnings 中简要说明。
-3. answer_segment_ids 只能包含当前单题独有的答案内容；analysis_segment_ids 只能包含当前单题独有的解析内容。
-4. 为便于增量处理，顶层 JSON 必须先输出 schema_version、document_role、items，并按题号顺序逐个输出完整 item；最后再输出 unassigned_segment_ids 和 warnings。
+行号范围规则：
+1. 输入是添加了 L000001 形式行号前缀的完整 Markdown；行号从 1 开始，范围的起止行均包含在内。
+2. 每一行在整个 items 数组中最多归属一次，不得把同一行重复分给多道题或多个字段。
+3. 同时汇总多道题答案的答案表、跨题说明、页眉页脚等内容，不属于任何单题；必须放入 unassigned_line_ranges，并在 warnings 中简要说明。
+4. answer_line_ranges 只能指向当前单题独有的答案内容；analysis_line_ranges 只能指向当前单题独有的解析内容。
+5. 紧邻题干、答案或解析末尾的图片标识符行属于该字段，必须包含在对应范围内。
+6. 为便于增量处理，顶层 JSON 必须先输出 schema_version、document_role、items，并按题号顺序逐个输出完整 item；最后再输出 unassigned_line_ranges 和 warnings。
 
 允许的唯一修复是题号元数据：如果 OCR 题号明显漏字，且前后题号、解析稿或其他上下文提供了充分证据，可以把原始题号归一化为正确题号；必须同时返回 raw_question_no、normalized_question_no、number_repair.reason 和 number_repair.confidence。没有充分证据时不得猜测。
 
@@ -113,7 +119,7 @@ function roleForJobDocument(job: ImportJob, document: ImportJobDocument): ModelS
 
 function segmentsForDocument(document: OCRDocument): SplitSegment[] {
   const source = String(document.markdown || '')
-  if (source.length > MAX_SEGMENT_CHARS) throw new RouteError(413, 'OCR 识别稿过长，当前版本暂不支持一次性模型拆分。')
+  if (source.length > MAX_MARKDOWN_CHARS) throw new RouteError(413, 'OCR Markdown 过长，当前版本暂不支持一次性模型拆分。')
   const lines = source.match(/[^\n]*(?:\n|$)/g) || []
   const segments: SplitSegment[] = []
   let offset = 0
@@ -157,28 +163,33 @@ function extractDeltaContent(body: any) {
 }
 
 function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: boolean) {
+  const numberedMarkdown = segments.map((segment, index) => {
+    const line = segment.text.endsWith('\n') ? segment.text.slice(0, -1) : segment.text
+    return `L${String(index + 1).padStart(6, '0')}\t${line}`
+  }).join('\n')
   const payload = {
     document_role: role,
     instructions: role === 'solutions'
-      ? '这是答案解析文档。只把片段分配到 answer_segment_ids 或 analysis_segment_ids。不要生成 stem。'
+      ? '这是答案解析文档。只返回 answer_line_ranges 或 analysis_line_ranges，不要生成题干范围。'
       : role === 'questions'
-        ? '这是原卷文档。只把片段分配到 stem_segment_ids。不要生成答案或解析。'
-        : '这是同一份原卷与答案解析文档。按题号把片段分配到题干、答案或解析。',
+        ? '这是原卷文档。只返回 stem_line_ranges，不要生成答案或解析范围。'
+        : '这是同一份原卷与答案解析文档。按题号返回题干、答案和解析在完整 Markdown 中的行号范围。',
+    line_numbering: '1-based, inclusive; L000001 means line 1',
     output_schema: {
-      schema_version: 'model-split-v1',
+      schema_version: 'model-split-line-ranges-v1',
       items: [{
         question_no: 'string',
         raw_question_no: 'string',
         normalized_question_no: 'string',
         number_repair: { applied: 'boolean', reason: 'string', confidence: 'number 0..1' },
-        stem_segment_ids: 'string[]',
-        answer_segment_ids: 'string[]',
-        analysis_segment_ids: 'string[]',
+        stem_line_ranges: 'Array<[start_line, end_line]>',
+        answer_line_ranges: 'Array<[start_line, end_line]>',
+        analysis_line_ranges: 'Array<[start_line, end_line]>',
       }],
-      unassigned_segment_ids: 'string[]',
+      unassigned_line_ranges: 'Array<[start_line, end_line]>',
       warnings: 'string[]',
     },
-    segments: segments.map(({ id, text, pageNo, blockIds }) => ({ id, text, pageNo, blockIds })),
+    numbered_markdown: numberedMarkdown,
   }
   return {
     model: readAiAssistantConfig().model,
@@ -366,6 +377,68 @@ function stringList(value: unknown) {
   return Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : []
 }
 
+function lineRanges(value: unknown): Array<[number, number]> {
+  if (!Array.isArray(value)) return []
+  const source = value.length === 2 && value.every((entry) => Number.isFinite(Number(entry))) ? [value] : value
+  return source.flatMap((entry) => {
+    if (Array.isArray(entry) && entry.length >= 2) {
+      const start = Number.parseInt(String(entry[0]), 10)
+      const end = Number.parseInt(String(entry[1]), 10)
+      return Number.isFinite(start) && Number.isFinite(end) ? [[start, end] as [number, number]] : []
+    }
+    if (entry && typeof entry === 'object') {
+      const record = entry as Record<string, unknown>
+      const start = Number.parseInt(String(record.start_line ?? record.start ?? ''), 10)
+      const end = Number.parseInt(String(record.end_line ?? record.end ?? ''), 10)
+      return Number.isFinite(start) && Number.isFinite(end) ? [[start, end] as [number, number]] : []
+    }
+    return []
+  })
+}
+
+function segmentIdsForRanges(value: unknown, segments: SplitSegment[]) {
+  const ids: string[] = []
+  for (const [start, end] of lineRanges(value)) {
+    if (start < 1 || end < start || end > segments.length) {
+      ids.push(`invalid_line_range_${start}_${end}`)
+      continue
+    }
+    for (let line = start; line <= end; line += 1) ids.push(segments[line - 1].id)
+  }
+  return [...new Set(ids)]
+}
+
+function materializeLineRangeItem(item: SplitItem, segments: SplitSegment[]): SplitItem {
+  return {
+    ...item,
+    stem_segment_ids: item.stem_line_ranges === undefined ? item.stem_segment_ids : segmentIdsForRanges(item.stem_line_ranges, segments),
+    answer_segment_ids: item.answer_line_ranges === undefined ? item.answer_segment_ids : segmentIdsForRanges(item.answer_line_ranges, segments),
+    analysis_segment_ids: item.analysis_line_ranges === undefined ? item.analysis_segment_ids : segmentIdsForRanges(item.analysis_line_ranges, segments),
+  }
+}
+
+function attachAdjacentFigureMarkers(items: SplitItem[], segments: SplitSegment[]) {
+  const byId = new Map(segments.map((segment, index) => [segment.id, index]))
+  const assigned = new Set(items.flatMap((item) => SEGMENT_FIELDS.flatMap((field) => stringList(item[field]))))
+  for (const item of items) {
+    for (const field of SEGMENT_FIELDS) {
+      const ids = stringList(item[field])
+      const indexes = ids.map((id) => byId.get(id)).filter((index): index is number => index !== undefined)
+      if (!indexes.length) continue
+      let cursor = Math.max(...indexes) + 1
+      while (cursor < segments.length && !segments[cursor].text.trim()) cursor += 1
+      while (cursor < segments.length && figureMarkerIds(segments[cursor].text).length > 0 && !assigned.has(segments[cursor].id)) {
+        ids.push(segments[cursor].id)
+        assigned.add(segments[cursor].id)
+        cursor += 1
+        while (cursor < segments.length && !segments[cursor].text.trim()) cursor += 1
+      }
+      item[field] = ids
+    }
+  }
+  return items
+}
+
 const SEGMENT_FIELDS = ['stem_segment_ids', 'answer_segment_ids', 'analysis_segment_ids'] as const
 
 function sanitizeSharedAggregateSegments(items: SplitItem[]) {
@@ -490,7 +563,7 @@ function candidateFromModelItem(
     status: 'needs_review',
     issues,
     parseDiagnostics: repair ? [{ code: 'model_repaired_question_no', severity: repair.confidence >= 0.8 ? 'info' : 'warning', questionNo, message: `模型根据上下文将 OCR 题号「${rawQuestionNo}」修复为「${questionNo}」：${repair.reason}` }] : [],
-    parserConfigSnapshot: { source: 'model-assisted-split-v1', rawQuestionNo: rawQuestionNo || undefined, numberRepair: repair || undefined },
+    parserConfigSnapshot: { source: 'model-assisted-line-range-split-v1', rawQuestionNo: rawQuestionNo || undefined, numberRepair: repair || undefined },
     createdAt: timestamp,
     updatedAt: timestamp,
   }
@@ -529,7 +602,7 @@ function mergeSeparatedCandidates(questionCandidates: QuestionCandidate[], solut
 async function splitDocument(role: ModelSplitRole, document: OCRDocument, metadata: ReturnType<typeof normalizeImportMetadata>) {
   const segments = segmentsForDocument(document)
   const result = await callModel(role, segments)
-  const sanitized = sanitizeSharedAggregateSegments(Array.isArray(result.items) ? result.items as SplitItem[] : [])
+  const sanitized = sanitizeSharedAggregateSegments(attachAdjacentFigureMarkers((Array.isArray(result.items) ? result.items as SplitItem[] : []).map((item) => materializeLineRangeItem(item, segments)), segments))
   const items = sanitized.items
   if (!items.length) throw new RouteError(502, '拆题模型没有返回题目。')
   const used = new Set<string>()
@@ -579,13 +652,14 @@ async function splitDocumentStream(
   const candidates: QuestionCandidate[] = []
   const itemPreviews: ModelSplitPreviewItem[] = []
   const result = await callModelStream(role, segments, (item) => {
-    const built = candidateFromModelItem(item, role, document, segments, metadata, used, diagnostics)
+    const materialized = attachAdjacentFigureMarkers([materializeLineRangeItem(item, segments)], segments)[0]
+    const built = candidateFromModelItem(materialized, role, document, segments, metadata, used, diagnostics)
     const index = itemPreviews.length
     candidates.push(built.candidate)
     itemPreviews.push(built.preview)
     onItem(index, built.preview)
   }, signal)
-  const sanitized = sanitizeSharedAggregateSegments(Array.isArray(result.items) ? result.items as SplitItem[] : [])
+  const sanitized = sanitizeSharedAggregateSegments(attachAdjacentFigureMarkers((Array.isArray(result.items) ? result.items as SplitItem[] : []).map((item) => materializeLineRangeItem(item, segments)), segments))
   if (!sanitized.items.length) throw new RouteError(502, '拆题模型没有返回题目。')
   const finalUsed = new Set<string>()
   const finalDiagnostics: string[] = []
@@ -646,7 +720,7 @@ export async function createModelSplitPreviewStream(jobId: string, emit: (event:
   const metadata = metadataForCandidates(job, questionSource)
 
   if (job.mode === 'single_document') {
-    emit({ event: 'started', data: { mode: job.mode, documents: [{ role: questionRole, totalSegments: questionSegments.length }] } })
+    emit({ event: 'started', data: { mode: job.mode, documents: [{ role: questionRole, totalLines: questionSegments.length }] } })
     const result = await splitDocumentStream(questionRole, questionOcr, questionSegments, metadata, (index, item) => {
       emit({ event: 'item', data: { role: questionRole, index, item } })
     }, signal)
@@ -667,8 +741,8 @@ export async function createModelSplitPreviewStream(jobId: string, emit: (event:
     data: {
       mode: job.mode,
       documents: [
-        { role: questionRole, totalSegments: questionSegments.length },
-        { role: 'solutions', totalSegments: solutionSegments.length },
+        { role: questionRole, totalLines: questionSegments.length },
+        { role: 'solutions', totalLines: solutionSegments.length },
       ],
     },
   })

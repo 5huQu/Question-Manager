@@ -45,7 +45,7 @@ export function ModelSplitDialog({
     phase: 'idle' | 'connecting' | 'streaming' | 'completed' | 'error'
     receivedItems: number
     totalItems?: number
-    totalSegments?: number
+    totalLines?: number
     message: string
   }
   loading: boolean
@@ -151,7 +151,7 @@ export function ModelSplitDialog({
       {!preview && !loading ? (
         <div className="question-edit-glass-inner rounded-xl p-5 text-sm text-zinc-600 dark:text-zinc-300">生成结果会先进入预览，不会立即替换当前候选题。双文档批次会并行处理原卷和解析稿，再按题号合并。</div>
       ) : null}
-      {loading && !draftItems.length ? <div className="question-edit-glass-inner flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl text-sm text-zinc-500"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /><span>{stream.message || '正在调用模型并等待第一道完整题目…'}</span>{stream.totalSegments ? <span className="text-[11px] text-zinc-400">正在分析 {stream.totalSegments} 个 OCR 片段</span> : null}</div> : null}
+      {loading && !draftItems.length ? <div className="question-edit-glass-inner flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl text-sm text-zinc-500"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /><span>{stream.message || '正在调用模型并等待第一道完整题目…'}</span>{stream.totalLines ? <span className="text-[11px] text-zinc-400">正在分析 {stream.totalLines} 行 OCR Markdown</span> : null}</div> : null}
       {stream.phase === 'error' && !draftItems.length ? <div className="question-edit-glass-inner flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl px-6 text-center"><CircleAlert className="size-5 text-red-500" /><span className="text-sm font-medium text-red-700 dark:text-red-300">模型拆题未完成</span><span className="max-w-xl text-xs leading-5 text-zinc-500">{stream.message}</span></div> : null}
       {preview && draftItems.length ? (
         <div className="flex h-full min-h-0 flex-col gap-3">
