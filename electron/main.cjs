@@ -134,6 +134,20 @@ function secureWebContents(contents, appUrl) {
     }
     return { action: 'deny' }
   })
+  // Windows 主窗口会按高 DPI 进行显示补偿；打印页不能继承该补偿，
+  // 否则 A4 的 CSS 毫米尺寸会跟随屏幕缩放参与打印排版。
+  contents.on('did-create-window', (childWindow, details) => {
+    let isTeachingDocumentPrintPage = false
+    try {
+      const target = new URL(details.url)
+      const app = new URL(appUrl)
+      isTeachingDocumentPrintPage = target.origin === app.origin
+        && target.pathname === '/print/teaching-document'
+    } catch {
+      return
+    }
+    if (isTeachingDocumentPrintPage) childWindow.webContents.setZoomFactor(1)
+  })
 }
 
 async function createWindow() {
@@ -325,6 +339,9 @@ ipcMain.handle('pdf-export:start', async (event, options) => {
           additionalArguments: [`--api-base-url=${appOrigin}`],
         },
       })
+      // 隐藏 PDF 导出窗口同样固定为原始比例，不能依赖 BrowserWindow 的默认
+      // zoom 行为或未来的窗口继承策略。
+      printWindow.webContents.setZoomFactor(1)
       // 隐藏打印窗口同样应用现有安全策略（导航拦截 + window.open 管控）。
       secureWebContents(printWindow.webContents, appOrigin)
       return printWindow

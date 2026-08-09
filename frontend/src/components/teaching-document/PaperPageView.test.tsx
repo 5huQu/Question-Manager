@@ -6,6 +6,7 @@ import { PaperPageView } from './PaperPageView'
 import {
   createDefaultPrintLayout,
   DEFAULT_A4_PAPER,
+  effectivePaperMetrics,
   TEACHING_DOM,
   type PaginatedPage,
   type QuestionFragmentPaginationItem,
@@ -165,6 +166,15 @@ describe('PaperPageView（纸张预览与打印页共享 renderer）', () => {
     expect(content?.style.flex).toBe('1 1 0px')
     expect(content?.style.minHeight).toBe('0px')
     expect(footer?.style.height).toBe('10mm')
+  })
+
+  it('uses the paper content height instead of the browser viewport for figures', () => {
+    const html = renderPage(makePage(0, [wholeQuestionItem()]), () => question)
+    const root = document.createElement('div')
+    root.innerHTML = html
+    const page = root.querySelector<HTMLElement>(`[${TEACHING_DOM.paperPage}]`)
+    expect(page?.style.getPropertyValue('--td-paper-content-height'))
+      .toBe(`${effectivePaperMetrics(printLayout).contentHeightPx}px`)
   })
 
   it('renders a stable placeholder when the question resolver fails（whole-block path）', () => {

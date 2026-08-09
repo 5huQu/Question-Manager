@@ -102,6 +102,22 @@ export function teachingTypographyCssVars(style?: TeachingDocumentStyle): Record
   return vars
 }
 
+/**
+ * 影响分页的文档级排版变量。展示预览、隐藏测量树和独立打印页必须使用同一份值，
+ * 否则“题目间距”会只在编辑页生效，造成所见与打印分页不同。
+ */
+export function teachingDocumentLayoutCssVars(style?: TeachingDocumentStyle): Record<string, string> {
+  const questionSpacing = style?.questionSpacing || 'compact'
+  return {
+    ...teachingTypographyCssVars(style),
+    '--td-question-gap': {
+      compact: '6px',
+      normal: '12px',
+      relaxed: '18px',
+    }[questionSpacing],
+  }
+}
+
 /** 由字体 id 查 CSS font-family 栈；未知 id 返回 undefined，渲染端回退默认字体。 */
 export function fontStackById(id: string | undefined): string | undefined {
   if (!id) return undefined
@@ -205,7 +221,9 @@ export function lectureFontFaceCss(
   const face = (family: string, option: LectureFontOption, range: string) => {
     if (!option.localNames?.length) return ''
     const sources = option.localNames.map((name) => `local("${name.replaceAll('"', '\\"')}")`).join(', ')
-    return `@font-face{font-family:"${family}";src:${sources};unicode-range:${range};font-display:swap;}`
+    // 打印前会等待 document.fonts.ready。使用 block 可避免 Windows 上先按回退字
+    // 体测量、随后切换本机字体而导致分页快照失效。
+    return `@font-face{font-family:"${family}";src:${sources};unicode-range:${range};font-display:block;}`
   }
   return [
     face('td-body-latin', bodyLatin, LATIN_UNICODE_RANGE),

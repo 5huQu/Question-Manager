@@ -17,7 +17,7 @@ import type { ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import { TEACHING_DOM } from '@/utils/teachingDocument'
 import { headingLabelByBlockId } from '@/utils/teachingDocument'
 import { BlockRenderer, type FigureResolution, type QuestionResolution, type TeachingDocumentResolvers } from './blocks/BlockRenderer'
-import { teachingTypographyCssVars } from '@/utils/teachingDocument/lectureFonts'
+import { teachingDocumentLayoutCssVars } from '@/utils/teachingDocument/lectureFonts'
 import 'katex/dist/katex.min.css'
 
 export interface TeachingDocumentRendererProps {
@@ -58,7 +58,7 @@ export function TeachingDocumentFrame({
   return (
     <article
       className={`td-document ${surfaceClass} text-zinc-900 dark:text-zinc-100 ${className}`}
-      style={teachingTypographyCssVars(document.style) as CSSProperties}
+      style={teachingDocumentLayoutCssVars(document.style) as CSSProperties}
       data-document-version={document.version}
       data-document-type={document.documentType}
       {...{

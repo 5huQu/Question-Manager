@@ -3,6 +3,7 @@ import {
   lectureFontCssVars,
   resolveDocumentFonts,
   resolveHeadingStyle,
+  teachingDocumentLayoutCssVars,
   teachingTypographyCssVars,
   typographyPresetForDocumentType,
   typographyStyleForPreset,
@@ -47,5 +48,10 @@ describe('lecture font resolution', () => {
     expect(vars['--td-question-size']).toBe('16px')
     expect(vars['--td-question-color']).toBe('#2563eb')
     expect(vars['--td-question-style']).toBe('italic')
+  })
+
+  it('shares question spacing with the print layout', () => {
+    expect(teachingDocumentLayoutCssVars({ questionSpacing: 'normal' })['--td-question-gap']).toBe('12px')
+    expect(teachingDocumentLayoutCssVars({ questionSpacing: 'relaxed' })['--td-question-gap']).toBe('18px')
   })
 })

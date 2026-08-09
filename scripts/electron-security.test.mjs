@@ -29,6 +29,7 @@ const htmlSource = fs.readFileSync(path.join(projectRoot, 'frontend/index.html')
 assert.match(mainSource, /sandbox:\s*true/)
 assert.match(mainSource, /\.on\(['"]will-navigate['"]/)
 assert.match(mainSource, /\.setWindowOpenHandler\(/)
+assert.match(mainSource, /\.on\(['"]did-create-window['"]/)
 assert.match(htmlSource, /Content-Security-Policy/)
 assert.match(htmlSource, /object-src 'none'/)
 
@@ -169,6 +170,10 @@ assert.match(lifecycleSource, /buildPrintUrl\(deps\.appOrigin, options\.document
 assert.match(mainSource, /event\.sender\.id !== mainWindow\.webContents\.id/)
 // 隐藏打印窗口应用现有 secureWebContents 安全策略。
 assert.match(mainSource, /secureWebContents\(printWindow\.webContents, appOrigin\)/)
+// 高 DPI 主窗口可保留显示补偿；所有教学文档打印窗口必须明确回到原始比例。
+assert.match(mainSource, /target\.pathname === '\/print\/teaching-document'/)
+assert.match(mainSource, /childWindow\.webContents\.setZoomFactor\(1\)/)
+assert.match(mainSource, /printWindow\.webContents\.setZoomFactor\(1\)/)
 // load 与 ready 等待绑定：readyPromise 挂载兑底 rejection 处理，避免未处理异常。
 assert.match(lifecycleSource, /readyPromise\.catch\(\(\) => \{\}\)/)
 // 并发锁在打开保存对话框之前生效。
