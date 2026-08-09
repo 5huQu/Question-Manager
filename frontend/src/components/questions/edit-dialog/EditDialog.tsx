@@ -249,6 +249,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
                 <QuestionFigureManager
                   question={draft as QuestionItem}
                   onFiguresChange={(figures) => { setDraft((current) => ({ ...current, figures })); onFiguresChanged?.(figures) }}
+                  onQuestionChange={(question) => { updateDraft(question); onFiguresChanged?.(question.figures) }}
                   surface="glass"
                 />
               ) : mode === 'form' ? (

@@ -337,6 +337,21 @@ export function bindFiguresToMarkers(id: string, body: Record<string, unknown>) 
   return { figures: repo.getQuestion(id)?.figures || nextFigures }
 }
 
+export function removeUnboundFigurePlaceholders(id: string) {
+  const item = repo.getQuestion(id)
+  if (!item) throw new RouteError(404, '题目不存在。')
+  const content = {
+    stem: removeUnboundOcrPlaceholders(item.stemMarkdown),
+    answer: removeUnboundOcrPlaceholders(item.answerText),
+    analysis: removeUnboundOcrPlaceholders(item.analysisMarkdown),
+  }
+  if (content.stem === item.stemMarkdown && content.answer === item.answerText && content.analysis === item.analysisMarkdown) {
+    throw new RouteError(400, '当前题目没有可移除的未绑定图片占位符。')
+  }
+  persistExplicitFigureBindings(id, item, item.figures, content)
+  return repo.getQuestion(id)!
+}
+
 type FigureBindingContent = { stem: string; answer: string; analysis: string }
 
 function inlineBoundMarkerIds(content: FigureBindingContent) {
@@ -365,8 +380,27 @@ function bindMarkerInContent(item: { stemMarkdown: string; answerText: string; a
   return { content, blockId: markerId, usage: field }
 }
 
+function removeUnboundOcrPlaceholders(value: string) {
+  return String(value || '')
+    .replace(/\s*<!--\s*OCR_IMAGE_REFERENCE:(?:stem|answer|analysis):\d+\s*-->\s*(?:>\s*⚠️\s*缺少可绑定的(?:题干|答案|解析)图（引用\s*\d+\/\d+）\s*)?/gi, '\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 function persistExplicitFigureBindings(id: string, item: NonNullable<ReturnType<typeof repo.getQuestion>>, figures: Array<Record<string, any>>, content: FigureBindingContent) {
   const formatIssues = validateQuestionMarkdown({ problem_text: content.stem, answer: content.answer, analysis: content.analysis })
+  const labels: Record<keyof FigureBindingContent, string> = { stem: '题干', answer: '答案', analysis: '解析' }
+  const fields: Record<keyof FigureBindingContent, string> = { stem: 'problem_text', answer: 'answer', analysis: 'analysis' }
+  for (const key of Object.keys(content) as Array<keyof FigureBindingContent>) {
+    const references = Array.from(String(content[key] || '').matchAll(/<!--\s*OCR_IMAGE_REFERENCE:(stem|answer|analysis):\d+\s*-->/gi), (match) => match[0])
+    if (!references.length) continue
+    formatIssues.push({
+      field: fields[key],
+      code: 'unresolved_ocr_image_reference',
+      message: `仍有 ${references.length} 个未绑定的${labels[key]}图片标签。`,
+      snippet: references.join('\n'),
+    })
+  }
   const requiresFormatReview = Boolean(formatIssues.length)
   const formatReviewJson = requiresFormatReview ? JSON.stringify(formatReviewPayload(formatIssues, nowIso())) : '{}'
   repo.updateQuestionAfterFigureBinding(id, [

@@ -4,6 +4,7 @@ import { keymap } from '@codemirror/view'
 import { Check, ChevronRight, Clipboard, Code2, ImagePlus, Link2, LoaderCircle, Plus, Trash2, WandSparkles, X } from 'lucide-react'
 import { questionBankApi } from '@/api/questionBank'
 import { Button, Empty } from '@/components/ui'
+import { Modal } from '@/components/dialogs/Modal'
 import type { QuestionFigure, QuestionItem } from '@/types'
 import { assetUrl, choiceLabelsForQuestion, figureCaption } from '@/utils/questionDisplay'
 import { FigureUploadDialog } from './FigureDialogs'
@@ -166,11 +167,13 @@ function TikzComposer({
 export function QuestionFigureManager({
   question,
   onFiguresChange,
+  onQuestionChange,
   onClose,
   surface = 'solid',
 }: {
   question: QuestionItem
   onFiguresChange?: (figures: QuestionFigure[]) => void
+  onQuestionChange?: (question: QuestionItem) => void
   onClose?: () => void
   surface?: FigureManagerSurface
 }) {
@@ -185,7 +188,7 @@ export function QuestionFigureManager({
   const [tikzFigure, setTikzFigure] = useState<QuestionFigure | undefined>()
   const [uploadOpen, setUploadOpen] = useState(false)
   const [bindingMarkerId, setBindingMarkerId] = useState('')
-  const [autoBindingPreview, setAutoBindingPreview] = useState(false)
+  const [autoBindingDialogOpen, setAutoBindingDialogOpen] = useState(false)
   const [copyNotice, setCopyNotice] = useState('')
 
   useEffect(() => {
@@ -252,8 +255,22 @@ export function QuestionFigureManager({
     try {
       const result = await questionBankApi.bindFiguresToMarkers(question.id, automaticBindings.map(({ figure, marker }) => ({ figureId: String(figure.id), markerId: marker.id })))
       commit(result.figures)
-      setAutoBindingPreview(false)
+      setAutoBindingDialogOpen(false)
       setCopyNotice(`已按题干、答案、解析的顺序确认绑定 ${automaticBindings.length} 张图片。`)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } finally { setBusy(false) }
+  }
+
+  const removeUnboundPlaceholders = async () => {
+    const placeholderCount = unboundMarkers.filter((marker) => marker.kind === 'ocr').length
+    if (!placeholderCount) { setCopyNotice('当前题目没有可移除的未绑定图片占位符。'); return }
+    if (!window.confirm(`移除全部 ${placeholderCount} 个未绑定图片占位符及其缺图提示？已绑定的图片不会受影响。`)) return
+    setBusy(true); setError('')
+    try {
+      const updated = await questionBankApi.removeUnboundFigurePlaceholders(question.id)
+      commit(updated.figures)
+      onQuestionChange?.(updated)
+      setAutoBindingDialogOpen(false)
+      setCopyNotice(`已移除 ${placeholderCount} 个未绑定图片占位符。`)
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } finally { setBusy(false) }
   }
 
@@ -277,7 +294,7 @@ export function QuestionFigureManager({
     <section className={`${surface === 'glass' ? 'question-edit-glass-inner' : 'flex overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950'} flex min-h-[520px] min-w-0 flex-col motion-safe:transition-[opacity,transform] motion-safe:duration-200`}>
       <header className={`${surface === 'glass' ? 'question-edit-glass-inner-header' : 'border-b border-zinc-100 bg-zinc-50/60 dark:border-zinc-900 dark:bg-zinc-900/20'} flex flex-wrap items-center justify-between gap-3 px-4 py-3`}>
         <div><h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">题图管理</h3><p className="mt-0.5 text-xs text-zinc-500">维护题干、解析和选项图片；资源独立保存，不依赖原始 PDF。</p></div>
-        <div className="flex items-center gap-2"><Button size="sm" variant="outline" icon={WandSparkles} disabled={busy || !figures.length} onClick={() => setAutoBindingPreview(true)}>自动匹配标签</Button><Button size="sm" variant="outline" icon={ImagePlus} disabled={busy} onClick={() => setUploadOpen(true)}>上传图片</Button><Button size="sm" icon={Plus} disabled={busy} onClick={() => setTikzOpen(true)}>新建 TikZ</Button>{onClose ? <Button size="sm" variant="outline" icon={X} onClick={onClose}>关闭</Button> : null}</div>
+        <div className="flex flex-wrap items-center justify-end gap-2"><Button size="sm" variant="outline" icon={WandSparkles} disabled={busy || !figures.length} onClick={() => setAutoBindingDialogOpen(true)}>自动匹配标签</Button><Button size="sm" variant="outline" icon={X} disabled={busy || !unboundMarkers.some((marker) => marker.kind === 'ocr')} onClick={() => void removeUnboundPlaceholders()}>移除未绑定占位符</Button><Button size="sm" variant="outline" icon={ImagePlus} disabled={busy} onClick={() => setUploadOpen(true)}>上传图片</Button><Button size="sm" icon={Plus} disabled={busy} onClick={() => setTikzOpen(true)}>新建 TikZ</Button>{onClose ? <Button size="sm" variant="outline" icon={X} onClick={onClose}>关闭</Button> : null}</div>
       </header>
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(9rem,0.8fr)_minmax(0,1.7fr)] divide-x divide-zinc-200/70 dark:divide-zinc-800/70">
         <aside className={`${surface === 'glass' ? 'question-edit-glass-aside' : 'bg-zinc-50/35 dark:bg-zinc-900/15'} min-h-0 overflow-y-auto p-2`}>
@@ -300,14 +317,6 @@ export function QuestionFigureManager({
               <p className="mt-1 leading-5 text-zinc-500">复制图标签后，在“直观修改”中切换到 Markdown 源码，将它粘贴到图片应出现的位置。</p>
               <button type="button" onClick={() => void copyMarker(selected, figures.indexOf(selected))} className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 font-medium text-zinc-700 transition-colors hover:bg-zinc-100 active:scale-[0.98] dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"><Clipboard className="size-3.5" />图 {figures.indexOf(selected) + 1} · 复制图片标签</button>
             </div>
-            {autoBindingPreview ? <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900/30">
-              {automaticBindings.length ? <><p className="font-medium text-zinc-800 dark:text-zinc-100">请确认自动匹配</p>
-                <p className="mt-1 leading-5 text-zinc-500">已按题干、答案、解析中标签出现的顺序，依次匹配尚未绑定的题图；确认后会同步图片用途到目标字段。</p>
-                <div className="mt-2 space-y-1.5">{automaticBindings.map(({ figure, marker }) => <div key={`${figure.id}-${marker.id}`} className="flex items-center gap-2 rounded border border-zinc-200 bg-white px-2 py-1.5 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"><span className="shrink-0 font-medium">图 {figures.indexOf(figure) + 1} · {usageLabel(String(figure.usage || 'stem'))}</span><ChevronRight className="size-3.5 shrink-0 text-zinc-400" /><span className="min-w-0 truncate">{marker.label} · {marker.id}</span></div>)}</div>
-                {unboundMarkers.length !== unboundFigures.length ? <p className="mt-2 text-amber-800/80 dark:text-amber-300/80">发现 {unboundMarkers.length} 个标签、{unboundFigures.length} 张未绑定题图；本次只匹配前 {automaticBindings.length} 项，其余请手动处理。</p> : null}
-                <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => setAutoBindingPreview(false)}>取消</Button><Button size="sm" icon={busy ? LoaderCircle : Check} disabled={busy} onClick={() => void confirmAutomaticBindings()}>{busy ? '绑定中' : `确认绑定 ${automaticBindings.length} 项`}</Button></div>
-              </> : <><p className="font-medium text-zinc-800 dark:text-zinc-100">没有可自动匹配的标签</p><p className="mt-1 leading-5 text-zinc-500">已解析题干、答案和解析：当前有 {unboundMarkers.length} 个未绑定标签、{unboundFigures.length} 张未绑定题图。请确认文本中已保留图片标签，或使用下方手动绑定。</p><div className="mt-3 flex justify-end"><Button size="sm" variant="outline" onClick={() => setAutoBindingPreview(false)}>知道了</Button></div></>}
-            </div> : null}
             {unboundMarkers.length ? <div className="rounded-lg border border-amber-200 bg-amber-50/45 p-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
               <p className="font-medium">手动绑定现有图片标签</p>
               <p className="mt-1 leading-5 text-amber-800/80 dark:text-amber-300/80">这个题目的文本中有未绑定标签。选择一项后，将当前图片明确绑定到它；不会移动或改写其他图片。</p>
@@ -320,6 +329,9 @@ export function QuestionFigureManager({
         </div>
       </div>
       {uploadOpen ? <FigureUploadDialog question={question} optionLabels={optionLabels} usageOptions={[{ value: 'stem', label: '题干图' }, { value: 'analysis', label: '解析图' }, ...(optionLabels.length ? [{ value: 'options', label: '选项图' }] : [])]} onClose={() => setUploadOpen(false)} onUploaded={(figure) => { const next = [...figures, figure]; commit(next); setSelectedId(String(figure.id || '')); setCopyNotice(`图 ${next.length} 已上传。复制图片标签并粘贴到文本即可确定位置。`) }} /> : null}
+      {autoBindingDialogOpen ? <Modal title="自动匹配结果" desc="按题干、答案、解析中标签出现的顺序匹配；确认后会在原位置插入图片，并同步图片用途。" onClose={() => setAutoBindingDialogOpen(false)} footer={<div className="flex justify-end gap-2 border-t border-zinc-100 px-4 py-3 dark:border-zinc-800"><Button size="sm" variant="outline" onClick={() => setAutoBindingDialogOpen(false)}>取消</Button>{automaticBindings.length ? <Button size="sm" icon={busy ? LoaderCircle : Check} disabled={busy} onClick={() => void confirmAutomaticBindings()}>{busy ? '绑定中' : `确认绑定 ${automaticBindings.length} 项`}</Button> : null}</div>}>
+        {automaticBindings.length ? <div className="space-y-3 text-xs"><div className="space-y-1.5">{automaticBindings.map(({ figure, marker }) => <div key={`${figure.id}-${marker.id}`} className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-200"><span className="shrink-0 font-medium">图 {figures.indexOf(figure) + 1} · {usageLabel(String(figure.usage || 'stem'))}</span><ChevronRight className="size-3.5 shrink-0 text-zinc-400" /><span className="min-w-0 truncate">{marker.label} · {marker.id}</span></div>)}</div>{unboundMarkers.length !== unboundFigures.length ? <p className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 leading-5 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">发现 {unboundMarkers.length} 个标签、{unboundFigures.length} 张未绑定题图；本次只匹配前 {automaticBindings.length} 项。剩余项可上传图片后继续匹配，或移除未绑定占位符。</p> : null}</div> : <div className="text-sm leading-6 text-zinc-600 dark:text-zinc-300">没有可自动匹配的组合。当前有 {unboundMarkers.length} 个未绑定标签、{unboundFigures.length} 张未绑定题图；请上传图片、手动绑定，或移除未绑定占位符。</div>}
+      </Modal> : null}
     </section>
   )
 }

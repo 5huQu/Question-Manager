@@ -6,6 +6,7 @@ import {
   createItem,
   bindFiguresToMarkers,
   bindFigureToMarker,
+  removeUnboundFigurePlaceholders,
   deleteFigure,
   deleteItem,
   getItem,
@@ -138,6 +139,14 @@ export function mountQuestionBankItemsRoutes(app: Express) {
         decodeURIComponent(String(req.params.id || '')),
         req.body || {},
       ))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/question-bank/items/:id/figures/remove-placeholders', (req, res) => {
+    try {
+      res.json(removeUnboundFigurePlaceholders(decodeURIComponent(String(req.params.id || ''))))
     } catch (error) {
       sendRouteError(res, error)
     }

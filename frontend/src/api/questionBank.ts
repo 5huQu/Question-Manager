@@ -163,6 +163,13 @@ export const questionBankApi = {
       body: JSON.stringify({ bindings }),
     })
   },
+  removeUnboundFigurePlaceholders(questionId: string) {
+    return api<QuestionItem>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/remove-placeholders`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({}),
+    })
+  },
   previewTikz(questionId: string, source: string) {
     return api<{ sourceHash: string; width: number; height: number; svgBase64: string }>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/tikz/preview`, {
       method: 'POST',
