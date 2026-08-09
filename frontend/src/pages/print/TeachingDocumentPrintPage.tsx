@@ -20,7 +20,7 @@ import { choiceLayoutOverridesEqual, type ChoiceLayoutOverrides } from '@/utils/
 import { questionBankApi } from '@/api/questionBank'
 import { teachingDocumentsApi, type TeachingDocumentRecord } from '@/api/teachingDocuments'
 import { ApiError } from '@/api/client'
-import { lectureFontCssVars, lectureFontFaceCss, resolveDocumentFonts } from '@/utils/teachingDocument/lectureFonts'
+import { lectureFontCssVars, lectureFontFaceCss, resolveDocumentFonts, teachingDocumentLayoutCssVars } from '@/utils/teachingDocument/lectureFonts'
 import {
   resolveDocumentPaper,
   isA3LandscapeSpread,
@@ -365,6 +365,10 @@ export default function TeachingDocumentPrintPage() {
       className="td-theme-print"
       style={{
         ...fontVars,
+        ...teachingDocumentLayoutCssVars(document?.style),
+        // 与预览中的隐藏测量树保持一致。缺失时图像会使用 70vh 作为上限，
+        // Windows 打印窗口的视口高度会因此改变后续分页。
+        '--td-paper-content-height': `${metrics.contentHeightPx}px`,
       } as CSSProperties}
       {...{
         [TEACHING_DOM.printDocument]: '',
@@ -381,7 +385,10 @@ export default function TeachingDocumentPrintPage() {
           aria-hidden="true"
           data-teaching-measure-root=""
           className="pointer-events-none fixed -left-[100000px] top-0 overflow-visible opacity-0"
-          style={{ width: `${metrics.contentWidthPx}px` } as CSSProperties}
+          style={{
+            width: `${metrics.contentWidthPx}px`,
+            '--td-paper-content-height': `${metrics.contentHeightPx}px`,
+          } as CSSProperties}
         >
           <div ref={measurementRootRef}>
             <TeachingDocumentRenderer

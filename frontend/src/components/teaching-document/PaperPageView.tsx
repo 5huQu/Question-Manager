@@ -13,6 +13,7 @@ import {
   TEACHING_DOM,
   pageHeaderSlots,
   pageFooterSlots,
+  effectivePaperMetrics,
   type PaginatedPage,
   type PaperSpec,
   type PrintLayoutSpec,
@@ -81,10 +82,23 @@ export function PaperPageView({
   const headingLabels = headingLabelByBlockId(document)
   const layoutResolvers: TeachingDocumentResolvers = { ...resolvers, choiceLayoutOverrides }
   const footerReserved = printLayout.footer.enabled
+  const paperMetrics = effectivePaperMetrics(printLayout)
   // 页眉页脚仍占用原有的稳定分页高度；仅向纸张边缘移动到更自然的印刷位置。
   // 至少保留 8mm 物理留白，避免不同打印机的不可打印区裁切内容。
   const headerVisualOffsetMm = -Math.min(7, Math.max(0, paper.marginTopMm - 8))
   const footerVisualOffsetMm = Math.min(7, Math.max(0, paper.marginBottomMm - 8))
+  const paperPageStyle = {
+    width: `${paper.widthMm}mm`,
+    height: `${paper.heightMm}mm`,
+    padding: `${paper.marginTopMm}mm ${paper.marginRightMm}mm ${paper.marginBottomMm}mm ${paper.marginLeftMm}mm`,
+    boxSizing: 'border-box',
+    display: 'flex',
+    flexDirection: 'column',
+    // 图片及其他可缩放内容必须以实际纸张的可用高度为上限；不能回退到
+    // 70vh，因为独立打印窗口与编辑器预览的视口高度通常不同。
+    '--td-paper-content-height': `${paperMetrics.contentHeightPx}px`,
+    ...style,
+  } as CSSProperties
 
   return (
     <section
@@ -94,15 +108,7 @@ export function PaperPageView({
         [TEACHING_DOM.paperPage]: '',
         [TEACHING_DOM.pageIndex]: page.index,
       }}
-      style={{
-        width: `${paper.widthMm}mm`,
-        height: `${paper.heightMm}mm`,
-        padding: `${paper.marginTopMm}mm ${paper.marginRightMm}mm ${paper.marginBottomMm}mm ${paper.marginLeftMm}mm`,
-        boxSizing: 'border-box',
-        display: 'flex',
-        flexDirection: 'column',
-        ...style,
-      }}
+      style={paperPageStyle}
       onClick={onBlockSelect ? (event) => {
         const target = event.target
         if (!(target instanceof Element)) return

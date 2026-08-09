@@ -59,7 +59,9 @@
 /* ─── 打印时隐藏屏幕 UI ────────────────────────────────────────────────────── */
 
 @media print {
-  html, body {
+  html, body, #root {
+    width: var(--td-page-width) !important;
+    min-width: var(--td-page-width) !important;
     margin: 0;
     padding: 0;
     background: #ffffff;
@@ -85,6 +87,15 @@
     box-shadow: none !important;
     margin: 0 !important;
     transform: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* 旧版 Windows Chromium/打印驱动仍可能只认 page-break-*。两个规则与
+     break-before: page 同时保留，确保每个已分页的纸张容器占一张物理纸。 */
+  [data-teaching-paper-page] + [data-teaching-paper-page],
+  [data-teaching-paper-spread] + [data-teaching-paper-spread] {
+    page-break-before: always;
   }
 
   /* 页面容器无间距 */

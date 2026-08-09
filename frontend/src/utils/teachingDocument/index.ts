@@ -35,6 +35,7 @@ export {
   typographyStyleForPreset,
   resolveHeadingStyle,
   resolveQuestionStyle,
+  teachingDocumentLayoutCssVars,
   teachingTypographyCssVars,
 } from './lectureFonts'
 export * from './layout'

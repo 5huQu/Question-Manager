@@ -55,7 +55,7 @@ import {
   TEXT_FONT_OPTIONS,
   lectureFontFaceCss,
   lectureFontCssVars,
-  teachingTypographyCssVars,
+  teachingDocumentLayoutCssVars,
   resolveDocumentFonts,
   resolveHeadingStyle,
   resolveQuestionStyle,
@@ -566,13 +566,8 @@ export default function TeachingDocumentEditorPage() {
   const questionSpacing = editor.document?.style?.questionSpacing || 'compact'
   const fontVars = useMemo(() => ({
     ...lectureFontCssVars(documentFonts.body, documentFonts.heading, documentFonts.bodyLatin, documentFonts.headingLatin, documentFonts.bodyNumber, documentFonts.headingNumber),
-    ...teachingTypographyCssVars(editor.document?.style),
-    '--td-question-gap': {
-      compact: '6px',
-      normal: '12px',
-      relaxed: '18px',
-    }[questionSpacing],
-  }), [documentFonts, editor.document?.style, questionSpacing])
+    ...teachingDocumentLayoutCssVars(editor.document?.style),
+  }), [documentFonts, editor.document?.style])
   const fontFaceCss = useMemo(
     () => lectureFontFaceCss(documentFonts.bodyLatin, documentFonts.bodyNumber, documentFonts.headingLatin, documentFonts.headingNumber),
     [documentFonts],
