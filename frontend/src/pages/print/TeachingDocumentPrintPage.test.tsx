@@ -122,6 +122,13 @@ describe('TeachingDocumentPrintPage', () => {
     expect(printRoot?.style.getPropertyValue('--td-heading-font')).toContain('Songti SC')
   })
 
+  it('uses the editor root font size when the print URL provides it', async () => {
+    mocks.getDocument.mockResolvedValue(recordWith(3))
+    renderPrintRoute('?docId=doc-1&revision=3&rootFontSize=18.4')
+    await flush()
+    expect(document.documentElement.style.fontSize).toBe('18.4px')
+  })
+
   it('notifies the main process once layout settles instead of waiting for the 30s timeout', async () => {
     vi.useFakeTimers()
     try {

@@ -60,11 +60,17 @@ export function ExportPdfPanel({
   const openPrintDialog = useCallback(() => {
     if (!canRun) return
     const printUrl = new URL('/print/teaching-document', window.location.origin)
+    // 独立打印窗口不会继承编辑器的 DPI 自适应根字号。把实际计算值交给
+    // 打印页，确保所有 rem 尺寸参与测量时与当前预览完全一致。
+    const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize)
     printUrl.searchParams.set('docId', documentId)
     printUrl.searchParams.set('revision', String(revision))
     printUrl.searchParams.set('autoPrint', '1')
     printUrl.searchParams.set('variant', variant)
     printUrl.searchParams.set('paper', JSON.stringify(paper))
+    if (Number.isFinite(rootFontSize) && rootFontSize >= 12 && rootFontSize <= 24) {
+      printUrl.searchParams.set('rootFontSize', String(rootFontSize))
+    }
     window.open(printUrl.toString(), '_blank', 'noopener,noreferrer')
   }, [canRun, documentId, revision, paper, variant])
 

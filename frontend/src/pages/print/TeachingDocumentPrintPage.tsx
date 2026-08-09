@@ -59,12 +59,19 @@ import '@/components/teaching-document/teaching-document.css'
 import '@/components/teaching-document/print.css'
 
 type PageState = 'loading' | 'error' | 'measuring' | 'ready'
+
+function parseRootFontSize(value: string | null): number | null {
+  const fontSize = Number(value)
+  return Number.isFinite(fontSize) && fontSize >= 12 && fontSize <= 24 ? fontSize : null
+}
+
 export default function TeachingDocumentPrintPage() {
   const [searchParams] = useSearchParams()
   const docId = searchParams.get('docId') || ''
   const revisionParam = Number(searchParams.get('revision') || '0')
   const autoPrint = searchParams.get('autoPrint') === '1'
   const printVariant: TeachingDocumentPrintVariant = searchParams.get('variant') === 'teacher' ? 'teacher' : 'student'
+  const rootFontSize = parseRootFontSize(searchParams.get('rootFontSize'))
 
   const [state, setState] = useState<PageState>('loading')
   const [error, setError] = useState('')
@@ -104,15 +111,18 @@ export default function TeachingDocumentPrintPage() {
   // 因此这里必须显式通过 window.document 访问根元素。
   useEffect(() => {
     const rootStyle = window.document.documentElement.style
+    const previousRootFontSize = rootStyle.fontSize
     rootStyle.setProperty('--td-page-size', `${paper.widthMm}mm ${paper.heightMm}mm`)
     rootStyle.setProperty('--td-page-width', `${paper.widthMm}mm`)
     rootStyle.setProperty('--td-page-height', `${paper.heightMm}mm`)
+    if (rootFontSize !== null) rootStyle.fontSize = `${rootFontSize}px`
     return () => {
       rootStyle.removeProperty('--td-page-size')
       rootStyle.removeProperty('--td-page-width')
       rootStyle.removeProperty('--td-page-height')
+      rootStyle.fontSize = previousRootFontSize
     }
-  }, [paper])
+  }, [paper, rootFontSize])
   const printLayout = useMemo(
     () => createDocumentPrintLayout(pagePaper, record?.content?.style?.print),
     [pagePaper, record?.content?.style?.print],
