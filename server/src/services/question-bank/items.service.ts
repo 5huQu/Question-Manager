@@ -307,6 +307,46 @@ export function bindFigureToMarker(id: string, figureId: string, body: Record<st
   return nextFigure
 }
 
+export function bindFiguresToMarkers(id: string, body: Record<string, unknown>) {
+  const item = repo.getQuestion(id)
+  if (!item) throw new RouteError(404, '题目不存在。')
+  const bindings = Array.isArray(body.bindings) ? body.bindings : []
+  if (!bindings.length) throw new RouteError(400, '没有可确认的图片绑定。')
+
+  const markerPattern = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/gi
+  const availableMarkers = new Set(Array.from(
+    [item.stemMarkdown, item.answerText, item.analysisMarkdown].join('\n').matchAll(markerPattern),
+    (match) => match[1],
+  ))
+  const occupiedMarkers = new Set(item.figures.flatMap((figure) => [figure.id, figure.blockId]).filter(Boolean).map(String))
+  const seenFigures = new Set<string>()
+  const seenMarkers = new Set<string>()
+  const assignments = bindings.map((binding) => {
+    const value = binding && typeof binding === 'object' ? binding as Record<string, unknown> : {}
+    const figureId = String(value.figureId || '').trim()
+    const markerId = String(value.markerId || '').trim()
+    if (!figureId || !markerId || !/^[^\s>]+$/.test(markerId)) throw new RouteError(400, '图片绑定信息无效。')
+    if (seenFigures.has(figureId) || seenMarkers.has(markerId)) throw new RouteError(400, '同一图片或标签不能重复绑定。')
+    if (!availableMarkers.has(markerId)) throw new RouteError(400, '有图片标签已不在题目文本中，请刷新后重试。')
+    if (occupiedMarkers.has(markerId)) throw new RouteError(400, '有图片标签已绑定题图，请刷新后重试。')
+    const figure = item.figures.find((candidate) => String(candidate.id || '') === figureId)
+    if (!figure) throw new RouteError(404, '题图不存在。')
+    if (figure.blockId) throw new RouteError(400, '有题图已绑定图片标签，请刷新后重试。')
+    seenFigures.add(figureId)
+    seenMarkers.add(markerId)
+    return { figureId, markerId }
+  })
+  const assignmentByFigureId = new Map(assignments.map((assignment) => [assignment.figureId, assignment.markerId]))
+  const figures = item.figures.map((figure) => {
+    const markerId = assignmentByFigureId.get(String(figure.id || ''))
+    return markerId ? { ...figure, blockId: markerId } : figure
+  })
+  // The confirmation screen presents this mapping before it reaches the API;
+  // persist the approved group together so a partial sequence is never saved.
+  repo.updateQuestionFigures(id, figures)
+  return { figures }
+}
+
 function normalizeFigureUsage(value: unknown) {
   const usage = String(value || 'stem')
   if (!['stem', 'analysis', 'options'].includes(usage)) throw new RouteError(400, '图片类型无效。')

@@ -154,6 +154,7 @@ const expectedRoutes = new Set([
   'PATCH /api/question-bank/items/:id/figures/:figureId',
   'POST /api/question-bank/items/:id/figures/upload',
   'POST /api/question-bank/items/:id/figures/:figureId/bind',
+  'POST /api/question-bank/items/:id/figures/bind-batch',
   'POST /api/question-bank/items/:id/figures/tikz/preview',
   'POST /api/question-bank/items/:id/figures/tikz',
   'PATCH /api/question-bank/items/:id/figures/:figureId/tikz',

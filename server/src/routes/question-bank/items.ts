@@ -4,6 +4,7 @@ import {
   createFigure,
   createTikzFigure,
   createItem,
+  bindFiguresToMarkers,
   bindFigureToMarker,
   deleteFigure,
   deleteItem,
@@ -124,6 +125,17 @@ export function mountQuestionBankItemsRoutes(app: Express) {
       res.json(bindFigureToMarker(
         decodeURIComponent(String(req.params.id || '')),
         decodeURIComponent(String(req.params.figureId || '')),
+        req.body || {},
+      ))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/question-bank/items/:id/figures/bind-batch', (req, res) => {
+    try {
+      res.json(bindFiguresToMarkers(
+        decodeURIComponent(String(req.params.id || '')),
         req.body || {},
       ))
     } catch (error) {

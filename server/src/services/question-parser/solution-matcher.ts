@@ -51,6 +51,7 @@ export type InlineAnswerTableBlock = {
 const PAGE_MARKER_RE = /<!--\s*(?:GLM|DOC2X)_PAGE:\d+\s*-->/g
 const ANSWER_MARKER_RE = /<!--\s*QM:ANSWER\s*-->|【\s*(?:参考答案|答案)\s*】|(?:参考答案|答案)\s*[:：]/
 const ANALYSIS_MARKER_RE = /<!--\s*QM:ANALYSIS\s*-->|【\s*(?:解析|分析|详解)\s*】|(?:解析|分析|详解)\s*[:：]/
+const MANUAL_FIELD_END_MARKER_RE = /<!--\s*QM:END\s*-->/
 const ANSWER_TABLE_RE = /<table\b[^>]*>[\s\S]*?<\/table>/gi
 const INLINE_ANSWER_MARKER_RE = /(?:^|\s)([0-9０-９]{1,3})\s*(?:\\cdot|[、:：]|[.．](?![0-9０-９]))\s*/g
 const COMPACT_NUMERIC_INLINE_ANSWER_MARKER_RE = /(?:^|\s)([0-9０-９]{1,3})\s*[.．]\s*/g
@@ -435,7 +436,12 @@ function trimBodyBeforeAnswerTable(body: string, config: ImportFlowV2ParserConfi
 }
 
 export function splitQuestionFields(body: string, offset = 0): ParsedQuestionFields {
-  const source = String(body || '')
+  const rawSource = String(body || '')
+  // The editor wraps a selected answer/analysis range in QM markers. Keep the
+  // end marker out of the field value so a marked multi-line range cannot
+  // absorb the following OCR text.
+  const manualFieldEnd = firstMarker(MANUAL_FIELD_END_MARKER_RE, rawSource)
+  const source = manualFieldEnd ? rawSource.slice(0, manualFieldEnd.index) : rawSource
   const answer = firstMarker(ANSWER_MARKER_RE, source)
   const analysis = firstMarker(ANALYSIS_MARKER_RE, source)
 
@@ -543,7 +549,37 @@ function mergeSolutionMatch(target: SolutionMatch | undefined, patch: SolutionMa
   }
 }
 
+function looksLikeStandaloneAnswer(value: string) {
+  const text = String(value || '').trim()
+  if (!text || text.length > 80 || /\r?\n/.test(text)) return false
+  if (/[。！？；]/.test(text)) return false
+  if (/^(?:无解|不存在|空集|任意实数|任意实数解)$/.test(text)) return true
+  if (/[\u4e00-\u9fff]/.test(text)) return false
+  return !/^(?:[（(]\s*\d+\s*[)）]|解|证明|因为|由|设|当|若|故|所以|分析|详解)/.test(text)
+}
+
 function solutionPatchForSection(section: SolutionSection, fields: ParsedQuestionFields, fallbackRange: MarkdownRange): SolutionMatch {
+  // Explicit field markers are an operator assertion. They must override the
+  // OCR-derived section heading (for example, a bare answer inside “解析”).
+  if (fields.hasFieldMarkers) {
+    return {
+      answerText: fields.answerText || undefined,
+      analysisMarkdown: fields.analysisMarkdown || undefined,
+      answerRange: fields.answerRange,
+      analysisRange: fields.analysisRange,
+    }
+  }
+
+  // Some answer-and-solution sheets put a bare final result under a broad
+  // “解析” heading. Preserve that short result as the answer verbatim; an
+  // empty analysis is a valid candidate state.
+  if (looksLikeStandaloneAnswer(fields.stemMarkdown)) {
+    return {
+      answerText: fields.stemMarkdown,
+      answerRange: fields.stemRange || fallbackRange,
+    }
+  }
+
   if (section.kind === 'answer') {
     return {
       answerText: fields.answerText || fields.stemMarkdown,

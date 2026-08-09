@@ -156,6 +156,13 @@ export const questionBankApi = {
       body: JSON.stringify({ markerId }),
     })
   },
+  bindFiguresToMarkers(questionId: string, bindings: Array<{ figureId: string; markerId: string }>) {
+    return api<{ figures: QuestionFigure[] }>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/bind-batch`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ bindings }),
+    })
+  },
   previewTikz(questionId: string, source: string) {
     return api<{ sourceHash: string; width: number; height: number; svgBase64: string }>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/tikz/preview`, {
       method: 'POST',

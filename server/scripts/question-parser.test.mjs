@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { buildParserPreview, classifyQuestionDocumentLayout, defaultParserConfig, extractInlineAnswerTableBlocks, mergeQuestionCandidatesWithSolutions, parseQuestionCandidates, parseSolutionDocument } from '../dist/services/question-parser/index.js'
+import { buildParserPreview, classifyQuestionDocumentLayout, defaultParserConfig, detectSolutionQuestionNumbers, extractInlineAnswerTableBlocks, extractSolutionMatches, mergeQuestionCandidatesWithSolutions, parseQuestionCandidates, parseSolutionDocument, splitQuestionFields } from '../dist/services/question-parser/index.js'
 import { refreshCandidateParseDiagnostics, validateQuestionCandidate } from '../dist/services/question-parser/candidate-validator.js'
 import { cleanOcrPresentationMarkdown } from '../dist/services/question-parser/presentation-cleanup.js'
 
@@ -1677,6 +1677,40 @@ assert.match(ocrSpacedFormulaCandidates[0].stemMarkdown, /x _ \{1\} \+ x _ \{2\}
   assert.match(manuallyMarkedCandidates[0].analysisMarkdown, /直接计算/)
   assert.doesNotMatch(manuallyMarkedCandidates[0].stemMarkdown, /QM:/)
   assert.equal(manuallyMarkedCandidates[1].answerText, '9')
+}
+
+// A bare final result under an OCR “解析” heading is still an answer. The
+// result must be preserved as-is and an empty analysis is valid.
+{
+  const matches = extractSolutionMatches('解析\n14. $\\frac{37\\pi}{3}$', undefined, defaultParserConfig)
+  assert.equal(matches.get('14')?.answerText, '$\\frac{37\\pi}{3}$')
+  assert.equal(matches.get('14')?.analysisMarkdown, undefined)
+}
+
+// The editor can wrap an arbitrary multi-line selection. Its explicit field
+// marker takes precedence over an enclosing “解析” section and QM:END prevents
+// trailing OCR content from being swallowed into the answer.
+{
+  const fields = splitQuestionFields([
+    '<!-- QM:ANSWER -->',
+    '$\\left(\\{0,1\\}\\right)$',
+    '第二行答案说明',
+    '<!-- QM:END -->',
+    '不属于答案的后续文本',
+  ].join('\n'))
+  assert.equal(fields.answerText, '$\\left(\\{0,1\\}\\right)$\n第二行答案说明')
+  assert.equal(fields.analysisMarkdown, '')
+
+  const matches = extractSolutionMatches([
+    '解析',
+    '<!-- QM:QUESTION 12 -->',
+    '<!-- QM:ANSWER -->',
+    '2',
+    '<!-- QM:END -->',
+  ].join('\n'), undefined, defaultParserConfig)
+  assert.equal(matches.get('12')?.answerText, '2')
+  assert.equal(matches.get('12')?.analysisMarkdown, undefined)
+  assert.deepEqual(detectSolutionQuestionNumbers('<!-- QM:QUESTION 12 -->\n2', defaultParserConfig).map((item) => item.questionNo), ['12'])
 }
 
 {

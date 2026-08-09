@@ -208,6 +208,35 @@ export function MarkdownStructurePreviewDialog({
     }
   }
 
+  function selectedLineRange() {
+    const textarea = markdownTextareaRef.current
+    const selection = document.activeElement === textarea
+      ? { start: textarea.selectionStart, end: textarea.selectionEnd }
+      : markdownSelectionRef.current
+    const selectionStart = Math.min(selection.start, selection.end)
+    const selectionEnd = Math.max(selection.start, selection.end)
+    const start = markdownDraft.lastIndexOf('\n', Math.max(0, selectionStart - 1)) + 1
+    const lineEnd = markdownDraft.indexOf('\n', selectionEnd)
+    return { start, end: lineEnd < 0 ? markdownDraft.length : lineEnd }
+  }
+
+  function suggestedQuestionNoForLine(start: number) {
+    const line = markdownDraft.slice(start, markdownDraft.indexOf('\n', start) < 0 ? markdownDraft.length : markdownDraft.indexOf('\n', start))
+    return /^\s*(?:第\s*)?([0-9０-９]{1,3})\s*(?:题\s*)?[.．、·•:：]/.exec(line)?.[1] || questionNo || ''
+  }
+
+  function focusMarkerCursor(nextCursor: number, previousScrollTop: number) {
+    markdownSelectionRef.current = { start: nextCursor, end: nextCursor }
+    window.requestAnimationFrame(() => {
+      const nextTextarea = markdownTextareaRef.current
+      if (!nextTextarea) return
+      nextTextarea.focus()
+      nextTextarea.setSelectionRange(nextCursor, nextCursor)
+      nextTextarea.scrollTop = previousScrollTop
+      if (markdownLineNumbersRef.current) markdownLineNumbersRef.current.scrollTop = previousScrollTop
+    })
+  }
+
   function insertMarkerAtCurrentLine(marker: string) {
     const textarea = markdownTextareaRef.current
     if (!textarea) return
@@ -219,16 +248,8 @@ export function MarkdownStructurePreviewDialog({
     const markerLine = `${marker}\n`
     const nextDraft = `${markdownDraft.slice(0, lineStart)}${markerLine}${markdownDraft.slice(lineStart)}`
     const nextCursor = lineStart + markerLine.length
-    markdownSelectionRef.current = { start: nextCursor, end: nextCursor }
     setMarkdownDraft(nextDraft)
-    window.requestAnimationFrame(() => {
-      const nextTextarea = markdownTextareaRef.current
-      if (!nextTextarea) return
-      nextTextarea.focus()
-      nextTextarea.setSelectionRange(nextCursor, nextCursor)
-      nextTextarea.scrollTop = previousScrollTop
-      if (markdownLineNumbersRef.current) markdownLineNumbersRef.current.scrollTop = previousScrollTop
-    })
+    focusMarkerCursor(nextCursor, previousScrollTop)
   }
 
   function insertManualQuestionMarker() {
@@ -242,6 +263,51 @@ export function MarkdownStructurePreviewDialog({
     }
     setError('')
     insertMarkerAtCurrentLine(`<!-- QM:QUESTION ${normalizedQuestionNo} -->`)
+  }
+
+  function markSelectedContent(kind: 'answer' | 'analysis') {
+    const textarea = markdownTextareaRef.current
+    if (!textarea) return
+    const { start, end } = selectedLineRange()
+    const original = markdownDraft.slice(start, end)
+    if (!original.trim()) {
+      setError('请先选中答案或解析内容；未选中时会使用光标所在行。')
+      return
+    }
+    const value = window.prompt(`请输入这段内容所属的题号（将标记为${kind === 'answer' ? '答案' : '解析'}）`, suggestedQuestionNoForLine(start))
+    if (value === null) return
+    const normalizedQuestionNo = value.trim().replace(/^第\s*/, '').replace(/\s*题$/, '')
+    if (!/^[0-9０-９]{1,3}$/.test(normalizedQuestionNo)) {
+      setError('题号必须是 1-3 位数字。')
+      return
+    }
+
+    // A common OCR form is “12.2”: the first “12.” is a question label and
+    // the remaining “2” is the answer. Remove only that matching first-line
+    // label; all selected answer/analysis text is otherwise preserved.
+    const content = original
+      .replace(new RegExp(`^(\\s*(?:第\\s*)?${normalizedQuestionNo}\\s*(?:题\\s*)?[.．、·•:：]\\s*)`), '')
+      .trim()
+    if (!content) {
+      setError('选中内容只有题号，请连同答案或解析正文一起选中。')
+      return
+    }
+
+    const previousScrollTop = textarea.scrollTop
+    const leadingNewline = start > 0 && !markdownDraft.slice(0, start).endsWith('\n') ? '\n' : ''
+    const marker = kind === 'answer' ? 'ANSWER' : 'ANALYSIS'
+    const block = [
+      `<!-- QM:QUESTION ${normalizedQuestionNo} -->`,
+      `<!-- QM:${marker} -->`,
+      content,
+      '<!-- QM:END -->',
+      '',
+    ].join('\n')
+    const nextDraft = `${markdownDraft.slice(0, start)}${leadingNewline}${block}${markdownDraft.slice(end)}`
+    const nextCursor = start + leadingNewline.length + block.length
+    setError('')
+    setMarkdownDraft(nextDraft)
+    focusMarkerCursor(nextCursor, previousScrollTop)
   }
 
   async function rerunParserPreview(nextConfig: ImportFlowV2ParserConfig) {
@@ -448,29 +514,29 @@ export function MarkdownStructurePreviewDialog({
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={insertManualQuestionMarker}
                   >
-                    插入题目分割
+                    标记题目起点
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
                     icon={Braces}
-                    title="从光标所在行开始标记为当前题答案"
+                    title="将选中内容（可多行）标记为指定题的答案"
                     className="sf-pressable"
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => insertMarkerAtCurrentLine('<!-- QM:ANSWER -->')}
+                    onClick={() => markSelectedContent('answer')}
                   >
-                    标记答案
+                    选中为答案
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
                     icon={Braces}
-                    title="从光标所在行开始标记为当前题解析"
+                    title="将选中内容（可多行）标记为指定题的解析"
                     className="sf-pressable"
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => insertMarkerAtCurrentLine('<!-- QM:ANALYSIS -->')}
+                    onClick={() => markSelectedContent('analysis')}
                   >
-                    标记解析
+                    选中为解析
                   </Button>
                 </div>
                 <span className="shrink-0 text-[11px] text-zinc-400">{markdownLineCount} 行</span>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { keymap } from '@codemirror/view'
-import { Check, ChevronRight, Clipboard, Code2, ImagePlus, Link2, LoaderCircle, Plus, Trash2, X } from 'lucide-react'
+import { Check, ChevronRight, Clipboard, Code2, ImagePlus, Link2, LoaderCircle, Plus, Trash2, WandSparkles, X } from 'lucide-react'
 import { questionBankApi } from '@/api/questionBank'
 import { Button, Empty } from '@/components/ui'
 import type { QuestionFigure, QuestionItem } from '@/types'
@@ -171,6 +171,7 @@ export function QuestionFigureManager({
   const [tikzFigure, setTikzFigure] = useState<QuestionFigure | undefined>()
   const [uploadOpen, setUploadOpen] = useState(false)
   const [bindingMarkerId, setBindingMarkerId] = useState('')
+  const [autoBindingPreview, setAutoBindingPreview] = useState(false)
   const [copyNotice, setCopyNotice] = useState('')
 
   useEffect(() => {
@@ -180,6 +181,8 @@ export function QuestionFigureManager({
 
   const selected = figures.find((figure) => String(figure.id || '') === selectedId)
   const unboundMarkers = useMemo(() => markerReferences(question, figures), [question.stemMarkdown, question.answerText, question.analysisMarkdown, figures])
+  const unboundFigures = useMemo(() => figures.filter((figure) => figure.id && !figure.blockId), [figures])
+  const automaticBindings = useMemo(() => unboundMarkers.slice(0, unboundFigures.length).map((marker, index) => ({ marker, figure: unboundFigures[index] })), [unboundMarkers, unboundFigures])
   useEffect(() => {
     if (!selected) return
     setUsage((selected.usage || 'stem') as Usage)
@@ -217,6 +220,17 @@ export function QuestionFigureManager({
       const next = await questionBankApi.bindFigureToMarker(question.id, selected.id, bindingMarkerId)
       commit(figures.map((figure) => figure.id === next.id ? next : figure))
       setBindingMarkerId('')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } finally { setBusy(false) }
+  }
+
+  const confirmAutomaticBindings = async () => {
+    if (!automaticBindings.length) return
+    setBusy(true); setError('')
+    try {
+      const result = await questionBankApi.bindFiguresToMarkers(question.id, automaticBindings.map(({ figure, marker }) => ({ figureId: String(figure.id), markerId: marker.id })))
+      commit(result.figures)
+      setAutoBindingPreview(false)
+      setCopyNotice(`已按题干、答案、解析的顺序确认绑定 ${automaticBindings.length} 张图片。`)
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } finally { setBusy(false) }
   }
 
@@ -264,8 +278,15 @@ export function QuestionFigureManager({
               <button type="button" onClick={() => void copyMarker(selected, figures.indexOf(selected))} className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 font-medium text-zinc-700 transition-colors hover:bg-zinc-100 active:scale-[0.98] dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"><Clipboard className="size-3.5" />图 {figures.indexOf(selected) + 1} · 复制图片标签</button>
             </div>
             {unboundMarkers.length ? <div className="rounded-lg border border-amber-200 bg-amber-50/45 p-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
-              <p className="font-medium">手动绑定现有图片标签</p>
+              <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium">手动绑定现有图片标签</p>{automaticBindings.length ? <Button size="sm" variant="outline" icon={WandSparkles} disabled={busy} onClick={() => setAutoBindingPreview((open) => !open)}>{autoBindingPreview ? '收起自动匹配' : '自动匹配'}</Button> : null}</div>
               <p className="mt-1 leading-5 text-amber-800/80 dark:text-amber-300/80">这个题目的文本中有未绑定标签。选择一项后，将当前图片明确绑定到它；不会移动或改写其他图片。</p>
+              {autoBindingPreview ? <div className="mt-3 rounded-md border border-amber-200/80 bg-white/80 p-2.5 dark:border-amber-900/50 dark:bg-zinc-950/50">
+                <p className="font-medium text-zinc-800 dark:text-zinc-100">请确认自动匹配</p>
+                <p className="mt-1 leading-5 text-zinc-500">按题干、答案、解析中标签出现的顺序，依次匹配尚未绑定的题图。</p>
+                <div className="mt-2 space-y-1.5">{automaticBindings.map(({ figure, marker }) => <div key={`${figure.id}-${marker.id}`} className="flex items-center gap-2 rounded border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-200"><span className="shrink-0 font-medium">图 {figures.indexOf(figure) + 1}</span><ChevronRight className="size-3.5 shrink-0 text-zinc-400" /><span className="min-w-0 truncate">{marker.label} · {marker.id}</span></div>)}</div>
+                {unboundMarkers.length !== unboundFigures.length ? <p className="mt-2 text-amber-800/80 dark:text-amber-300/80">发现 {unboundMarkers.length} 个标签、{unboundFigures.length} 张未绑定题图；本次只匹配前 {automaticBindings.length} 项，其余请手动处理。</p> : null}
+                <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => setAutoBindingPreview(false)}>取消</Button><Button size="sm" icon={busy ? LoaderCircle : Check} disabled={busy} onClick={() => void confirmAutomaticBindings()}>{busy ? '绑定中' : `确认绑定 ${automaticBindings.length} 项`}</Button></div>
+              </div> : null}
               <div className="mt-2 flex flex-wrap items-center gap-2"><select aria-label="选择未绑定图片标签" className="h-8 min-w-0 flex-1 rounded-md border border-amber-200 bg-white px-2 text-xs text-zinc-800 dark:border-amber-900/60 dark:bg-zinc-950 dark:text-zinc-100" value={bindingMarkerId} onChange={(event) => setBindingMarkerId(event.target.value)}><option value="">选择一个未绑定标签</option>{unboundMarkers.map((marker) => <option key={marker.id} value={marker.id}>{marker.label} · {marker.id}</option>)}</select><Button size="sm" icon={Link2} disabled={busy || !bindingMarkerId} onClick={() => void bindSelected()}>{busy ? '绑定中' : '绑定当前图片'}</Button></div>
             </div> : null}
             {selected.origin === 'tikz' ? <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-zinc-50/50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/30"><span>这是一张 TikZ 题图，可重新编辑源码与预览。</span><Button size="sm" variant="outline" icon={Code2} disabled={busy} onClick={() => { setTikzFigure(selected); setTikzOpen(true) }}>编辑 TikZ</Button></div> : null}
