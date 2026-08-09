@@ -199,29 +199,39 @@ export function DocumentEditor({
     // 文档来二次确认，长文档会在停止输入后出现明显卡顿。签名相同即可安全跳过；
     // 真正的 undo、插入、拖拽和远端 reload 都会产生不同签名，仍走完整同步。
     if (contentSig === lastEmittedContentSig.current && outlineSig === lastEmittedOutlineSig.current) return
-    // 这是来自结构操作、撤销或重载的外部变化；才值得进行完整比较。
-    const currentJson = editor.getJSON()
-    const currentDoc = editorDocToTeachingDocument(currentJson, metaRef.current)
-    const nextEditorDoc = teachingDocumentToEditorDoc(document)
-    const editorMatches = JSON.stringify(currentJson) === JSON.stringify(nextEditorDoc)
-    if (contentSig === JSON.stringify(currentDoc.content)
-      && outlineSig === JSON.stringify(currentDoc.outline ?? {})
-      && editorMatches) {
+    let cancelled = false
+    // Tiptap 会为新增块同步创建 React NodeView，并在内部调用 flushSync。
+    // 把外部 setContent 移出 React effect 调用栈，避免生命周期内同步刷新。
+    queueMicrotask(() => {
+      if (cancelled || editor.isDestroyed) return
+      // 这是来自结构操作、撤销或重载的外部变化；才值得进行完整比较。
+      const currentJson = editor.getJSON()
+      const currentDoc = editorDocToTeachingDocument(currentJson, metaRef.current)
+      const nextEditorDoc = teachingDocumentToEditorDoc(document)
+      const editorMatches = JSON.stringify(currentJson) === JSON.stringify(nextEditorDoc)
+      if (contentSig === JSON.stringify(currentDoc.content)
+        && outlineSig === JSON.stringify(currentDoc.outline ?? {})
+        && editorMatches) {
+        lastEmittedContentSig.current = contentSig
+        lastEmittedOutlineSig.current = outlineSig
+        return
+      }
+      // 外部更新：同步编辑器内容
+      syncing.current = true
+      try {
+        editor
+          .chain()
+          .setMeta(DOCUMENT_EXTERNAL_SYNC_META, true)
+          .setMeta('addToHistory', false)
+          .setContent(nextEditorDoc, { emitUpdate: false })
+          .run()
+      } finally {
+        syncing.current = false
+      }
       lastEmittedContentSig.current = contentSig
       lastEmittedOutlineSig.current = outlineSig
-      return
-    }
-    // 外部更新：同步编辑器内容
-    syncing.current = true
-    editor
-      .chain()
-      .setMeta(DOCUMENT_EXTERNAL_SYNC_META, true)
-      .setMeta('addToHistory', false)
-      .setContent(nextEditorDoc, { emitUpdate: false })
-      .run()
-    syncing.current = false
-    lastEmittedContentSig.current = contentSig
-    lastEmittedOutlineSig.current = outlineSig
+    })
+    return () => { cancelled = true }
   }, [editor, document.content, document.outline, flushPendingChanges])
 
   useEffect(() => {

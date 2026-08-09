@@ -121,10 +121,11 @@ export class TeachingDocumentLayoutCoordinator {
     }
 
     const existing = this.inFlight.get(input.key)
-    if (existing) {
+    if (existing && !existing.controller.signal.aborted) {
       existing.consumers += 1
       return this.handleFor(input.key, existing, true)
     }
+    if (existing && this.inFlight.get(input.key) === existing) this.inFlight.delete(input.key)
 
     const generation = this.nextGeneration()
     this.cancelBefore(generation)
@@ -226,7 +227,12 @@ export class TeachingDocumentLayoutCoordinator {
         if (released) return
         released = true
         request.consumers = Math.max(0, request.consumers - 1)
-        if (request.consumers === 0 && this.inFlight.get(key) === request) request.controller.abort()
+        if (request.consumers === 0 && this.inFlight.get(key) === request) {
+          // 先摘除再取消。React effect 清理后可能在同一轮任务中立刻以同 key
+          // 重新订阅；不能让新消费者复用一个已经注定以 AbortError 结束的 Promise。
+          this.inFlight.delete(key)
+          request.controller.abort()
+        }
       },
     }
   }

@@ -76,6 +76,45 @@ describe('DocumentEditor external insertion', () => {
     act(() => root.unmount())
     container.remove()
   })
+
+  it('creates an externally inserted page-break NodeView outside the React effect lifecycle', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const editorRef: { current: Editor | null } = { current: null }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => {
+        root.render(
+          <DocumentEditor
+            document={documentWithContent([{ type: 'paragraph', id: 'p-1', content: [{ type: 'text', text: '正文' }] }])}
+            onChange={() => undefined}
+            onEditorReady={(instance) => { editorRef.current = instance }}
+          />,
+        )
+      })
+      await act(async () => {
+        root.render(
+          <DocumentEditor
+            document={documentWithContent([
+              { type: 'paragraph', id: 'p-1', content: [{ type: 'text', text: '正文' }] },
+              { type: 'pageBreak', id: 'break-1' },
+            ])}
+            onChange={() => undefined}
+            onEditorReady={(instance) => { editorRef.current = instance }}
+          />,
+        )
+        await Promise.resolve()
+      })
+
+      expect(editorRef.current?.getJSON().content?.map((node) => node.attrs?.blockId)).toEqual(['p-1', 'break-1'])
+      expect(consoleError.mock.calls.flat().join(' ')).not.toContain('flushSync was called from inside a lifecycle method')
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+      consoleError.mockRestore()
+    }
+  })
 })
 
 describe('DocumentEditor model synchronization', () => {

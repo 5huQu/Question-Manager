@@ -63,4 +63,33 @@ describe('waitForRenderReadiness', () => {
     expect(result.pendingFigures).toEqual(['pending-figure'])
     expect(result.diagnostics[0].code).toBe('resource-timeout')
   })
+
+  it('stops waiting when an animation frame is never delivered', async () => {
+    const root = document.createElement('div')
+    const result = await waitForRenderReadiness(root, {
+      timeoutMs: 5,
+      stableFrames: 1,
+      requestFrame: () => 1,
+    })
+
+    expect(result.ready).toBe(false)
+    expect(result.timedOut).toBe(true)
+    expect(result.diagnostics[0].code).toBe('unstable-layout')
+  })
+
+  it('stops waiting for a frame as soon as the layout request is aborted', async () => {
+    const root = document.createElement('div')
+    const controller = new AbortController()
+    const waiting = waitForRenderReadiness(root, {
+      timeoutMs: 1_000,
+      stableFrames: 1,
+      signal: controller.signal,
+      requestFrame: () => 1,
+    })
+
+    controller.abort()
+    const result = await waiting
+    expect(result.ready).toBe(false)
+    expect(result.timedOut).toBe(false)
+  })
 })

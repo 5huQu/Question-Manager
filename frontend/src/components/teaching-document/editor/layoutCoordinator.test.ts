@@ -83,6 +83,27 @@ describe('TeachingDocumentLayoutCoordinator', () => {
     expect(execute).toHaveBeenCalledTimes(1)
   })
 
+  it('starts fresh work when the last consumer releases and immediately requests the same key again', async () => {
+    const coordinator = new TeachingDocumentLayoutCoordinator()
+    const first = coordinator.request({
+      ...requestInput('restart-after-release', async () => settled()),
+      execute: ({ signal }) => new Promise<LayoutCoordinatorWorkResult>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('Layout request aborted', 'AbortError')), { once: true })
+      }),
+    })
+    const firstResult = first.promise.catch((error: unknown) => error)
+    await Promise.resolve()
+
+    first.release()
+    const replacementExecute = vi.fn(async () => settled())
+    const replacement = coordinator.request(requestInput('restart-after-release', replacementExecute))
+
+    expect(replacement.shared).toBe(false)
+    await expect(replacement.promise).resolves.toMatchObject({ status: 'settled', key: 'restart-after-release' })
+    await expect(firstResult).resolves.toMatchObject({ name: 'AbortError' })
+    expect(replacementExecute).toHaveBeenCalledTimes(1)
+  })
+
   it('prevents an older generation from overwriting a newer snapshot', async () => {
     const completions = new Map<string, (result: LayoutCoordinatorWorkResult) => void>()
     const coordinator = new TeachingDocumentLayoutCoordinator()

@@ -53,10 +53,24 @@ export function inspectRenderResources(root: HTMLElement): ResourceSnapshot {
   }
 }
 
-function nextFrame(requestFrame: (callback: FrameRequestCallback) => number, signal?: AbortSignal) {
+function nextFrame(
+  requestFrame: (callback: FrameRequestCallback) => number,
+  deadline: number,
+  signal?: AbortSignal,
+) {
   return new Promise<void>((resolve) => {
     if (signal?.aborted) return resolve()
-    requestFrame(() => resolve())
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timer)
+      signal?.removeEventListener('abort', finish)
+      resolve()
+    }
+    const timer = window.setTimeout(finish, Math.max(1, deadline - Date.now()))
+    signal?.addEventListener('abort', finish, { once: true })
+    requestFrame(finish)
   })
 }
 
@@ -70,7 +84,7 @@ async function waitForStableFrames(
   let stable = 0
   let previous = ''
   while (stable < count && Date.now() < deadline && !signal?.aborted) {
-    await nextFrame(requestFrame, signal)
+    await nextFrame(requestFrame, deadline, signal)
     const rect = root.getBoundingClientRect()
     const signature = [
       rect.width,
