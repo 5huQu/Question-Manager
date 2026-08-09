@@ -7,49 +7,53 @@ export function ReviewHeaderBar({ ws }: { ws: ImportV2WorkspaceState }) {
   const { selectedDoc, activeImportJob, questions, committedQuestionCount } = ws
 
   return (
-    <section className="grid min-h-12 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border pb-3">
+    <section className="question-edit-glass-inner mb-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 md:p-4.5 rounded-2xl border border-black/6 bg-white/70 backdrop-blur-xl dark:border-white/8 dark:bg-zinc-900/70 shadow-2xs">
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
           aria-label="返回导入批次列表"
           title="返回导入批次列表"
           onClick={() => ws.navigate('/tools/import')}
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl border border-black/10 bg-white/80 text-zinc-600 hover:bg-white hover:text-zinc-900 dark:border-white/12 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 transition-all active:scale-95 shadow-2xs"
         >
           <ChevronLeft className="size-4" />
         </button>
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold text-foreground">
+          <h1 className="truncate text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             {activeImportJob?.paperTitle || activeImportJob?.title || selectedDoc?.paperTitle || selectedDoc?.originalFileName || '未命名资料'}
           </h1>
-          <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
             <button
               type="button"
               onClick={() => selectedDoc && ws.navigateToDocument(selectedDoc.id)}
-              className="shrink-0 transition-colors hover:text-foreground"
+              className="shrink-0 transition-colors hover:text-zinc-900 dark:hover:text-zinc-200"
             >
               资料与识别
             </button>
-            <ChevronLeft className="size-3 rotate-180" />
-            <span className="shrink-0 font-medium text-foreground">题目核对</span>
-            <span aria-hidden="true">·</span>
-            <span className="truncate">{questions.length} 题，{committedQuestionCount} 题已入库</span>
+            <ChevronLeft className="size-3 rotate-180 text-zinc-400" />
+            <span className="shrink-0 font-semibold text-zinc-900 dark:text-zinc-100">题目核对</span>
+            <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">·</span>
+            <span className="truncate font-medium">{questions.length} 题，{committedQuestionCount} 题已入库</span>
           </div>
         </div>
       </div>
-      <div className="flex items-center justify-end gap-1.5">
+
+      <div className="flex flex-wrap items-center justify-end gap-2 self-stretch md:self-auto">
         <select
           aria-label="导入规则预设"
-          className="h-8 min-w-0 max-w-44 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground outline-none focus:ring-2 focus:ring-ring"
+          className="h-9 min-w-0 max-w-44 rounded-xl border border-black/10 bg-white/90 px-3 text-xs font-medium text-zinc-900 shadow-2xs outline-none transition-all focus:border-zinc-900 dark:border-white/12 dark:bg-zinc-900/90 dark:text-zinc-100"
           value={ws.selectedParserPresetId}
           onChange={(event) => ws.setSelectedParserPresetId(event.target.value)}
           disabled={Boolean(ws.busy)}
           title="导入规则预设"
         >
           {ws.parserPresets.map((preset) => (
-            <option key={preset.id} value={preset.id}>{preset.name}</option>
+            <option key={preset.id} value={preset.id}>
+              {preset.name}
+            </option>
           ))}
         </select>
+
         <Button
           size="sm"
           variant="outline"
@@ -57,19 +61,22 @@ export function ReviewHeaderBar({ ws }: { ws: ImportV2WorkspaceState }) {
           disabled={Boolean(ws.busy) || !ws.selectedParserPresetId || !ws.canRecleanSelectedDoc}
           onClick={ws.handleApplySelectedParserPreset}
           title={ws.selectedDocCommittedCount > 0 ? '该批次已有题目入库，暂不支持重新解析。' : '按当前所选预设重新生成未入库候选题。'}
+          className="rounded-xl border-black/10 bg-white/80 hover:bg-white dark:border-white/12 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-xs font-semibold shadow-2xs active:scale-95"
         >
           {ws.busy === `reclean-${selectedDoc?.id}` ? '解析中...' : '重新解析'}
         </Button>
+
         <Button
           size="sm"
           variant="outline"
           icon={FileText}
           disabled={!ws.selectedDocOcr && !ws.selectedOcr}
           onClick={ws.openSelectedDocMarkdownPreview}
-          className="hidden xl:inline-flex"
+          className="hidden xl:inline-flex rounded-xl border-black/10 bg-white/80 hover:bg-white dark:border-white/12 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-xs font-semibold shadow-2xs active:scale-95"
         >
           模型识别稿
         </Button>
+
         <Button
           size="sm"
           variant="outline"
@@ -77,10 +84,11 @@ export function ReviewHeaderBar({ ws }: { ws: ImportV2WorkspaceState }) {
           disabled={Boolean(ws.busy) || !ws.canModelSplit}
           onClick={ws.openModelSplitDialog}
           title={ws.selectedDocCommittedCount > 0 ? '该批次已有题目入库，暂不支持模型辅助拆题。' : '调用模型拆分题目并预览结果。'}
-          className="hidden 2xl:inline-flex"
+          className="hidden 2xl:inline-flex rounded-xl border-black/10 bg-white/80 hover:bg-white dark:border-white/12 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-xs font-semibold shadow-2xs active:scale-95"
         >
           模型辅助拆题
         </Button>
+
         <ReviewActionMenu
           label="批次操作"
           actions={[
