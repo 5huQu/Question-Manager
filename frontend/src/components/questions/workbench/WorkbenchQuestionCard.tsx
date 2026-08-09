@@ -41,6 +41,7 @@ export function WorkbenchQuestionCard({
   const [draft, setDraft] = useState<Partial<QuestionItem>>(item)
   const [showAnalysis, setShowAnalysis] = useState(false)
   const [saveNotice, setSaveNotice] = useState('')
+  const [figuresChanged, setFiguresChanged] = useState(false)
 
   useEffect(() => {
     setDraft(item)
@@ -53,11 +54,21 @@ export function WorkbenchQuestionCard({
   async function saveEditedQuestion(nextDraft = draft) {
     const saved = await questionBankApi.updateItem(item.id, nextDraft, item.contentRevision)
     setDraft(saved)
+    setFiguresChanged(false)
     setEditing(false)
     setSaveNotice('题目已保存')
     window.setTimeout(() => setSaveNotice(''), 3000)
     if (onQuestionSaved) onQuestionSaved(saved)
     else onReload()
+  }
+
+  function closeEditor() {
+    setEditing(false)
+    if (!figuresChanged) return
+    setFiguresChanged(false)
+    // Figure resources are written immediately, but the surrounding card
+    // should remain stable while its editor is open. Refresh only after close.
+    onReload()
   }
 
   return (
@@ -68,7 +79,7 @@ export function WorkbenchQuestionCard({
         actions={
           <>
             {saveNotice ? <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"><CheckCircle className="size-3.5" />{saveNotice}</span> : null}
-            <button type="button" onClick={() => setEditing(true)} className={questionCardOutlineButtonClass}>
+            <button type="button" onClick={() => { setFiguresChanged(false); setEditing(true) }} className={questionCardOutlineButtonClass}>
               <PencilLine className="size-3.5" />编辑
             </button>
             <button type="button" onClick={() => onDelete(item.id)} className={questionCardDangerButtonClass}>
@@ -95,7 +106,7 @@ export function WorkbenchQuestionCard({
         }
       />
 
-      {editing ? createPortal(<EditDialog draft={draft} setDraft={setDraft} onClose={() => setEditing(false)} onSave={saveEditedQuestion} onFiguresChanged={() => onReload()} />, document.body) : null}
+      {editing ? createPortal(<EditDialog draft={draft} setDraft={setDraft} onClose={closeEditor} onSave={saveEditedQuestion} onFiguresChanged={() => setFiguresChanged(true)} />, document.body) : null}
     </QuestionCardFrame>
   )
 }

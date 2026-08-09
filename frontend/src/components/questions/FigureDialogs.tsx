@@ -489,11 +489,7 @@ export function FigureUploadDialog({ question, optionLabels, usageOptions, onClo
           <div
             ref={pasteTargetRef}
             className="flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-zinc-200 bg-zinc-50/50 px-4 py-8 text-center outline-none transition-colors hover:bg-white dark:border-zinc-800 dark:bg-zinc-950/20 dark:hover:bg-zinc-950 focus:border-zinc-900 dark:focus:border-zinc-100"
-            contentEditable
             onClick={() => fileInputRef.current?.click()}
-            onInput={(event) => {
-              event.currentTarget.textContent = ''
-            }}
             onDragOver={(event) => {
               event.preventDefault()
               event.dataTransfer.dropEffect = 'copy'
@@ -506,7 +502,6 @@ export function FigureUploadDialog({ question, optionLabels, usageOptions, onClo
               if (acceptClipboardData(event.clipboardData)) event.preventDefault()
             }}
             role="button"
-            suppressContentEditableWarning
             tabIndex={0}
           >
             <input

@@ -149,6 +149,13 @@ export const questionBankApi = {
       body: form,
     })
   },
+  bindFigureToMarker(questionId: string, figureId: string, markerId: string) {
+    return api<QuestionFigure>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/${encodeURIComponent(figureId)}/bind`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ markerId }),
+    })
+  },
   previewTikz(questionId: string, source: string) {
     return api<{ sourceHash: string; width: number; height: number; svgBase64: string }>(`/api/question-bank/items/${encodeURIComponent(questionId)}/figures/tikz/preview`, {
       method: 'POST',

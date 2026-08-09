@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { keymap } from '@codemirror/view'
-import { Check, ChevronRight, Code2, FileUp, ImagePlus, LoaderCircle, Plus, Trash2, X } from 'lucide-react'
+import { Check, ChevronRight, Clipboard, Code2, ImagePlus, Link2, LoaderCircle, Plus, Trash2, X } from 'lucide-react'
 import { questionBankApi } from '@/api/questionBank'
 import { Button, Empty } from '@/components/ui'
 import type { QuestionFigure, QuestionItem } from '@/types'
 import { assetUrl, choiceLabelsForQuestion, figureCaption } from '@/utils/questionDisplay'
+import { FigureUploadDialog } from './FigureDialogs'
 
 const defaultTikz = `\\begin{tikzpicture}
   \\draw[->] (-0.2,0) -- (4.2,0) node[right] {$x$};
@@ -23,6 +24,25 @@ function usageLabel(value: string) {
 function figurePath(figure: QuestionFigure) {
   const path = String(figure.path || '').trim()
   return path ? assetUrl(path) : ''
+}
+
+function figureMarker(figure: QuestionFigure) {
+  return `<!-- DOC2X_FIGURE:${String(figure.blockId || figure.id || '').trim()} -->`
+}
+
+function markerReferences(question: QuestionItem, figures: QuestionFigure[]) {
+  const markerPattern = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/gi
+  const knownIds = new Set(figures.flatMap((figure) => [figure.id, figure.blockId]).filter(Boolean).map(String))
+  const fields = [
+    ['stemMarkdown', '题干与选项'],
+    ['answerText', '答案'],
+    ['analysisMarkdown', '解析'],
+  ] as const
+  const seen = new Set<string>()
+  return fields.flatMap(([key, label]) => {
+    markerPattern.lastIndex = 0
+    return Array.from(String(question[key] || '').matchAll(markerPattern), (match) => ({ id: match[1], label }))
+  }).filter((marker) => !knownIds.has(marker.id) && !seen.has(marker.id) && Boolean(seen.add(marker.id)))
 }
 
 function dataSvg(result: { svgBase64: string }) {
@@ -149,7 +169,9 @@ export function QuestionFigureManager({
   const [error, setError] = useState('')
   const [tikzOpen, setTikzOpen] = useState(false)
   const [tikzFigure, setTikzFigure] = useState<QuestionFigure | undefined>()
-  const fileRef = useRef<HTMLInputElement | null>(null)
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [bindingMarkerId, setBindingMarkerId] = useState('')
+  const [copyNotice, setCopyNotice] = useState('')
 
   useEffect(() => {
     setFigures(question.figures || [])
@@ -157,6 +179,7 @@ export function QuestionFigureManager({
   }, [question.id, question.figures])
 
   const selected = figures.find((figure) => String(figure.id || '') === selectedId)
+  const unboundMarkers = useMemo(() => markerReferences(question, figures), [question.stemMarkdown, question.answerText, question.analysisMarkdown, figures])
   useEffect(() => {
     if (!selected) return
     setUsage((selected.usage || 'stem') as Usage)
@@ -187,14 +210,28 @@ export function QuestionFigureManager({
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } finally { setBusy(false) }
   }
 
-  const upload = async (file: File) => {
+  const bindSelected = async () => {
+    if (!selected?.id || !bindingMarkerId) return
     setBusy(true); setError('')
     try {
-      const form = new FormData(); form.append('file', file); form.append('usage', usage); if (usage === 'options') form.append('optionLabel', optionLabel)
-      const figure = await questionBankApi.uploadFigure(question.id, form)
-      const next = [...figures, figure]
-      commit(next); setSelectedId(String(figure.id || ''))
+      const next = await questionBankApi.bindFigureToMarker(question.id, selected.id, bindingMarkerId)
+      commit(figures.map((figure) => figure.id === next.id ? next : figure))
+      setBindingMarkerId('')
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } finally { setBusy(false) }
+  }
+
+  const copyMarker = async (figure: QuestionFigure, index: number) => {
+    const marker = figureMarker(figure)
+    if (!figure.id || !navigator.clipboard?.writeText) {
+      setCopyNotice('当前浏览器无法写入剪贴板，请在 Markdown 源码中手动输入标签。')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(marker)
+      setCopyNotice(`已复制图 ${index + 1} 标签；切到 Markdown 源码后粘贴到需要的位置。`)
+    } catch (cause) {
+      setCopyNotice(cause instanceof Error ? cause.message : '复制失败，请在 Markdown 源码中手动输入标签。')
+    }
   }
 
   if (tikzOpen) return <TikzComposer questionId={question.id} optionLabels={optionLabels} existingFigure={tikzFigure} surface={surface} onCancel={() => { setTikzOpen(false); setTikzFigure(undefined) }} onSaved={(figure) => { const next = tikzFigure?.id ? figures.map((item) => item.id === figure.id ? figure : item) : [...figures, figure]; commit(next); setSelectedId(String(figure.id || '')); setTikzOpen(false); setTikzFigure(undefined) }} />
@@ -203,7 +240,7 @@ export function QuestionFigureManager({
     <section className={`${surface === 'glass' ? 'question-edit-glass-inner' : 'flex overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950'} flex min-h-[520px] min-w-0 flex-col motion-safe:transition-[opacity,transform] motion-safe:duration-200`}>
       <header className={`${surface === 'glass' ? 'question-edit-glass-inner-header' : 'border-b border-zinc-100 bg-zinc-50/60 dark:border-zinc-900 dark:bg-zinc-900/20'} flex flex-wrap items-center justify-between gap-3 px-4 py-3`}>
         <div><h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">题图管理</h3><p className="mt-0.5 text-xs text-zinc-500">维护题干、解析和选项图片；资源独立保存，不依赖原始 PDF。</p></div>
-        <div className="flex items-center gap-2"><input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = '' }} /><Button size="sm" variant="outline" icon={FileUp} disabled={busy} onClick={() => fileRef.current?.click()}>上传图片</Button><Button size="sm" icon={Plus} disabled={busy} onClick={() => setTikzOpen(true)}>新建 TikZ</Button>{onClose ? <Button size="sm" variant="outline" icon={X} onClick={onClose}>关闭</Button> : null}</div>
+        <div className="flex items-center gap-2"><Button size="sm" variant="outline" icon={ImagePlus} disabled={busy} onClick={() => setUploadOpen(true)}>上传图片</Button><Button size="sm" icon={Plus} disabled={busy} onClick={() => setTikzOpen(true)}>新建 TikZ</Button>{onClose ? <Button size="sm" variant="outline" icon={X} onClick={onClose}>关闭</Button> : null}</div>
       </header>
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(9rem,0.8fr)_minmax(0,1.7fr)] divide-x divide-zinc-200/70 dark:divide-zinc-800/70">
         <aside className={`${surface === 'glass' ? 'question-edit-glass-aside' : 'bg-zinc-50/35 dark:bg-zinc-900/15'} min-h-0 overflow-y-auto p-2`}>
@@ -216,12 +253,28 @@ export function QuestionFigureManager({
         <div className={`${surface === 'glass' ? 'question-edit-glass-content' : ''} min-h-0 overflow-y-auto p-4`}>
           {selected ? <div className="space-y-4">
             <div className={`${surface === 'glass' ? 'question-edit-glass-preview' : 'border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/20'} flex min-h-64 items-center justify-center overflow-hidden rounded-xl border p-4`}><FigurePreview figure={selected} /></div>
-            <div className="flex flex-wrap items-end justify-between gap-3"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="space-y-1"><span className="block text-[13px] font-medium text-zinc-500">图片用途</span><select className="h-9 min-w-36 rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950" value={usage} onChange={(event) => setUsage(event.target.value as Usage)}><option value="stem">题干图</option><option value="analysis">解析图</option>{optionLabels.length ? <option value="options">选项图</option> : null}</select></label>{usage === 'options' ? <label className="space-y-1"><span className="block text-[13px] font-medium text-zinc-500">对应选项</span><select className="h-9 min-w-24 rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950" value={optionLabel} onChange={(event) => setOptionLabel(event.target.value)}>{optionLabels.map((label) => <option key={label}>{label}</option>)}</select></label> : null}</div><div className="flex items-center gap-2"><Button size="sm" variant="outline" icon={Trash2} disabled={busy} onClick={() => void deleteSelected()}>删除</Button><Button size="sm" icon={busy ? LoaderCircle : Check} disabled={busy} onClick={() => void updateSelected()}>{busy ? '保存中...' : '保存属性'}</Button></div></div>
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50/50 p-2.5 dark:border-zinc-800 dark:bg-zinc-900/30">
+              <label className="flex items-center gap-2"><span className="shrink-0 text-xs font-medium text-zinc-500">图片用途</span><select className="h-8 min-w-28 rounded-md border border-zinc-200 bg-white px-2.5 text-sm dark:border-zinc-800 dark:bg-zinc-950" value={usage} onChange={(event) => setUsage(event.target.value as Usage)}><option value="stem">题干图</option><option value="analysis">解析图</option>{optionLabels.length ? <option value="options">选项图</option> : null}</select></label>
+              {usage === 'options' ? <label className="flex items-center gap-2"><span className="shrink-0 text-xs font-medium text-zinc-500">对应选项</span><select className="h-8 min-w-20 rounded-md border border-zinc-200 bg-white px-2.5 text-sm dark:border-zinc-800 dark:bg-zinc-950" value={optionLabel} onChange={(event) => setOptionLabel(event.target.value)}>{optionLabels.map((label) => <option key={label}>{label}</option>)}</select></label> : null}
+              <div className="ml-auto flex items-center gap-2"><Button size="sm" variant="outline" icon={Trash2} disabled={busy} onClick={() => void deleteSelected()}>删除</Button><Button size="sm" icon={busy ? LoaderCircle : Check} disabled={busy} onClick={() => void updateSelected()}>{busy ? '保存中...' : '保存属性'}</Button></div>
+            </div>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900/30">
+              <p className="font-medium text-zinc-700 dark:text-zinc-200">插入位置</p>
+              <p className="mt-1 leading-5 text-zinc-500">复制图标签后，在“直观修改”中切换到 Markdown 源码，将它粘贴到图片应出现的位置。</p>
+              <button type="button" onClick={() => void copyMarker(selected, figures.indexOf(selected))} className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 font-medium text-zinc-700 transition-colors hover:bg-zinc-100 active:scale-[0.98] dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"><Clipboard className="size-3.5" />图 {figures.indexOf(selected) + 1} · 复制图片标签</button>
+            </div>
+            {unboundMarkers.length ? <div className="rounded-lg border border-amber-200 bg-amber-50/45 p-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
+              <p className="font-medium">手动绑定现有图片标签</p>
+              <p className="mt-1 leading-5 text-amber-800/80 dark:text-amber-300/80">这个题目的文本中有未绑定标签。选择一项后，将当前图片明确绑定到它；不会移动或改写其他图片。</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2"><select aria-label="选择未绑定图片标签" className="h-8 min-w-0 flex-1 rounded-md border border-amber-200 bg-white px-2 text-xs text-zinc-800 dark:border-amber-900/60 dark:bg-zinc-950 dark:text-zinc-100" value={bindingMarkerId} onChange={(event) => setBindingMarkerId(event.target.value)}><option value="">选择一个未绑定标签</option>{unboundMarkers.map((marker) => <option key={marker.id} value={marker.id}>{marker.label} · {marker.id}</option>)}</select><Button size="sm" icon={Link2} disabled={busy || !bindingMarkerId} onClick={() => void bindSelected()}>{busy ? '绑定中' : '绑定当前图片'}</Button></div>
+            </div> : null}
             {selected.origin === 'tikz' ? <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-zinc-50/50 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/30"><span>这是一张 TikZ 题图，可重新编辑源码与预览。</span><Button size="sm" variant="outline" icon={Code2} disabled={busy} onClick={() => { setTikzFigure(selected); setTikzOpen(true) }}>编辑 TikZ</Button></div> : null}
           </div> : <div className="flex min-h-64 items-center justify-center"><Empty text="选择一张题图进行管理" /></div>}
           {error ? <div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50/40 px-3 py-2 text-xs text-red-700 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400">{error}</div> : null}
+          {copyNotice ? <div role="status" className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-300">{copyNotice}</div> : null}
         </div>
       </div>
+      {uploadOpen ? <FigureUploadDialog question={question} optionLabels={optionLabels} usageOptions={[{ value: 'stem', label: '题干图' }, { value: 'analysis', label: '解析图' }, ...(optionLabels.length ? [{ value: 'options', label: '选项图' }] : [])]} onClose={() => setUploadOpen(false)} onUploaded={(figure) => { const next = [...figures, figure]; commit(next); setSelectedId(String(figure.id || '')); setCopyNotice(`图 ${next.length} 已上传。复制图片标签并粘贴到文本即可确定位置。`) }} /> : null}
     </section>
   )
 }

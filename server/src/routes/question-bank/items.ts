@@ -4,6 +4,7 @@ import {
   createFigure,
   createTikzFigure,
   createItem,
+  bindFigureToMarker,
   deleteFigure,
   deleteItem,
   getItem,
@@ -113,6 +114,18 @@ export function mountQuestionBankItemsRoutes(app: Express) {
   app.post('/api/question-bank/items/:id/figures/upload', questionFigureUpload, (req, res) => {
     try {
       res.status(201).json(uploadFigure(decodeURIComponent(String(req.params.id || '')), req))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.post('/api/question-bank/items/:id/figures/:figureId/bind', (req, res) => {
+    try {
+      res.json(bindFigureToMarker(
+        decodeURIComponent(String(req.params.id || '')),
+        decodeURIComponent(String(req.params.figureId || '')),
+        req.body || {},
+      ))
     } catch (error) {
       sendRouteError(res, error)
     }

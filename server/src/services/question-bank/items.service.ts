@@ -277,8 +277,34 @@ export function uploadFigure(id: string, req: Request) {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
   fs.writeFileSync(outputPath, file.buffer)
   const figure = { id: figureId, origin: 'manual_upload', usage, category: 'question_figure', optionLabel: usage === 'options' && req.body?.optionLabel ? String(req.body.optionLabel).toUpperCase() : '', pageNumber: 1, bbox: {}, sourcePath: '', path: outputRel, originalName: file.originalname }
-  persistFiguresWithInlineBinding(id, item, [...item.figures, figure])
+  // A user-uploaded image has no reliable OCR position.  Do not infer one from
+  // the number of placeholders: the editor gives the user a figure token to
+  // place explicitly, which avoids silently binding an image to another part
+  // of a long question or solution.
+  repo.updateQuestionFigures(id, [...item.figures, figure])
   return figure
+}
+
+export function bindFigureToMarker(id: string, figureId: string, body: Record<string, unknown>) {
+  const item = repo.getQuestion(id)
+  if (!item) throw new RouteError(404, '题目不存在。')
+  const markerId = String(body.markerId || '').trim()
+  if (!markerId) throw new RouteError(400, '请选择要绑定的图片标签。')
+  if (!/^[^\s>]+$/.test(markerId)) throw new RouteError(400, '图片标签格式无效。')
+
+  const escapedMarkerId = markerId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const markerPattern = new RegExp(`<!--\\s*DOC2X_FIGURE:${escapedMarkerId}\\s*-->`, 'i')
+  const content = [item.stemMarkdown, item.answerText, item.analysisMarkdown].join('\n')
+  if (!markerPattern.test(content)) throw new RouteError(400, '所选图片标签已不在题目文本中，请刷新后重试。')
+
+  const index = item.figures.findIndex((figure) => String(figure.id || '') === figureId)
+  if (index < 0) throw new RouteError(404, '题图不存在。')
+  const nextFigure = { ...item.figures[index], blockId: markerId }
+  const nextFigures = item.figures.map((figure, figureIndex) => figureIndex === index ? nextFigure : figure)
+  // This is an explicit one-to-one user decision, so it deliberately bypasses
+  // the count-based OCR binding routine and leaves all other markers intact.
+  repo.updateQuestionFigures(id, nextFigures)
+  return nextFigure
 }
 
 function normalizeFigureUsage(value: unknown) {
