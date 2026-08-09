@@ -210,7 +210,7 @@ export function MarkdownStructurePreviewDialog({
 
   function selectedLineRange() {
     const textarea = markdownTextareaRef.current
-    const selection = document.activeElement === textarea
+    const selection = (textarea && document.activeElement === textarea)
       ? { start: textarea.selectionStart, end: textarea.selectionEnd }
       : markdownSelectionRef.current
     const selectionStart = Math.min(selection.start, selection.end)

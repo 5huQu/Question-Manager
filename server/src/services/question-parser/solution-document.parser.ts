@@ -27,8 +27,54 @@ function nonEmpty(value: string | undefined) {
   return text || undefined
 }
 
+function looksLikeStandaloneAnswer(value: string) {
+  const text = String(value || '').trim()
+  if (!text || text.length > 80 || /[。！？；]/.test(text)) return false
+  if (/^(?:无解|不存在|空集|任意实数|任意实数解)$/.test(text)) return true
+  if (/[\u4e00-\u9fff]/.test(text)) return false
+  return !/^(?:[（(]\s*\d+\s*[)）]|解|证明|因为|由|设|当|若|故|所以|分析|详解)/.test(text)
+}
+
+function onlyQuestionSectionHeading(value: string) {
+  const lines = String(value || '').replace(PAGE_MARKER_RE, '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  return lines.length > 0 && lines.every((line) => /^(?:#{1,6}\s*)?[一二三四五六七八九十]+[、.．](?:(?:单项|多项|单选|多选|非)?选择题|填空题|解答题|计算题|实验题|选做题)(?:[:： （(].*)?$/.test(line))
+}
+
+/**
+ * A separated answer document can contain only a final result for a small
+ * question, followed immediately by the next question-type heading. Treat
+ * the result as an answer, not as analysis; an empty analysis is valid.
+ */
+function inferUnmarkedStandaloneAnswer(body: string, offset: number): SolutionMatch | undefined {
+  const source = String(body || '')
+  const lines = source.split(/(?<=\n)/)
+  let lineOffset = 0
+
+  for (const lineWithNewline of lines) {
+    const line = lineWithNewline.replace(/\r?\n$/, '')
+    const text = line.trim()
+    const textStart = lineOffset + line.indexOf(text)
+    const textEnd = textStart + text.length
+    lineOffset += lineWithNewline.length
+    if (!text || PAGE_MARKER_RE.test(text)) {
+      PAGE_MARKER_RE.lastIndex = 0
+      continue
+    }
+    if (!looksLikeStandaloneAnswer(text)) return undefined
+    const trailing = source.slice(textEnd).replace(PAGE_MARKER_RE, '').trim()
+    if (trailing && !onlyQuestionSectionHeading(trailing)) return undefined
+    return {
+      answerText: text,
+      answerRange: { start: offset + textStart, end: offset + textEnd },
+    }
+  }
+  return undefined
+}
+
 function solutionMatchFromWholeDocumentChunk(body: string, offset: number, fallbackRange: MarkdownRange): SolutionMatch {
   const fields = splitQuestionFields(body, offset)
+  const inferredStandaloneAnswer = !fields.hasFieldMarkers ? inferUnmarkedStandaloneAnswer(body, offset) : undefined
+  if (inferredStandaloneAnswer) return inferredStandaloneAnswer
   const inferredLeadingAnswer = !fields.answerText && fields.analysisMarkdown ? nonEmpty(fields.stemMarkdown) : undefined
   const answerText = nonEmpty(fields.answerText) || inferredLeadingAnswer
   const analysisMarkdown = nonEmpty(fields.analysisMarkdown) || (!answerText ? nonEmpty(fields.stemMarkdown) : undefined)

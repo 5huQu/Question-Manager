@@ -1687,6 +1687,36 @@ assert.match(ocrSpacedFormulaCandidates[0].stemMarkdown, /x _ \{1\} \+ x _ \{2\}
   assert.equal(matches.get('14')?.analysisMarkdown, undefined)
 }
 
+// Separated answer documents use a whole-document branch once enough later
+// questions contain field markers. A bare fill-in answer before the following
+// question-type heading must still be kept as an answer on that branch.
+{
+  const separatedAnswerDocument = {
+    ...ocrDocument,
+    id: 'ocr_separated_bare_fill_answer_test',
+    markdown: [
+      '# 数学参考答案',
+      '12. 2',
+      '13. $\\left( {0,1}\\right) ,1$ (答案不唯一，写出一组即可。)',
+      '14. $\\frac{37\\pi}{3}$',
+      '## 四、解答题：本题共 5 小题。',
+      '15. 【答案】A',
+      '【解析】第十五题解析。',
+      '16. 【答案】B',
+      '【解析】第十六题解析。',
+      '17. 【答案】C',
+      '【解析】第十七题解析。',
+      '18. 【答案】D',
+      '【解析】第十八题解析。',
+    ].join('\n'),
+    pages: [],
+    assets: [],
+  }
+  const matches = parseSolutionDocument(separatedAnswerDocument, { config: defaultParserConfig })
+  assert.equal(matches.get('14')?.answerText, '$\\frac{37\\pi}{3}$')
+  assert.equal(matches.get('14')?.analysisMarkdown, undefined)
+}
+
 // The editor can wrap an arbitrary multi-line selection. Its explicit field
 // marker takes precedence over an enclosing “解析” section and QM:END prevents
 // trailing OCR content from being swallowed into the answer.
