@@ -1,20 +1,26 @@
 /**
- * 题目内容编辑弹窗（全屏 portal）
- * 复用 QuestionContentEditor；保存时进入"保存方式确认"步：
- * 回填到题库（PATCH updateItem，带 contentRevision 冲突处理）或仅保存在本文档（localContent 覆盖）
+ * 题目内容及元数据编辑弹窗（全屏 portal）
+ * 复用 QuestionContentEditor 及题库元数据编辑组件；保存时进入"保存方式确认"步：
+ * 回填到题库（PATCH updateItem，带 contentRevision 冲突处理及元数据更新）或仅保存在本文档（localContent 覆盖）
  */
 
-import { useMemo, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Database, FileText, HelpCircle, Image, LoaderCircle } from 'lucide-react'
-import type { QuestionItem } from '@/types'
+import { Check, Database, FileText, HelpCircle, Image, LoaderCircle, RotateCcw, Save, Tag, X } from 'lucide-react'
+import type { OcrSettings, QuestionItem, TagLibraries } from '@/types'
 import type { QuestionContentDraft } from '@/types/questionContent'
 import type { QuestionBlock } from '@/types/teachingDocument'
 import { questionBankApi } from '@/api/questionBank'
 import { ApiError } from '@/api/client'
+import { learningTagsApi } from '@/api/learningTags'
+import { settingsApi } from '@/api/settings'
+import { useAsync } from '@/hooks/useAsync'
 import { QuestionContentEditor, type QuestionEditorConflict } from '@/components/questions/editor/QuestionContentEditor'
 import { QuestionFigureManager } from '@/components/questions/QuestionFigureManager'
-import { contentEquals, type QuestionContentValue } from '@/components/questions/editor/model'
+import { contentEquals } from '@/components/questions/editor/model'
+import { LabeledInput, LabeledSelect, MultiTagSelector } from '@/components/questions/edit-dialog/form-fields'
+import { difficultyLabelFromScore10 } from '@/utils/questionDisplay'
+import { gradeOptionsForTeachingStages } from '@/utils/stages'
 
 export function QuestionEditDialog(props: {
   block: QuestionBlock
@@ -28,19 +34,62 @@ export function QuestionEditDialog(props: {
   onFiguresChanged?: (figures: QuestionItem['figures']) => void
 }) {
   const { block, question } = props
-  const initialValue = useMemo<QuestionContentValue>(() => ({
+  const initialValue = useMemo<Partial<QuestionItem>>(() => ({
     stemMarkdown: block.localContent?.stemMarkdown ?? question.stemMarkdown ?? '',
     answerText: block.localContent?.answerText ?? question.answerText ?? '',
     analysisMarkdown: block.localContent?.analysisMarkdown ?? question.analysisMarkdown ?? '',
+    sourceTitle: question.sourceTitle ?? '',
+    chapter: question.chapter ?? '',
+    stage: question.stage ?? '',
+    questionType: question.questionType ?? '',
+    difficultyScore10: question.difficultyScore10 ?? 0,
+    difficultyLabel: question.difficultyLabel ?? '',
+    knowledgePoints: question.knowledgePoints ?? [],
+    solutionMethods: question.solutionMethods ?? [],
   }), []) // eslint-disable-line react-hooks/exhaustive-deps -- 仅取打开弹窗时的快照
-  const [draft, setDraft] = useState<QuestionContentValue>(initialValue)
+
+  const [draft, setDraft] = useState<Partial<QuestionItem>>(initialValue)
   const [step, setStep] = useState<'edit' | 'confirm' | 'discard'>('edit')
   const [saving, setSaving] = useState(false)
   const [conflict, setConflict] = useState<QuestionEditorConflict | null>(null)
   const [writeError, setWriteError] = useState('')
-  const [editPanel, setEditPanel] = useState<'content' | 'figures'>('content')
+  const [editPanel, setEditPanel] = useState<'content' | 'metadata' | 'figures'>('content')
 
-  const dirty = !contentEquals(draft, initialValue)
+  const tagLibraries = useAsync<TagLibraries>(() => learningTagsApi.getQuestionBankTagLibraries(), [])
+  const ocrSettings = useAsync<OcrSettings>(() => settingsApi.getOcrSettings(), [])
+  const configuredStageOptions = gradeOptionsForTeachingStages(ocrSettings.data?.teachingStages)
+  const metadataStageOptions = draft.stage && !configuredStageOptions.includes(draft.stage)
+    ? [...configuredStageOptions, draft.stage]
+    : configuredStageOptions
+
+  function updateDraft(patch: Partial<QuestionItem>) {
+    setDraft((current) => ({ ...current, ...patch }))
+  }
+
+  const dirty = useMemo(() => {
+    const contentChanged = !contentEquals(
+      {
+        stemMarkdown: draft.stemMarkdown ?? '',
+        answerText: draft.answerText ?? '',
+        analysisMarkdown: draft.analysisMarkdown ?? '',
+      },
+      {
+        stemMarkdown: initialValue.stemMarkdown ?? '',
+        answerText: initialValue.answerText ?? '',
+        analysisMarkdown: initialValue.analysisMarkdown ?? '',
+      },
+    )
+    const metadataChanged =
+      (draft.sourceTitle ?? '') !== (initialValue.sourceTitle ?? '') ||
+      (draft.chapter ?? '') !== (initialValue.chapter ?? '') ||
+      (draft.stage ?? '') !== (initialValue.stage ?? '') ||
+      (draft.questionType ?? '') !== (initialValue.questionType ?? '') ||
+      (draft.difficultyScore10 ?? 0) !== (initialValue.difficultyScore10 ?? 0) ||
+      JSON.stringify(draft.knowledgePoints ?? []) !== JSON.stringify(initialValue.knowledgePoints ?? []) ||
+      JSON.stringify(draft.solutionMethods ?? []) !== JSON.stringify(initialValue.solutionMethods ?? [])
+    return contentChanged || metadataChanged
+  }, [draft, initialValue])
+
   const dialogTitle = `编辑题目内容 · ${question.questionNo || block.questionId}`
 
   function requestClose() {
@@ -51,12 +100,26 @@ export function QuestionEditDialog(props: {
     props.onClose()
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key === 'Escape') {
       event.preventDefault()
       requestClose()
     }
   }
+
+  useEffect(() => {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        if (dirty && step === 'edit') {
+          setConflict(null)
+          setStep('confirm')
+        }
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [dirty, step])
 
   async function writeBack() {
     setSaving(true)
@@ -82,9 +145,9 @@ export function QuestionEditDialog(props: {
 
   function keepLocal() {
     props.onKeepLocal({
-      stemMarkdown: draft.stemMarkdown,
-      answerText: draft.answerText,
-      analysisMarkdown: draft.analysisMarkdown,
+      stemMarkdown: draft.stemMarkdown ?? '',
+      answerText: draft.answerText ?? '',
+      analysisMarkdown: draft.analysisMarkdown ?? '',
     })
   }
 
@@ -113,6 +176,15 @@ export function QuestionEditDialog(props: {
               <button
                 type="button"
                 role="tab"
+                aria-selected={editPanel === 'metadata'}
+                onClick={() => setEditPanel('metadata')}
+                className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-3.5 text-xs font-medium"
+              >
+                <Tag className="size-3.5" />题目元数据
+              </button>
+              <button
+                type="button"
+                role="tab"
                 aria-selected={editPanel === 'figures'}
                 onClick={() => setEditPanel('figures')}
                 className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-3.5 text-xs font-medium"
@@ -120,7 +192,7 @@ export function QuestionEditDialog(props: {
                 <Image className="size-3.5" />题图管理
               </button>
             </div>
-            <div className="min-h-0 flex-1">
+            <div className="min-h-0 flex-1 overflow-hidden">
               {editPanel === 'figures' ? (
                 <QuestionFigureManager
                   question={question}
@@ -128,17 +200,86 @@ export function QuestionEditDialog(props: {
                   onClose={requestClose}
                   surface="glass"
                 />
+              ) : editPanel === 'metadata' ? (
+                <div className="h-full overflow-y-auto space-y-4 pr-1">
+                  <div className="question-edit-glass-preview rounded-2xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-black/6 pb-2 dark:border-white/8">
+                      <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-200">题目元数据</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <LabeledInput
+                        label="来源"
+                        help="用于题目来源展示和筛选。"
+                        value={draft.sourceTitle ?? ''}
+                        onChange={(value) => updateDraft({ sourceTitle: value })}
+                      />
+                      <LabeledInput
+                        label="章节/知识点概览"
+                        help="旧字段；可作为主知识点简写。"
+                        value={draft.chapter ?? ''}
+                        onChange={(value) => updateDraft({ chapter: value })}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <LabeledSelect
+                        label="学段"
+                        help="用于题目展示、筛选和后续导入记录。"
+                        value={draft.stage ?? ''}
+                        options={metadataStageOptions}
+                        placeholder="未设学段"
+                        onChange={(value) => updateDraft({ stage: value })}
+                      />
+                      <LabeledSelect
+                        label="题型"
+                        help="影响题目展示、筛选和试卷导出时的版式判断。"
+                        value={draft.questionType ?? ''}
+                        options={['单选题', '多选题', '填空题', '解答题']}
+                        placeholder="未设题型"
+                        onChange={(value) => updateDraft({ questionType: value })}
+                      />
+                    </div>
+                    <LabeledInput
+                      label="难度分 1-10"
+                      help="保存时同步显示难度标签。"
+                      value={String(draft.difficultyScore10 ?? '')}
+                      onChange={(value) => updateDraft({ difficultyScore10: Number(value), difficultyLabel: difficultyLabelFromScore10(Number(value)) })}
+                    />
+                    <MultiTagSelector
+                      label="知识点"
+                      help="搜索并勾选多个知识点；再次点击可取消选择。"
+                      options={tagLibraries.data?.knowledgePoints ?? []}
+                      values={draft.knowledgePoints ?? []}
+                      onChange={(values) => updateDraft({ knowledgePoints: values })}
+                    />
+                    <MultiTagSelector
+                      label="解题方法"
+                      help="搜索并勾选多个解题方法；再次点击可取消选择。"
+                      options={tagLibraries.data?.solutionMethods ?? []}
+                      values={draft.solutionMethods ?? []}
+                      onChange={(values) => updateDraft({ solutionMethods: values })}
+                    />
+                  </div>
+                </div>
               ) : (
                 <QuestionContentEditor
                   entityKey={`teaching-question-${block.id}`}
                   className="h-full min-h-0"
                   surface="glass"
+                  hideFooter
                   title={dialogTitle}
                   description="内容以 Markdown 保存，公式与表格可视化编辑。保存时可选择回填题库或仅保留在本文档。"
-                  value={draft}
-                  savedValue={initialValue}
+                  value={{
+                    stemMarkdown: draft.stemMarkdown ?? '',
+                    answerText: draft.answerText ?? '',
+                    analysisMarkdown: draft.analysisMarkdown ?? '',
+                  }}
+                  savedValue={{
+                    stemMarkdown: initialValue.stemMarkdown ?? '',
+                    answerText: initialValue.answerText ?? '',
+                    analysisMarkdown: initialValue.analysisMarkdown ?? '',
+                  }}
                   dirty={dirty}
-                  onChange={setDraft}
+                  onChange={(val) => updateDraft(val)}
                   onSave={() => { setConflict(null); setStep('confirm') }}
                   onCancel={requestClose}
                   contentRevision={question.contentRevision}
@@ -147,6 +288,45 @@ export function QuestionEditDialog(props: {
                 />
               )}
             </div>
+            <footer className="question-edit-glass-footer flex shrink-0 items-center justify-between gap-4 px-4 py-2.5 rounded-xl border border-black/6 dark:border-white/8">
+              <div className="flex min-w-0 items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400" aria-live="polite">
+                {dirty ? (
+                  <span className="flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-400/10 dark:text-amber-400">
+                    <span className="size-1.5 shrink-0 rounded-full bg-amber-500 animate-pulse" />有未保存修改
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-400">
+                    <Check className="size-3.5 shrink-0" />内容已保存
+                  </span>
+                )}
+                <span className="hidden truncate text-zinc-400 sm:inline dark:text-zinc-500">快捷键 ⌘/Ctrl + S</span>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  className="h-8.5 rounded-lg px-3 text-xs font-medium text-zinc-500 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-50"
+                  onClick={requestClose}
+                >
+                  <span className="flex items-center gap-1.5"><X className="size-3.5" />关闭</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!dirty || saving}
+                  className="question-edit-glass-button-secondary h-8.5 rounded-lg border px-3 text-xs font-medium text-zinc-700 transition-all hover:bg-zinc-50 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  onClick={() => setDraft(initialValue)}
+                >
+                  <span className="flex items-center gap-1.5"><RotateCcw className="size-3.5" />重置</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!dirty || saving}
+                  className="h-8.5 rounded-lg bg-zinc-900 px-4 text-xs font-medium text-zinc-50 shadow-xs transition-all hover:bg-zinc-800 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  onClick={() => { setConflict(null); setStep('confirm') }}
+                >
+                  <span className="flex items-center gap-1.5"><Save className="size-3.5" />{saving ? '保存中…' : '保存内容'}</span>
+                </button>
+              </div>
+            </footer>
           </div>
         ) : step === 'confirm' ? (
           <div className="question-edit-glass-panel flex flex-1 items-center justify-center p-8">

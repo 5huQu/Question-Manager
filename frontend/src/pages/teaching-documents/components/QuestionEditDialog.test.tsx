@@ -8,6 +8,18 @@ vi.mock('@/api/questionBank', () => ({
   questionBankApi: { updateItem: vi.fn() },
 }))
 
+vi.mock('@/api/learningTags', () => ({
+  learningTagsApi: {
+    getQuestionBankTagLibraries: vi.fn().mockResolvedValue({ knowledgePoints: ['三角函数', '导数'], solutionMethods: ['配方法'] }),
+  },
+}))
+
+vi.mock('@/api/settings', () => ({
+  settingsApi: {
+    getOcrSettings: vi.fn().mockResolvedValue({ teachingStages: ['高中数学', '初中数学'] }),
+  },
+}))
+
 vi.mock('@/components/questions/editor/QuestionContentEditor', () => ({
   QuestionContentEditor: ({ title }: { title?: string }) => <div data-testid="question-content-editor">{title}</div>,
 }))
@@ -37,11 +49,14 @@ const question = {
   stemMarkdown: '题干',
   answerText: '答案',
   analysisMarkdown: '解析',
+  sourceTitle: '高考真题',
+  stage: '高中数学',
+  questionType: '单选题',
   figures: [],
   contentRevision: 1,
 } as Partial<QuestionItem> as QuestionItem
 
-describe('QuestionEditDialog figure management panel', () => {
+describe('QuestionEditDialog figure management and metadata panels', () => {
   let container: HTMLDivElement
   let root: Root
 
@@ -71,11 +86,24 @@ describe('QuestionEditDialog figure management panel', () => {
     })
   }
 
-  it('switches between content editing and the new figure management panel', async () => {
+  it('switches between content editing, metadata, and figure management panels', async () => {
     await renderDialog()
     expect(document.querySelector('[data-testid="question-content-editor"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="question-figure-manager"]')).toBeNull()
 
+    // Switch to metadata tab
+    await act(async () => {
+      Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+        .find((button) => button.textContent?.includes('题目元数据'))
+        ?.click()
+    })
+
+    expect(document.querySelector('[data-testid="question-content-editor"]')).toBeNull()
+    expect(document.body.textContent).toContain('题目元数据')
+    expect(document.body.textContent).toContain('学段')
+    expect(document.body.textContent).toContain('题型')
+
+    // Switch to figure management tab
     await act(async () => {
       Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
         .find((button) => button.textContent?.includes('题图管理'))
