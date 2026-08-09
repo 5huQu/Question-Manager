@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TEACHING_DOM, waitForRenderReadiness } from '.'
 
 const immediateFrame = (callback: FrameRequestCallback) => {
@@ -7,6 +7,8 @@ const immediateFrame = (callback: FrameRequestCallback) => {
 }
 
 describe('waitForRenderReadiness', () => {
+  afterEach(() => vi.useRealTimers())
+
   it('transitions from a pending question resolver to a stable ready layout', async () => {
     const root = document.createElement('div')
     const question = document.createElement('div')
@@ -65,12 +67,15 @@ describe('waitForRenderReadiness', () => {
   })
 
   it('stops waiting when an animation frame is never delivered', async () => {
+    vi.useFakeTimers()
     const root = document.createElement('div')
-    const result = await waitForRenderReadiness(root, {
+    const waiting = waitForRenderReadiness(root, {
       timeoutMs: 5,
       stableFrames: 1,
       requestFrame: () => 1,
     })
+    await vi.advanceTimersByTimeAsync(5)
+    const result = await waiting
 
     expect(result.ready).toBe(false)
     expect(result.timedOut).toBe(true)

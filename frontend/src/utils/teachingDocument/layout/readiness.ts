@@ -58,19 +58,20 @@ function nextFrame(
   deadline: number,
   signal?: AbortSignal,
 ) {
-  return new Promise<void>((resolve) => {
-    if (signal?.aborted) return resolve()
+  return new Promise<'frame' | 'timeout' | 'aborted'>((resolve) => {
+    if (signal?.aborted) return resolve('aborted')
     let settled = false
-    const finish = () => {
+    const finish = (result: 'frame' | 'timeout' | 'aborted') => {
       if (settled) return
       settled = true
       window.clearTimeout(timer)
-      signal?.removeEventListener('abort', finish)
-      resolve()
+      signal?.removeEventListener('abort', abort)
+      resolve(result)
     }
-    const timer = window.setTimeout(finish, Math.max(1, deadline - Date.now()))
-    signal?.addEventListener('abort', finish, { once: true })
-    requestFrame(finish)
+    const abort = () => finish('aborted')
+    const timer = window.setTimeout(() => finish('timeout'), Math.max(1, deadline - Date.now()))
+    signal?.addEventListener('abort', abort, { once: true })
+    requestFrame(() => finish('frame'))
   })
 }
 
@@ -84,7 +85,8 @@ async function waitForStableFrames(
   let stable = 0
   let previous = ''
   while (stable < count && Date.now() < deadline && !signal?.aborted) {
-    await nextFrame(requestFrame, deadline, signal)
+    const frame = await nextFrame(requestFrame, deadline, signal)
+    if (frame !== 'frame' || Date.now() >= deadline) break
     const rect = root.getBoundingClientRect()
     const signature = [
       rect.width,
