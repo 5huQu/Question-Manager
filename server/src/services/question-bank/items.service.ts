@@ -292,19 +292,14 @@ export function bindFigureToMarker(id: string, figureId: string, body: Record<st
   if (!markerId) throw new RouteError(400, '请选择要绑定的图片标签。')
   if (!/^[^\s>]+$/.test(markerId)) throw new RouteError(400, '图片标签格式无效。')
 
-  const escapedMarkerId = markerId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const markerPattern = new RegExp(`<!--\\s*DOC2X_FIGURE:${escapedMarkerId}\\s*-->`, 'i')
-  const content = [item.stemMarkdown, item.answerText, item.analysisMarkdown].join('\n')
-  if (!markerPattern.test(content)) throw new RouteError(400, '所选图片标签已不在题目文本中，请刷新后重试。')
-
   const index = item.figures.findIndex((figure) => String(figure.id || '') === figureId)
   if (index < 0) throw new RouteError(404, '题图不存在。')
-  const nextFigure = { ...item.figures[index], blockId: markerId }
+  const replacement = bindMarkerInContent(item, markerId, item.figures[index])
+  if (!replacement) throw new RouteError(400, '所选图片标签已不在题目文本中，请刷新后重试。')
+  const nextFigure = { ...item.figures[index], blockId: replacement.blockId, usage: replacement.usage }
   const nextFigures = item.figures.map((figure, figureIndex) => figureIndex === index ? nextFigure : figure)
-  // This is an explicit one-to-one user decision, so it deliberately bypasses
-  // the count-based OCR binding routine and leaves all other markers intact.
-  repo.updateQuestionFigures(id, nextFigures)
-  return nextFigure
+  persistExplicitFigureBindings(id, item, nextFigures, replacement.content)
+  return repo.getQuestion(id)?.figures.find((figure) => String(figure.id || '') === figureId) || nextFigure
 }
 
 export function bindFiguresToMarkers(id: string, body: Record<string, unknown>) {
@@ -313,38 +308,77 @@ export function bindFiguresToMarkers(id: string, body: Record<string, unknown>) 
   const bindings = Array.isArray(body.bindings) ? body.bindings : []
   if (!bindings.length) throw new RouteError(400, '没有可确认的图片绑定。')
 
-  const markerPattern = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/gi
-  const availableMarkers = new Set(Array.from(
-    [item.stemMarkdown, item.answerText, item.analysisMarkdown].join('\n').matchAll(markerPattern),
-    (match) => match[1],
-  ))
-  const occupiedMarkers = new Set(item.figures.flatMap((figure) => [figure.id, figure.blockId]).filter(Boolean).map(String))
+  let content = { stem: item.stemMarkdown, answer: item.answerText, analysis: item.analysisMarkdown }
+  const boundMarkers = inlineBoundMarkerIds(content)
   const seenFigures = new Set<string>()
   const seenMarkers = new Set<string>()
-  const assignments = bindings.map((binding) => {
+  const nextFigures = [...item.figures]
+  for (const binding of bindings) {
     const value = binding && typeof binding === 'object' ? binding as Record<string, unknown> : {}
     const figureId = String(value.figureId || '').trim()
     const markerId = String(value.markerId || '').trim()
     if (!figureId || !markerId || !/^[^\s>]+$/.test(markerId)) throw new RouteError(400, '图片绑定信息无效。')
     if (seenFigures.has(figureId) || seenMarkers.has(markerId)) throw new RouteError(400, '同一图片或标签不能重复绑定。')
-    if (!availableMarkers.has(markerId)) throw new RouteError(400, '有图片标签已不在题目文本中，请刷新后重试。')
-    if (occupiedMarkers.has(markerId)) throw new RouteError(400, '有图片标签已绑定题图，请刷新后重试。')
-    const figure = item.figures.find((candidate) => String(candidate.id || '') === figureId)
+    const figureIndex = nextFigures.findIndex((candidate) => String(candidate.id || '') === figureId)
+    const figure = nextFigures[figureIndex]
     if (!figure) throw new RouteError(404, '题图不存在。')
-    if (figure.blockId) throw new RouteError(400, '有题图已绑定图片标签，请刷新后重试。')
+    if ([figure.id, figure.blockId].filter(Boolean).map(String).some((value) => boundMarkers.has(value))) throw new RouteError(400, '有题图已在正文中定位，请刷新后重试。')
+    const replacement = bindMarkerInContent({ ...item, stemMarkdown: content.stem, answerText: content.answer, analysisMarkdown: content.analysis }, markerId, figure)
+    if (!replacement) throw new RouteError(400, '有图片标签已不在题目文本中，请刷新后重试。')
     seenFigures.add(figureId)
     seenMarkers.add(markerId)
-    return { figureId, markerId }
-  })
-  const assignmentByFigureId = new Map(assignments.map((assignment) => [assignment.figureId, assignment.markerId]))
-  const figures = item.figures.map((figure) => {
-    const markerId = assignmentByFigureId.get(String(figure.id || ''))
-    return markerId ? { ...figure, blockId: markerId } : figure
-  })
+    boundMarkers.add(replacement.blockId)
+    content = replacement.content
+    nextFigures[figureIndex] = { ...figure, blockId: replacement.blockId, usage: replacement.usage }
+  }
   // The confirmation screen presents this mapping before it reaches the API;
   // persist the approved group together so a partial sequence is never saved.
-  repo.updateQuestionFigures(id, figures)
-  return { figures }
+  persistExplicitFigureBindings(id, item, nextFigures, content)
+  return { figures: repo.getQuestion(id)?.figures || nextFigures }
+}
+
+type FigureBindingContent = { stem: string; answer: string; analysis: string }
+
+function inlineBoundMarkerIds(content: FigureBindingContent) {
+  const markerPattern = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/gi
+  return new Set(Object.values(content).flatMap((value) => Array.from(String(value || '').matchAll(markerPattern), (match) => match[1])))
+}
+
+function bindMarkerInContent(item: { stemMarkdown: string; answerText: string; analysisMarkdown: string }, markerId: string, figure: Record<string, any>): { content: FigureBindingContent; blockId: string; usage: string } | null {
+  const content: FigureBindingContent = { stem: item.stemMarkdown, answer: item.answerText, analysis: item.analysisMarkdown }
+  const ocrMatch = markerId.match(/^OCR_IMAGE_REFERENCE:(stem|answer|analysis):(\d+)$/i)
+  if (ocrMatch) {
+    const field = ocrMatch[1].toLowerCase() as keyof FigureBindingContent
+    const escapedMarkerId = markerId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const pattern = new RegExp(`<!--\\s*${escapedMarkerId}\\s*-->`, 'i')
+    if (!pattern.test(content[field])) return null
+    const blockId = String(figure.blockId || figure.id || '').trim()
+    if (!blockId) return null
+    content[field] = content[field].replace(pattern, `<!-- DOC2X_FIGURE:${blockId} -->`)
+    return { content, blockId, usage: field }
+  }
+
+  const escapedMarkerId = markerId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const pattern = new RegExp(`<!--\\s*DOC2X_FIGURE:${escapedMarkerId}\\s*-->`, 'i')
+  const field = (Object.keys(content) as Array<keyof FigureBindingContent>).find((key) => pattern.test(content[key]))
+  if (!field) return null
+  return { content, blockId: markerId, usage: field }
+}
+
+function persistExplicitFigureBindings(id: string, item: NonNullable<ReturnType<typeof repo.getQuestion>>, figures: Array<Record<string, any>>, content: FigureBindingContent) {
+  const formatIssues = validateQuestionMarkdown({ problem_text: content.stem, answer: content.answer, analysis: content.analysis })
+  const requiresFormatReview = Boolean(formatIssues.length)
+  const formatReviewJson = requiresFormatReview ? JSON.stringify(formatReviewPayload(formatIssues, nowIso())) : '{}'
+  repo.updateQuestionAfterFigureBinding(id, [
+    content.stem,
+    content.answer,
+    content.analysis,
+    JSON.stringify(figures),
+    requiresFormatReview ? 'blocked' : item.bankStatus === 'blocked' ? 'ready' : item.bankStatus,
+    requiresFormatReview ? 1 : 0,
+    formatReviewJson,
+    nowIso(),
+  ])
 }
 
 function normalizeFigureUsage(value: unknown) {

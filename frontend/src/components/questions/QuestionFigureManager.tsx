@@ -16,6 +16,7 @@ const defaultTikz = `\\begin{tikzpicture}
 
 type Usage = 'stem' | 'analysis' | 'options'
 type FigureManagerSurface = 'solid' | 'glass'
+type MarkerReference = { id: string; label: string; field: 'stem' | 'answer' | 'analysis'; kind: 'doc2x' | 'ocr' }
 
 function usageLabel(value: string) {
   return value === 'analysis' ? '解析图' : value === 'options' ? '选项图' : '题干图'
@@ -31,18 +32,31 @@ function figureMarker(figure: QuestionFigure) {
 }
 
 function markerReferences(question: QuestionItem, figures: QuestionFigure[]) {
-  const markerPattern = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/gi
+  const doc2xMarkerPattern = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/gi
+  const ocrMarkerPattern = /<!--\s*OCR_IMAGE_REFERENCE:(stem|answer|analysis):(\d+)\s*-->/gi
   const knownIds = new Set(figures.flatMap((figure) => [figure.id, figure.blockId]).filter(Boolean).map(String))
   const fields = [
-    ['stemMarkdown', '题干与选项'],
-    ['answerText', '答案'],
-    ['analysisMarkdown', '解析'],
-  ] as const
+    ['stemMarkdown', '题干与选项', 'stem'],
+    ['answerText', '答案', 'answer'],
+    ['analysisMarkdown', '解析', 'analysis'],
+  ] as const satisfies ReadonlyArray<[keyof QuestionItem, string, MarkerReference['field']]>
   const seen = new Set<string>()
-  return fields.flatMap(([key, label]) => {
+  return fields.flatMap(([key, label, field]) => {
+    const value = String(question[key] || '')
+    doc2xMarkerPattern.lastIndex = 0
+    ocrMarkerPattern.lastIndex = 0
+    const doc2xMarkers = Array.from(value.matchAll(doc2xMarkerPattern), (match) => ({ id: match[1], label, field, kind: 'doc2x' as const, index: match.index || 0 }))
+    const ocrMarkers = Array.from(value.matchAll(ocrMarkerPattern), (match) => ({ id: `OCR_IMAGE_REFERENCE:${match[1]}:${match[2]}`, label, field, kind: 'ocr' as const, index: match.index || 0 }))
+    return [...doc2xMarkers, ...ocrMarkers].sort((left, right) => left.index - right.index)
+  }).filter((marker) => (marker.kind === 'ocr' || !knownIds.has(marker.id)) && !seen.has(marker.id) && Boolean(seen.add(marker.id))) as MarkerReference[]
+}
+
+function inlineDoc2xFigureIds(question: QuestionItem) {
+  const markerPattern = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/gi
+  return new Set(['stemMarkdown', 'answerText', 'analysisMarkdown'].flatMap((key) => {
     markerPattern.lastIndex = 0
-    return Array.from(String(question[key] || '').matchAll(markerPattern), (match) => ({ id: match[1], label }))
-  }).filter((marker) => !knownIds.has(marker.id) && !seen.has(marker.id) && Boolean(seen.add(marker.id)))
+    return Array.from(String(question[key as keyof QuestionItem] || '').matchAll(markerPattern), (match) => match[1])
+  }))
 }
 
 function dataSvg(result: { svgBase64: string }) {
@@ -181,8 +195,17 @@ export function QuestionFigureManager({
 
   const selected = figures.find((figure) => String(figure.id || '') === selectedId)
   const unboundMarkers = useMemo(() => markerReferences(question, figures), [question.stemMarkdown, question.answerText, question.analysisMarkdown, figures])
-  const unboundFigures = useMemo(() => figures.filter((figure) => figure.id && !figure.blockId), [figures])
-  const automaticBindings = useMemo(() => unboundMarkers.slice(0, unboundFigures.length).map((marker, index) => ({ marker, figure: unboundFigures[index] })), [unboundMarkers, unboundFigures])
+  const inlineFigureIds = useMemo(() => inlineDoc2xFigureIds(question), [question.stemMarkdown, question.answerText, question.analysisMarkdown])
+  const unboundFigures = useMemo(() => figures.filter((figure) => figure.id && ![figure.id, figure.blockId].filter(Boolean).map(String).some((value) => inlineFigureIds.has(value))), [figures, inlineFigureIds])
+  const automaticBindings = useMemo(() => {
+    const remaining = [...unboundFigures]
+    return unboundMarkers.flatMap((marker) => {
+      const usage = marker.field === 'stem' ? 'stem' : marker.field
+      const index = remaining.findIndex((figure) => String(figure.usage || 'stem') === usage)
+      const figure = remaining.splice(index >= 0 ? index : 0, 1)[0]
+      return figure ? [{ marker, figure }] : []
+    })
+  }, [unboundMarkers, unboundFigures])
   useEffect(() => {
     if (!selected) return
     setUsage((selected.usage || 'stem') as Usage)
@@ -279,8 +302,8 @@ export function QuestionFigureManager({
             </div>
             {autoBindingPreview ? <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900/30">
               {automaticBindings.length ? <><p className="font-medium text-zinc-800 dark:text-zinc-100">请确认自动匹配</p>
-                <p className="mt-1 leading-5 text-zinc-500">已按题干、答案、解析中标签出现的顺序，依次匹配尚未绑定的题图。</p>
-                <div className="mt-2 space-y-1.5">{automaticBindings.map(({ figure, marker }) => <div key={`${figure.id}-${marker.id}`} className="flex items-center gap-2 rounded border border-zinc-200 bg-white px-2 py-1.5 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"><span className="shrink-0 font-medium">图 {figures.indexOf(figure) + 1}</span><ChevronRight className="size-3.5 shrink-0 text-zinc-400" /><span className="min-w-0 truncate">{marker.label} · {marker.id}</span></div>)}</div>
+                <p className="mt-1 leading-5 text-zinc-500">已按题干、答案、解析中标签出现的顺序，依次匹配尚未绑定的题图；确认后会同步图片用途到目标字段。</p>
+                <div className="mt-2 space-y-1.5">{automaticBindings.map(({ figure, marker }) => <div key={`${figure.id}-${marker.id}`} className="flex items-center gap-2 rounded border border-zinc-200 bg-white px-2 py-1.5 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"><span className="shrink-0 font-medium">图 {figures.indexOf(figure) + 1} · {usageLabel(String(figure.usage || 'stem'))}</span><ChevronRight className="size-3.5 shrink-0 text-zinc-400" /><span className="min-w-0 truncate">{marker.label} · {marker.id}</span></div>)}</div>
                 {unboundMarkers.length !== unboundFigures.length ? <p className="mt-2 text-amber-800/80 dark:text-amber-300/80">发现 {unboundMarkers.length} 个标签、{unboundFigures.length} 张未绑定题图；本次只匹配前 {automaticBindings.length} 项，其余请手动处理。</p> : null}
                 <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => setAutoBindingPreview(false)}>取消</Button><Button size="sm" icon={busy ? LoaderCircle : Check} disabled={busy} onClick={() => void confirmAutomaticBindings()}>{busy ? '绑定中' : `确认绑定 ${automaticBindings.length} 项`}</Button></div>
               </> : <><p className="font-medium text-zinc-800 dark:text-zinc-100">没有可自动匹配的标签</p><p className="mt-1 leading-5 text-zinc-500">已解析题干、答案和解析：当前有 {unboundMarkers.length} 个未绑定标签、{unboundFigures.length} 张未绑定题图。请确认文本中已保留图片标签，或使用下方手动绑定。</p><div className="mt-3 flex justify-end"><Button size="sm" variant="outline" onClick={() => setAutoBindingPreview(false)}>知道了</Button></div></>}
