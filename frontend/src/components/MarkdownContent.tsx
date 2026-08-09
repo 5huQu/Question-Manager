@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import 'katex/dist/katex.min.css'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
@@ -7,42 +7,87 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import { normalizeLatexMathDelimiters } from '@/utils/mathMarkdown'
 import { blankNodeToHast, remarkFillBlank } from '@/utils/fillBlankMarkdown'
+import { splitHtmlTableSegments, type HtmlTable } from '@/utils/htmlTables'
 
 export const MarkdownContent = memo(function MarkdownContent({ content, className = '' }: { content: string; className?: string }) {
+  const segments = useMemo(() => splitHtmlTableSegments(content), [content])
   return (
     <div className={`markdown-content min-w-0 max-w-none text-zinc-950 dark:text-zinc-50 ${className}`}>
-      <ReactMarkdown
-        remarkPlugins={[remarkMath, remarkGfm, remarkBreaks, remarkFillBlank]}
-        remarkRehypeOptions={{ handlers: { blank: blankNodeToHast } as any }}
-        rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
-        urlTransform={markdownUrlTransform}
-        components={{
-          p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
-          ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
-          ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,
-          li: ({ children }) => <li className="pl-1">{children}</li>,
-          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-          blockquote: ({ children }) => <blockquote className="my-2 border-l-2 border-zinc-300 pl-3 text-zinc-600">{children}</blockquote>,
-          code: ({ children }) => <code className="rounded bg-zinc-100 px-1 py-0.5 text-[0.92em]">{children}</code>,
-          span: ({ className, children, node: _node, ...props }) => String(className || '').includes('katex-error')
-            ? <span {...props} className="inline-flex items-baseline gap-1 rounded bg-amber-50 px-1 text-amber-900"><code>{children}</code><span className="text-[10px] text-amber-700">公式未规范化</span></span>
-            : <span {...props} className={className}>{children}</span>,
-          ['blank' as any]: ({ node }: any) => {
-            const count = Number((node?.properties as { dataBlank?: string } | undefined)?.dataBlank) || 3
-            const width = `${Math.min(2 + count * 0.35, 8)}em`
-            return <span aria-label="填空" className="mx-0.5 inline-block h-[1.15em] translate-y-[0.18em] border-b border-zinc-500 align-baseline dark:border-zinc-400" style={{ width }} />
-          },
-          pre: ({ children }) => <pre className="my-2 overflow-auto rounded-lg border bg-zinc-50 p-3 text-xs leading-5">{children}</pre>,
-          table: ({ children }) => <div className="question-table-wrap"><table className="question-table">{children}</table></div>,
-          th: ({ children }) => <th>{children}</th>,
-          td: ({ children }) => <td>{children}</td>,
-        }}
-      >
-        {normalizeMarkdownForRender(content)}
-      </ReactMarkdown>
+      {segments.map((segment, index) => segment.type === 'html-table'
+        ? <HtmlTablePreview key={`html-table-${index}`} table={segment.table} />
+        : <MarkdownSegment key={`markdown-${index}`} content={segment.content} />)}
     </div>
   )
 })
+
+function MarkdownSegment({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkMath, remarkGfm, remarkBreaks, remarkFillBlank]}
+      remarkRehypeOptions={{ handlers: { blank: blankNodeToHast } as any }}
+      rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
+      urlTransform={markdownUrlTransform}
+      components={markdownComponents}
+    >
+      {normalizeMarkdownForRender(content)}
+    </ReactMarkdown>
+  )
+}
+
+function HtmlTableCellContent({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkMath, remarkGfm, remarkBreaks, remarkFillBlank]}
+      remarkRehypeOptions={{ handlers: { blank: blankNodeToHast } as any }}
+      rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
+      urlTransform={markdownUrlTransform}
+      components={{ ...markdownComponents, p: ({ children }) => <>{children}</> }}
+    >
+      {normalizeLatexMathDelimiters(stripDoc2xNoiseComments(content))}
+    </ReactMarkdown>
+  )
+}
+
+function HtmlTablePreview({ table }: { table: HtmlTable }) {
+  return (
+    <div className="question-table-wrap">
+      <table className="question-table">
+        <tbody>
+          {table.rows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {row.map((cell, cellIndex) => {
+                const Cell = cell.header ? 'th' : 'td'
+                return <Cell key={cellIndex} colSpan={cell.colspan} rowSpan={cell.rowspan} style={cell.align ? { textAlign: cell.align } : undefined}><HtmlTableCellContent content={cell.content} /></Cell>
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+const markdownComponents = {
+  p: ({ children }: { children?: React.ReactNode }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
+  ul: ({ children }: { children?: React.ReactNode }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,
+  li: ({ children }: { children?: React.ReactNode }) => <li className="pl-1">{children}</li>,
+  strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-semibold">{children}</strong>,
+  blockquote: ({ children }: { children?: React.ReactNode }) => <blockquote className="my-2 border-l-2 border-zinc-300 pl-3 text-zinc-600">{children}</blockquote>,
+  code: ({ children }: { children?: React.ReactNode }) => <code className="rounded bg-zinc-100 px-1 py-0.5 text-[0.92em]">{children}</code>,
+  span: ({ className, children, node: _node, ...props }: { className?: string; children?: React.ReactNode; node?: unknown }) => String(className || '').includes('katex-error')
+    ? <span {...props} className="inline-flex items-baseline gap-1 rounded bg-amber-50 px-1 text-amber-900"><code>{children}</code><span className="text-[10px] text-amber-700">公式未规范化</span></span>
+    : <span {...props} className={className}>{children}</span>,
+  ['blank' as any]: ({ node }: any) => {
+    const count = Number((node?.properties as { dataBlank?: string } | undefined)?.dataBlank) || 3
+    const width = `${Math.min(2 + count * 0.35, 8)}em`
+    return <span aria-label="填空" className="mx-0.5 inline-block h-[1.15em] translate-y-[0.18em] border-b border-zinc-500 align-baseline dark:border-zinc-400" style={{ width }} />
+  },
+  pre: ({ children }: { children?: React.ReactNode }) => <pre className="my-2 overflow-auto rounded-lg border bg-zinc-50 p-3 text-xs leading-5">{children}</pre>,
+  table: ({ children }: { children?: React.ReactNode }) => <div className="question-table-wrap"><table className="question-table">{children}</table></div>,
+  th: ({ children }: { children?: React.ReactNode }) => <th>{children}</th>,
+  td: ({ children }: { children?: React.ReactNode }) => <td>{children}</td>,
+}
 
 function markdownUrlTransform(value: string) {
   if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=\s]+$/i.test(value)) return value

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Check, Image, LoaderCircle, Pencil, RotateCcw, Save, Tag, X } from 'lucide-react'
 import { ApiError } from '@/api/client'
 import { learningTagsApi } from '@/api/learningTags'
@@ -23,6 +23,32 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState('')
   const [editorConflict, setEditorConflict] = useState<QuestionEditorConflict | null>(null)
+
+  const previewScrollContainerRef = useRef<HTMLDivElement>(null)
+  const stemPreviewRef = useRef<HTMLDivElement>(null)
+  const answerPreviewRef = useRef<HTMLDivElement>(null)
+  const analysisPreviewRef = useRef<HTMLDivElement>(null)
+
+  const handleActiveTabChange = (field: 'stemMarkdown' | 'answerText' | 'analysisMarkdown') => {
+    const targetRef = field === 'stemMarkdown'
+      ? stemPreviewRef
+      : field === 'answerText'
+        ? answerPreviewRef
+        : analysisPreviewRef
+
+    if (targetRef.current && previewScrollContainerRef.current) {
+      const container = previewScrollContainerRef.current
+      const target = targetRef.current
+      const containerRect = container.getBoundingClientRect()
+      const targetRect = target.getBoundingClientRect()
+      const scrollTop = container.scrollTop + (targetRect.top - containerRect.top) - 16
+
+      container.scrollTo({
+        top: Math.max(0, scrollTop),
+        behavior: 'smooth',
+      })
+    }
+  }
 
   const initialDraft = useMemo(() => ({ ...draft }), [draft.id])
   const initialContent = useMemo<QuestionContentDraft>(() => ({
@@ -237,6 +263,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
                   }}
                   onSave={handleSaveAll}
                   onCancel={onClose}
+                  onActiveTabChange={handleActiveTabChange}
                   saving={saving}
                   dirty={contentDraft.dirty}
                   contentRevision={draft.contentRevision}
@@ -283,7 +310,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
             </div>
 
             {/* Right Column: Live Preview */}
-            <div className="h-full overflow-y-auto pl-2 border-t pt-4 lg:border-t-0 lg:pt-0 lg:border-l border-black/6 dark:border-white/8 space-y-4 lg:pl-6">
+            <div ref={previewScrollContainerRef} className="h-full overflow-y-auto pl-2 border-t pt-4 lg:border-t-0 lg:pt-0 lg:border-l border-black/6 dark:border-white/8 space-y-4 lg:pl-6">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-300">实时预览效果</span>
                 <span className="relative flex h-2 w-2">
@@ -313,7 +340,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
                 </div>
 
                 {/* Question Stem Content */}
-                <div className="space-y-3">
+                <div ref={stemPreviewRef} className="space-y-3">
 	                  <QuestionMarkdownContent
 	                    className="text-sm leading-7"
 	                    content={draftProblemText(draft)}
@@ -324,7 +351,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
 
                 {/* Answers and Analysis Sections (always visible in preview for easy editing) */}
                 <div className="border-t border-zinc-100 dark:border-zinc-800/80 pt-4 space-y-4">
-                  <div className="bg-zinc-50/50 dark:bg-zinc-800/30 rounded-xl p-3.5 border border-zinc-200/60 dark:border-zinc-700/30">
+                  <div ref={answerPreviewRef} className="bg-zinc-50/50 dark:bg-zinc-800/30 rounded-xl p-3.5 border border-zinc-200/60 dark:border-zinc-700/30">
                     <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block mb-1">答案</span>
 	                    {draftAnswerText(draft).trim() ? (
 	                      <MarkdownContent className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed font-medium" content={draftAnswerText(draft)} />
@@ -333,7 +360,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
                     )}
                   </div>
 
-                  <div className="bg-zinc-50/50 dark:bg-zinc-800/30 rounded-xl p-3.5 border border-zinc-200/60 dark:border-zinc-700/30">
+                  <div ref={analysisPreviewRef} className="bg-zinc-50/50 dark:bg-zinc-800/30 rounded-xl p-3.5 border border-zinc-200/60 dark:border-zinc-700/30">
                     <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block mb-1.5">解析</span>
 	                    {draftAnalysisText(draft).trim() ? (
 	                      <>

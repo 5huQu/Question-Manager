@@ -1,6 +1,7 @@
 import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { aiAssistantApi, type AiAssistantContentFormatResult } from '@/api/aiAssistant'
 import { QuestionContentEditor } from './QuestionContentEditor'
 import { joinChoices, splitChoices, suggestChoiceConversion, type QuestionContentValue } from './model'
 
@@ -84,6 +85,41 @@ describe('QuestionContentEditor', () => {
     expect(container.textContent).toContain('Markdown 源码')
   })
 
+  it('opens imported HTML tables visually and retains merged cell attributes', async () => {
+    const value = {
+      ...initial,
+      stemMarkdown: '统计结果如下：\n\n<table border="1"><tr><td rowspan="2">性别</td><td colspan="2">冰雪运动</td></tr><tr><td>了解</td><td>不了解</td></tr></table>',
+      analysisMarkdown: '<table border="1"><tr><td>附： $\\chi^2$</td><td>0.050</td></tr></table>',
+    }
+    await act(async () => {
+      root.render(<QuestionContentEditor entityKey="candidate:html-table" value={value} onChange={() => undefined} />)
+    })
+
+    expect(container.querySelector('[aria-label="题干与选项 Markdown 源码"]')).toBeNull()
+    expect(container.querySelector('td[rowspan="2"]')?.textContent).toContain('性别')
+    expect(container.querySelector('td[colspan="2"]')?.textContent).toContain('冰雪运动')
+    expect(container.textContent).not.toContain('转换提示')
+  })
+
+  it('shows row, column, merge, and header controls when a table is selected', async () => {
+    const onChange = vi.fn()
+    const value = {
+      ...initial,
+      stemMarkdown: '<table border="1"><tr><td>甲</td><td>乙</td></tr><tr><td>1</td><td>2</td></tr></table>',
+    }
+    await act(async () => {
+      root.render(<QuestionContentEditor entityKey="candidate:table-actions" value={value} onChange={onChange} />)
+    })
+
+    expect(container.querySelector('[aria-label="表格操作"]')).not.toBeNull()
+    const addRow = container.querySelector<HTMLButtonElement>('[aria-label="在下方插入行"]')!
+    expect(addRow).not.toBeNull()
+    expect(container.querySelector('[aria-label="合并选中的单元格"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="切换首行表头"]')).not.toBeNull()
+    await act(async () => { addRow.click() })
+    expect(onChange.mock.calls.at(-1)?.[0].stemMarkdown).toBe('<table border="1"><tr><td>甲</td><td>乙</td></tr><tr><td></td><td></td></tr><tr><td>1</td><td>2</td></tr></table>')
+  })
+
   it('previews and applies inline legacy choices without mutating before confirmation', async () => {
     const onChange = vi.fn()
     const value = {
@@ -126,6 +162,50 @@ describe('QuestionContentEditor', () => {
     })
     expect(save).toHaveBeenCalledOnce()
     expect(save.mock.calls[0][0].stemMarkdown).toContain('新增条件')
+  })
+
+  it('closes the prompt, shows AI progress, then lets the user revert the backfilled fields', async () => {
+    let resolveRequest!: (result: AiAssistantContentFormatResult) => void
+    const pending = new Promise<AiAssistantContentFormatResult>((resolve) => { resolveRequest = resolve })
+    const optimize = vi.spyOn(aiAssistantApi, 'formatQuestionContent').mockReturnValue(pending)
+    const optimized = {
+      stemMarkdown: '优化后的题干',
+      answerText: '优化后的答案',
+      analysisMarkdown: '优化后的解析',
+    }
+
+    function Harness() {
+      const [value, setValue] = useState(initial)
+      return <QuestionContentEditor entityKey="question:ai-workflow" value={value} onChange={setValue} />
+    }
+
+    try {
+      await act(async () => { root.render(<Harness />) })
+      const openHelper = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('AI 辅助'))!
+      await act(async () => { openHelper.click() })
+      expect(document.body.textContent).toContain('AI 提示词辅助')
+
+      const aiButton = [...document.body.querySelectorAll('button')].find((button) => button.textContent === 'AI助手')!
+      await act(async () => { aiButton.click() })
+      expect(optimize).toHaveBeenCalledWith(initial)
+      expect(container.textContent).toContain('AI 助手正在优化题干、答案和解析')
+      expect(document.body.textContent).not.toContain('AI 提示词辅助')
+
+      await act(async () => {
+        resolveRequest({ content: optimized, model: 'test-model' })
+        await pending
+      })
+      expect(container.textContent).toContain('AI 格式优化已回填到题干、答案和解析')
+      expect(container.textContent).toContain('保留优化结果')
+      expect(container.textContent).toContain('撤销 AI 优化')
+
+      const revert = [...container.querySelectorAll('button')].find((button) => button.textContent === '撤销 AI 优化')!
+      await act(async () => { revert.click() })
+      expect(container.textContent).not.toContain('AI 格式优化已回填到题干、答案和解析')
+      expect(container.textContent).toContain('计算')
+    } finally {
+      optimize.mockRestore()
+    }
   })
 })
 

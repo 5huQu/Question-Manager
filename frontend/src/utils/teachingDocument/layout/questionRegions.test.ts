@@ -85,6 +85,17 @@ describe('createQuestionRuntimeModel', () => {
       .toEqual([[0, 2], [2, 4]])
   })
 
+  it('normalizes alternate inline math delimiters before passing options to the document editor', () => {
+    const block: QuestionBlock = { type: 'question', id: 'question-block', questionId: 'question-1' }
+    const model = createQuestionRuntimeModel(block, question({
+      stemMarkdown: '选择正确结论。\n\nA. \\(\\frac{3}{5}\\mathrm{i}\\)\nB. \\(-\\frac{4}{5}\\mathrm{i}\\)\nC. \\(\\frac{3}{5}\\)\nD. \\(-\\frac{4}{5}\\)',
+    }))
+    const optionRegion = model.regions.find((region) => region.kind === 'options-row')
+
+    expect(optionRegion && optionRegion.kind === 'options-row' ? optionRegion.inlineContent?.A : undefined)
+      .toEqual([{ type: 'inlineMath', latex: '\\frac{3}{5}\\mathrm{i}' }])
+  })
+
   it('uses the persisted per-question choice layout', () => {
     const block: QuestionBlock = {
       type: 'question',

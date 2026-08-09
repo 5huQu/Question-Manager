@@ -113,7 +113,7 @@ describe('TeachingDocumentEditorPage 选中图片弹出属性面板', () => {
       figure!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
     })
     const propertiesDock = container.querySelector<HTMLElement>('[data-teaching-properties-dock]')
-    expect(propertiesDock?.className).toContain('w-[300px]')
+    expect(propertiesDock?.className).toContain('w-[18.75rem]')
     expect(propertiesDock?.dataset.teachingDockOccupied).toBe('true')
     expect(propertiesDock?.style.width).toBe('')
     const aside = container.querySelector('aside')
@@ -127,7 +127,7 @@ describe('TeachingDocumentEditorPage 选中图片弹出属性面板', () => {
 
     const close = container.querySelector<HTMLButtonElement>('button[title="关闭属性面板"]')
     await act(async () => close?.click())
-    expect(propertiesDock?.className).toContain('w-[300px]')
+    expect(propertiesDock?.className).toContain('w-[18.75rem]')
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 350))
     })

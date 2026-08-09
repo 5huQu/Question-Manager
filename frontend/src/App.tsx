@@ -11,6 +11,7 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import type { OcrSettings } from '@/types'
 import type { UpdateCheckResult } from '@/api/client'
 import { AccountManagementGuard } from '@/auth/AccountManagementGuard'
+import { useAppUiScale } from '@/lib/uiScale'
 
 const TraditionalWorkbenchPage = lazy(() => import('@/pages/workbench/TraditionalWorkbenchPage'))
 const ImportDocumentReviewPage = lazy(() => import('@/pages/import-v2/ImportDocumentReviewPage'))
@@ -96,6 +97,9 @@ function LegacyImportV2RunQuestionsRedirect({ runId }: { runId: string }) {
 export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
+  // 自动档由 CSS media query 根据 CSS viewport 宽度更新，不会在 resize 时触发 React 重渲染。
+  // 打印路由刻意绕开应用 UI scale，保护 A4 / PDF 真实几何。
+  useAppUiScale(!location.pathname.startsWith('/print/'))
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('theme') === 'dark')
   const [settingsReady, setSettingsReady] = useState(false)
   const [availableUpdate, setAvailableUpdate] = useState<UpdateCheckResult | null>(null)

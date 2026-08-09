@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { ParagraphBlock, TeachingDocumentV1, TeachingInline } from '@/types/teachingDocument'
+import type { QuestionItem } from '@/types'
 import type { ParagraphFragmentPaginationItem } from '@/utils/teachingDocument'
 import { InlineContent } from './blocks/InlineContent'
 import { ParagraphFragmentRenderer } from './blocks/BlockRenderer'
@@ -253,5 +254,45 @@ describe('TeachingDocumentRenderer fallbacks', () => {
       />,
     )
     expect(html.match(/data-block-id="duplicate"/g)).toHaveLength(2)
+  })
+
+  it('renders the imported Winter Olympics question table with merged cells in document flow', () => {
+    const question: QuestionItem = {
+      id: 'winter-olympics-table',
+      serialNo: null,
+      questionNo: '15',
+      stage: '高中',
+      questionType: '解答题',
+      difficultyScore: 3,
+      difficultyScore10: 6,
+      difficultyLabel: '中等',
+      chapter: '',
+      knowledgePoints: [],
+      solutionMethods: [],
+      sourceTitle: '昆明市第一中学 2026 届高三数学第六次月考试题',
+      bankStatus: 'ready',
+      stemMarkdown: '北京冬奥会的成功举办，促进了全民群众参与冰雪运动。统计结果如下：\n\n<table border="1"><tr><td rowspan="2">性别</td><td colspan="2">冰雪运动</td><td rowspan="2">合计</td></tr><tr><td>了解</td><td>不了解</td></tr><tr><td>男</td><td>$m$</td><td>$n$</td><td>60</td></tr><tr><td>女</td><td>$p$</td><td>$q$</td><td>60</td></tr><tr><td>合计</td><td>80</td><td>40</td><td>120</td></tr></table>',
+      answerText: '',
+      analysisMarkdown: '',
+      totalScore: 13,
+      scoringRubric: [],
+      sliceImagePath: '',
+      figures: [],
+      sourceRunId: '',
+      updatedAt: '',
+      hasFigures: false,
+    }
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer
+        document={documentWith([{ type: 'question', id: 'winter-olympics-question', questionId: question.id }])}
+        resolveQuestion={() => question}
+      />,
+    )
+
+    expect(html).toContain('rowSpan="2"')
+    expect(html).toContain('colSpan="2"')
+    expect(html).toContain('冰雪运动')
+    expect(html).toContain('katex')
+    expect(html).not.toContain('&lt;table')
   })
 })

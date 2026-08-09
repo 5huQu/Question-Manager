@@ -29,6 +29,7 @@ import {
 import { PARSER_RULE_CATEGORIES } from './types'
 import { useSettingsState } from './useSettingsState'
 import { AccountManagementCard } from './AccountManagementCard'
+import { UI_SCALE_OPTIONS, useUiScaleMode } from '@/lib/uiScale'
 
 type SettingsTabKey = 'general' | 'ocr' | 'parser' | 'ai' | 'system'
 
@@ -41,6 +42,7 @@ const SETTINGS_TABS: { key: SettingsTabKey; label: string; icon: React.Component
 ]
 
 export function SettingsPage() {
+  const [uiScaleMode, setUiScaleMode] = useUiScaleMode()
   const {
     data,
     error,
@@ -143,6 +145,35 @@ export function SettingsPage() {
             <Field label="系统网站描述">
               <TextArea rows={2} value={draft.siteDescription ?? ''} onChange={(value) => setDraft({ ...draft, siteDescription: value })} />
             </Field>
+
+            <SectionTitle className="pt-2">界面缩放</SectionTitle>
+            <div className="space-y-1.5">
+              <span className="block text-[13px] font-medium text-zinc-500">Web 界面缩放</span>
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Web 界面缩放">
+                {UI_SCALE_OPTIONS.map((option) => {
+                  const active = uiScaleMode === option.mode
+                  return (
+                    <button
+                      key={String(option.mode)}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setUiScaleMode(option.mode)}
+                      className={`rounded border px-3 py-1.5 text-xs font-semibold transition-all ${
+                        active
+                          ? 'border-zinc-900 bg-zinc-950 text-white shadow-sm dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950'
+                          : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <p className="text-[11px] leading-normal text-zinc-400 dark:text-zinc-500">
+              自动模式按浏览器 CSS 宽度调整：1680px 起 105%，1920px 起 110%，2400px 起 115%。此偏好仅保存在当前浏览器，不影响 A4 预览或 PDF 导出。
+            </p>
 
             <SectionTitle className="pt-2">导出选项与教学学段</SectionTitle>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

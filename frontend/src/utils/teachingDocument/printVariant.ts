@@ -21,6 +21,8 @@ export function documentForPrintVariant(source: TeachingDocumentV1, variant: Tea
       ...block.display,
       showAnswer: showSolutions,
       showAnalysis: showSolutions,
+      // 教师版已呈现答案与解析，不再保留学生作答区域。
+      answerSpace: variant === 'teacher' ? undefined : block.display?.answerSpace,
     },
   })
   const transformChild = (block: BoxChildBlock): BoxChildBlock => block.type === 'question' ? transformQuestion(block) : block

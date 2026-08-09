@@ -40,10 +40,17 @@ type SplitItem = {
   analysis_line_ranges?: unknown
 }
 
+type AnswerTableEntry = {
+  question_no?: unknown
+  answer_text?: unknown
+  source_line_ranges?: unknown
+}
+
 type ModelSplitPayload = {
   schema_version?: unknown
   document_role?: unknown
   items?: unknown
+  answer_table_entries?: unknown
   unassigned_segment_ids?: unknown
   unassigned_line_ranges?: unknown
   warnings?: unknown
@@ -80,21 +87,29 @@ export type ModelSplitPreview = {
 const previews = new Map<string, ModelSplitPreview>()
 const MAX_MARKDOWN_CHARS = 240_000
 
-const FIXED_SYSTEM_PROMPT = `你是题目结构拆分器，只负责识别题目边界、字段归属和题号元数据。
+const FIXED_SYSTEM_PROMPT = `你是题目结构拆分器，只负责识别题目边界、字段归属、题号元数据，以及从原文答案表中抄录题号与答案的对应关系。
+
+语言要求：所有 warnings、number_repair.reason 和其他说明性文本必须使用简体中文，不得输出英文说明。
 
 严格禁止：
 1. 改写、润色、翻译或校正 OCR 正文、公式、表格和图片引用。
-2. 推理答案，补写缺失内容，或进行题型、知识点、解题方法、难度分类。
+2. 根据题干推理答案，补写原文不存在的内容，或进行题型、知识点、解题方法、难度分类。只允许从原文明确存在的汇总答案表中逐字抄录答案。
 3. 创建、删除、修改或重排任何图片标识符。
-4. 输出题目正文。正文只能由本地根据你返回的 Markdown 行号范围恢复。
+4. 输出题目正文。除 answer_table_entries.answer_text 外，正文只能由本地根据你返回的 Markdown 行号范围恢复。
 
 行号范围规则：
 1. 输入是添加了 L000001 形式行号前缀的完整 Markdown；行号从 1 开始，范围的起止行均包含在内。
 2. 每一行在整个 items 数组中最多归属一次，不得把同一行重复分给多道题或多个字段。
-3. 同时汇总多道题答案的答案表、跨题说明、页眉页脚等内容，不属于任何单题；必须放入 unassigned_line_ranges，并在 warnings 中简要说明。
+3. 同时汇总多道题答案的答案表、跨题说明、页眉页脚等内容，不属于任何单题；必须放入 unassigned_line_ranges。答案表还需要按下述规则输出 answer_table_entries。
 4. answer_line_ranges 只能指向当前单题独有的答案内容；analysis_line_ranges 只能指向当前单题独有的解析内容。
 5. 紧邻题干、答案或解析末尾的图片标识符行属于该字段，必须包含在对应范围内。
 6. 为便于增量处理，顶层 JSON 必须先输出 schema_version、document_role、items，并按题号顺序逐个输出完整 item；最后再输出 unassigned_line_ranges 和 warnings。
+
+答案表提取规则：
+1. 识别原文中“题号/答案”横向表格或其他明确的汇总答案表，为每个有明确对应关系的题号输出一条 answer_table_entries。
+2. answer_text 必须是答案表中的原文答案，只抄录答案单元格本身，例如 C、BD、$\\frac{1}{2}$；不得解释、计算、改写或补全。
+3. source_line_ranges 必须指向包含该题号与答案对应关系的原始表格行，作为本地核验依据。同一张汇总表格行可以被多个 answer_table_entries 重复引用。
+4. 无法明确确定题号与答案对应关系时不要输出该条目，并在 warnings 中用简体中文说明。
 
 允许的唯一修复是题号元数据：如果 OCR 题号明显漏字，且前后题号、解析稿或其他上下文提供了充分证据，可以把原始题号归一化为正确题号；必须同时返回 raw_question_no、normalized_question_no、number_repair.reason 和 number_repair.confidence。没有充分证据时不得猜测。
 
@@ -170,10 +185,10 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
   const payload = {
     document_role: role,
     instructions: role === 'solutions'
-      ? '这是答案解析文档。只返回 answer_line_ranges 或 analysis_line_ranges，不要生成题干范围。'
+      ? '这是答案解析文档。返回 answer_line_ranges 或 analysis_line_ranges，不要生成题干范围；如有汇总答案表，同时提取 answer_table_entries。'
       : role === 'questions'
-        ? '这是原卷文档。只返回 stem_line_ranges，不要生成答案或解析范围。'
-        : '这是同一份原卷与答案解析文档。按题号返回题干、答案和解析在完整 Markdown 中的行号范围。',
+        ? '这是原卷文档。只返回 stem_line_ranges，不要生成答案或解析范围；通常不应存在 answer_table_entries。'
+        : '这是同一份原卷与答案解析文档。按题号返回题干、答案和解析在完整 Markdown 中的行号范围；如有汇总答案表，同时提取 answer_table_entries。',
     line_numbering: '1-based, inclusive; L000001 means line 1',
     output_schema: {
       schema_version: 'model-split-line-ranges-v1',
@@ -185,6 +200,11 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
         stem_line_ranges: 'Array<[start_line, end_line]>',
         answer_line_ranges: 'Array<[start_line, end_line]>',
         analysis_line_ranges: 'Array<[start_line, end_line]>',
+      }],
+      answer_table_entries: [{
+        question_no: 'string',
+        answer_text: 'string copied exactly from the source answer cell',
+        source_line_ranges: 'Array<[start_line, end_line]>',
       }],
       unassigned_line_ranges: 'Array<[start_line, end_line]>',
       warnings: 'string[]',
@@ -575,6 +595,128 @@ function candidateFromModelItem(
   return { candidate, preview: { questionNo, rawQuestionNo: rawQuestionNo || undefined, numberRepair: repair, stemMarkdown, answerText, analysisMarkdown, sourceRefs, issues: candidate.issues } }
 }
 
+function compactEvidenceText(value: string) {
+  return String(value || '').normalize('NFKC').replace(/\s+/g, '')
+}
+
+function plainTableCell(value: string) {
+  return String(value || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&')
+    .trim()
+}
+
+function answerFromTableRows(rows: string[][], questionNo: string) {
+  const questionRow = rows.find((row) => /题号/.test(row[0] || ''))
+  const answerRow = rows.find((row) => /答案/.test(row[0] || ''))
+  if (!questionRow || !answerRow) return { recognized: false as const }
+  const column = questionRow.findIndex((cell, index) => index > 0 && normalizeQuestionNo(cell) === questionNo)
+  return { recognized: true as const, answerText: column > 0 ? String(answerRow[column] || '').trim() : '' }
+}
+
+function answerEvidenceForQuestion(evidenceText: string, questionNo: string) {
+  const htmlRows = Array.from(evidenceText.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi), (rowMatch) =>
+    Array.from(rowMatch[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi), (cellMatch) => plainTableCell(cellMatch[1])),
+  ).filter((row) => row.length > 0)
+  if (htmlRows.length > 0) return answerFromTableRows(htmlRows, questionNo)
+
+  const markdownRows = evidenceText.split(/\r?\n/)
+    .filter((line) => line.includes('|'))
+    .map((line) => line.split('|').map(plainTableCell).filter((cell, index, cells) => cell || (index > 0 && index < cells.length - 1)))
+    .filter((row) => row.length > 1 && !row.every((cell) => /^:?-{2,}:?$/.test(cell)))
+  if (markdownRows.length > 0) return answerFromTableRows(markdownRows, questionNo)
+  return { recognized: false as const }
+}
+
+function segmentsForEvidenceRanges(value: unknown, segments: SplitSegment[]) {
+  const ranges = lineRanges(value)
+  if (!ranges.length || ranges.some(([start, end]) => start < 1 || end < start || end > segments.length)) return []
+  const ids = segmentIdsForRanges(ranges, segments)
+  const byId = new Map(segments.map((segment) => [segment.id, segment]))
+  return ids.map((id) => byId.get(id)).filter((segment): segment is SplitSegment => Boolean(segment))
+}
+
+function applyAnswerTableEntries(
+  rawEntries: unknown,
+  document: OCRDocument,
+  segments: SplitSegment[],
+  candidates: QuestionCandidate[],
+  previews: ModelSplitPreviewItem[],
+) {
+  if (!Array.isArray(rawEntries) || rawEntries.length === 0) return [] as string[]
+  const verified = new Map<string, { answerText: string; evidenceSegments: SplitSegment[] }>()
+  const conflicts = new Set<string>()
+  let rejectedCount = 0
+
+  for (const rawEntry of rawEntries) {
+    if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) {
+      rejectedCount += 1
+      continue
+    }
+    const entry = rawEntry as AnswerTableEntry
+    const questionNo = normalizeQuestionNo(entry.question_no)
+    const answerText = String(entry.answer_text || '').trim()
+    const evidenceSegments = segmentsForEvidenceRanges(entry.source_line_ranges, segments)
+    const evidenceText = reconstruct(evidenceSegments)
+    const tableEvidence = answerEvidenceForQuestion(evidenceText, questionNo)
+    const evidenceMatches = tableEvidence.recognized
+      ? Boolean(tableEvidence.answerText) && compactEvidenceText(tableEvidence.answerText) === compactEvidenceText(answerText)
+      : compactEvidenceText(evidenceText).includes(compactEvidenceText(answerText))
+    if (!questionNo || !answerText || !evidenceSegments.length || !evidenceMatches) {
+      rejectedCount += 1
+      continue
+    }
+    const existing = verified.get(questionNo)
+    if (existing && compactEvidenceText(existing.answerText) !== compactEvidenceText(answerText)) {
+      conflicts.add(questionNo)
+      verified.delete(questionNo)
+      continue
+    }
+    if (!conflicts.has(questionNo)) verified.set(questionNo, { answerText, evidenceSegments })
+  }
+
+  const warnings: string[] = []
+  let filledCount = 0
+  for (const [questionNo, entry] of verified) {
+    const candidate = candidates.find((item) => item.questionNo === questionNo)
+    const preview = previews.find((item) => item.questionNo === questionNo)
+    if (!candidate || !preview) {
+      rejectedCount += 1
+      continue
+    }
+    if (candidate.answerText.trim()) {
+      if (compactEvidenceText(candidate.answerText) !== compactEvidenceText(entry.answerText)) {
+        warnings.push(`第 ${questionNo} 题的独立答案与汇总答案表不一致，已保留独立答案，请人工复核。`)
+      }
+      continue
+    }
+    const sourceRefs = rangesForSegments(document, entry.evidenceSegments, 'answer')
+    candidate.answerText = entry.answerText
+    candidate.sourceRefs.push(...sourceRefs)
+    candidate.issues = candidate.issues.filter((issue) => issue.code !== 'missing_answer')
+    candidate.parseDiagnostics.push({
+      code: 'model_answer_table_match',
+      severity: 'info',
+      questionNo,
+      message: `已从 OCR 汇总答案表提取并核验第 ${questionNo} 题答案。`,
+    })
+    candidate.status = statusForIssues(candidate.issues)
+    candidate.updatedAt = nowIso()
+    preview.answerText = entry.answerText
+    preview.sourceRefs.push(...sourceRefs)
+    preview.issues = preview.issues.filter((issue) => issue.code !== 'missing_answer')
+    filledCount += 1
+  }
+
+  if (filledCount > 0) warnings.unshift(`已从汇总答案表识别并填入 ${filledCount} 道题的答案，答案均通过 OCR 原文行号核验。`)
+  if (conflicts.size > 0) warnings.push(`汇总答案表中有 ${conflicts.size} 道题出现互相冲突的答案，未自动填入，请人工复核。`)
+  if (rejectedCount > 0) warnings.push(`有 ${rejectedCount} 条答案表映射缺少有效原文证据，未自动填入。`)
+  return warnings
+}
+
 function mergeSeparatedCandidates(questionCandidates: QuestionCandidate[], solutionCandidates: QuestionCandidate[]) {
   const solutions = new Map(solutionCandidates.map((candidate) => [candidate.questionNo, candidate]))
   const diagnostics: string[] = []
@@ -614,6 +756,7 @@ async function splitDocument(role: ModelSplitRole, document: OCRDocument, metada
     candidates.push(built.candidate)
     previews.push(built.preview)
   }
+  const answerTableWarnings = applyAnswerTableEntries(result.answer_table_entries, document, segments, candidates, previews)
   const questionNos = new Map<string, number>()
   for (const candidate of candidates) {
     if (!candidate.questionNo) continue
@@ -636,7 +779,7 @@ async function splitDocument(role: ModelSplitRole, document: OCRDocument, metada
   for (const markerId of sourceMarkerIds) {
     if (!assignedMarkerIds.has(markerId)) markerWarnings.push(`图片标识符 ${markerId} 未被模型分配到单题，已原样保留在 OCR 识别稿中，请按需人工确认归属。`)
   }
-  return { candidates, previews, diagnostics, warnings: [...(Array.isArray(result.warnings) ? result.warnings.map((value) => String(value || '')).filter(Boolean) : []), ...sanitized.warnings, ...markerWarnings] }
+  return { candidates, previews, diagnostics, warnings: [...answerTableWarnings, ...(Array.isArray(result.warnings) ? result.warnings.map((value) => String(value || '')).filter(Boolean) : []), ...sanitized.warnings, ...markerWarnings] }
 }
 
 async function splitDocumentStream(
@@ -675,6 +818,7 @@ async function splitDocumentStream(
   diagnostics.splice(0, diagnostics.length, ...finalDiagnostics)
   candidates.splice(0, candidates.length, ...finalCandidates)
   itemPreviews.splice(0, itemPreviews.length, ...finalPreviews)
+  const answerTableWarnings = applyAnswerTableEntries(result.answer_table_entries, document, segments, candidates, itemPreviews)
   const questionNos = new Map<string, number>()
   for (const candidate of candidates) {
     if (!candidate.questionNo) continue
@@ -701,7 +845,7 @@ async function splitDocumentStream(
     candidates,
     previews: itemPreviews,
     diagnostics,
-    warnings: [...(Array.isArray(result.warnings) ? result.warnings.map((value) => String(value || '')).filter(Boolean) : []), ...sanitized.warnings, ...markerWarnings],
+    warnings: [...answerTableWarnings, ...(Array.isArray(result.warnings) ? result.warnings.map((value) => String(value || '')).filter(Boolean) : []), ...sanitized.warnings, ...markerWarnings],
   }
 }
 

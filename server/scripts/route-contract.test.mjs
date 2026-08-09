@@ -27,6 +27,7 @@ const expectedRoutes = new Set([
   'GET /api/health',
   'GET /api/settings',
   'PATCH /api/settings',
+  'POST /api/ai-assistant/format-question-content',
   'GET /api/import-flow-v2/parser-config',
   'PUT /api/import-flow-v2/parser-config',
   'POST /api/import-flow-v2/parser-config/reset',

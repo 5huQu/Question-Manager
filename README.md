@@ -131,6 +131,8 @@ npm run dev
 
 Vite 会将 `/api` 请求代理到本地 API。
 
+接口访问、认证约定和常用示例见 [docs/api.md](docs/api.md)；可导入 Swagger UI、Postman 或 Insomnia 的完整接口目录见 [docs/openapi.yaml](docs/openapi.yaml)。
+
 ## 桌面打包
 
 启动 Electron 桌面版：

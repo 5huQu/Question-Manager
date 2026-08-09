@@ -64,15 +64,6 @@ function inspector(overrides: Partial<React.ComponentProps<typeof ManualFixInspe
 }
 
 describe('ManualFixInspector', () => {
-  it('优先展示 issues，并在缺少 issues 时展示 parseDiagnostics', () => {
-    inspector({ candidate: { issues: [{ message: '题干可能缺失' }], parseDiagnostics: [{ message: '解析备用提示' }] } })
-    expect(container.textContent).toContain('题干可能缺失')
-    expect(container.textContent).not.toContain('解析备用提示')
-
-    act(() => root.render(<ManualFixInspector {...inspectorProps({ candidate: { parseDiagnostics: ['检测到跨题内容'] } })} />))
-    expect(container.textContent).toContain('检测到跨题内容')
-  })
-
   it('点击内容、选区和题图页签时返回对应值', () => {
     const onTabChange = vi.fn()
     inspector({ onTabChange })

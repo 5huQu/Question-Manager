@@ -3,6 +3,7 @@ const ISSUE_LABELS: Record<string, string> = {
   unplaced_figure: '图片待核对',
   missing_answer: '缺少答案',
   missing_analysis: '缺少解析',
+  choice_options_unrecognized: '选项待核对',
   missing_solution: '缺少解析文档匹配',
   solution_conflict: '解析冲突',
   unmatched_solution: '多余解析',

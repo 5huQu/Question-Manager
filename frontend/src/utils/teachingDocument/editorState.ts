@@ -14,6 +14,11 @@ export type TeachingDocumentCommand =
   | { type: 'setStyle'; patch: Partial<TeachingDocumentStyle>; mergeKey?: string }
   | { type: 'setOutline'; patch: Partial<TeachingDocumentOutlineOptions>; mergeKey?: string }
   | { type: 'insertBlock'; block: TeachingBlock; afterBlockId?: string }
+  /**
+   * 在一个顶层对象之后维护唯一的显式换页标记。
+   * 换页是两个对象之间的结构，而不是对象自身的“题前换页”等隐式属性。
+   */
+  | { type: 'setPageBreakAfter'; blockId: string; enabled: boolean }
   /** 用多个顶层块替换一个块；用于将 Markdown + LaTeX 源码一次性结构化导入。 */
   | { type: 'replaceBlockWithBlocks'; blockId: string; blocks: TeachingBlock[] }
   /** 用多个合法盒子子块替换一个盒子子块。 */
@@ -220,6 +225,19 @@ function applyTeachingDocumentCommandRaw(document: TeachingDocumentV1, command: 
     const index = command.afterBlockId ? content.findIndex((block) => block.id === command.afterBlockId) + 1 : content.length
     const safeIndex = Math.max(0, Math.min(content.length, index))
     return { ...document, content: [...content.slice(0, safeIndex), command.block, ...content.slice(safeIndex)] }
+  }
+  if (command.type === 'setPageBreakAfter') {
+    const blockIndex = content.findIndex((block) => block.id === command.blockId)
+    // 换页符本身没有“其后换页”的意义，也不能嵌套进卡片子内容。
+    if (blockIndex < 0 || content[blockIndex]?.type === 'pageBreak') return document
+    const next = content[blockIndex + 1]
+    if (command.enabled) {
+      if (next?.type === 'pageBreak') return document
+      const pageBreak = newTeachingBlock('pageBreak')
+      return { ...document, content: [...content.slice(0, blockIndex + 1), pageBreak, ...content.slice(blockIndex + 1)] }
+    }
+    if (next?.type !== 'pageBreak') return document
+    return { ...document, content: [...content.slice(0, blockIndex + 1), ...content.slice(blockIndex + 2)] }
   }
   if (command.type === 'reorderBlocks') {
     if (command.order.length !== content.length) return document

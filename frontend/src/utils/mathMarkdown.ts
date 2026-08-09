@@ -37,6 +37,52 @@ function normalizeLine(value: string) {
   return output
 }
 
+/**
+ * Repair a delimiter pattern occasionally produced by OCR: an inline formula
+ * is wrapped in a second, incomplete pair of dollar signs, for example
+ * `$设 $$ p_n = 1 $ $`.  The rich editor is intentionally forgiving about
+ * this, but remark-math correctly treats it as malformed Markdown.  Keep
+ * true display formulas (`$$...$$`) untouched while making the shared source
+ * render consistently everywhere.
+ */
+function repairOcrInlineMathDelimitersInText(value: string) {
+  const inline = (latex: string) => `$${latex.trim()}$`
+  return value
+    // `$说明 $$ 公式 $ $` → `说明 $公式$`
+    .replace(/(?<!\\)\$([^$\n]*?\S[^$\n]*?)(?<!\\)\$\$\s*([^$\n]+?)\s*(?<!\\)\$\s+(?<!\\)\$/g, (_match, prefix: string, latex: string) => `${prefix.trimEnd()} ${inline(latex)}`)
+    // `$$ 公式 $ $` → `$公式$`
+    .replace(/(?<!\\)\$\$\s*([^$\n]+?)\s*(?<!\\)\$\s+(?<!\\)\$/g, (_match, latex: string) => inline(latex))
+    // `$$ 公式 $` → `$公式$`, but retain valid `$$公式$$` display math.
+    .replace(/(?<!\\)\$\$\s*([^$\n]+?)\s*(?<!\\)\$(?!\$)/g, (_match, latex: string) => inline(latex))
+}
+
+function repairOcrInlineMathDelimiters(value: string) {
+  let output = ''
+  let cursor = 0
+  let codeTicks = 0
+  for (let index = 0; index < value.length;) {
+    if (value[index] !== '`') {
+      index += 1
+      continue
+    }
+    let end = index + 1
+    while (value[end] === '`') end += 1
+    const count = end - index
+    if (!codeTicks) {
+      output += repairOcrInlineMathDelimitersInText(value.slice(cursor, index))
+      output += value.slice(index, end)
+      cursor = end
+      codeTicks = count
+    } else if (codeTicks === count) {
+      output += value.slice(cursor, end)
+      cursor = end
+      codeTicks = 0
+    }
+    index = end
+  }
+  return output + (codeTicks ? value.slice(cursor) : repairOcrInlineMathDelimitersInText(value.slice(cursor)))
+}
+
 /** Convert standard LaTeX math delimiters into the Markdown form used internally. */
 export function normalizeLatexMathDelimiters(value: string) {
   const lines = String(value || '').split('\n')
@@ -50,6 +96,6 @@ export function normalizeLatexMathDelimiters(value: string) {
       else if (fence.marker === marker && length >= fence.length) fence = null
       return line
     }
-    return fence ? line : normalizeLine(line)
+    return fence ? line : repairOcrInlineMathDelimiters(normalizeLine(line))
   }).join('\n')
 }

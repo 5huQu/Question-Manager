@@ -1222,6 +1222,40 @@ const truncatedCandidateIssues = validateQuestionCandidate({
 }, new Set())
 assert.equal(truncatedCandidateIssues.some((issue) => issue.code === 'possible_cross_page'), true)
 
+const choiceWithoutStructuredOptionsIssues = validateQuestionCandidate({
+  id: 'candidate_choice_without_options',
+  sourceDocumentId: 'source_choice_without_options',
+  questionNo: '13',
+  stemMarkdown: '下列说法正确的是（ ）。',
+  answerText: 'A',
+  analysisMarkdown: '根据定义判断。',
+  questionType: '单选题',
+  figures: [],
+  sourceRefs: [],
+  status: 'ready',
+  issues: [],
+  createdAt: '2026-08-09T00:00:00.000Z',
+  updatedAt: '2026-08-09T00:00:00.000Z',
+}, new Set())
+assert.equal(choiceWithoutStructuredOptionsIssues.some((issue) => issue.code === 'choice_options_unrecognized'), true)
+
+const choiceWithStructuredOptionsIssues = validateQuestionCandidate({
+  id: 'candidate_choice_with_options',
+  sourceDocumentId: 'source_choice_with_options',
+  questionNo: '14',
+  stemMarkdown: ['下列说法正确的是（ ）。', 'A. 甲', 'B. 乙', 'C. 丙', 'D. 丁'].join('\n'),
+  answerText: 'A',
+  analysisMarkdown: '根据定义判断。',
+  questionType: '单选题',
+  figures: [],
+  sourceRefs: [],
+  status: 'ready',
+  issues: [],
+  createdAt: '2026-08-09T00:00:00.000Z',
+  updatedAt: '2026-08-09T00:00:00.000Z',
+}, new Set())
+assert.equal(choiceWithStructuredOptionsIssues.some((issue) => issue.code === 'choice_options_unrecognized'), false)
+
 const trailingLabelImageChoiceDocument = {
   ...ocrDocument,
   id: 'ocr_trailing_label_image_choice_test',

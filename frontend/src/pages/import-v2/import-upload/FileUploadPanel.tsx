@@ -58,14 +58,14 @@ export function FileUploadPanel({ state }: FileUploadPanelProps) {
     <div className="md:col-span-6 space-y-6">
       <Panel title="导入模式与文件上传">
         <div className="space-y-4">
-          <div className="flex bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-zinc-200/50 dark:border-zinc-800/50 w-full select-none">
+          <div className="flex bg-black/4 dark:bg-white/6 p-1 rounded-xl border border-black/5 dark:border-white/8 w-full select-none">
             <button
               type="button"
               onClick={() => setUploadDocumentMode('single_document')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs transition-all cursor-pointer ${
                 uploadDocumentMode === 'single_document'
-                  ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-xs border border-zinc-200/20'
-                  : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
+                  ? 'bg-zinc-900 text-white shadow-2xs font-semibold dark:bg-zinc-100 dark:text-zinc-900'
+                  : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 font-medium'
               }`}
             >
               <FileText className="size-3.5" />
@@ -74,10 +74,10 @@ export function FileUploadPanel({ state }: FileUploadPanelProps) {
             <button
               type="button"
               onClick={() => setUploadDocumentMode('separated_documents')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs transition-all cursor-pointer ${
                 uploadDocumentMode === 'separated_documents'
-                  ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-xs border border-zinc-200/20'
-                  : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
+                  ? 'bg-zinc-900 text-white shadow-2xs font-semibold dark:bg-zinc-100 dark:text-zinc-900'
+                  : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 font-medium'
               }`}
             >
               <Layers className="size-3.5" />
@@ -86,10 +86,10 @@ export function FileUploadPanel({ state }: FileUploadPanelProps) {
             <button
               type="button"
               onClick={() => setUploadDocumentMode('doc2x_package')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs transition-all cursor-pointer ${
                 uploadDocumentMode === 'doc2x_package'
-                  ? 'bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 shadow-xs border border-zinc-200/20'
-                  : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'
+                  ? 'bg-zinc-900 text-white shadow-2xs font-semibold dark:bg-zinc-100 dark:text-zinc-900'
+                  : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 font-medium'
               }`}
             >
               <FileArchive className="size-3.5" />
@@ -99,7 +99,10 @@ export function FileUploadPanel({ state }: FileUploadPanelProps) {
 
           {uploadDocumentMode === 'single_document' ? (
             <div
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                setDragOver(true)
+              }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => {
                 e.preventDefault()
@@ -109,10 +112,10 @@ export function FileUploadPanel({ state }: FileUploadPanelProps) {
                 }
               }}
               onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[220px] ${
+              className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[220px] shadow-2xs ${
                 dragOver
-                  ? 'border-zinc-900 bg-zinc-50/30 dark:border-zinc-100 dark:bg-zinc-900/30'
-                  : 'border-zinc-200 bg-white hover:bg-zinc-50/10 dark:border-zinc-800 dark:bg-zinc-950'
+                  ? 'border-zinc-900 bg-zinc-100/60 dark:border-zinc-100 dark:bg-zinc-800/60'
+                  : 'border-black/10 bg-white/80 hover:bg-white hover:border-black/20 dark:border-white/12 dark:bg-zinc-900/80 dark:hover:bg-zinc-900'
               }`}
             >
               <input
@@ -125,9 +128,11 @@ export function FileUploadPanel({ state }: FileUploadPanelProps) {
                 }}
               />
               {uploading ? (
-                <LoaderCircle className="size-8 animate-spin text-zinc-500 mb-3" />
+                <LoaderCircle className="size-8 animate-spin text-zinc-600 dark:text-zinc-300 mb-3" />
               ) : (
-                <Upload className="size-8 text-zinc-400 dark:text-zinc-500 mb-3" />
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-black/4 text-zinc-600 dark:bg-white/6 dark:text-zinc-300 mb-3">
+                  <Upload className="size-6" />
+                </div>
               )}
               <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">
                 {uploading ? '文件上传并处理中...' : pendingUploadFile ? pendingUploadFile.name : '点击选择或拖拽资料至此处'}
@@ -142,7 +147,7 @@ export function FileUploadPanel({ state }: FileUploadPanelProps) {
                     e.stopPropagation()
                     setPendingUploadFile(null)
                   }}
-                  className="mt-3 text-xs text-red-500 hover:underline flex items-center gap-1"
+                  className="mt-3 text-xs text-rose-600 hover:underline flex items-center gap-1 font-medium"
                 >
                   <Trash2 className="size-3" /> 移除文件
                 </button>

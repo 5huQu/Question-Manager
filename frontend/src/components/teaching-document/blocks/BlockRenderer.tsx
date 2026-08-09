@@ -440,6 +440,7 @@ function QuestionRegionContent({
   resolveFigure,
   choiceLayoutBlockId,
   editableQuestionText = false,
+  joinWithAnalysis = false,
   onInlineContentChange,
 }: {
   region: QuestionRuntimeRegion
@@ -448,6 +449,8 @@ function QuestionRegionContent({
   resolveFigure?: (asset: FigureAssetRef) => FigureResolution
   choiceLayoutBlockId?: string
   editableQuestionText?: boolean
+  /** 答案后紧接解析时，两者共用一个连续的蓝底容器。 */
+  joinWithAnalysis?: boolean
   onInlineContentChange?: (key: string, content: TeachingInline[]) => void
 }) {
   if (region.kind === 'heading') return null
@@ -586,8 +589,8 @@ function QuestionRegionContent({
   }
   if (region.kind === 'answer') {
     return (
-      <div className="td-question-answer mt-3 rounded-md bg-zinc-50/80 px-3 py-2 dark:bg-zinc-900/40">
-        <span className="text-xs font-semibold text-zinc-500">参考答案：</span>
+      <div className={`td-question-answer mt-3 border border-blue-200/70 bg-blue-50/80 px-3 py-2 dark:border-blue-900/60 dark:bg-blue-950/30 ${joinWithAnalysis ? 'rounded-t-md border-b-0' : 'rounded-md'}`}>
+        <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">参考答案：</span>
         {editableQuestionText && region.inlineContent ? (
           <div
             className="mt-1"
@@ -605,7 +608,7 @@ function QuestionRegionContent({
           </div>
         ) : (
           <MarkdownWithInlineFigures
-            className="mt-1 text-sm text-zinc-800 dark:text-zinc-200"
+            className="mt-1 text-sm text-blue-950 dark:text-blue-100"
             content={region.markdown}
             figures={region.figures}
             showFigureCaptions={false}
@@ -697,11 +700,17 @@ export function QuestionRuntimeContent({
       {continuation === 'middle' || continuation === 'end' ? (
         <div className="mb-1 text-[10px] font-medium text-zinc-400">续题</div>
       ) : null}
-      {regions.map((region) => {
+      {regions.map((region, regionIndex) => {
         const item = itemByKey.get(region.key)
+        const previousRegion = regions[regionIndex - 1]
+        const nextRegion = regions[regionIndex + 1]
+        const isAnalysis = region.type === 'analysis'
+        const analysisStart = isAnalysis && previousRegion?.type !== 'analysis'
+        const analysisEnd = isAnalysis && nextRegion?.type !== 'analysis'
+        const analysisJoinsAnswer = analysisStart && previousRegion?.kind === 'answer'
         return (
           <div
-            className="td-question-region flow-root"
+            className={`td-question-region flow-root ${isAnalysis ? `td-question-analysis-region border-x border-blue-200/70 bg-blue-50/80 px-3 py-2 dark:border-blue-900/60 dark:bg-blue-950/30 ${analysisStart && !analysisJoinsAnswer ? 'rounded-t-md border-t' : ''} ${analysisStart && analysisJoinsAnswer ? 'border-t-0' : ''} ${analysisEnd ? 'rounded-b-md border-b' : ''}` : ''}`}
             key={`${region.key}:${item?.kind === 'question-paragraph-fragment' ? item.fragmentIndex : 0}`}
             {...{
               [TEACHING_DOM.questionRegion]: region.type,
@@ -724,6 +733,7 @@ export function QuestionRuntimeContent({
               resolveFigure={resolveFigure}
               choiceLayoutBlockId={choiceLayoutBlockId}
               editableQuestionText={editableQuestionText}
+              joinWithAnalysis={region.kind === 'answer' && nextRegion?.type === 'analysis'}
               onInlineContentChange={onInlineContentChange}
             />
           </div>

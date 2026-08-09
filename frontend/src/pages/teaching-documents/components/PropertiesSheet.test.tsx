@@ -16,7 +16,12 @@ afterEach(() => {
   container = null
 })
 
-function renderSheet(location: SelectedLocation, onUpdate = vi.fn(), onUpdateTopLevel = vi.fn()) {
+function renderSheet(
+  location: SelectedLocation,
+  onUpdate = vi.fn(),
+  onUpdateTopLevel = vi.fn(),
+  options?: { pageBreakAfter?: boolean; onSetPageBreakAfter?: (blockId: string, enabled: boolean) => void },
+) {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -31,6 +36,8 @@ function renderSheet(location: SelectedLocation, onUpdate = vi.fn(), onUpdateTop
         onDelete={vi.fn()}
         onDuplicate={vi.fn()}
         onMove={vi.fn()}
+        pageBreakAfter={options?.pageBreakAfter}
+        onSetPageBreakAfter={options?.onSetPageBreakAfter}
         onInsertChild={vi.fn()}
         onDeleteBoxChildren={vi.fn()}
         onMergeBoxParagraphs={vi.fn()}
@@ -45,6 +52,42 @@ function renderSheet(location: SelectedLocation, onUpdate = vi.fn(), onUpdateTop
 }
 
 describe('PropertiesSheet 对齐与卡片内容列表', () => {
+  it('在布局页用显式标记控制对象后的强制换页', async () => {
+    const onSetPageBreakAfter = vi.fn()
+    const figure = {
+      type: 'figure' as const,
+      id: 'fig-page-break',
+      asset: { type: 'documentAsset' as const, assetId: 'a' },
+      alignment: 'center' as const,
+    }
+    await renderSheet({ block: figure, topLevel: figure }, vi.fn(), vi.fn(), { pageBreakAfter: true, onSetPageBreakAfter })
+    const layoutTab = Array.from(container!.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === '布局')
+    await act(async () => layoutTab?.click())
+    const input = container!.querySelector<HTMLInputElement>('input[aria-label="在此对象后强制换页"]')
+    expect(input?.checked).toBe(true)
+    await act(async () => {
+      input!.click()
+    })
+    expect(onSetPageBreakAfter).toHaveBeenCalledWith('fig-page-break', false)
+  })
+
+  it('卡片内对象的换页标记写在所属卡片之后', async () => {
+    const onSetPageBreakAfter = vi.fn()
+    const box: TeachingBlock = {
+      type: 'box', id: 'box-page-break', templateId: 'concept', breakBehavior: 'auto', children: [
+        { type: 'figure', id: 'child-figure', asset: { type: 'documentAsset', assetId: 'a' }, alignment: 'center' },
+      ],
+    }
+    await renderSheet({ block: box.children[0] as TeachingBlock, topLevel: box, boxId: box.id }, vi.fn(), vi.fn(), { onSetPageBreakAfter })
+    const layoutTab = Array.from(container!.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === '布局')
+    await act(async () => layoutTab?.click())
+    const input = container!.querySelector<HTMLInputElement>('input[aria-label="在此对象后强制换页"]')
+    await act(async () => input!.click())
+    expect(onSetPageBreakAfter).toHaveBeenCalledWith('box-page-break', true)
+  })
+
   it('图片“对齐”修改同时清除 layoutPreset（否则 preset 优先导致不生效）', async () => {
     const onUpdate = vi.fn()
     const figure = {

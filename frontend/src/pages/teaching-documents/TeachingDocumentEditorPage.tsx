@@ -389,6 +389,12 @@ export default function TeachingDocumentEditorPage() {
   const document = editor.document
   const marginPreset = document.style?.marginPreset ?? 'normal'
   const selected = findSelected(selectedId)
+  const selectedHasPageBreakAfter = (() => {
+    const topLevelId = selected?.topLevel.id
+    if (!topLevelId) return false
+    const index = document.content.findIndex((block) => block.id === topLevelId)
+    return index >= 0 && document.content[index + 1]?.type === 'pageBreak'
+  })()
   const renderResourceVersion = questionIds
     .map((id) => {
       const resolution = questionMap[id]
@@ -604,7 +610,21 @@ export default function TeachingDocumentEditorPage() {
     else editor.dispatch({ type: 'moveBlock', blockId: selected.block.id, direction })
   }
 
+  function setPageBreakAfter(blockId: string, enabled: boolean) {
+    editor.dispatch({ type: 'setPageBreakAfter', blockId, enabled })
+  }
+
   function insertBlock(type: TeachingBlock['type'], afterBlockId?: string, headingLevel?: HeadingLevel) {
+    // 换页的唯一语义：选中对象和下一对象之间的显式标记。不要让文本光标
+    // 或旧的“对象前换页”属性决定位置，否则分页预期会随编辑焦点漂移。
+    if (type === 'pageBreak') {
+      const anchorId = afterBlockId || selected?.topLevel.id || editor.activeTopLevelBlockId()
+      if (anchorId) {
+        setPageBreakAfter(anchorId, true)
+        selectAndShow(anchorId)
+        return
+      }
+    }
     // 卡片流编辑器聚焦时，插入落在光标处（段落内自动拆段，文字环绕对象，
     // 与 Word 文本框一致）；章节/换页/嵌套卡片等非卡片类型仍走顶层插入。
     const cardEditor = afterBlockId ? null : getFocusedCardEditor()
@@ -1211,7 +1231,7 @@ export default function TeachingDocumentEditorPage() {
         <aside
           data-teaching-properties-dock
           data-teaching-dock-occupied={propertiesDockOccupied ? 'true' : 'false'}
-          className={`h-full shrink-0 overflow-hidden border-l border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 ${propertiesDockOccupied ? 'w-[300px]' : 'w-0'}`}
+          className={`h-full shrink-0 overflow-hidden border-l border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 ${propertiesDockOccupied ? 'w-[18.75rem]' : 'w-0'}`}
         >
           <PropertiesSheet
             variant="docked"
@@ -1223,6 +1243,8 @@ export default function TeachingDocumentEditorPage() {
             onDelete={deleteSelected}
             onDuplicate={() => selected && !selected.boxId && editor.dispatch({ type: 'duplicateBlock', blockId: selected.block.id })}
             onMove={moveSelected}
+            onSetPageBreakAfter={setPageBreakAfter}
+            pageBreakAfter={selectedHasPageBreakAfter}
             onInsertChild={(box, type) => {
               insertBoxChild(type as BoxChildBlock['type'], box.id)
             }}

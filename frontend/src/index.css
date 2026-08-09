@@ -41,7 +41,16 @@
 }
 
 :root {
-  --app-body-text: 14px;
+  /*
+   * Application UI scale: changing the root rem size scales Tailwind tokens
+   * (text-sm, h-8, size-4, p-2, gap-*) together without creating a zoomed
+   * ancestor for TeachingDocument's A4 measurement / print surfaces.
+   */
+  --app-ui-auto-scale: 1;
+  --app-ui-auto-root-font-size: 16px;
+  --app-ui-scale: var(--app-ui-auto-scale);
+  --app-ui-root-font-size: var(--app-ui-auto-root-font-size);
+  --app-body-text: 0.875rem;
   --background: 1 0 0;
   --foreground: 0.145 0 0;
   --card: 1 0 0;
@@ -75,7 +84,28 @@
   --sidebar-border: 0.922 0 0;
   --sidebar-ring: 0.708 0 0;
   --radius: 0.625rem;
-  font-size: 16px;
+  font-size: var(--app-ui-root-font-size);
+}
+
+@media (min-width: 1680px) {
+  :root {
+    --app-ui-auto-scale: 1.05;
+    --app-ui-auto-root-font-size: 16.8px;
+  }
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --app-ui-auto-scale: 1.1;
+    --app-ui-auto-root-font-size: 17.6px;
+  }
+}
+
+@media (min-width: 2400px) {
+  :root {
+    --app-ui-auto-scale: 1.15;
+    --app-ui-auto-root-font-size: 18.4px;
+  }
 }
 
 @layer base {
@@ -102,6 +132,12 @@ body {
 /* Browser printing must escape the fixed desktop shell. Without these
    overrides Chromium clips printable routes to the current scroll viewport. */
 @media print {
+  /* Print / PDF uses fixed mm and px geometry, never the screen UI preference. */
+  html {
+    --app-ui-scale: 1 !important;
+    font-size: 16px !important;
+  }
+
   html,
   body,
   #root,

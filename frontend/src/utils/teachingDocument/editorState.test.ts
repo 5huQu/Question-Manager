@@ -60,6 +60,24 @@ describe('TeachingDocument editor state', () => {
     expect(document.content.map((block) => block.id)).toEqual(['p2'])
   })
 
+  it('maintains one explicit page-break marker directly after the selected object', () => {
+    const withBreak = applyTeachingDocumentCommand(baseDocument, {
+      type: 'setPageBreakAfter', blockId: 'p1', enabled: true,
+    })
+    expect(withBreak.content.map((block) => block.type)).toEqual(['paragraph', 'pageBreak', 'paragraph'])
+    expect(withBreak.content[1].type).toBe('pageBreak')
+
+    // Re-enabling never creates two consecutive blank pages.
+    expect(applyTeachingDocumentCommand(withBreak, {
+      type: 'setPageBreakAfter', blockId: 'p1', enabled: true,
+    })).toBe(withBreak)
+
+    const withoutBreak = applyTeachingDocumentCommand(withBreak, {
+      type: 'setPageBreakAfter', blockId: 'p1', enabled: false,
+    })
+    expect(withoutBreak.content.map((block) => block.id)).toEqual(['p1', 'p2'])
+  })
+
   it('creates a section at the level explicitly chosen by the insert menu', () => {
     const firstLevel = newTeachingBlock('heading', { headingLevel: 1 })
     const childLevel = newTeachingBlock('heading', { headingLevel: 2 })

@@ -1,4 +1,5 @@
 import type { CandidateIssue, CandidateParseDiagnostic, QuestionCandidate, QuestionCandidateStatus } from '../../types/question-candidate.js'
+import { hasReliableFourChoiceOptions } from '../../utils/question-type.js'
 
 export const LIVE_VALIDATION_ISSUE_CODES = new Set<CandidateIssue['code']>([
   'missing_question_no',
@@ -6,6 +7,7 @@ export const LIVE_VALIDATION_ISSUE_CODES = new Set<CandidateIssue['code']>([
   'missing_stem',
   'missing_answer',
   'missing_analysis',
+  'choice_options_unrecognized',
   'possible_cross_page',
   'possible_presentation_noise',
 ])
@@ -37,7 +39,9 @@ function hasLikelyTruncatedEnding(value: string) {
 }
 
 export function validateQuestionCandidate(candidate: QuestionCandidate, duplicateQuestionNos: Set<string>): CandidateIssue[] {
-  const issues: CandidateIssue[] = [...candidate.issues]
+  // Live issues are recalculated from the latest editable fields. This keeps a
+  // warning from a previous OCR/edit state from surviving after the user fixes it.
+  const issues: CandidateIssue[] = candidate.issues.filter((item) => !LIVE_VALIDATION_ISSUE_CODES.has(item.code))
   const isLecture = candidate.paperKind === 'lecture'
   if (!isLecture && !candidate.questionNo.trim()) {
     issues.push(issue('missing_question_no', 'error', '未识别到题号。'))
@@ -53,6 +57,10 @@ export function validateQuestionCandidate(candidate: QuestionCandidate, duplicat
   }
   if (!candidate.analysisMarkdown.trim()) {
     issues.push(issue('missing_analysis', 'warning', '未匹配到解析。'))
+  }
+  if (/(?:单选|多选|单项选择|多项选择)/.test(candidate.questionType || '')
+    && !hasReliableFourChoiceOptions(candidate.stemMarkdown)) {
+    issues.push(issue('choice_options_unrecognized', 'warning', '当前题型为单选或多选，但未识别到结构化 A、B、C、D 选项，请核对题干。'))
   }
   if ([candidate.stemMarkdown, candidate.answerText, candidate.analysisMarkdown].some(hasResidualPresentationNoise)) {
     issues.push(issue('possible_presentation_noise', 'warning', '检测到疑似页码、卷别、题型标题或答题说明，请人工复核。'))

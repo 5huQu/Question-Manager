@@ -18,6 +18,8 @@ import type {
 } from '@/types/teachingDocument'
 import type { FigureLayoutPreset } from '../figureLayoutPresets'
 import { normalizeMarkdownForRender } from '@/components/MarkdownContent'
+import { splitHtmlTableSegments } from '@/utils/htmlTables'
+import { normalizeLatexMathDelimiters } from '@/utils/mathMarkdown'
 import { choiceLayoutForTexts, type ChoiceLayout } from '@/utils/choiceLayout'
 import type { ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import {
@@ -183,7 +185,10 @@ export function isEditableQuestionText(value: string) {
 
 function inlineContentOrFallback(inlineContent: QuestionInlineContent | undefined, key: string, value: string) {
   if (inlineContent && Object.prototype.hasOwnProperty.call(inlineContent, key)) return inlineContent[key]
-  return isEditableQuestionText(value) ? parseInlineMarkdown(value) : undefined
+  const normalized = normalizeLatexMathDelimiters(value)
+  // 块级公式仍交给 MarkdownContent 渲染；内联编辑器只接收行内内容。
+  if (/(?:^|\n)\s*\$\$/.test(normalized)) return undefined
+  return isEditableQuestionText(normalized) ? parseInlineMarkdown(normalized) : undefined
 }
 
 function contentRegions(input: {
@@ -272,7 +277,12 @@ function contentRegions(input: {
     })
   }
 
-  const normalized = normalizeMarkdownForRender(input.markdown)
+  // Keep supported HTML tables intact until MarkdownContent renders them. The
+  // older general-purpose normalizer intentionally flattens HTML tables to GFM,
+  // which would discard rowspan/colspan in a teaching document.
+  const normalized = splitHtmlTableSegments(input.markdown)
+    .map((segment) => segment.type === 'html-table' ? segment.source : normalizeMarkdownForRender(segment.content))
+    .join('')
   let cursor = 0
   FIGURE_MARKER.lastIndex = 0
   let marker: RegExpExecArray | null
@@ -503,8 +513,11 @@ export function createQuestionRuntimeModel(
   const showScore = block.display?.showScore === true
   const figureOverrides = block.display?.figureOverrides
   const inlineContent = block.display?.inlineContent
-  const parsedChoice = parseChoiceQuestion(question.stemMarkdown)
-  const stemMarkdown = parsedChoice?.stem || question.stemMarkdown || '题干为空'
+  // 题库预览在 MarkdownContent 中会先统一 \(...\) / \[...\] 定界符；
+  // 讲义编辑器会把选项拆到内联编辑器，必须在拆分前使用同一规则。
+  const normalizedStemMarkdown = normalizeLatexMathDelimiters(question.stemMarkdown)
+  const parsedChoice = parseChoiceQuestion(normalizedStemMarkdown)
+  const stemMarkdown = parsedChoice?.stem || normalizedStemMarkdown || '题干为空'
   const stemFigures = figuresByUsage(question.figures, 'stem')
   const optionFigures = figuresByUsage(question.figures, 'options')
   const analysisFigures = figuresByUsage(question.figures, 'analysis')

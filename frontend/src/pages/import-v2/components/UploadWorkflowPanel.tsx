@@ -147,34 +147,40 @@ export function UploadWorkflowPanel({ ws }: { ws: ImportV2WorkspaceState }) {
               </div>
 
               {/* Stepper */}
-              <div className="bg-zinc-50/30 dark:bg-zinc-900/5 p-4 rounded-xl border border-zinc-150 dark:border-zinc-800">
+              <div className="bg-white/70 dark:bg-zinc-900/70 p-4 rounded-2xl border border-black/6 dark:border-white/8 backdrop-blur-xl shadow-2xs">
                 <div className="flex items-center w-full select-none">
                   {ws.steps.map((step, idx) => (
                     <div key={idx} className="flex items-center flex-1 last:flex-initial">
                       <div className="flex items-center gap-2">
-                        <div className={`flex size-7 items-center justify-center rounded-full border text-xs font-semibold transition-all ${
-                          step.state === 'done'
-                            ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
-                            : step.state === 'current'
-                              ? 'bg-zinc-900 border-zinc-900 text-white dark:bg-zinc-100 dark:border-zinc-100 dark:text-zinc-950 shadow-md ring-2 ring-zinc-500/20'
-                              : 'bg-zinc-100 border-zinc-200 text-zinc-400 dark:bg-zinc-900 dark:border-zinc-800 dark:text-zinc-500'
-                        }`}>
+                        <div
+                          className={`flex size-7 items-center justify-center rounded-full border text-xs font-bold transition-all ${
+                            step.state === 'done'
+                              ? 'bg-emerald-500 border-emerald-500 text-white shadow-2xs'
+                              : step.state === 'current'
+                                ? 'bg-zinc-900 border-zinc-900 text-white dark:bg-zinc-100 dark:border-zinc-100 dark:text-zinc-950 shadow-xs ring-2 ring-zinc-900/15 dark:ring-white/20'
+                                : 'bg-black/4 border-black/10 text-zinc-400 dark:bg-white/6 dark:border-white/12 dark:text-zinc-500'
+                          }`}
+                        >
                           {step.state === 'done' ? <Check className="size-4 stroke-[3]" /> : idx + 1}
                         </div>
-                        <span className={`text-xs font-semibold whitespace-nowrap ${
-                          step.state === 'done'
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : step.state === 'current'
-                              ? 'text-zinc-900 dark:text-zinc-100'
-                              : 'text-zinc-400 dark:text-zinc-500'
-                        }`}>
+                        <span
+                          className={`text-xs font-semibold whitespace-nowrap ${
+                            step.state === 'done'
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : step.state === 'current'
+                                ? 'text-zinc-900 dark:text-zinc-100 font-bold'
+                                : 'text-zinc-400 dark:text-zinc-500'
+                          }`}
+                        >
                           {step.title}
                         </span>
                       </div>
                       {idx < ws.steps.length - 1 && (
-                        <div className={`h-[2px] flex-1 mx-4 rounded min-w-[20px] transition-all ${
-                          step.state === 'done' ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-800'
-                        }`} />
+                        <div
+                          className={`h-[2px] flex-1 mx-4 rounded-full min-w-[20px] transition-all ${
+                            step.state === 'done' ? 'bg-emerald-500' : 'bg-black/10 dark:bg-white/10'
+                          }`}
+                        />
                       )}
                     </div>
                   ))}
@@ -183,33 +189,41 @@ export function UploadWorkflowPanel({ ws }: { ws: ImportV2WorkspaceState }) {
 
               {/* Parser preset selector */}
               {!ws.selectedDocIsImportJobSolution && ws.parserPresets.length > 0 ? (
-                <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 dark:border-zinc-800 dark:bg-zinc-900/20 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-2 rounded-2xl border border-black/6 bg-white/70 p-3.5 backdrop-blur-xl dark:border-white/8 dark:bg-zinc-900/70 shadow-2xs sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">导入规则预设</p>
-                    <p className="mt-0.5 text-[11px] text-zinc-400">生成或重解析候选题时使用。</p>
+                    <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">导入规则预设</p>
+                    <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">生成或重解析候选题时使用。</p>
                   </div>
                   <select
-                    className="h-8 min-w-56 rounded-md border border-zinc-200 bg-white px-2 text-xs font-medium text-zinc-700 outline-none focus:ring-1 focus:ring-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
+                    className="h-8.5 min-w-56 rounded-xl border border-black/10 bg-white/90 px-3 text-xs font-medium text-zinc-900 shadow-2xs outline-none transition-all focus:border-zinc-900 dark:border-white/12 dark:bg-zinc-900/90 dark:text-zinc-100"
                     value={ws.selectedParserPresetId}
                     onChange={(event) => ws.setSelectedParserPresetId(event.target.value)}
                     disabled={Boolean(ws.busy)}
                   >
                     {ws.parserPresets.map((preset) => (
-                      <option key={preset.id} value={preset.id}>{preset.name}</option>
+                      <option key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </option>
                     ))}
                   </select>
                 </div>
               ) : null}
 
               {/* Core action area */}
-              <div className="bg-white dark:bg-zinc-955 p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-4">
+              <div className="bg-white/80 dark:bg-zinc-900/80 p-6 rounded-2xl border border-black/6 dark:border-white/8 shadow-2xs backdrop-blur-xl space-y-4">
                 {/* uploaded */}
                 {selectedDoc.status === 'uploaded' && (
                   <div className="space-y-4">
                     <p className="text-xs text-zinc-500 leading-relaxed">
-                      资料已成功保存。点击"开始自动识别"将通过 {ws.currentOcrProviderLabel} 自动提取试卷题目、公式及插图。
+                      资料已成功保存。点击“开始自动识别”将通过 {ws.currentOcrProviderLabel} 自动提取试卷题目、公式及插图。
                     </p>
-                    <Button size="default" icon={Play} disabled={Boolean(ws.busy)} onClick={() => ws.startSourceOcr(selectedDoc.id)} className="w-full sm:w-auto">
+                    <Button
+                      size="default"
+                      icon={Play}
+                      disabled={Boolean(ws.busy)}
+                      onClick={() => ws.startSourceOcr(selectedDoc.id)}
+                      className="w-full sm:w-auto bg-zinc-900 text-white shadow-xs hover:bg-zinc-800 active:scale-[0.98] rounded-xl dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                    >
                       {ws.busy === `ocr-${selectedDoc.id}` ? '正在启动...' : '开始自动识别'}
                     </Button>
                   </div>

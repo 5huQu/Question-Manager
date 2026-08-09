@@ -1,6 +1,6 @@
 export function yearOptionsFromServerYear(serverYear?: number) {
   const currentYear = Number.isFinite(serverYear) && serverYear ? serverYear : new Date().getFullYear()
-  return Array.from({ length: 31 }, (_, index) => String(currentYear - 30 + index))
+  return Array.from({ length: 31 }, (_, index) => String(currentYear - index))
 }
 
 export type ProvinceCityOption = {

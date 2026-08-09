@@ -49,6 +49,9 @@ export function PropertiesSheet(props: {
   onDelete: () => void
   onDuplicate: () => void
   onMove: (direction: -1 | 1) => void
+  /** 为当前顶层对象维护紧随其后的显式换页标记。 */
+  onSetPageBreakAfter?: (blockId: string, enabled: boolean) => void
+  pageBreakAfter?: boolean
   onInsertChild: (box: BoxBlock, type: BoxChildBlock['type']) => void
   onDeleteBoxChildren: (boxId: string, childIds: string[]) => boolean
   onMergeBoxParagraphs: (boxId: string, childIds: string[]) => boolean
@@ -82,6 +85,8 @@ function PropertiesSheetPanel(props: {
   onDelete: () => void
   onDuplicate: () => void
   onMove: (direction: -1 | 1) => void
+  onSetPageBreakAfter?: (blockId: string, enabled: boolean) => void
+  pageBreakAfter?: boolean
   onInsertChild: (box: BoxBlock, type: BoxChildBlock['type']) => void
   onDeleteBoxChildren: (boxId: string, childIds: string[]) => boolean
   onMergeBoxParagraphs: (boxId: string, childIds: string[]) => boolean
@@ -104,6 +109,9 @@ function PropertiesSheetPanel(props: {
     : block
   const updateDisplayBlock = displayBlock.id === block.id ? props.onUpdate : props.onUpdateTopLevel
   const layoutBlock = displayBlock.type === 'box' ? displayBlock : block
+  // 换页符只能位于顶层对象之间。卡片内对象的面板仍提供此项，但作用于所属卡片之后。
+  const pageBreakTarget = props.selected.topLevel
+  const canSetPageBreakAfter = pageBreakTarget.type !== 'pageBreak'
 
   return (
     <motion.aside
@@ -112,7 +120,7 @@ function PropertiesSheetPanel(props: {
       exit={props.reduced ? { opacity: 0 } : { x: 20, opacity: 0 }}
       transition={props.reduced ? { duration: 0.15 } : props.variant === 'docked' ? springDock : springPanel}
       className={props.variant === 'docked'
-        ? 'question-edit-glass-aside flex h-full w-[300px] flex-col border-l border-black/6 dark:border-white/8'
+        ? 'question-edit-glass-aside flex h-full w-[18.75rem] flex-col border-l border-black/6 dark:border-white/8'
         : 'question-edit-glass-dialog absolute inset-y-0 right-0 z-30 flex w-[min(26rem,calc(100vw-2rem))] flex-col border-l border-black/6 dark:border-white/8 shadow-[-8px_0_24px_-6px_rgba(0,0,0,0.08)] backdrop-blur-2xl backdrop-saturate-150'}
     >
       <div className="flex h-12 items-center justify-between border-b border-black/6 px-4 dark:border-white/8">
@@ -174,13 +182,24 @@ function PropertiesSheetPanel(props: {
           </summary>
           <div className="space-y-3 border-t border-zinc-100 px-3 py-3 dark:border-zinc-900">
             <p className="font-mono text-[10px] text-zinc-400 select-all">{layoutBlock.id}</p>
+            {canSetPageBreakAfter ? (
+              <label className="flex cursor-pointer items-start gap-2 rounded-md border border-zinc-200 bg-zinc-50/50 px-2.5 py-2 text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-200">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 size-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-950"
+                  checked={props.pageBreakAfter === true}
+                  onChange={(event) => props.onSetPageBreakAfter?.(pageBreakTarget.id, event.target.checked)}
+                  aria-label="在此对象后强制换页"
+                />
+                <span><span className="block font-medium">在此对象后强制换页</span><span className="mt-0.5 block text-[10px] text-zinc-500">{props.selected.boxId ? '在所属卡片与下一对象之间插入换页标记。' : '在当前对象与下一对象之间插入换页标记。'}</span></span>
+              </label>
+            ) : null}
             {layoutBlock.type === 'box' ? (
               <Field label="跨页方式">
                 <select className={fieldClass} value={layoutBlock.breakBehavior} onChange={(event) => updateDisplayBlock({ breakBehavior: event.target.value as BoxBlock['breakBehavior'] })}>
                   <option value="auto">自动</option>
                   <option value="avoid">不拆开</option>
                   <option value="allow">允许拆散</option>
-                  <option value="force-before">之前换页</option>
                 </select>
               </Field>
             ) : null}
@@ -190,7 +209,6 @@ function PropertiesSheetPanel(props: {
                   <select className={fieldClass} value={block.breakBehavior || 'auto'} onChange={(event) => props.onUpdate({ breakBehavior: event.target.value as QuestionBlock['breakBehavior'] })}>
                     <option value="auto">自动分页（推荐）</option>
                     <option value="avoid">整题不拆</option>
-                    <option value="force-before">题前换页</option>
                   </select>
                 </Field>
                 <Field label="手动指定题目 ID">

@@ -23,7 +23,10 @@ import type { ManualFixRegion as Region, ManualFixSegment as Segment, ManualFixT
 import { useCandidateFixSession } from '@/hooks/useCandidateFixSession'
 import { useQuestionEditorDraft } from '@/hooks/useQuestionEditorDraft'
 import type { QuestionContentDraft } from '@/types/questionContent'
+import { copyManualFixRegionScreenshot } from '@/utils/manualFixPdfClipboard'
 import { candidateDetailPath, candidateReviewPath, importJobDocumentPath, legacySourceDocumentPath } from './importV2Routes'
+
+import { useSidebar } from '@/components/ui/sidebar'
 
 interface SourceProfile {
   pageCount?: number
@@ -54,6 +57,12 @@ function setFigureChoiceLabel(markdown: string, figure: any, optionLabel?: strin
 }
 
 export default function CandidateFixWorkbenchPage() {
+  const { setOpen } = useSidebar()
+
+  useEffect(() => {
+    setOpen(false)
+  }, [setOpen])
+
   const { jobId, sourceDocumentId: sourceDocumentIdFromPath, candidateId } = useParams<{ jobId: string; sourceDocumentId: string; candidateId: string }>()
   const [searchParams] = useSearchParams()
   const sourceDocumentIdFromQuery = searchParams.get('sourceDocumentId') || ''
@@ -564,6 +573,14 @@ export default function CandidateFixWorkbenchPage() {
     setActiveInspectorTab('regions')
   }
 
+  function copyPdfSelection(kind: 'question' | 'solution') {
+    return copyManualFixRegionScreenshot({
+      regions,
+      kind,
+      fallbackSourceDocumentId: String(candidate?.sourceDocumentId || sourceDocumentId),
+    })
+  }
+
   async function handleUploadFigure(file: File) {
     if (!candidateId) return
     if (!file.type.startsWith('image/')) {
@@ -659,8 +676,8 @@ export default function CandidateFixWorkbenchPage() {
       <ManualFixHeader candidate={candidate} pdfName={pdfName} saving={saving} finalizing={finalizing} textDirty={textDirty} saveError={saveError} onBack={() => navigateBack()} onSaveDraft={handleSaveDraft} onFinalize={handleFinalizeFix} />
 
       <div className="grid h-auto grid-cols-1 items-stretch gap-5 overflow-visible xl:h-[calc(100vh-7rem)] xl:min-h-[680px] xl:grid-cols-12 xl:overflow-hidden">
-        {/* 左侧：PDF 渲染展示与划框区域 (7格) */}
-        <div className="flex min-h-[640px] flex-col overflow-hidden rounded-xl border bg-zinc-50/50 shadow-sm transition-colors duration-200 xl:col-span-7 xl:min-h-0 dark:bg-zinc-955">
+        {/* 左侧：PDF 渲染展示与划框区域 (5格) */}
+        <div className="flex min-h-[640px] flex-col overflow-hidden rounded-xl border bg-zinc-50/50 shadow-sm transition-colors duration-200 xl:col-span-5 xl:min-h-0 dark:bg-zinc-955">
           <ManualFixViewerToolbar pageBrowseMode={pageBrowseMode} regionView={regionView} sourceProfiles={sourceProfileEntries} activeSourceDocumentId={activeSourceDocumentId} currentPage={currentPage} maxPages={maxPages} onBrowseModeChange={setPageBrowseMode} onRegionViewChange={handleRegionViewChange} onSourceChange={(sourceId) => { setActiveSourceDocumentId(sourceId); setCurrentPage(1); setRect({ x: 0, y: 0, width: 0, height: 0 }); setSelectedRegionId(null) }} onPageChange={(page) => { setCurrentPage(Math.min(maxPages, Math.max(1, page))); setRect({ x: 0, y: 0, width: 0, height: 0 }); setSelectedRegionId(null) }} />
 
           <ManualFixDocumentViewer candidate={candidate} activeSourceDocumentId={activeSourceDocumentId} currentPage={currentPage} pageBrowseMode={pageBrowseMode} pageNumbers={pageNumbers} rect={rect} scrollAreaRef={scrollAreaRef} pageContainerRefs={pageContainerRefs} getPageImageRef={getPageImageRef} canvasBoxesForPage={canvasBoxesForPage} selectedBoxIdForPage={selectedBoxIdForPage} onSelectBoxId={handleSelectBoxId} onRectChange={handleRectChange} onDeleteSelected={handleDeleteSelected} onNaturalSizeReady={(size, page) => { if (currentPage === page) setNaturalSize(size) }} onFocusPage={(page) => focusPage(page, { scroll: true })} />
@@ -694,6 +711,8 @@ export default function CandidateFixWorkbenchPage() {
           onDeleteFigure={handleDeleteFigure}
           onAddFigureRegion={handleAddFigureRegion}
           onUploadFigure={handleUploadFigure}
+          onCopyStemPdfScreenshot={() => copyPdfSelection('question')}
+          onCopyAnalysisPdfScreenshot={() => copyPdfSelection('solution')}
           uploadingFigure={uploadingFigure}
           figureUploadError={figureUploadError}
         />

@@ -1,9 +1,35 @@
 import { useState } from 'react'
-import { mergeAttributes, Node } from '@tiptap/core'
+import { InputRule, mergeAttributes, Node } from '@tiptap/core'
+import type { NodeType } from '@tiptap/pm/model'
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { FormulaEditorDialog } from './FormulaEditorDialog'
+
+/**
+ * Turn a just-completed `$…$` sequence into the atomic formula node.  Imported
+ * content is parsed by the Markdown adapter, while this rule covers formulas
+ * repaired directly in the visual editor without replacing the whole document
+ * (which would lose the user's caret and undo history).
+ */
+export function inlineFormulaInputRule(type: NodeType) {
+  return new InputRule({
+    find: /(^|[^\\$])\$([^$\n]+?)\$$/,
+    handler: ({ state, range, match }) => {
+      const latex = String(match[2] || '')
+      if (!latex.trim()) return null
+
+      // Input rules run before the final `$` is inserted into the document.
+      // Keep the non-formula prefix, add that character, then replace exactly
+      // the `$…$` range with one formula atom.
+      const start = range.from + String(match[1] || '').length
+      const end = range.to
+      state.tr.insertText('$', end)
+      state.tr.replaceWith(start, end + 1, type.create({ latex }))
+      state.tr.scrollIntoView()
+    },
+  })
+}
 
 function FormulaNodeView({ node, updateAttributes, selected }: NodeViewProps) {
   const [open, setOpen] = useState(false)
@@ -62,6 +88,9 @@ function formulaNode(name: 'formulaInline' | 'formulaBlock', inline: boolean) {
     parseHTML: () => [{ tag: `${inline ? 'span' : 'div'}[data-formula="${inline ? 'inline' : 'block'}"]`, getAttrs: (element) => ({ latex: (element as HTMLElement).dataset.latex || '' }) }],
     renderHTML: ({ HTMLAttributes }) => [inline ? 'span' : 'div', mergeAttributes(HTMLAttributes, { 'data-formula': inline ? 'inline' : 'block', 'data-latex': HTMLAttributes.latex })],
     addNodeView: () => ReactNodeViewRenderer(FormulaNodeView),
+    addInputRules() {
+      return inline ? [inlineFormulaInputRule(this.type)] : []
+    },
   })
 }
 

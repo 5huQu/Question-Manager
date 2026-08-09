@@ -40,4 +40,21 @@ describe('documentForPrintVariant', () => {
     expect(documentForPrintVariant(document, 'teacher')).toBe(teacher)
     expect(student).not.toBe(teacher)
   })
+
+  it('removes answer space from the teacher projection while retaining it for students', () => {
+    const document: TeachingDocumentV1 = {
+      version: 1,
+      documentType: 'worksheet',
+      title: '',
+      metadata: {},
+      content: [{
+        type: 'question', id: 'q', questionId: 'question',
+        display: { answerSpace: { heightMm: 24, style: 'lines' } },
+      }],
+    }
+    const student = documentForPrintVariant(document, 'student').content[0]
+    const teacher = documentForPrintVariant(document, 'teacher').content[0]
+    expect(student.type === 'question' && student.display?.answerSpace).toEqual({ heightMm: 24, style: 'lines' })
+    expect(teacher.type === 'question' && teacher.display?.answerSpace).toBeUndefined()
+  })
 })

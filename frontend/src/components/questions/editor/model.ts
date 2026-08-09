@@ -1,5 +1,6 @@
 import type { QuestionContentDraft } from '@/types/questionContent'
 import { markdownToEditorDocument } from '@/utils/questionContentCodec'
+import { withoutHtmlTableSegments } from '@/utils/htmlTables'
 import { parseChoiceQuestion } from '@/utils/questionDisplay'
 
 export type QuestionContentValue = QuestionContentDraft
@@ -66,7 +67,10 @@ export function suggestChoiceConversion(markdown: string): ChoiceConversionSugge
 
 export function detectCompatibilityWarnings(value: QuestionContentValue): QuestionContentEditorWarning[] {
   return (Object.entries(value) as Array<[keyof QuestionContentValue, string]>).flatMap(([field, markdown]) => {
-    const warnings: QuestionContentEditorWarning[] = markdownToEditorDocument(markdown).warnings.map((warning) => ({
+    // HTML tables are now parsed into safe, span-aware Tiptap tables. The legacy
+    // codec still treats every HTML tag as raw Markdown, so only pass it the
+    // remaining source when deciding whether a warning is warranted.
+    const warnings: QuestionContentEditorWarning[] = markdownToEditorDocument(withoutHtmlTableSegments(markdown)).warnings.map((warning) => ({
       code: 'raw-markdown' as const,
       field,
       message: warning.message,

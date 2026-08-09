@@ -577,6 +577,10 @@ export const importV2Api = {
   getSourceDocumentOcrStatus(sourceDocumentId: string) {
     return api<{ sourceDocument: ImportV2SourceDocument; task: ImportV2OcrTask; ocrDocument?: ImportV2OcrDocument }>('/api/import-flow-v2/source-documents/' + encodeURIComponent(sourceDocumentId) + '/ocr-status')
   },
+  async getSourceDocumentPageImage(sourceDocumentId: string, pageNo: number) {
+    const response = await apiStream(`/api/import-flow-v2/source-documents/${encodeURIComponent(sourceDocumentId)}/pages/${encodeURIComponent(String(pageNo))}`)
+    return response.blob()
+  },
   listOcrDocuments(sourceDocumentId?: string) {
     const query = sourceDocumentId ? '?sourceDocumentId=' + encodeURIComponent(sourceDocumentId) : ''
     return api<{ items: ImportV2OcrDocument[] }>('/api/import-flow-v2/ocr-documents' + query)

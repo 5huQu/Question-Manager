@@ -13,6 +13,7 @@ export type CandidateIssueCode =
   | 'missing_stem'
   | 'missing_answer'
   | 'missing_analysis'
+  | 'choice_options_unrecognized'
   | 'missing_solution'
   | 'solution_conflict'
   | 'unmatched_solution'

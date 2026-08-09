@@ -978,10 +978,13 @@ button.td-print-chrome-slot:hover {
   color: color-mix(in srgb, var(--td-brand-ink) 70%, transparent);
 }
 
-/* 答案区淡底色 */
-.td-theme-print .td-question [class*="bg-zinc-50"] {
-  background: var(--td-brand-tint) !important;
-  border-radius: 4px;
+/* 教师版答案、解析统一使用低饱和蓝底；解析的多个可分页区域连续呈现。 */
+.td-theme-print .td-question-answer,
+.td-theme-print .td-question-analysis-region {
+  background: #eff6ff !important;
+}
+.td-theme-print .td-question-analysis-region + .td-question-analysis-region {
+  margin-top: 0;
 }
 
 /* rawMarkdown 继承 */

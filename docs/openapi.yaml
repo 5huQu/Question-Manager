@@ -1,0 +1,1820 @@
+openapi: 3.1.1
+info:
+  title: Question Manager Local API
+  version: 0.1.1
+  description: |
+    Question Manager 的本地优先 REST API。此规范覆盖 server/src/index.ts 挂载的
+    已实现路由；动态领域对象保留为开放 JSON 对象，具体字段以服务层 contracts、
+    TypeScript 类型和 docs/api.md 为准。
+
+    默认 single-admin 模式下，除 `/livez` 和公开认证接口外均需会话 Cookie。所有
+    POST、PUT、PATCH、DELETE 请求还必须带允许的 Origin 与 `X-QM-CSRF` 请求头。
+    认证 Cookie 名称会随部署安全配置变化，因此以通用 `sessionCookie` 描述。
+servers:
+  - url: http://127.0.0.1:8797
+    description: 默认源码开发服务
+security:
+  - sessionCookie: []
+tags:
+  - name: Liveness
+  - name: Authentication
+  - name: Settings
+  - name: Question bank
+  - name: Collections
+  - name: Export records
+  - name: Layout drafts
+  - name: Learning tags
+  - name: Quick actions
+  - name: Dashboard
+  - name: Import V2 - source documents
+  - name: Import V2 - OCR documents
+  - name: Import V2 - parser
+  - name: Import V2 - candidates
+  - name: Import V2 - jobs
+  - name: Candidate fixes
+  - name: Teaching documents
+paths:
+  /livez:
+    get:
+      tags: [Liveness]
+      operationId: getLiveness
+      summary: 匿名存活探针
+      security: []
+      responses:
+        '200':
+          description: 服务进程正常
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean, const: true }
+
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: 登录并创建 Cookie 会话
+      description: 需要允许的 Origin。成功时设置 HttpOnly 会话 Cookie，并在响应中提供 CSRF token。
+      security: []
+      requestBody:
+        $ref: '#/components/requestBodies/Credentials'
+      responses:
+        '200': { $ref: '#/components/responses/Authenticated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/auth/bootstrap:
+    post:
+      tags: [Authentication]
+      operationId: bootstrapAdmin
+      summary: 首次创建管理员
+      description: "仅在尚未初始化时可用；如配置 ADMIN_BOOTSTRAP_TOKEN，请求体还需 `bootstrapToken`。"
+      security: []
+      requestBody:
+        $ref: '#/components/requestBodies/BootstrapCredentials'
+      responses:
+        '201': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/auth/state:
+    get:
+      tags: [Authentication]
+      operationId: getAuthState
+      summary: 查询初始化和当前会话状态
+      security: []
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      summary: 注销当前会话
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/auth/change-password:
+    post:
+      tags: [Authentication]
+      operationId: changePassword
+      summary: 修改管理员密码并注销其他会话
+      requestBody:
+        $ref: '#/components/requestBodies/ChangePassword'
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/auth/sessions:
+    get:
+      tags: [Authentication]
+      operationId: listSessions
+      summary: 列出管理员会话
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/auth/sessions/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    delete:
+      tags: [Authentication]
+      operationId: revokeSession
+      summary: 注销指定会话
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/health:
+    get:
+      tags: [Settings]
+      operationId: getHealth
+      summary: 获取受保护的运行环境与工具健康信息
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/settings:
+    get:
+      tags: [Settings]
+      operationId: getSettings
+      summary: 获取 OCR 和应用设置（不返回完整密钥）
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+    patch:
+      tags: [Settings]
+      operationId: updateSettings
+      summary: 更新 OCR 和应用设置
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/question-bank/items:
+    get:
+      tags: [Question bank]
+      operationId: listQuestionBankItems
+      summary: 分页检索题库题目
+      parameters:
+        - { $ref: '#/components/parameters/SearchQuery' }
+        - { $ref: '#/components/parameters/Stage' }
+        - { $ref: '#/components/parameters/QuestionType' }
+        - { $ref: '#/components/parameters/KnowledgePoint' }
+        - { $ref: '#/components/parameters/SolutionMethod' }
+        - { $ref: '#/components/parameters/Difficulty' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+    post:
+      tags: [Question bank]
+      operationId: createQuestionBankItem
+      summary: 创建一条题库题目
+      requestBody: { $ref: '#/components/requestBodies/QuestionItem' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/question-bank/items/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Question bank]
+      operationId: getQuestionBankItem
+      summary: 获取题目详情
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Question bank]
+      operationId: updateQuestionBankItem
+      summary: "更新题目；可传 `expectedContentRevision` 防止覆盖"
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Question bank]
+      operationId: deleteQuestionBankItem
+      summary: 删除题目
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/question-bank/items/{id}/rerun-ocr:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Question bank]
+      operationId: rerunQuestionItemOcr
+      summary: 针对既有题目重新执行 OCR
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/question-bank/items/classify:
+    post:
+      tags: [Question bank]
+      operationId: startQuestionBankClassification
+      summary: 启动全题库分类任务
+      responses:
+        '202': { $ref: '#/components/responses/AcceptedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/question-bank/classification-tasks/active:
+    get:
+      tags: [Question bank]
+      operationId: getActiveQuestionBankClassificationTask
+      summary: 获取当前活跃分类任务
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+  /api/question-bank/classification-tasks/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Question bank]
+      operationId: getQuestionBankClassificationTask
+      summary: 获取分类任务状态
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/question-bank/import-json:
+    post:
+      tags: [Question bank]
+      operationId: importQuestionBankJson
+      summary: 批量导入题库 JSON
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/question-bank/items/{id}/figures:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Question bank]
+      operationId: createQuestionFigure
+      summary: 按已有本地源图裁剪并绑定题图
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/question-bank/items/{id}/figures/upload:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Question bank]
+      operationId: uploadQuestionFigure
+      summary: 上传题目题图
+      requestBody: { $ref: '#/components/requestBodies/MultipartFileWithFigureUsage' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/question-bank/items/{id}/figures/{figureId}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { $ref: '#/components/parameters/FigureId' }
+    patch:
+      tags: [Question bank]
+      operationId: updateQuestionFigure
+      summary: 更新题图裁剪/绑定信息
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    delete:
+      tags: [Question bank]
+      operationId: deleteQuestionFigure
+      summary: 删除题图
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/question-bank/items/{id}/figures/tikz/preview:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Question bank]
+      operationId: previewQuestionTikzFigure
+      summary: 渲染题目 TikZ 预览，不保存
+      requestBody: { $ref: '#/components/requestBodies/TikzSource' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/question-bank/items/{id}/figures/tikz:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Question bank]
+      operationId: createQuestionTikzFigure
+      summary: 渲染并保存题目 TikZ 题图
+      requestBody: { $ref: '#/components/requestBodies/TikzFigure' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/question-bank/items/{id}/figures/{figureId}/tikz:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { $ref: '#/components/parameters/FigureId' }
+    patch:
+      tags: [Question bank]
+      operationId: updateQuestionTikzFigure
+      summary: 重新渲染并更新已保存的 TikZ 题图
+      requestBody: { $ref: '#/components/requestBodies/TikzFigure' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/question-bank/tag-libraries:
+    get:
+      tags: [Learning tags]
+      operationId: getQuestionBankTagLibraries
+      summary: 获取题库可用的知识点和解题方法标签库
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+  /api/learning-tags/libraries:
+    get:
+      tags: [Learning tags]
+      operationId: listLearningTagLibraries
+      summary: 列出用户学习标签库
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+    post:
+      tags: [Learning tags]
+      operationId: createLearningTagLibrary
+      summary: 创建或写入学习标签库
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/learning-tags/libraries/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    delete:
+      tags: [Learning tags]
+      operationId: deleteLearningTagLibrary
+      summary: 删除非默认学习标签库
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/question-bank/collections:
+    get:
+      tags: [Collections]
+      operationId: listCollections
+      summary: 列出试题篮/收藏集合
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+    post:
+      tags: [Collections]
+      operationId: createCollection
+      summary: 创建试题篮/收藏集合
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/question-bank/collections/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Collections]
+      operationId: getCollection
+      summary: 获取集合及其题目关系
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Collections]
+      operationId: updateCollection
+      summary: 更新集合元数据
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    delete:
+      tags: [Collections]
+      operationId: deleteCollection
+      summary: 删除集合
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/question-bank/collections/{id}/items:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Collections]
+      operationId: addCollectionItem
+      summary: 将题目加入集合
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    put:
+      tags: [Collections]
+      operationId: replaceCollectionItems
+      summary: 整体替换集合的题目顺序和内容
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    delete:
+      tags: [Collections]
+      operationId: clearCollectionItems
+      summary: 清空集合中的题目
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+  /api/question-bank/collections/{id}/items/{relationId}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { $ref: '#/components/parameters/RelationId' }
+    patch:
+      tags: [Collections]
+      operationId: updateCollectionItem
+      summary: 更新集合题目关系（分数、分区等）
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    delete:
+      tags: [Collections]
+      operationId: deleteCollectionItem
+      summary: 从集合移除一题
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/question-bank/collections/{id}/reorder:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      tags: [Collections]
+      operationId: reorderCollectionItems
+      summary: 按 relationId 与 sortOrder 重排集合题目
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/question-bank/collections/{id}/export:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Collections]
+      operationId: exportCollection
+      summary: 导出集合为 Markdown、LaTeX 或 PDF
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/question-bank/export-records:
+    get:
+      tags: [Export records]
+      operationId: listExportRecords
+      summary: 检索导出历史
+      parameters:
+        - { $ref: '#/components/parameters/SearchQuery' }
+        - name: sourceType
+          in: query
+          schema: { type: string, enum: [collection, run, import_job] }
+        - name: collectionId
+          in: query
+          schema: { type: string }
+        - name: runId
+          in: query
+          schema: { type: string }
+        - name: importJobId
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+  /api/question-bank/export-records/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    delete:
+      tags: [Export records]
+      operationId: deleteExportRecord
+      summary: 删除导出历史记录
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/question-bank/export-records/{id}/restore-to-basket:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Export records]
+      operationId: restoreExportRecordToBasket
+      summary: 从导出快照恢复题目到集合
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/question-bank/collections/{id}/export-records:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Export records]
+      operationId: listCollectionExportRecords
+      summary: 列出指定集合的导出历史
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/question-bank/quick-action-metadata:
+    get:
+      tags: [Quick actions]
+      operationId: getQuickActionMetadata
+      summary: 获取随机组卷可用的筛选元数据
+      parameters:
+        - { $ref: '#/components/parameters/Stage' }
+        - name: knowledgePoints
+          in: query
+          description: 逗号分隔的标签列表
+          schema: { type: string }
+        - name: solutionMethods
+          in: query
+          description: 逗号分隔的标签列表
+          schema: { type: string }
+        - name: matchMode
+          in: query
+          schema: { type: string, enum: [strict, loose] }
+        - name: difficultyMode
+          in: query
+          schema: { type: string, enum: [foundation, standard, advanced, challenge, custom] }
+        - name: difficultyMin
+          in: query
+          schema: { type: number, minimum: 1, maximum: 10 }
+        - name: difficultyMax
+          in: query
+          schema: { type: number, minimum: 1, maximum: 10 }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+  /api/question-bank/daily-question:
+    get:
+      tags: [Quick actions]
+      operationId: getDailyQuestion
+      summary: 按可选标签随机获取每日一题
+      parameters:
+        - { $ref: '#/components/parameters/Stage' }
+        - name: knowledgePoint
+          in: query
+          schema: { type: string }
+        - name: solutionMethod
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+  /api/question-bank/random-paper:
+    post:
+      tags: [Quick actions]
+      operationId: generateRandomPaper
+      summary: 按题型、难度和标签随机组卷
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/dashboard/activity-heatmap:
+    get:
+      tags: [Dashboard]
+      operationId: getActivityHeatmap
+      summary: 获取按日活动热力图
+      parameters:
+        - { $ref: '#/components/parameters/DateFrom' }
+        - { $ref: '#/components/parameters/DateTo' }
+        - { $ref: '#/components/parameters/ActivityMetric' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+  /api/dashboard/activity-hours:
+    get:
+      tags: [Dashboard]
+      operationId: getActivityHours
+      summary: 获取按时段活动统计
+      parameters:
+        - { $ref: '#/components/parameters/DateFrom' }
+        - { $ref: '#/components/parameters/DateTo' }
+        - { $ref: '#/components/parameters/ActivityMetric' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+
+  /api/question-bank/layout-drafts:
+    get:
+      tags: [Layout drafts]
+      operationId: searchLayoutDrafts
+      summary: 分页检索排版草稿
+      parameters:
+        - { $ref: '#/components/parameters/SearchQuery' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+  /api/question-bank/collections/{id}/layout-drafts:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Layout drafts]
+      operationId: listCollectionLayoutDrafts
+      summary: 列出集合下的排版草稿
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Layout drafts]
+      operationId: createLayoutDraft
+      summary: 从集合创建排版草稿
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/question-bank/layout-drafts/{draftId}:
+    parameters: [{ $ref: '#/components/parameters/DraftId' }]
+    get:
+      tags: [Layout drafts]
+      operationId: getLayoutDraft
+      summary: 获取排版草稿与当前预览状态
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Layout drafts]
+      operationId: updateLayoutDraft
+      summary: 保存布局或局部内容编辑；请求携带 revision
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Layout drafts]
+      operationId: deleteLayoutDraft
+      summary: 删除排版草稿
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/question-bank/layout-drafts/{draftId}/refresh-content:
+    parameters: [{ $ref: '#/components/parameters/DraftId' }]
+    post:
+      tags: [Layout drafts]
+      operationId: refreshLayoutDraftContent
+      summary: 用题库最新版内容刷新草稿
+      requestBody: { $ref: '#/components/requestBodies/Revision' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/question-bank/layout-drafts/{draftId}/content/{relationId}/sync-to-bank:
+    parameters:
+      - { $ref: '#/components/parameters/DraftId' }
+      - { $ref: '#/components/parameters/RelationId' }
+    post:
+      tags: [Layout drafts]
+      operationId: syncLayoutDraftContentToBank
+      summary: 将一个草稿题目的内容编辑同步回题库
+      requestBody: { $ref: '#/components/requestBodies/Revision' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/question-bank/layout-drafts/{draftId}/preview:
+    parameters: [{ $ref: '#/components/parameters/DraftId' }]
+    post:
+      tags: [Layout drafts]
+      operationId: generateLayoutPreview
+      summary: 排队或复用 PDF 预览
+      requestBody: { $ref: '#/components/requestBodies/Revision' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/question-bank/layout-drafts/{draftId}/preview-status:
+    parameters: [{ $ref: '#/components/parameters/DraftId' }]
+    get:
+      tags: [Layout drafts]
+      operationId: getLayoutPreviewStatus
+      summary: 查询 PDF 预览队列状态
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/question-bank/layout-drafts/{draftId}/pages:
+    parameters: [{ $ref: '#/components/parameters/DraftId' }]
+    get:
+      tags: [Layout drafts]
+      operationId: getLayoutPreviewPages
+      summary: 获取预览 PDF 与页面图片 URL
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/question-bank/layout-drafts/{draftId}/export:
+    parameters: [{ $ref: '#/components/parameters/DraftId' }]
+    post:
+      tags: [Layout drafts]
+      operationId: exportLayoutDraft
+      summary: 导出指定 revision 的排版草稿
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/teaching-document-templates:
+    get:
+      tags: [Teaching documents]
+      operationId: listTeachingDocumentTemplates
+      summary: 列出教学文档打印模板
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+    post:
+      tags: [Teaching documents]
+      operationId: createTeachingDocumentTemplate
+      summary: 创建教学文档打印模板
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/teaching-document-templates/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      tags: [Teaching documents]
+      operationId: updateTeachingDocumentTemplate
+      summary: 更新教学文档打印模板
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Teaching documents]
+      operationId: deleteTeachingDocumentTemplate
+      summary: 删除教学文档打印模板
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/teaching-documents:
+    get:
+      tags: [Teaching documents]
+      operationId: listTeachingDocuments
+      summary: 列出教学文档摘要
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+    post:
+      tags: [Teaching documents]
+      operationId: createTeachingDocument
+      summary: 创建教学文档草稿
+      requestBody: { $ref: '#/components/requestBodies/TeachingDocumentCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /api/teaching-documents/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Teaching documents]
+      operationId: getTeachingDocument
+      summary: 获取教学文档、资产和校验问题
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Teaching documents]
+      operationId: updateTeachingDocument
+      summary: 保存完整文档内容；必须携带 expectedRevision
+      requestBody: { $ref: '#/components/requestBodies/TeachingDocumentUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '409': { $ref: '#/components/responses/RevisionConflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Teaching documents]
+      operationId: deleteTeachingDocument
+      summary: 删除教学文档；服务会说明保留资产数
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/teaching-documents/{id}/duplicate:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Teaching documents]
+      operationId: duplicateTeachingDocument
+      summary: 复制教学文档
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/teaching-documents/{id}/assets:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Teaching documents]
+      operationId: uploadTeachingDocumentAsset
+      summary: 上传教学文档图片资产
+      requestBody: { $ref: '#/components/requestBodies/MultipartFile' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/teaching-documents/{id}/tikz/render:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Teaching documents]
+      operationId: renderTeachingDocumentTikz
+      summary: 渲染并保存教学文档 TikZ 图
+      requestBody: { $ref: '#/components/requestBodies/TikzSource' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/teaching-document-assets/{assetId}:
+    parameters: [{ $ref: '#/components/parameters/AssetId' }]
+    get:
+      tags: [Teaching documents]
+      operationId: getTeachingDocumentAsset
+      summary: 获取教学文档资产元数据
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/import-flow-v2/source-documents:
+    get:
+      tags: [Import V2 - source documents]
+      operationId: listSourceDocuments
+      summary: 分页列出导入源资料
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/SearchQuery' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+    post:
+      tags: [Import V2 - source documents]
+      operationId: createSourceDocument
+      summary: 创建未上传的资料记录
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/import-flow-v2/source-documents/upload:
+    post:
+      tags: [Import V2 - source documents]
+      operationId: uploadSourceDocument
+      summary: 上传 PDF 或图片源资料
+      description: "`file` 外可传 JSON 字符串字段 `metadata`；文件上限由 SOURCE_DOCUMENT_UPLOAD_MAX_BYTES 控制。"
+      requestBody: { $ref: '#/components/requestBodies/MultipartSourceDocument' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/import-flow-v2/source-documents/import-doc2x-package:
+    post:
+      tags: [Import V2 - source documents]
+      operationId: importDoc2xPackage
+      summary: 上传并导入 Doc2X Markdown ZIP 包
+      description: "`file` 外可传 JSON 字符串字段 `metadata`；文件上限由 DOC2X_PACKAGE_UPLOAD_MAX_BYTES 控制。"
+      requestBody: { $ref: '#/components/requestBodies/MultipartSourceDocument' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/import-flow-v2/source-documents/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Import V2 - source documents]
+      operationId: getSourceDocument
+      summary: 获取源资料详情
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Import V2 - source documents]
+      operationId: updateSourceDocument
+      summary: 更新源资料元数据
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    delete:
+      tags: [Import V2 - source documents]
+      operationId: deleteSourceDocument
+      summary: 删除未受保护的源资料及关联未提交草稿
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/source-documents/{id}/candidates:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Import V2 - source documents]
+      operationId: listSourceDocumentCandidates
+      summary: 列出一个源资料的候选题
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+  /api/import-flow-v2/source-documents/{id}/ocr:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Import V2 - source documents]
+      operationId: startSourceDocumentOcr
+      summary: 启动或强制重新启动整份 OCR
+      description: 已有已提交候选题时服务会阻止重新 OCR。请求体可指定 provider 与 force。
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '202': { $ref: '#/components/responses/AcceptedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/import-flow-v2/source-documents/{id}/ocr-status:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Import V2 - source documents]
+      operationId: getSourceDocumentOcrStatus
+      summary: 查询 OCR 任务状态
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/source-documents/{id}/pages/{page}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - name: page
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    get:
+      tags: [Import V2 - source documents]
+      operationId: renderSourceDocumentPage
+      summary: 渲染并返回源资料指定页的图片
+      responses:
+        '200': { $ref: '#/components/responses/Image' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/import-flow-v2/ocr-documents:
+    get:
+      tags: [Import V2 - OCR documents]
+      operationId: listOcrDocuments
+      summary: 分页列出 OCR 中间文档
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/SearchQuery' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+  /api/import-flow-v2/ocr-documents/import-json:
+    post:
+      tags: [Import V2 - OCR documents]
+      operationId: importOcrDocumentJson
+      summary: 导入已标准化的 OCRDocument JSON
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/import-flow-v2/ocr-documents/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Import V2 - OCR documents]
+      operationId: getOcrDocument
+      summary: 获取 OCRDocument
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/ocr-documents/{id}/markdown:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      tags: [Import V2 - OCR documents]
+      operationId: updateOcrDocumentMarkdown
+      summary: 更新 OCRDocument Markdown
+      requestBody: { $ref: '#/components/requestBodies/OcrMarkdown' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/ocr-documents/{id}/parse-candidates:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Import V2 - OCR documents]
+      operationId: parseOcrDocumentCandidates
+      summary: 用指定 preset/configOverride 解析候选题
+      requestBody: { $ref: '#/components/requestBodies/ParseCandidates' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/ocr-documents/{id}/markdown-preview:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Import V2 - OCR documents]
+      operationId: getOcrMarkdownPreview
+      summary: 获取 Markdown 与行号/页标记预览
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/ocr-documents/{id}/parser-preview:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Import V2 - OCR documents]
+      operationId: getOcrParserPreview
+      summary: 预览解析结构和候选题边界，不写入候选题
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/import-flow-v2/parser-config:
+    get:
+      tags: [Import V2 - parser]
+      operationId: getParserConfig
+      summary: 获取当前候选题解析配置
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+    put:
+      tags: [Import V2 - parser]
+      operationId: saveParserConfig
+      summary: "保存完整解析配置；可用 `{ config: ... }` 包装"
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/import-flow-v2/parser-config/reset:
+    post:
+      tags: [Import V2 - parser]
+      operationId: resetParserConfig
+      summary: 重置解析配置为默认值
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+  /api/import-flow-v2/parser-presets:
+    get:
+      tags: [Import V2 - parser]
+      operationId: listParserPresets
+      summary: 列出解析预设
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+    post:
+      tags: [Import V2 - parser]
+      operationId: createParserPreset
+      summary: "创建解析预设；可用 `{ preset: ... }` 包装"
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/import-flow-v2/parser-presets/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    put:
+      tags: [Import V2 - parser]
+      operationId: updateParserPreset
+      summary: "更新解析预设；可用 `{ preset: ... }` 包装"
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Import V2 - parser]
+      operationId: deleteParserPreset
+      summary: 删除非内置解析预设
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/import-flow-v2/candidates/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      tags: [Import V2 - candidates]
+      operationId: updateQuestionCandidate
+      summary: "更新一个未提交候选题；可直接传字段或使用 `{ candidate: ... }` 包装"
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Import V2 - candidates]
+      operationId: deleteQuestionCandidate
+      summary: 删除一个未提交候选题
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/candidates/{id}/commit:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Import V2 - candidates]
+      operationId: commitQuestionCandidate
+      summary: 校验并提交一个候选题至题库
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/import-flow-v2/candidates/commit:
+    post:
+      tags: [Import V2 - candidates]
+      operationId: commitQuestionCandidates
+      summary: 批量校验并提交候选题
+      requestBody: { $ref: '#/components/requestBodies/CandidateIds' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/import-flow-v2/candidates/skip:
+    post:
+      tags: [Import V2 - candidates]
+      operationId: skipQuestionCandidates
+      summary: 批量跳过候选题
+      requestBody: { $ref: '#/components/requestBodies/CandidateIds' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/import-flow-v2/candidates/{id}/figures/upload:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Import V2 - candidates]
+      operationId: uploadCandidateFigure
+      summary: 上传并绑定候选题题图
+      requestBody: { $ref: '#/components/requestBodies/MultipartFileWithFigureUsage' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/candidates/{id}/unplaced-figures/{blockId}/resolve:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { $ref: '#/components/parameters/BlockId' }
+    post:
+      tags: [Import V2 - candidates]
+      operationId: resolveCandidateUnplacedFigure
+      summary: 将未归位 OCR 图块绑定到候选题内容位置
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/candidates/{id}/figures/{figureId}/move:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { $ref: '#/components/parameters/FigureId' }
+    post:
+      tags: [Import V2 - candidates]
+      operationId: moveCandidateFigure
+      summary: 调整候选题题图用途、选项或内联位置
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/import-flow-v2/candidates/{candidateId}/fix-session:
+    parameters: [{ $ref: '#/components/parameters/CandidateId' }]
+    post:
+      tags: [Candidate fixes]
+      operationId: createOrRestoreCandidateFixSession
+      summary: 创建或恢复候选题人工修正会话
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/candidate-fix-sessions/{sessionId}:
+    parameters: [{ $ref: '#/components/parameters/SessionId' }]
+    get:
+      tags: [Candidate fixes]
+      operationId: getCandidateFixSession
+      summary: 获取人工修正会话和相对坐标选区
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/candidate-fix-sessions/{sessionId}/regions:
+    parameters: [{ $ref: '#/components/parameters/SessionId' }]
+    put:
+      tags: [Candidate fixes]
+      operationId: saveCandidateFixRegions
+      summary: "保存选区；请求体须包含 `regions` 与当前 `revision`"
+      requestBody: { $ref: '#/components/requestBodies/CandidateFixRegions' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/import-flow-v2/candidate-fix-sessions/{sessionId}/validate:
+    parameters: [{ $ref: '#/components/parameters/SessionId' }]
+    post:
+      tags: [Candidate fixes]
+      operationId: validateCandidateFixSession
+      summary: 校验选区会话能否完成
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/candidate-fix-sessions/{sessionId}/finalize:
+    parameters: [{ $ref: '#/components/parameters/SessionId' }]
+    post:
+      tags: [Candidate fixes]
+      operationId: finalizeCandidateFixSession
+      summary: 完成选区修正并将结果应用回候选题
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/import-flow-v2/candidate-fix-sessions/{sessionId}/reopen:
+    parameters: [{ $ref: '#/components/parameters/SessionId' }]
+    post:
+      tags: [Candidate fixes]
+      operationId: reopenCandidateFixSession
+      summary: 重新打开已完成的选区修正会话
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/import-flow-v2/resolve-import-job:
+    get:
+      tags: [Import V2 - jobs]
+      operationId: resolveImportJob
+      summary: 按 sourceDocumentId 或兼容 runId 解析导入批次
+      parameters:
+        - name: sourceDocumentId
+          in: query
+          schema: { type: string }
+        - name: runId
+          in: query
+          schema: { type: string }
+        - name: ensure
+          in: query
+          description: 对单文档资料默认创建关联批次；传 false 仅查询
+          schema: { type: boolean, default: true }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/jobs:
+    get:
+      tags: [Import V2 - jobs]
+      operationId: listImportJobs
+      summary: 分页列出导入批次及统计
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/SearchQuery' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+    post:
+      tags: [Import V2 - jobs]
+      operationId: createImportJob
+      summary: 创建单文档或分离题干/解析的导入批次
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/import-flow-v2/jobs/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Import V2 - jobs]
+      operationId: getImportJob
+      summary: 获取导入批次、关联资料和统计
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Import V2 - jobs]
+      operationId: updateImportJob
+      summary: 更新导入批次元数据
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Import V2 - jobs]
+      operationId: deleteImportJob
+      summary: 删除导入批次
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/import-flow-v2/jobs/{id}/documents:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Import V2 - jobs]
+      operationId: getImportJobDocuments
+      summary: 获取批次及已关联的源资料
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Import V2 - jobs]
+      operationId: addSourceDocumentToImportJob
+      summary: 将已存在源资料关联到导入批次
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '201': { $ref: '#/components/responses/CreatedJsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/jobs/{id}/parse-candidates:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Import V2 - jobs]
+      operationId: parseImportJobCandidates
+      summary: 对批次资料执行候选题解析
+      requestBody: { $ref: '#/components/requestBodies/ParseCandidates' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/jobs/{id}/candidates:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Import V2 - jobs]
+      operationId: listImportJobCandidates
+      summary: 列出批次下所有候选题
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/jobs/{id}/questions:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Import V2 - jobs]
+      operationId: listImportJobQuestions
+      summary: 列出批次已提交至题库的题目
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/jobs/{id}/classify:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Import V2 - jobs]
+      operationId: classifyImportJobQuestions
+      summary: 分类此导入批次已提交的题目
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/jobs/{id}/model-split:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Import V2 - jobs]
+      operationId: createModelSplitPreview
+      summary: 生成模型辅助拆题预览
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/jobs/{id}/model-split/stream:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Import V2 - jobs]
+      operationId: streamModelSplitPreview
+      summary: 以 Server-Sent Events 流式生成模型辅助拆题预览
+      responses:
+        '200': { $ref: '#/components/responses/EventStream' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/jobs/{id}/model-split/{runId}/apply:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { $ref: '#/components/parameters/RunId' }
+    post:
+      tags: [Import V2 - jobs]
+      operationId: applyModelSplitPreview
+      summary: 应用已确认的模型拆题预览
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/import-flow-v2/jobs/{id}/export-records:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [Import V2 - jobs]
+      operationId: listImportJobExportRecords
+      summary: 列出导入批次的导出历史
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/import-flow-v2/jobs/{id}/export:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [Import V2 - jobs]
+      operationId: exportImportJob
+      summary: 按导出请求导出批次中已提交的题目
+      requestBody: { $ref: '#/components/requestBodies/JsonObject' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonObject' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # New paths are inserted above this marker; reusable definitions stay last.
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: qm_session
+      description: 部署实际 Cookie 名可随安全配置改变；浏览器客户端应让服务端设置并自动携带 Cookie。
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    FigureId:
+      name: figureId
+      in: path
+      required: true
+      schema: { type: string }
+    RelationId:
+      name: relationId
+      in: path
+      required: true
+      schema: { type: string }
+    DraftId:
+      name: draftId
+      in: path
+      required: true
+      schema: { type: string }
+    AssetId:
+      name: assetId
+      in: path
+      required: true
+      schema: { type: string }
+    CandidateId:
+      name: candidateId
+      in: path
+      required: true
+      schema: { type: string }
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string }
+    BlockId:
+      name: blockId
+      in: path
+      required: true
+      schema: { type: string }
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { type: string }
+    SearchQuery:
+      name: q
+      in: query
+      schema: { type: string }
+    Stage:
+      name: stage
+      in: query
+      schema: { type: string }
+    QuestionType:
+      name: questionType
+      in: query
+      schema: { type: string }
+    KnowledgePoint:
+      name: knowledgePoint
+      in: query
+      schema: { type: string }
+    SolutionMethod:
+      name: solutionMethod
+      in: query
+      schema: { type: string }
+    Difficulty:
+      name: difficulty
+      in: query
+      schema: { type: string }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1 }
+    PageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1 }
+    DateFrom:
+      name: from
+      in: query
+      schema: { type: string, format: date }
+    DateTo:
+      name: to
+      in: query
+      schema: { type: string, format: date }
+    ActivityMetric:
+      name: metric
+      in: query
+      schema:
+        type: string
+        enum: [all, questions_created, questions_updated, exports_created, ocr_completed]
+  requestBodies:
+    Credentials:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [username, password]
+            properties:
+              username: { type: string }
+              password: { type: string, format: password }
+    BootstrapCredentials:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Credentials'
+              - type: object
+                properties:
+                  bootstrapToken: { type: string }
+    ChangePassword:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [currentPassword, newPassword]
+            properties:
+              currentPassword: { type: string, format: password }
+              newPassword: { type: string, format: password }
+    JsonObject:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/JsonObject' }
+    QuestionItem:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/QuestionItemInput' }
+    Revision:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [revision]
+            properties:
+              revision: { type: integer, minimum: 1 }
+            additionalProperties: true
+    CandidateIds:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [candidateIds]
+            properties:
+              candidateIds:
+                type: array
+                minItems: 1
+                items: { type: string }
+            additionalProperties: true
+    CandidateFixRegions:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [regions, revision]
+            properties:
+              revision: { type: integer, minimum: 1 }
+              regions:
+                type: array
+                items: { $ref: '#/components/schemas/JsonObject' }
+    OcrMarkdown:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [markdown]
+            properties:
+              markdown: { type: string }
+    ParseCandidates:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              presetId: { type: string }
+              configOverride: { $ref: '#/components/schemas/JsonObject' }
+    TeachingDocumentCreate:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [title, documentType]
+            properties:
+              title: { type: string }
+              documentType: { type: string, enum: [lecture, worksheet, exam] }
+              content: { $ref: '#/components/schemas/JsonObject' }
+    TeachingDocumentUpdate:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [expectedRevision]
+            properties:
+              expectedRevision: { type: integer, minimum: 1 }
+              title: { type: string }
+              content: { $ref: '#/components/schemas/JsonObject' }
+    TikzSource:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [source]
+            properties:
+              source: { type: string }
+    TikzFigure:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [source, usage]
+            properties:
+              source: { type: string }
+              usage: { type: string, enum: [stem, options, analysis] }
+              optionLabel: { type: string }
+    MultipartFile:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file]
+            properties:
+              file: { type: string, format: binary }
+    MultipartFileWithFigureUsage:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file, usage]
+            properties:
+              file: { type: string, format: binary }
+              usage: { type: string, enum: [stem, options, analysis] }
+              optionLabel: { type: string }
+    MultipartSourceDocument:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file]
+            properties:
+              file: { type: string, format: binary }
+              metadata:
+                type: string
+                description: JSON 字符串形式的资料元数据
+  responses:
+    Ok:
+      description: 操作成功
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Ok' }
+    JsonObject:
+      description: 操作成功，响应结构由具体资源决定
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/JsonObject' }
+    CreatedJsonObject:
+      description: 资源已创建
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/JsonObject' }
+    AcceptedJsonObject:
+      description: 异步任务已受理
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/JsonObject' }
+    Authenticated:
+      description: 已创建会话，并在 Set-Cookie 中返回会话 Cookie
+      headers:
+        Set-Cookie:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AuthState' }
+    BadRequest:
+      description: 请求或业务校验失败
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: 未登录或会话过期
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Origin 或 CSRF 校验失败，或权限不足
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: 资源状态、唯一约束或 revision 冲突
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: 登录或初始化限流
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Image:
+      description: 已渲染的源资料页面图片
+      content:
+        image/png:
+          schema: { type: string, format: binary }
+        image/jpeg:
+          schema: { type: string, format: binary }
+    EventStream:
+      description: "模型拆题事件流；每条事件为 `event: <name>` 加 JSON `data`。"
+      content:
+        text/event-stream:
+          schema: { type: string }
+    RevisionConflict:
+      description: 教学文档的 expectedRevision 与服务端当前 revision 不匹配
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/RevisionConflict' }
+    ValidationFailed:
+      description: 教学文档 JSON 未通过服务端结构校验
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    JsonObject:
+      type: object
+      additionalProperties: true
+    Ok:
+      type: object
+      properties:
+        ok: { type: boolean }
+      additionalProperties: true
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        code: { type: string }
+        details: {}
+      additionalProperties: true
+    Credentials:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password }
+    AuthState:
+      type: object
+      properties:
+        initialized: { type: boolean }
+        authenticated: { type: boolean }
+        csrfToken: { type: string }
+        admin:
+          type: object
+          properties:
+            username: { type: string }
+        accountManagementAvailable: { type: boolean }
+      additionalProperties: true
+    QuestionItemInput:
+      type: object
+      properties:
+        questionNo: { type: string }
+        stage: { type: string }
+        subject: { type: string }
+        questionType: { type: string }
+        stemMarkdown: { type: string }
+        answerText: { type: string }
+        analysisMarkdown: { type: string }
+        knowledgePoints:
+          type: array
+          items: { type: string }
+        solutionMethods:
+          type: array
+          items: { type: string }
+        bankStatus: { type: string, enum: [ready, blocked] }
+      additionalProperties: true
+    RevisionConflict:
+      type: object
+      required: [error, expectedRevision, actualRevision, current]
+      properties:
+        error: { type: string, const: revision_conflict }
+        message: { type: string }
+        expectedRevision: { type: integer }
+        actualRevision: { type: integer }
+        current: { $ref: '#/components/schemas/JsonObject' }
+      additionalProperties: true

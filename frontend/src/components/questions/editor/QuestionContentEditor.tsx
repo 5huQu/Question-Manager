@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Check, FileText, ListPlus, Plus, RotateCcw, Save, Sigma, X } from 'lucide-react'
+import { AlertTriangle, Check, FileText, ListPlus, LoaderCircle, Plus, RotateCcw, Save, Sigma, Sparkles, X } from 'lucide-react'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { RichMarkdownEditor } from './RichMarkdownEditor'
 import { FormulaEditorDialog } from './FormulaEditorDialog'
+import { AiPromptHelperDialog } from '@/components/dialogs/AiPromptHelperDialog'
+import { aiAssistantApi, type AiAssistantQuestionContent } from '@/api/aiAssistant'
 import { contentEquals, detectCompatibilityWarnings, joinChoices, splitChoices, suggestChoiceConversion, type ChoiceConversionSuggestion, type QuestionContentValue, type QuestionEditorVariant, type StructuredChoice } from './model'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -29,9 +31,18 @@ export interface QuestionContentEditorProps {
   className?: string
   surface?: 'solid' | 'glass'
   hideFooter?: boolean
+  hideHeader?: boolean
+  /** Let an enclosing pane own scrolling so child toolbars can stick to it. */
+  contentScroll?: 'self' | 'parent'
+  /** Callback fired when active tab field changes (stemMarkdown, answerText, analysisMarkdown) */
+  onActiveTabChange?: (field: EditorField) => void
+  /** Optional manual-fix PDF selection actions shown in the AI helper. */
+  onCopyStemPdfScreenshot?: () => Promise<void>
+  onCopyAnalysisPdfScreenshot?: () => Promise<void>
 }
 
 type EditorField = keyof QuestionContentValue
+type AiOptimizationStatus = 'idle' | 'running' | 'review' | 'error'
 
 const tabs: Array<{ key: EditorField; label: string }> = [
   { key: 'stemMarkdown', label: '题干与选项' },
@@ -174,11 +185,22 @@ export function QuestionContentEditor({
   className = '',
   surface = 'solid',
   hideFooter = false,
+  hideHeader = false,
+  contentScroll = 'self',
+  onActiveTabChange,
+  onCopyStemPdfScreenshot,
+  onCopyAnalysisPdfScreenshot,
 }: QuestionContentEditorProps) {
   const [activeField, setActiveField] = useState<EditorField>('stemMarkdown')
   const [saveError, setSaveError] = useState('')
+  const [aiPromptOpen, setAiPromptOpen] = useState(false)
+  const [aiOptimizationStatus, setAiOptimizationStatus] = useState<AiOptimizationStatus>('idle')
+  const [aiOptimizationError, setAiOptimizationError] = useState('')
   const baseline = useRef(value)
   const lastEntity = useRef(entityKey)
+  const aiOriginalContent = useRef<QuestionContentValue | null>(null)
+  const aiRequestId = useRef(0)
+  const isMounted = useRef(true)
   if (lastEntity.current !== entityKey) {
     lastEntity.current = entityKey
     baseline.current = value
@@ -191,6 +213,21 @@ export function QuestionContentEditor({
     [stem.choices.length, value.stemMarkdown],
   )
   const compact = variant === 'compact'
+  const aiOptimizing = aiOptimizationStatus === 'running'
+
+  useEffect(() => {
+    isMounted.current = true
+    return () => {
+      isMounted.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    aiRequestId.current += 1
+    aiOriginalContent.current = null
+    setAiOptimizationStatus('idle')
+    setAiOptimizationError('')
+  }, [entityKey])
 
   useEffect(() => {
     if (!dirty) return
@@ -206,8 +243,46 @@ export function QuestionContentEditor({
     onChange({ ...value, [field]: next })
   }
 
+  async function optimizeWithAi(content: AiAssistantQuestionContent) {
+    const requestId = ++aiRequestId.current
+    if (!content.stemMarkdown.trim() && !content.answerText.trim() && !content.analysisMarkdown.trim()) {
+      aiOriginalContent.current = null
+      setAiOptimizationError('题干、答案和解析不能同时为空。')
+      setAiOptimizationStatus('error')
+      return
+    }
+
+    aiOriginalContent.current = content
+    setAiOptimizationError('')
+    setAiOptimizationStatus('running')
+    try {
+      const result = await aiAssistantApi.formatQuestionContent(content)
+      if (!isMounted.current || requestId !== aiRequestId.current) return
+      onChange(result.content)
+      setAiOptimizationStatus('review')
+    } catch (error) {
+      if (!isMounted.current || requestId !== aiRequestId.current) return
+      aiOriginalContent.current = null
+      setAiOptimizationError(error instanceof Error ? error.message : 'AI 助手格式优化失败。')
+      setAiOptimizationStatus('error')
+    }
+  }
+
+  function keepAiOptimization() {
+    aiOriginalContent.current = null
+    setAiOptimizationError('')
+    setAiOptimizationStatus('idle')
+  }
+
+  function revertAiOptimization() {
+    if (aiOriginalContent.current) onChange(aiOriginalContent.current)
+    aiOriginalContent.current = null
+    setAiOptimizationError('')
+    setAiOptimizationStatus('idle')
+  }
+
   async function save() {
-    if (!onSave || disabled || saving || !dirty) return
+    if (!onSave || disabled || saving || aiOptimizing || !dirty) return
     setSaveError('')
     try {
       await onSave(value)
@@ -237,21 +312,23 @@ export function QuestionContentEditor({
   )
 
   return (
-    <div className={`${surface === 'glass' ? 'question-edit-glass-inner' : 'flex overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950'} flex min-h-0 flex-col ${className}`} aria-busy={saving}>
-      <header className={`${surface === 'glass' ? 'question-edit-glass-inner-header' : 'border-b border-zinc-100 bg-zinc-50/50 dark:border-zinc-900 dark:bg-zinc-900/10'} px-5 py-4`}>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <FileText className="size-4 text-zinc-500" />
-              <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{title}</h2>
+    <div className={`${surface === 'glass' ? (hideHeader ? 'bg-transparent' : 'question-edit-glass-inner') : `flex ${contentScroll === 'self' ? 'overflow-hidden' : 'overflow-visible'} rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950`} flex min-h-0 flex-col ${className}`} aria-busy={saving || aiOptimizing}>
+      {!hideHeader ? (
+        <header className={`${surface === 'glass' ? 'question-edit-glass-inner-header' : 'border-b border-zinc-100 bg-zinc-50/50 dark:border-zinc-900 dark:bg-zinc-900/10'} px-5 py-4`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <FileText className="size-4 text-zinc-500" />
+                <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{title}</h2>
+              </div>
+              <p className="mt-1 text-[13px] text-zinc-500">{description}</p>
             </div>
-            <p className="mt-1 text-[13px] text-zinc-500">{description}</p>
+            {contentRevision != null ? <span className="inline-flex h-5 items-center rounded-md border border-zinc-200 bg-zinc-100 px-2 text-[11px] font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">版本 {contentRevision}</span> : null}
           </div>
-          {contentRevision != null ? <span className="inline-flex h-5 items-center rounded-md border border-zinc-200 bg-zinc-100 px-2 text-[11px] font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">版本 {contentRevision}</span> : null}
-        </div>
-      </header>
+        </header>
+      ) : null}
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+      <div className={`min-h-0 flex-1 space-y-4 ${contentScroll === 'self' ? 'overflow-y-auto' : 'overflow-visible'} p-5`}>
         {conflict ? (
           <div role="alert" className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50/30 p-3 text-red-800 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
@@ -259,6 +336,27 @@ export function QuestionContentEditor({
           </div>
         ) : null}
         {saveError ? <div role="alert" className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50/30 p-3 text-xs text-red-800 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400"><AlertTriangle className="mt-0.5 size-4 shrink-0" />保存失败，本地修改仍保留：{saveError}</div> : null}
+        {aiOptimizationStatus === 'running' ? (
+          <div role="status" className="flex items-start gap-3 rounded-lg border border-violet-200 bg-violet-50/45 p-3 text-violet-800 dark:border-violet-900/40 dark:bg-violet-950/20 dark:text-violet-200">
+            <LoaderCircle className="mt-0.5 size-4 shrink-0 animate-spin" />
+            <div><p className="text-xs font-medium">AI 助手正在优化题干、答案和解析</p><p className="mt-1 text-xs opacity-90">完成后会自动回填到当前编辑器，期间请勿修改或保存内容。</p></div>
+          </div>
+        ) : null}
+        {aiOptimizationStatus === 'review' ? (
+          <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/55 p-3 text-emerald-900 dark:border-emerald-900/45 dark:bg-emerald-950/20 dark:text-emerald-100">
+            <div><p className="text-xs font-medium">AI 格式优化已回填到题干、答案和解析</p><p className="mt-1 text-xs opacity-80">请检查内容后选择保留或撤销；保留后仍需按正常流程保存。</p></div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button type="button" onClick={revertAiOptimization} className="h-8 rounded-md border border-emerald-300 bg-white px-3 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-zinc-950 dark:text-emerald-200 dark:hover:bg-emerald-950/60">撤销 AI 优化</button>
+              <button type="button" onClick={keepAiOptimization} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-700 px-3 text-xs font-medium text-white hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"><Check className="size-3.5" />保留优化结果</button>
+            </div>
+          </div>
+        ) : null}
+        {aiOptimizationStatus === 'error' ? (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50/30 p-3 text-red-800 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-400">
+            <span className="text-xs">AI 格式优化失败：{aiOptimizationError}</span>
+            <button type="button" onClick={keepAiOptimization} className="h-7 rounded-md px-2 text-xs font-medium hover:bg-red-100 dark:hover:bg-red-950/60">关闭提示</button>
+          </div>
+        ) : null}
         {warnings.length ? (
           <div role="status" className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50/30 p-3 text-amber-800 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-400">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
@@ -266,11 +364,32 @@ export function QuestionContentEditor({
           </div>
         ) : null}
 
-        <div role="tablist" aria-label="题目内容字段" className={`${surface === 'glass' ? 'question-edit-glass-tabs' : 'border-zinc-200/50 bg-zinc-100/80 dark:border-zinc-800/50 dark:bg-zinc-900/80 border'} inline-flex w-fit max-w-full overflow-x-auto rounded-lg p-0.5`}>
-          {tabs.map((tab) => (
-            <button key={tab.key} type="button" role="tab" aria-selected={activeField === tab.key} aria-controls={`${entityKey}-${tab.key}-panel`} className={`h-7.5 whitespace-nowrap rounded-md px-3 text-xs font-medium transition-all ${activeField === tab.key ? 'border border-zinc-200/50 bg-white text-zinc-900 shadow-2xs dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`} onClick={() => setActiveField(tab.key)}>{tab.label}</button>
-          ))}
+        <div className={aiOptimizing ? 'pointer-events-none select-none opacity-55' : ''}>
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div role="tablist" aria-label="题目内容字段" className={`${surface === 'glass' ? 'question-edit-glass-tabs' : 'border-zinc-200/50 bg-zinc-100/80 dark:border-zinc-800/50 dark:bg-zinc-900/80 border'} grid flex-1 grid-cols-3 rounded-lg p-0.5`}>
+            {tabs.map((tab) => (
+              <button key={tab.key} type="button" role="tab" aria-selected={activeField === tab.key} aria-controls={`${entityKey}-${tab.key}-panel`} className={`flex h-8 items-center justify-center whitespace-nowrap rounded-md px-2 text-xs font-medium transition-all duration-150 active:scale-[0.97] ${activeField === tab.key ? 'border border-zinc-200/20 bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`} onClick={() => { setActiveField(tab.key); onActiveTabChange?.(tab.key) }}>{tab.label}</button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setAiPromptOpen(true)}
+            disabled={disabled || aiOptimizing}
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-slate-100/90 px-3 text-xs font-medium text-slate-800 shadow-2xs transition-all duration-150 hover:border-slate-300 hover:bg-slate-200/80 active:scale-[0.97] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-800"
+          >
+            <Sparkles className="size-3.5 text-slate-600 dark:text-slate-400" />
+            <span>AI 辅助</span>
+          </button>
         </div>
+
+        <AiPromptHelperDialog
+          open={aiPromptOpen}
+          onClose={() => setAiPromptOpen(false)}
+          content={value}
+          onOptimizeWithAi={optimizeWithAi}
+          onCopyStemPdfScreenshot={onCopyStemPdfScreenshot}
+          onCopyAnalysisPdfScreenshot={onCopyAnalysisPdfScreenshot}
+        />
 
         <div id={`${entityKey}-${activeField}-panel`} role="tabpanel" aria-label={tabs.find((tab) => tab.key === activeField)?.label}>
           {editorForField(activeField)}
@@ -287,6 +406,7 @@ export function QuestionContentEditor({
             onChange={(choices) => updateField('stemMarkdown', joinChoices(stem.body, choices))}
           />
         ) : null}
+        </div>
       </div>
 
       {!hideFooter ? (
@@ -315,7 +435,7 @@ export function QuestionContentEditor({
             ) : null}
             <button
               type="button"
-              disabled={!dirty || saving || disabled}
+              disabled={!dirty || saving || disabled || aiOptimizing}
               className={`${surface === 'glass' ? 'question-edit-glass-button-secondary' : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950'} h-8.5 rounded-lg border px-3 text-xs font-medium text-zinc-700 transition-all hover:bg-zinc-50 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-900`}
               onClick={reset}
             >
@@ -323,7 +443,7 @@ export function QuestionContentEditor({
             </button>
             <button
               type="button"
-              disabled={!onSave || !dirty || saving || disabled}
+              disabled={!onSave || !dirty || saving || disabled || aiOptimizing}
               className="h-8.5 rounded-lg bg-zinc-900 px-4 text-xs font-medium text-zinc-50 shadow-xs transition-all hover:bg-zinc-800 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               onClick={() => { void save() }}
             >

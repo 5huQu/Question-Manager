@@ -16,7 +16,7 @@ const figureUsages = ['stem', 'analysis', 'options', 'unknown'] as const
 const sourceRefKinds = ['stem', 'answer', 'analysis', 'figure', 'unknown'] as const
 const paperKinds = ['gaokao_real', 'local_real', 'mock', 'school_exam', 'lecture', 'daily_practice', 'unknown'] as const
 const candidateIssueCodes = [
-  'missing_question_no', 'duplicate_question_no', 'missing_stem', 'missing_answer', 'missing_analysis',
+  'missing_question_no', 'duplicate_question_no', 'missing_stem', 'missing_answer', 'missing_analysis', 'choice_options_unrecognized',
   'missing_solution', 'solution_conflict', 'unmatched_solution', 'unplaced_figure', 'possible_cross_page',
   'formula_parse_error', 'markdown_render_error', 'possible_presentation_noise', 'manual_review_required',
   'image_download_failed',
