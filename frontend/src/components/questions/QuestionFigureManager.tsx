@@ -190,6 +190,8 @@ export function QuestionFigureManager({
   const [bindingMarkerId, setBindingMarkerId] = useState('')
   const [autoBindingDialogOpen, setAutoBindingDialogOpen] = useState(false)
   const [copyNotice, setCopyNotice] = useState('')
+  const [manualCopyMarker, setManualCopyMarker] = useState('')
+  const manualCopyInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setFigures(question.figures || [])
@@ -214,6 +216,13 @@ export function QuestionFigureManager({
     setUsage((selected.usage || 'stem') as Usage)
     setOptionLabel(selected.optionLabel || optionLabels[0] || 'A')
   }, [selectedId, selected?.usage, selected?.optionLabel, optionLabels.join('|')])
+
+  useEffect(() => {
+    if (!manualCopyMarker) return
+    const input = manualCopyInputRef.current
+    input?.focus()
+    input?.select()
+  }, [manualCopyMarker])
 
   const commit = (next: QuestionFigure[]) => {
     setFigures(next)
@@ -274,18 +283,46 @@ export function QuestionFigureManager({
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } finally { setBusy(false) }
   }
 
+  const copyWithLegacyClipboard = (value: string) => {
+    const textarea = document.createElement('textarea')
+    textarea.value = value
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    textarea.style.pointerEvents = 'none'
+    document.body.appendChild(textarea)
+    textarea.select()
+    try {
+      return document.execCommand('copy')
+    } catch {
+      return false
+    } finally {
+      textarea.remove()
+    }
+  }
+
   const copyMarker = async (figure: QuestionFigure, index: number) => {
     const marker = figureMarker(figure)
-    if (!figure.id || !navigator.clipboard?.writeText) {
-      setCopyNotice('当前浏览器无法写入剪贴板，请在 Markdown 源码中手动输入标签。')
+    if (!marker || marker === '<!-- DOC2X_FIGURE: -->') {
+      setCopyNotice('当前图片缺少可用标签，请先保存图片属性后重试。')
       return
     }
-    try {
-      await navigator.clipboard.writeText(marker)
-      setCopyNotice(`已复制图 ${index + 1} 标签；切到 Markdown 源码后粘贴到需要的位置。`)
-    } catch (cause) {
-      setCopyNotice(cause instanceof Error ? cause.message : '复制失败，请在 Markdown 源码中手动输入标签。')
+    setManualCopyMarker('')
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(marker)
+        setCopyNotice(`已复制图 ${index + 1} 标签；切到 Markdown 源码后粘贴到需要的位置。`)
+        return
+      } catch {
+        // HTTP/IP deployments commonly reject the modern Clipboard API.
+      }
     }
+    if (copyWithLegacyClipboard(marker)) {
+      setCopyNotice(`已通过兼容复制模式复制图 ${index + 1} 标签；可直接粘贴到 Markdown 源码。`)
+      return
+    }
+    setManualCopyMarker(marker)
+    setCopyNotice('浏览器禁止自动写入剪贴板；完整标签已自动选中，按 ⌘/Ctrl+C 后粘贴即可。')
   }
 
   if (tikzOpen) return <TikzComposer questionId={question.id} optionLabels={optionLabels} existingFigure={tikzFigure} surface={surface} onCancel={() => { setTikzOpen(false); setTikzFigure(undefined) }} onSaved={(figure) => { const next = tikzFigure?.id ? figures.map((item) => item.id === figure.id ? figure : item) : [...figures, figure]; commit(next); setSelectedId(String(figure.id || '')); setTikzOpen(false); setTikzFigure(undefined) }} />
@@ -316,6 +353,7 @@ export function QuestionFigureManager({
               <p className="font-medium text-zinc-700 dark:text-zinc-200">插入位置</p>
               <p className="mt-1 leading-5 text-zinc-500">复制图标签后，在“直观修改”中切换到 Markdown 源码，将它粘贴到图片应出现的位置。</p>
               <button type="button" onClick={() => void copyMarker(selected, figures.indexOf(selected))} className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 font-medium text-zinc-700 transition-colors hover:bg-zinc-100 active:scale-[0.98] dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"><Clipboard className="size-3.5" />图 {figures.indexOf(selected) + 1} · 复制图片标签</button>
+              {manualCopyMarker ? <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 p-2 dark:border-amber-900/50 dark:bg-amber-950/20"><p className="mb-1 text-amber-800 dark:text-amber-200">自动复制受限，标签已选中：</p><input ref={manualCopyInputRef} readOnly value={manualCopyMarker} onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="h-8 w-full rounded border border-amber-200 bg-white px-2 font-mono text-[11px] text-zinc-800 outline-none dark:border-amber-900/50 dark:bg-zinc-950 dark:text-zinc-100" /></div> : null}
             </div>
             {unboundMarkers.length ? <div className="rounded-lg border border-amber-200 bg-amber-50/45 p-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
               <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium">手动绑定现有图片标签</p><Button size="sm" variant="outline" icon={X} disabled={busy || !unboundMarkers.some((marker) => marker.kind === 'ocr')} onClick={() => void removeUnboundPlaceholders()}>移除全部未绑定占位符</Button></div>
