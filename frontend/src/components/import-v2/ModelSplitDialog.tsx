@@ -13,6 +13,7 @@ import {
   LoaderCircle,
   Radio,
   RotateCcw,
+  ShieldAlert,
   Sparkles,
   WandSparkles,
 } from 'lucide-react'
@@ -21,7 +22,7 @@ import { Button, Input } from '@/components/ui'
 import { QuestionContentEditor } from '@/components/questions/editor'
 import type { QuestionContentValue } from '@/components/questions/editor/model'
 import type { ModelSplitApplyItem, ModelSplitPreview, ModelSplitPreviewItem, ModelSplitRequestOptions } from '@/api/importV2'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 
 function translateWarning(value: string) {
   const text = String(value || '').trim()
@@ -87,15 +88,18 @@ export function ModelSplitDialog({
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [filterMode, setFilterMode] = useState<'all' | 'review' | 'ready'>('all')
   const [showWarnings, setShowWarnings] = useState(false)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [assistantNote, setAssistantNote] = useState('')
   const dirtyFieldsRef = useRef(new Set<string>())
   const selectedQuestionRef = useRef<HTMLButtonElement | null>(null)
+  const reduceMotion = useReducedMotion()
 
   useEffect(() => {
     if (stream.phase !== 'connecting') return
     dirtyFieldsRef.current.clear()
     setDraftItems([])
     setSelectedIndex(0)
+    setShowDiagnostics(false)
   }, [stream.phase])
 
   useEffect(() => {
@@ -126,15 +130,21 @@ export function ModelSplitDialog({
     return () => window.cancelAnimationFrame(frame)
   }, [selectedIndex])
 
+  useEffect(() => {
+    if (preview?.diagnostics.length) setShowDiagnostics(true)
+  }, [preview?.id, preview?.diagnostics.length])
+
   const selected = draftItems[selectedIndex]
   const issueCount = draftItems.reduce((count, item) => count + item.issues.length, 0)
   const reviewCount = draftItems.filter((item) => issueState(item).tone !== 'success').length
   const readyCount = draftItems.length - reviewCount
   const repairCount = draftItems.filter((item) => item.numberRepair).length
   const hasBlockingDiagnostics = Boolean(preview?.diagnostics.length)
+  const diagnosticCount = preview?.diagnostics.length || 0
   const status = selected ? issueState(selected) : null
   const translatedWarnings = useMemo(() => (preview?.warnings || []).map(translateWarning), [preview?.warnings])
   const isComplete = stream.phase === 'completed'
+  const noticeTransition = reduceMotion ? { duration: 0 } : { duration: 0.18, ease: 'easeOut' as const }
 
   const streamLabel =
     stream.phase === 'connecting'
@@ -354,27 +364,66 @@ export function ModelSplitDialog({
                 <span className="text-zinc-300 dark:text-zinc-700">|</span>
                 <span className="min-w-0 truncate text-zinc-500 dark:text-zinc-400">{stream.message}</span>
               </div>
-              {translatedWarnings.length ? (
-                <button
-                  type="button"
-                  onClick={() => setShowWarnings((v) => !v)}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-500/20 dark:text-amber-300 transition-colors"
-                >
-                  <AlertTriangle className="size-3.5 text-amber-600 dark:text-amber-400" />
-                  <span>处理说明 ({translatedWarnings.length})</span>
-                  <ChevronDown className={`size-3 transition-transform duration-200 ${showWarnings ? 'rotate-180' : ''}`} />
-                </button>
-              ) : null}
+              <div className="flex shrink-0 items-center gap-2">
+                {hasBlockingDiagnostics ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowDiagnostics((value) => !value)}
+                    aria-expanded={showDiagnostics}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/25 bg-rose-500/10 px-2.5 py-1 text-[11px] font-medium text-rose-800 transition-colors hover:bg-rose-500/20 active:scale-[0.98] dark:text-rose-200"
+                  >
+                    <ShieldAlert className="size-3.5 text-rose-600 dark:text-rose-400" />
+                    <span>安全核验 ({diagnosticCount})</span>
+                    <ChevronDown className={`size-3 transition-transform duration-200 motion-reduce:transition-none ${showDiagnostics ? 'rotate-180' : ''}`} />
+                  </button>
+                ) : null}
+                {translatedWarnings.length ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowWarnings((value) => !value)}
+                    aria-expanded={showWarnings}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-500/20 active:scale-[0.98] dark:text-amber-300 transition-colors"
+                  >
+                    <AlertTriangle className="size-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>处理说明 ({translatedWarnings.length})</span>
+                    <ChevronDown className={`size-3 transition-transform duration-200 motion-reduce:transition-none ${showWarnings ? 'rotate-180' : ''}`} />
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             <AnimatePresence>
+              {showDiagnostics && preview?.diagnostics.length ? (
+                <motion.div
+                  initial={reduceMotion ? { opacity: 1 } : { height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                  transition={noticeTransition}
+                  className="overflow-hidden rounded-xl border border-rose-500/25 bg-rose-500/8 p-3 text-xs text-rose-950 shadow-2xs backdrop-blur-md dark:text-rose-100"
+                >
+                  <div className="flex items-start gap-2">
+                    <ShieldAlert className="mt-0.5 size-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                    <div className="min-w-0">
+                      <div className="font-semibold text-rose-800 dark:text-rose-200">安全核验未通过，结果尚不能一键应用</div>
+                      <p className="mt-1 text-[11px] leading-relaxed text-rose-800/80 dark:text-rose-200/80">
+                        系统没有采用未能与 OCR 原文对应的模型内容，以避免改写公式或正文。请重新生成，或关闭此面板后在题目核对页人工修正。
+                      </p>
+                    </div>
+                  </div>
+                  <ul className="mt-2 space-y-1.5 pl-6 text-[11px] leading-relaxed text-zinc-700 dark:text-zinc-300">
+                    {preview.diagnostics.map((diagnostic, index) => (
+                      <li key={`${diagnostic}-${index}`} className="list-disc marker:text-rose-500">{diagnostic}</li>
+                    ))}
+                  </ul>
+                </motion.div>
+              ) : null}
               {showWarnings && translatedWarnings.length ? (
                 <motion.div
-                  initial={{ height: 0, opacity: 0 }}
+                  initial={reduceMotion ? { opacity: 1 } : { height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 shadow-2xs"
+                  exit={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                  transition={noticeTransition}
+                  className="overflow-hidden rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 shadow-2xs backdrop-blur-md"
                 >
                   <div className="flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-300 mb-1.5">
                     <AlertTriangle className="size-3.5 text-amber-600 dark:text-amber-400" />

@@ -662,6 +662,10 @@ function solutionFromSourceFragments(
   diagnostics: string[],
   itemLabel: string,
 ) {
+  const reject = (reason: string) => {
+    diagnostics.push(`${itemLabel}的答案解析边界未通过 OCR 原文核验：${reason}`)
+    return { answerText: '', analysisMarkdown: '', accepted: false as const, reason }
+  }
   const hasSourceFragments = item.solution_line_ranges !== undefined
     || item.solution_segment_ids !== undefined
     || item.answer_source_text !== undefined
@@ -684,22 +688,18 @@ function solutionFromSourceFragments(
   }
   const analysisStart = analysisAnchorPositions[0] ?? sourceWithoutTrailingWhitespace.length
   const beforeAnalysis = sourceWithoutTrailingWhitespace.slice(answerSourceText.length, analysisStart)
-  const valid = Boolean(sourceWithoutTrailingWhitespace)
-    && (answerSourceText || analysisStartSourceText)
-    && sourceWithoutTrailingWhitespace.startsWith(answerSourceText)
-    && answerSourceText.length <= analysisStart
-    && analysisAnchorPositions.length <= 1
-    && (!analysisStartSourceText || analysisAnchorPositions.length === 1)
-    && !/\S/u.test(beforeAnalysis)
-  if (!valid) {
-    diagnostics.push(`${itemLabel}的答案解析原文片段无法与 OCR 原文连续核验，未采用模型拆分。`)
-    return { answerText: '', analysisMarkdown: '', accepted: false }
-  }
+  if (!sourceWithoutTrailingWhitespace) return reject('模型没有提供可核验的答案解析原文范围。')
+  if (!answerSourceText && !analysisStartSourceText) return reject('模型没有给出答案或解析起始片段。')
+  if (!sourceWithoutTrailingWhitespace.startsWith(answerSourceText)) return reject('模型给出的答案片段不是 OCR 原文的开头。')
+  if (analysisStartSourceText && analysisAnchorPositions.length === 0) return reject('模型给出的解析起始片段未在 OCR 原文中找到。')
+  if (analysisAnchorPositions.length > 1) return reject('解析起始片段在 OCR 原文中出现多次，无法唯一确定边界。')
+  if (answerSourceText.length > analysisStart) return reject('解析起始片段落在答案片段内部。')
+  if (/\S/u.test(beforeAnalysis)) return reject('答案结束与解析起始之间仍有未归属的 OCR 正文。')
   const answerEnd = answerSourceText.length
   return {
     answerText: sourceWithoutTrailingWhitespace.slice(0, answerEnd).trim(),
     analysisMarkdown: analysisStartSourceText ? sourceWithoutTrailingWhitespace.slice(answerEnd).trim() : '',
-    accepted: true,
+    accepted: true as const,
   }
 }
 
@@ -763,6 +763,13 @@ function candidateFromModelItem(
   const issues: QuestionCandidate['issues'] = []
   if (!questionNo) issues.push({ code: 'missing_question_no', severity: 'error', message: `${label}缺少题号。` })
   if (!stemMarkdown && role !== 'solutions') issues.push({ code: 'missing_stem', severity: 'error', message: `${label}缺少题干。` })
+  if (sourceFragments && !sourceFragments.accepted) {
+    issues.push({
+      code: 'model_source_fragment_rejected',
+      severity: 'warning',
+      message: `${label}的模型答案解析边界未通过 OCR 原文核验（${sourceFragments.reason}）。为避免改写公式或正文，系统未写入答案和解析。`,
+    })
+  }
   if (!answerText && role !== 'questions') issues.push({ code: 'missing_answer', severity: 'warning', message: `${label}缺少答案。` })
   if (!analysisMarkdown && role !== 'questions') issues.push({ code: 'missing_analysis', severity: 'warning', message: `${label}缺少解析。` })
   if (repair && repair.confidence < 0.8) issues.push({ code: 'manual_review_required', severity: 'warning', message: `${label}题号由 OCR「${rawQuestionNo}」修复为「${questionNo}」，置信度较低。` })
@@ -784,7 +791,10 @@ function candidateFromModelItem(
     sourceRefs,
     status: 'needs_review',
     issues,
-    parseDiagnostics: repair ? [{ code: 'model_repaired_question_no', severity: repair.confidence >= 0.8 ? 'info' : 'warning', questionNo, message: `模型根据上下文将 OCR 题号「${rawQuestionNo}」修复为「${questionNo}」：${repair.reason}` }] : [],
+    parseDiagnostics: [
+      ...(repair ? [{ code: 'model_repaired_question_no', severity: repair.confidence >= 0.8 ? 'info' as const : 'warning' as const, questionNo, message: `模型根据上下文将 OCR 题号「${rawQuestionNo}」修复为「${questionNo}」：${repair.reason}` }] : []),
+      ...(sourceFragments && !sourceFragments.accepted ? [{ code: 'model_source_fragment_rejected', severity: 'warning' as const, questionNo, message: `${label}的模型答案解析边界未通过 OCR 原文核验：${sourceFragments.reason}` }] : []),
+    ],
     parserConfigSnapshot: { source: 'model-assisted-source-fragment-split-v2', rawQuestionNo: rawQuestionNo || undefined, numberRepair: repair || undefined },
     createdAt: timestamp,
     updatedAt: timestamp,
