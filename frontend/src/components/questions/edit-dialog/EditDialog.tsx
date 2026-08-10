@@ -170,10 +170,16 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
   const answerText = draftAnswerText(draft)
   const analysisText = draftAnalysisText(draft)
   const analysisFigures = figuresByUsage(draft.figures ?? [], 'analysis')
+  const stemInlineFigureIds = inlineFigureIds(draftProblemText(draft))
   const answerInlineFigureIds = inlineFigureIds(answerText)
   const analysisInlineFigureIds = inlineFigureIds(analysisText)
+  const inlineFigureIdsForQuestion = new Set([
+    ...stemInlineFigureIds,
+    ...answerInlineFigureIds,
+    ...analysisInlineFigureIds,
+  ])
   const unplacedAnalysisFigures = analysisFigures.filter((figure) => (
-    !isInlineFigure(figure, answerInlineFigureIds) && !isInlineFigure(figure, analysisInlineFigureIds)
+    !isInlineFigure(figure, inlineFigureIdsForQuestion)
   ))
 
   return (
@@ -384,7 +390,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
                     <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block mb-1.5">解析</span>
 	                    {analysisText.trim() ? (
 	                      <>
-	                        <MarkdownWithInlineFigures className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed" content={analysisText} figures={analysisFigures} />
+	                        <MarkdownWithInlineFigures className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed" content={analysisText} figures={draft.figures ?? []} />
                         <FigureGallery figures={unplacedAnalysisFigures} className="mt-3" />
                       </>
                     ) : (

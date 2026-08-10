@@ -102,6 +102,7 @@ export function MarkdownWithInlineFigures({
 }
 
 export function SolutionDisclosure({
+  stemMarkdown = '',
   answerText = '',
   analysisMarkdown = '',
   answerBlocks = [],
@@ -109,6 +110,7 @@ export function SolutionDisclosure({
   figures = [],
   className = '',
 }: {
+  stemMarkdown?: string
   answerText?: string
   analysisMarkdown?: string
   answerBlocks?: RichBlock[]
@@ -124,6 +126,8 @@ export function SolutionDisclosure({
   const hasAnalysis = analysisText.trim().length > 0
   const answerInlineIds = inlineFigureIds(answerMarkdown)
   const analysisInlineIds = inlineFigureIds(analysisText)
+  const stemInlineIds = inlineFigureIds(stemMarkdown)
+  const inlineIds = new Set([...stemInlineIds, ...answerInlineIds, ...analysisInlineIds])
   return (
     <div className={className}>
       <div className="flex justify-end">
@@ -138,8 +142,8 @@ export function SolutionDisclosure({
             </section>
             <section className="rounded-xl border bg-zinc-50 p-3">
               <p className="mb-1 text-xs text-zinc-500">解析</p>
-              {hasAnalysis ? <MarkdownWithInlineFigures className="text-sm leading-6" content={analysisText} figures={analysisFigures} /> : <span className="text-xs text-zinc-400">暂无解析</span>}
-              <FigureGallery figures={analysisFigures.filter((figure) => !isInlineFigure(figure, analysisInlineIds) && !isInlineFigure(figure, answerInlineIds))} className="mt-3" />
+              {hasAnalysis ? <MarkdownWithInlineFigures className="text-sm leading-6" content={analysisText} figures={figures} /> : <span className="text-xs text-zinc-400">暂无解析</span>}
+              <FigureGallery figures={analysisFigures.filter((figure) => !isInlineFigure(figure, inlineIds))} className="mt-3" />
             </section>
           </div>
         </div>
@@ -159,10 +163,17 @@ export function QuestionContent({ blocks, figures = [], className = '', prefix }
 export function QuestionMarkdownContent({ content, figures = [], className = '', prefix }: { content: string; figures?: QuestionFigure[]; className?: string; prefix?: string }) {
   const stemFigures = figuresByUsage(figures, 'stem')
   const optionFigures = figuresByUsage(figures, 'options')
-  const visibleFigures = stemFigures.filter((figure) => figure.path && !String(figure.path).trim().startsWith('<'))
   const parsedChoice = parseChoiceQuestion(content)
   const stemContent = parsedChoice?.stem || content
-  const inlineIds = inlineFigureIds(stemContent)
+  const inlineIds = inlineFigureIds(content)
+  // A marker is an explicit placement request and wins over a stale usage
+  // field. This also prevents an already-inline image from appearing again in
+  // the fallback gallery below.
+  const visibleFigures = figures.filter((figure) => (
+    figure.path
+      && !String(figure.path).trim().startsWith('<')
+      && (stemFigures.includes(figure) || isInlineFigure(figure, inlineIds))
+  ))
   return (
     <div className={`question-content ${className}`}>
       {prefix ? <p className="mb-2 text-xs font-semibold text-zinc-500">{prefix}</p> : null}
@@ -316,10 +327,20 @@ export function ChoiceOptions({
                 onChange={(content) => onInlineContentChange?.(option.label, content)}
               />
             ) : (
-              <MarkdownContent className="choice-markdown" content={withoutInlineFigureMarkers(option.content)} />
+              <MarkdownWithInlineFigures
+                className="choice-markdown"
+                content={option.content}
+                figures={figures.filter((figure) => String(figure.optionLabel || '').toUpperCase() === option.label)}
+              />
             )}
             <FigureGallery
-              figures={figures.filter((figure) => String(figure.optionLabel || '').toUpperCase() === option.label)}
+              figures={figures.filter((figure) => (
+                String(figure.optionLabel || '').toUpperCase() === option.label
+                // Editable teaching-document option blocks are rendered by
+                // Tiptap rather than the inline figure renderer, so retain
+                // their gallery image until that surface gains marker support.
+                && (Boolean(editableText && inlineContent?.[option.label]) || !isInlineFigure(figure, inlineFigureIds(option.content)))
+              ))}
               className="mt-2"
               compact
               showCaption={showFigureCaptions}

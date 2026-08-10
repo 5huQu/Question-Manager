@@ -14,7 +14,7 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
   const ws = useImportV2Workspace(view)
 
   return (
-    <div className={ws.activeStepTab === 'review' ? 'flex min-h-0 flex-col gap-3' : 'space-y-6'}>
+    <div className={ws.activeStepTab === 'review' ? 'flex h-full min-h-0 flex-col gap-0' : 'space-y-6'}>
       {/* Header */}
       {ws.activeStepTab === 'review' && ws.selectedDoc ? (
         <ReviewHeaderBar ws={ws} />
@@ -33,13 +33,13 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
 
       {/* Notification banners */}
       {ws.notice ? (
-        <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 px-4 py-2.5 text-xs text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-200 flex items-center gap-2 shadow-sm animate-in fade-in duration-200">
+        <div className="mx-4 mt-2 rounded-lg border border-zinc-200 bg-zinc-50/50 px-4 py-2.5 text-xs text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-200 flex items-center gap-2 shadow-sm animate-in fade-in duration-200">
           <Check className="size-3.5 text-zinc-900 dark:text-zinc-50" />
           <span>{ws.notice}</span>
         </div>
       ) : null}
       {ws.error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50/20 px-4 py-2.5 text-xs text-red-700 dark:border-red-900/30 dark:bg-red-950/10 dark:text-red-400 flex items-center gap-2 shadow-sm animate-in fade-in duration-200">
+        <div className="mx-4 mt-2 rounded-lg border border-red-200 bg-red-50/20 px-4 py-2.5 text-xs text-red-700 dark:border-red-900/30 dark:bg-red-950/10 dark:text-red-400 flex items-center gap-2 shadow-sm animate-in fade-in duration-200">
           <BadgeAlert className="size-3.5" />
           <span>{ws.error}</span>
         </div>
@@ -83,7 +83,7 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
 
       {/* Step 2: Review empty state */}
       {ws.activeStepTab === 'review' && ws.questions.length === 0 && (
-        <div className="flex flex-col items-center justify-center p-12 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl bg-zinc-50/10 min-h-[400px] animate-in fade-in duration-200">
+        <div className="m-4 flex flex-col items-center justify-center p-12 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl bg-zinc-50/10 min-h-[400px] animate-in fade-in duration-200">
           <Layers className="size-8 text-zinc-300 dark:text-zinc-700 mb-3" />
           <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-4">暂无待核对题目。请先在"1. 资料上传与识别"标签页中选择资料并生成/继续核对题目。</p>
           <Button size="sm" onClick={() => ws.selectedDoc ? ws.navigateToDocument(ws.selectedDoc.id) : ws.setActiveStepTab('upload')}>
@@ -94,7 +94,9 @@ export function ImportV2Workspace({ view }: { view: 'document' | 'candidate' }) 
 
       {/* Step 2: Candidate review workspace */}
       {ws.activeStepTab === 'review' && ws.questions.length > 0 && ws.showCheckArea && (
-        <CandidateReviewWorkspace ws={ws} />
+        <div className="flex-1 min-h-0 p-3 md:p-4">
+          <CandidateReviewWorkspace ws={ws} />
+        </div>
       )}
 
       {/* Metadata editor dialog */}

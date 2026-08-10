@@ -67,6 +67,17 @@ export function useImportUpload() {
     })
   }, [serverYear])
 
+  useEffect(() => {
+    const items = parserPresets.data?.items
+    if (!items || items.length === 0 || selectedDoc2xParserPresetId) return
+    const genericPreset = items.find((p) => p.id === 'generic_answer_table' || p.name.includes('通用试卷答案表'))
+    if (genericPreset) {
+      setSelectedDoc2xParserPresetId(genericPreset.id)
+    } else if (items[0]) {
+      setSelectedDoc2xParserPresetId(items[0].id)
+    }
+  }, [parserPresets.data, selectedDoc2xParserPresetId])
+
   function handleUploadFileSelection(files: FileList | null) {
     if (!files || files.length === 0) return
     const file = files[0]

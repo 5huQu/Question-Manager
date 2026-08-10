@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
 import { QuestionContent } from '@/components/questions/QuestionContent'
 import { useFloatingMenuPosition } from '@/hooks/useFloatingMenuPosition'
+import { useAutoFocusOnOpen } from '@/hooks/useAutoFocusOnOpen'
 import { paragraphBlocksFromText } from '@/utils/jsonCleanup'
 
 export function LabeledInput({
@@ -108,14 +109,7 @@ export function MultiTagSelector({
 
   const menuPosition = useFloatingMenuPosition(open, triggerRef, menuRef, { contentKey: filteredOptions.length })
 
-  useEffect(() => {
-    if (!open) return
-    const input = searchInputRef.current
-    if (!input) return
-    input.focus()
-    const cursorPosition = input.value.length
-    input.setSelectionRange(cursorPosition, cursorPosition)
-  }, [open])
+  useAutoFocusOnOpen(open, searchInputRef)
 
   function toggleTag(value: string) {
     if (cleanValues.includes(value)) onChange(cleanValues.filter((item) => item !== value))

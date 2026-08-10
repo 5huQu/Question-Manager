@@ -2,6 +2,7 @@ import { createPortal } from 'react-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
 import { useFloatingMenuPosition } from '@/hooks/useFloatingMenuPosition'
+import { useAutoFocusOnOpen } from '@/hooks/useAutoFocusOnOpen'
 
 type SearchableSelectProps = {
   value: string
@@ -51,14 +52,7 @@ export function SearchableSelect({
 
   const menuPosition = useFloatingMenuPosition(open, triggerRef, menuRef, { contentKey: filteredOptions.length })
 
-  useEffect(() => {
-    if (!open) return
-    const input = searchInputRef.current
-    if (!input) return
-    input.focus()
-    const cursorPosition = input.value.length
-    input.setSelectionRange(cursorPosition, cursorPosition)
-  }, [open])
+  useAutoFocusOnOpen(open, searchInputRef)
 
   function selectOption(option: string) {
     onChange(option)

@@ -26,7 +26,7 @@ export function CandidateReviewWorkspace({ ws }: { ws: ImportV2WorkspaceState })
   return (
     <div
       ref={ws.checkAreaRef}
-      className="flex h-auto min-h-0 flex-col overflow-hidden rounded-2xl border border-black/6 bg-white/70 backdrop-blur-xl dark:border-white/8 dark:bg-zinc-900/70 shadow-2xs lg:h-[calc(100vh-11rem)] lg:min-h-[34rem] lg:flex-row"
+      className="flex h-auto min-h-0 flex-col overflow-hidden rounded-2xl border border-black/6 bg-white/70 backdrop-blur-xl dark:border-white/8 dark:bg-zinc-900/70 shadow-2xs lg:h-full lg:min-h-[30rem] lg:flex-row"
     >
       <CandidateListSidebar ws={ws} />
       <CandidateDetailPanel ws={ws} />

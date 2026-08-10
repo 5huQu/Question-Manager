@@ -5,24 +5,28 @@ import type { ImportV2WorkspaceState } from '../useImportV2Workspace'
 
 export function ReviewHeaderBar({ ws }: { ws: ImportV2WorkspaceState }) {
   const { selectedDoc, activeImportJob, questions, committedQuestionCount } = ws
+  const paperTitle = activeImportJob?.paperTitle || activeImportJob?.title || selectedDoc?.paperTitle || selectedDoc?.originalFileName || '未命名资料'
 
   return (
-    <section className="question-edit-glass-inner mb-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 md:p-4.5 rounded-2xl border border-black/6 bg-white/70 backdrop-blur-xl dark:border-white/8 dark:bg-zinc-900/70 shadow-2xs">
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-black/6 bg-white/80 px-4 md:px-6 backdrop-blur-md dark:border-white/8 dark:bg-zinc-900/80">
+      {/* Left section: Back button + Primary Title + Secondary Metadata/Breadcrumb */}
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <button
           type="button"
           aria-label="返回导入批次列表"
           title="返回导入批次列表"
           onClick={() => ws.navigate('/tools/import')}
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl border border-black/10 bg-white/80 text-zinc-600 hover:bg-white hover:text-zinc-900 dark:border-white/12 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 transition-all active:scale-95 shadow-2xs"
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-black/10 bg-white/80 text-zinc-600 hover:bg-white hover:text-zinc-900 dark:border-white/12 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 transition-all active:scale-95 shadow-2xs"
         >
           <ChevronLeft className="size-4" />
         </button>
-        <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            {activeImportJob?.paperTitle || activeImportJob?.title || selectedDoc?.paperTitle || selectedDoc?.originalFileName || '未命名资料'}
+
+        <div className="flex min-w-0 flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-3">
+          <h1 className="truncate text-sm md:text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50 shrink-0 max-w-[20rem] lg:max-w-[28rem] xl:max-w-none">
+            {paperTitle}
           </h1>
-          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+
+          <div className="flex min-w-0 shrink items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
             <button
               type="button"
               onClick={() => selectedDoc && ws.navigateToDocument(selectedDoc.id)}
@@ -30,18 +34,19 @@ export function ReviewHeaderBar({ ws }: { ws: ImportV2WorkspaceState }) {
             >
               资料与识别
             </button>
-            <ChevronLeft className="size-3 rotate-180 text-zinc-400" />
-            <span className="shrink-0 font-semibold text-zinc-900 dark:text-zinc-100">题目核对</span>
-            <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700">·</span>
-            <span className="truncate font-medium">{questions.length} 题，{committedQuestionCount} 题已入库</span>
+            <ChevronLeft className="size-3 rotate-180 text-zinc-400 shrink-0" />
+            <span className="shrink-0 font-medium text-zinc-800 dark:text-zinc-200">题目校对</span>
+            <span aria-hidden="true" className="text-zinc-300 dark:text-zinc-700 shrink-0">·</span>
+            <span className="truncate font-medium">{questions.length} 题 · {committedQuestionCount} 题已入库</span>
           </div>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-2 self-stretch md:self-auto">
+      {/* Right section: Presets & Action Buttons */}
+      <div className="flex shrink-0 items-center gap-2">
         <select
           aria-label="导入规则预设"
-          className="h-9 min-w-0 max-w-44 rounded-xl border border-black/10 bg-white/90 px-3 text-xs font-medium text-zinc-900 shadow-2xs outline-none transition-all focus:border-zinc-900 dark:border-white/12 dark:bg-zinc-900/90 dark:text-zinc-100"
+          className="h-8.5 min-w-0 max-w-44 rounded-xl border border-black/10 bg-white/90 px-3 text-xs font-medium text-zinc-900 shadow-2xs outline-none transition-all focus:border-zinc-900 dark:border-white/12 dark:bg-zinc-900/90 dark:text-zinc-100"
           value={ws.selectedParserPresetId}
           onChange={(event) => ws.setSelectedParserPresetId(event.target.value)}
           disabled={Boolean(ws.busy)}
@@ -143,6 +148,6 @@ export function ReviewHeaderBar({ ws }: { ws: ImportV2WorkspaceState }) {
           ]}
         />
       </div>
-    </section>
+    </header>
   )
 }

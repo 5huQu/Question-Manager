@@ -69,6 +69,21 @@ describe('question figure rendering', () => {
     expect(container.querySelectorAll('img')).toHaveLength(1)
   })
 
+  it('does not append an option figure after rendering its inline marker', async () => {
+    const optionFigure = { ...figure, id: 'doc2x_option_a', usage: 'options', optionLabel: 'A' }
+    await act(async () => {
+      root.render(
+        <QuestionMarkdownContent
+          content={'选择正确答案。\nA. 图示 <!-- DOC2X_FIGURE:doc2x_option_a -->\nB. 乙\nC. 丙\nD. 丁'}
+          figures={[optionFigure]}
+        />,
+      )
+    })
+
+    expect(container.querySelectorAll('img')).toHaveLength(1)
+    expect(container.textContent).not.toContain('选项图 #1')
+  })
+
   it('can hide figure captions on teaching-document surfaces', async () => {
     await act(async () => {
       root.render(<FigureGallery figures={[figure]} showCaption={false} />)

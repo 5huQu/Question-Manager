@@ -178,6 +178,9 @@ export default function App() {
     || location.pathname === '/learning-tags'
     || location.pathname === '/exports'
 
+  const isCandidateReview = location.pathname.startsWith('/tools/import/') && location.pathname.includes('/candidates')
+  const isImportUpload = location.pathname === '/tools/import/upload'
+
   return (
     <SidebarProvider className={`h-screen overflow-hidden bg-background text-[var(--app-body-text)] text-foreground transition-colors duration-150 ${darkMode ? 'dark' : ''}`}>
       <AppSidebar
@@ -187,17 +190,25 @@ export default function App() {
       />
 
       <SidebarInset className="h-screen min-w-0 overflow-hidden transition-colors duration-150">
-        {/* 讲义编辑器拥有独立顶栏，隐藏全局面包屑 */}
-        {/^\/teaching-documents\/.+/.test(location.pathname) ? null : (
+        {/* 讲义编辑器、题目校对页与新建资料导入页拥有独立单层顶栏 Toolbar，隐藏全局面包屑 */}
+        {/^\/teaching-documents\/.+/.test(location.pathname) || isCandidateReview || isImportUpload ? null : (
           <AppPageHeader actions={
             location.pathname === '/questions'
               ? <QuestionBankHeaderActions />
               : undefined
           } />
         )}
-        <div className={`flex-1 ${location.pathname === '/questions' ? 'overflow-hidden flex flex-col h-[calc(100vh-3.5rem)]' : 'overflow-auto'}`} data-slot="app-scroll-container">
+        <div className={`flex-1 ${location.pathname === '/questions' || isCandidateReview ? 'overflow-hidden flex flex-col h-[calc(100vh-3.5rem)]' : 'overflow-auto'}`} data-slot="app-scroll-container">
           <div
-            className={`flex w-full flex-col ${location.pathname === '/questions' ? 'h-full p-4 md:p-5 pb-2 md:pb-2 gap-0 max-w-none' : fluidContent ? 'gap-6 p-4 md:p-6 max-w-none' : 'gap-6 p-4 md:p-6 mx-auto max-w-7xl'}`}
+            className={`flex w-full flex-col ${
+              location.pathname === '/questions'
+                ? 'h-full p-4 md:p-5 pb-2 md:pb-2 gap-0 max-w-none'
+                : isCandidateReview || isImportUpload
+                ? 'h-full p-0 gap-0 max-w-none'
+                : fluidContent
+                ? 'gap-6 p-4 md:p-6 max-w-none'
+                : 'gap-6 p-4 md:p-6 mx-auto max-w-7xl'
+            }`}
             data-slot="app-content-container"
           >
             <Suspense fallback={
