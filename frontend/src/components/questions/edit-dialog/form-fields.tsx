@@ -83,7 +83,10 @@ export function MultiTagSelector({
   onChange: (values: string[]) => void
 }) {
   const cleanValues = values.map((value) => String(value).trim()).filter(Boolean)
-  const mergedOptions = Array.from(new Set([...cleanValues, ...options.map((option) => String(option).trim()).filter(Boolean)]))
+  // Keep the source order stable when a value is checked. Prepending selected
+  // values makes a long open list jump back to the top after every click.
+  const normalizedOptions = options.map((option) => String(option).trim()).filter(Boolean)
+  const mergedOptions = Array.from(new Set([...normalizedOptions, ...cleanValues]))
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement | null>(null)

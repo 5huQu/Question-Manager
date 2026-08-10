@@ -73,4 +73,23 @@ describe('MultiTagSelector', () => {
     expect(container.querySelector('[aria-label="移除函数"]')).toBeNull()
     expect(container.querySelector('[aria-label="移除几何"]')).not.toBeNull()
   })
+
+  it('keeps the option order stable when selecting an item', async () => {
+    function Harness() {
+      const [values, setValues] = useState<string[]>([])
+      return <MultiTagSelector label="知识点" help="帮助" options={['函数', '几何', '概率']} values={values} onChange={setValues} />
+    }
+
+    await act(async () => root.render(<Harness />))
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')?.click())
+
+    await act(async () => {
+      const option = Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="option"]')).find((button) => button.textContent?.includes('概率'))
+      option?.click()
+    })
+
+    const optionNames = Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="option"]'))
+      .map((button) => button.textContent?.trim())
+    expect(optionNames).toEqual(['函数', '几何', '概率'])
+  })
 })
