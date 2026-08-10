@@ -33,11 +33,16 @@ type SplitItem = {
   normalized_question_no?: unknown
   number_repair?: { applied?: unknown; reason?: unknown; confidence?: unknown }
   stem_segment_ids?: unknown
+  solution_segment_ids?: unknown
   answer_segment_ids?: unknown
   analysis_segment_ids?: unknown
   stem_line_ranges?: unknown
+  solution_line_ranges?: unknown
   answer_line_ranges?: unknown
   analysis_line_ranges?: unknown
+  answer_source_text?: unknown
+  analysis_start_source_text?: unknown
+  analysis_source_text?: unknown
   answer_inline_spans?: unknown
   analysis_inline_spans?: unknown
 }
@@ -101,21 +106,22 @@ const FIXED_SYSTEM_PROMPT = `你是题目结构拆分器，只负责识别题目
 1. 改写、润色、翻译或校正 OCR 正文、公式、表格和图片引用。
 2. 根据题干推理答案，补写原文不存在的内容，或进行题型、知识点、解题方法、难度分类。只允许从原文明确存在的汇总答案表中逐字抄录答案。
 3. 创建、删除、修改或重排任何图片标识符。
-4. 输出题目正文。除 answer_table_entries.answer_text 与行内定位字段的 exact_text 外，正文只能由本地根据你返回的 Markdown 行号范围恢复。
+4. 输出题目正文。除 answer_table_entries.answer_text、answer_source_text 和 analysis_start_source_text 外，正文只能由本地根据你返回的 Markdown 行号范围恢复。
 
 行号范围规则：
 1. 输入是添加了 L000001 形式行号前缀的完整 Markdown；行号从 1 开始，范围的起止行均包含在内。
-2. 默认情况下，每一行在整个 items 数组中最多归属一次，不得把同一行重复分给多道题或多个字段。只有“答案和解析紧挨在同一 OCR 行”时，才可以用下述行内定位字段把同一行中互不重叠的字符分别归入答案和解析。
+2. 默认情况下，每一行在整个 items 数组中最多归属一次，不得把同一行重复分给多道题或多个字段。答案与解析属于同一题时，可共同放入该题的 solution_line_ranges；不要把同一行分别重复放入 answer_line_ranges 与 analysis_line_ranges。
 3. 同时汇总多道题答案的答案表、跨题说明、页眉页脚等内容，不属于任何单题；必须放入 unassigned_line_ranges。答案表还需要按下述规则输出 answer_table_entries。
 4. answer_line_ranges 只能指向当前单题独有的答案内容；analysis_line_ranges 只能指向当前单题独有的解析内容。
 5. 紧邻题干、答案或解析末尾的图片标识符行属于该字段，必须包含在对应范围内。
 6. 为便于增量处理，顶层 JSON 必须先输出 schema_version、document_role、items，并按题号顺序逐个输出完整 item；最后再输出 unassigned_line_ranges 和 warnings。
 
-行内定位规则（仅用于同一行内包含多个字段的版式）：
-1. answer_inline_spans 和 analysis_inline_spans 的每项均为 { line, start_column, end_column, exact_text }；line、start_column、end_column 都从 1 开始，列号按 Unicode 字符计数，首尾均包含。
-2. exact_text 必须与该行 start_column 到 end_column 的 OCR 原文逐字符一致；不得补字、改字、去除公式、改变空格或图片标识符。
-3. 只有当答案与解析确实在同一 OCR 行且无法按整行拆开时才使用。该行不可再放入 answer_line_ranges 或 analysis_line_ranges；不同字段的行内范围不得重叠。
-4. 例如原文为“1. A 因为 f(x)…”，答案可定位为 A，解析可定位为“因为 f(x)…”。题号前缀不属于答案或解析。
+答案解析原文拆分规则：
+1. 每题答案或解析存在时，使用 solution_line_ranges 指向这一题全部答案解析原文。answer_source_text 只抄录答案（从题号后开始，到解析开始前结束）；analysis_start_source_text 必须恰好抄录解析开头连续的 16 个 OCR 原文字符（解析不足 16 个字符时才抄录全部）。不要使用 answer_line_ranges、analysis_line_ranges、answer_inline_spans、analysis_inline_spans 或字符列号。
+2. answer_source_text 必须是 solution_line_ranges 对应原文（去掉第一行题号前缀）开头的连续片段；analysis_start_source_text 必须是解析正文开头的连续片段，并在该题原文中唯一出现。答案与解析之间的空格无需放入任一字段。对解答题、证明题或原文以“解”“证明”“（1）”等步骤开头且没有独立最终答案的题，answer_source_text 必须为空字符串，analysis_start_source_text 从这些步骤文字开始。
+3. 本地会严格核验这两个片段，并仅从 OCR 原文恢复答案、解析余文、换行、公式和图片标识符；不得补字、改字、去除公式、改变空格或图片标识符。
+4. 没有解析时 analysis_start_source_text 为空字符串；没有答案时 answer_source_text 为空字符串。不要回传完整解析正文。
+5. 例如原文为“1. A 因为 f(x)…”，返回 solution_line_ranges 为 [[1, 1]]、answer_source_text 为 “A”、analysis_start_source_text 为 “因为 f(x)…”。
 
 答案表提取规则：
 1. 识别原文中“题号/答案”横向表格或其他明确的汇总答案表，为每个有明确对应关系的题号输出一条 answer_table_entries。
@@ -199,23 +205,22 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
   const payload = {
     document_role: role,
     instructions: role === 'solutions'
-      ? '这是答案解析文档。返回 answer_line_ranges 或 analysis_line_ranges，不要生成题干范围；如有汇总答案表，同时提取 answer_table_entries。'
+      ? '这是答案解析文档。每题答案/解析使用 solution_line_ranges、answer_source_text、analysis_start_source_text；不要生成题干范围，也不要使用 answer_line_ranges 或 analysis_line_ranges；如有汇总答案表，同时提取 answer_table_entries。'
       : role === 'questions'
         ? '这是原卷文档。只返回 stem_line_ranges，不要生成答案或解析范围；通常不应存在 answer_table_entries。'
-        : '这是同一份原卷与答案解析文档。按题号返回题干、答案和解析在完整 Markdown 中的行号范围；如有汇总答案表，同时提取 answer_table_entries。',
+        : '这是同一份原卷与答案解析文档。题干使用 stem_line_ranges；每题答案/解析使用 solution_line_ranges、answer_source_text、analysis_start_source_text，不要使用 answer_line_ranges 或 analysis_line_ranges；如有汇总答案表，同时提取 answer_table_entries。',
     line_numbering: '1-based, inclusive; L000001 means line 1',
     output_schema: {
-      schema_version: 'model-split-line-ranges-v2',
+      schema_version: 'model-split-source-fragments-v3',
       items: [{
         question_no: 'string',
         raw_question_no: 'string',
         normalized_question_no: 'string',
         number_repair: { applied: 'boolean', reason: 'string', confidence: 'number 0..1' },
         stem_line_ranges: 'Array<[start_line, end_line]>',
-        answer_line_ranges: 'Array<[start_line, end_line]>',
-        analysis_line_ranges: 'Array<[start_line, end_line]>',
-        answer_inline_spans: 'Array<{line: number, start_column: number, end_column: number, exact_text: string}>',
-        analysis_inline_spans: 'Array<{line: number, start_column: number, end_column: number, exact_text: string}>',
+        solution_line_ranges: 'Array<[start_line, end_line]>',
+        answer_source_text: 'string copied exactly from the source, without the question number prefix',
+        analysis_start_source_text: 'exactly the first 16 source characters of the analysis (or all only if shorter), without the question number prefix; empty only when no analysis exists',
       }],
       answer_table_entries: [{
         question_no: 'string',
@@ -228,8 +233,17 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
     user_note: options.userNote || undefined,
     numbered_markdown: numberedMarkdown,
   }
+  const settings = readAiAssistantConfig()
+  const isOfficialDeepSeek = (() => {
+    try {
+      return new URL(settings.apiBaseUrl).hostname.toLowerCase().endsWith('deepseek.com')
+        && settings.model.toLowerCase().startsWith('deepseek-')
+    } catch {
+      return false
+    }
+  })()
   return {
-    model: readAiAssistantConfig().model,
+    model: settings.model,
     messages: [
       { role: 'system', content: FIXED_SYSTEM_PROMPT },
       { role: 'user', content: JSON.stringify(payload, null, 2) },
@@ -238,6 +252,9 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
     top_p: 0.1,
     stream,
     response_format: { type: 'json_object' },
+    // DeepSeek V4 Flash defaults to thinking mode. Splitting is an extraction task,
+    // and disabling it lets the first complete item reach the review UI promptly.
+    ...(isOfficialDeepSeek ? { thinking: { type: 'disabled' } } : {}),
   }
 }
 
@@ -520,6 +537,10 @@ function inlineSpans(
   return spans.sort((left, right) => left.segment.start + left.start - (right.segment.start + right.start))
 }
 
+function sourceAfterQuestionMarker(value: string) {
+  return String(value || '').replace(/^\s*(?:#{1,6}\s*)?(?:第\s*)?[0-9０-９]{1,3}\s*(?:题)?\s*[.．、·•:：]\s*/u, '')
+}
+
 function segmentIdsForRanges(value: unknown, segments: SplitSegment[]) {
   const ids: string[] = []
   for (const [start, end] of lineRanges(value)) {
@@ -536,6 +557,7 @@ function materializeLineRangeItem(item: SplitItem, segments: SplitSegment[]): Sp
   return {
     ...item,
     stem_segment_ids: item.stem_line_ranges === undefined ? item.stem_segment_ids : segmentIdsForRanges(item.stem_line_ranges, segments),
+    solution_segment_ids: item.solution_line_ranges === undefined ? item.solution_segment_ids : segmentIdsForRanges(item.solution_line_ranges, segments),
     answer_segment_ids: item.answer_line_ranges === undefined ? item.answer_segment_ids : segmentIdsForRanges(item.answer_line_ranges, segments),
     analysis_segment_ids: item.analysis_line_ranges === undefined ? item.analysis_segment_ids : segmentIdsForRanges(item.analysis_line_ranges, segments),
   }
@@ -563,12 +585,13 @@ function attachAdjacentFigureMarkers(items: SplitItem[], segments: SplitSegment[
   return items
 }
 
-const SEGMENT_FIELDS = ['stem_segment_ids', 'answer_segment_ids', 'analysis_segment_ids'] as const
+const SEGMENT_FIELDS = ['stem_segment_ids', 'solution_segment_ids', 'answer_segment_ids', 'analysis_segment_ids'] as const
 
 function sanitizeSharedAggregateSegments(items: SplitItem[]) {
   const normalized = items.map((item) => ({
     ...item,
     stem_segment_ids: [...new Set(stringList(item.stem_segment_ids))],
+    solution_segment_ids: [...new Set(stringList(item.solution_segment_ids))],
     answer_segment_ids: [...new Set(stringList(item.answer_segment_ids))],
     analysis_segment_ids: [...new Set(stringList(item.analysis_segment_ids))],
   }))
@@ -585,6 +608,7 @@ function sanitizeSharedAggregateSegments(items: SplitItem[]) {
   }
   if (!sharedAggregateIds.size) return { items: normalized, warnings: [] as string[] }
   for (const item of normalized) {
+    item.solution_segment_ids = stringList(item.solution_segment_ids).filter((id) => !sharedAggregateIds.has(id))
     item.answer_segment_ids = stringList(item.answer_segment_ids).filter((id) => !sharedAggregateIds.has(id))
     item.analysis_segment_ids = stringList(item.analysis_segment_ids).filter((id) => !sharedAggregateIds.has(id))
   }
@@ -632,6 +656,53 @@ function reconstructField(segments: SplitSegment[], spans: InlineSpan[]) {
   return value.trim()
 }
 
+function solutionFromSourceFragments(
+  item: SplitItem,
+  segments: SplitSegment[],
+  diagnostics: string[],
+  itemLabel: string,
+) {
+  const hasSourceFragments = item.solution_line_ranges !== undefined
+    || item.solution_segment_ids !== undefined
+    || item.answer_source_text !== undefined
+    || item.analysis_start_source_text !== undefined
+    || item.analysis_source_text !== undefined
+  if (!hasSourceFragments) return undefined
+  const answerSourceText = typeof item.answer_source_text === 'string' ? item.answer_source_text : ''
+  const analysisStartSourceText = typeof item.analysis_start_source_text === 'string'
+    ? item.analysis_start_source_text
+    : typeof item.analysis_source_text === 'string' ? item.analysis_source_text : ''
+  const sourceText = sourceAfterQuestionMarker(segments.map((segment) => segment.text).join(''))
+  const sourceWithoutTrailingWhitespace = sourceText.replace(/\s+$/u, '')
+  const analysisAnchorPositions: number[] = []
+  if (analysisStartSourceText) {
+    let cursor = sourceWithoutTrailingWhitespace.indexOf(analysisStartSourceText, Math.max(0, answerSourceText.length))
+    while (cursor >= 0) {
+      analysisAnchorPositions.push(cursor)
+      cursor = sourceWithoutTrailingWhitespace.indexOf(analysisStartSourceText, cursor + Math.max(1, analysisStartSourceText.length))
+    }
+  }
+  const analysisStart = analysisAnchorPositions[0] ?? sourceWithoutTrailingWhitespace.length
+  const beforeAnalysis = sourceWithoutTrailingWhitespace.slice(answerSourceText.length, analysisStart)
+  const valid = Boolean(sourceWithoutTrailingWhitespace)
+    && (answerSourceText || analysisStartSourceText)
+    && sourceWithoutTrailingWhitespace.startsWith(answerSourceText)
+    && answerSourceText.length <= analysisStart
+    && analysisAnchorPositions.length <= 1
+    && (!analysisStartSourceText || analysisAnchorPositions.length === 1)
+    && !/\S/u.test(beforeAnalysis)
+  if (!valid) {
+    diagnostics.push(`${itemLabel}的答案解析原文片段无法与 OCR 原文连续核验，未采用模型拆分。`)
+    return { answerText: '', analysisMarkdown: '', accepted: false }
+  }
+  const answerEnd = answerSourceText.length
+  return {
+    answerText: sourceWithoutTrailingWhitespace.slice(0, answerEnd).trim(),
+    analysisMarkdown: analysisStartSourceText ? sourceWithoutTrailingWhitespace.slice(answerEnd).trim() : '',
+    accepted: true,
+  }
+}
+
 function figureMarkerIds(value: string) {
   return Array.from(String(value || '').matchAll(/<!--[ \t]*DOC2X_FIGURE:([^>\s]+)[ \t]*-->/gi), (match) => match[1])
 }
@@ -641,7 +712,7 @@ function rangesForSegments(document: OCRDocument, segments: SplitSegment[], kind
 }
 
 function removeLeadingQuestionMarker(value: string) {
-  return value.replace(/^\s*(?:#{1,6}\s*)?(?:第\s*)?[0-9０-９]{1,3}\s*(?:题)?\s*[.．、·•:：]\s*/u, '').trim()
+  return sourceAfterQuestionMarker(value).trim()
 }
 
 function candidateFromModelItem(
@@ -656,8 +727,11 @@ function candidateFromModelItem(
   const byId = new Map(segments.map((segment) => [segment.id, segment]))
   const label = `第 ${String(item.normalized_question_no || item.question_no || item.raw_question_no || '?')} 题`
   const stemSegments = selectedSegments(stringList(item.stem_segment_ids), byId, used, diagnostics, `${label}题干`)
+  const solutionSegments = selectedSegments(stringList(item.solution_segment_ids), byId, used, diagnostics, `${label}答案解析`)
   const answerSegments = selectedSegments(stringList(item.answer_segment_ids), byId, used, diagnostics, `${label}答案`)
   const analysisSegments = selectedSegments(stringList(item.analysis_segment_ids), byId, used, diagnostics, `${label}解析`)
+  // Keep reading the former span shape so previews created before this request
+  // contract change remain reviewable.
   const answerSpans = inlineSpans(item.answer_inline_spans, segments, used, diagnostics, `${label}答案`)
   const analysisSpans = inlineSpans(item.analysis_inline_spans, segments, used, diagnostics, `${label}解析`)
   const questionNo = normalizeQuestionNo(item.normalized_question_no || item.question_no || item.raw_question_no)
@@ -666,10 +740,13 @@ function candidateFromModelItem(
     ? { reason: String(item.number_repair.reason || '模型修复题号'), confidence: Math.max(0, Math.min(1, Number(item.number_repair.confidence || 0))) }
     : undefined
   const stemMarkdown = role === 'solutions' ? '' : removeLeadingQuestionMarker(reconstructField(stemSegments, []))
-  const answerText = role === 'questions' ? '' : reconstructField(answerSegments, answerSpans)
-  const analysisMarkdown = role === 'questions' ? '' : reconstructField(analysisSegments, analysisSpans)
+  const sourceFragments = role === 'questions' ? undefined : solutionFromSourceFragments(item, solutionSegments, diagnostics, label)
+  const answerText = role === 'questions' ? '' : sourceFragments?.accepted ? sourceFragments.answerText : reconstructField(answerSegments, answerSpans)
+  const analysisMarkdown = role === 'questions' ? '' : sourceFragments?.accepted ? sourceFragments.analysisMarkdown : reconstructField(analysisSegments, analysisSpans)
   const sourceRefs = [
     ...rangesForSegments(document, stemSegments, 'stem'),
+    ...rangesForSegments(document, solutionSegments, 'answer'),
+    ...rangesForSegments(document, solutionSegments, 'analysis'),
     ...rangesForSegments(document, answerSegments, 'answer'),
     ...rangesForSegments(document, analysisSegments, 'analysis'),
     ...rangesForSegments(document, answerSpans.map((span) => span.segment), 'answer'),
@@ -677,6 +754,7 @@ function candidateFromModelItem(
   ]
   const figures = [
     ...stemSegments.flatMap((segment) => figuresForRange(document, { start: segment.start, end: segment.end }, 'stem')),
+    ...solutionSegments.flatMap((segment) => figuresForRange(document, { start: segment.start, end: segment.end }, 'analysis')),
     ...answerSegments.flatMap((segment) => figuresForRange(document, { start: segment.start, end: segment.end }, 'analysis')),
     ...analysisSegments.flatMap((segment) => figuresForRange(document, { start: segment.start, end: segment.end }, 'analysis')),
     ...answerSpans.flatMap((span) => figuresForRange(document, { start: span.segment.start, end: span.segment.end }, 'analysis')),
@@ -707,7 +785,7 @@ function candidateFromModelItem(
     status: 'needs_review',
     issues,
     parseDiagnostics: repair ? [{ code: 'model_repaired_question_no', severity: repair.confidence >= 0.8 ? 'info' : 'warning', questionNo, message: `模型根据上下文将 OCR 题号「${rawQuestionNo}」修复为「${questionNo}」：${repair.reason}` }] : [],
-    parserConfigSnapshot: { source: 'model-assisted-line-range-split-v1', rawQuestionNo: rawQuestionNo || undefined, numberRepair: repair || undefined },
+    parserConfigSnapshot: { source: 'model-assisted-source-fragment-split-v2', rawQuestionNo: rawQuestionNo || undefined, numberRepair: repair || undefined },
     createdAt: timestamp,
     updatedAt: timestamp,
   }
