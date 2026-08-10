@@ -3,7 +3,6 @@ import { Check, Image, LoaderCircle, Pencil, RotateCcw, Save, Tag, X } from 'luc
 import { ApiError } from '@/api/client'
 import { learningTagsApi } from '@/api/learningTags'
 import { settingsApi } from '@/api/settings'
-import { MarkdownContent } from '@/components/MarkdownContent'
 import { Modal } from '@/components/dialogs/Modal'
 import { Badge, Button } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
@@ -11,12 +10,23 @@ import { useQuestionEditorDraft } from '@/hooks/useQuestionEditorDraft'
 import type { OcrSettings, QuestionItem, TagLibraries } from '@/types'
 import type { QuestionContentDraft } from '@/types/questionContent'
 import { QuestionContentEditor, type QuestionEditorConflict } from '@/components/questions/editor'
-import { FigureGallery, QuestionMarkdownContent } from '@/components/questions/QuestionContent'
+import { FigureGallery, MarkdownWithInlineFigures, QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import { QuestionFigureManager } from '@/components/questions/QuestionFigureManager'
 import { difficultyBadgeVariant, difficultyLabel10, difficultyLabelFromScore10, figuresByUsage } from '@/utils/questionDisplay'
 import { draftAnalysisText, draftAnswerText, draftProblemText, paragraphBlocksFromText } from '@/utils/jsonCleanup'
 import { gradeOptionsForTeachingStages } from '@/utils/stages'
 import { LabeledInput, LabeledSelect, MultiTagSelector } from './form-fields'
+
+const DOC2X_FIGURE_MARKER = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/gi
+
+function inlineFigureIds(content: string) {
+  DOC2X_FIGURE_MARKER.lastIndex = 0
+  return new Set(Array.from(String(content || '').matchAll(DOC2X_FIGURE_MARKER), (match) => match[1]))
+}
+
+function isInlineFigure(figure: NonNullable<QuestionItem['figures']>[number], ids: Set<string>) {
+  return [figure.id, figure.blockId].some((value) => ids.has(String(value || '').trim()))
+}
 
 export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, onFiguresChanged, entityType = 'question' }: { draft: Partial<QuestionItem>; setDraft: Dispatch<SetStateAction<Partial<QuestionItem>>>; onClose: () => void; onSave: (nextDraft?: Partial<QuestionItem>) => Promise<void>; onManageFigures?: () => void; onFiguresChanged?: (figures: QuestionItem['figures']) => void; entityType?: string }) {
   const [mode, setMode] = useState<'form' | 'metadata' | 'figures'>('form')
@@ -156,6 +166,15 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [draft, contentDraft.value])
+
+  const answerText = draftAnswerText(draft)
+  const analysisText = draftAnalysisText(draft)
+  const analysisFigures = figuresByUsage(draft.figures ?? [], 'analysis')
+  const answerInlineFigureIds = inlineFigureIds(answerText)
+  const analysisInlineFigureIds = inlineFigureIds(analysisText)
+  const unplacedAnalysisFigures = analysisFigures.filter((figure) => (
+    !isInlineFigure(figure, answerInlineFigureIds) && !isInlineFigure(figure, analysisInlineFigureIds)
+  ))
 
   return (
     <Modal
@@ -354,8 +373,8 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
                 <div className="border-t border-zinc-100 dark:border-zinc-800/80 pt-4 space-y-4">
                   <div ref={answerPreviewRef} className="bg-zinc-50/50 dark:bg-zinc-800/30 rounded-xl p-3.5 border border-zinc-200/60 dark:border-zinc-700/30">
                     <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block mb-1">答案</span>
-	                    {draftAnswerText(draft).trim() ? (
-	                      <MarkdownContent className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed font-medium" content={draftAnswerText(draft)} />
+	                    {answerText.trim() ? (
+	                      <MarkdownWithInlineFigures className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed font-medium" content={answerText} figures={draft.figures ?? []} />
 	                    ) : (
                       <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">未设置答案</span>
                     )}
@@ -363,10 +382,10 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
 
                   <div ref={analysisPreviewRef} className="bg-zinc-50/50 dark:bg-zinc-800/30 rounded-xl p-3.5 border border-zinc-200/60 dark:border-zinc-700/30">
                     <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider block mb-1.5">解析</span>
-	                    {draftAnalysisText(draft).trim() ? (
+	                    {analysisText.trim() ? (
 	                      <>
-	                        <MarkdownContent className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed" content={draftAnalysisText(draft)} />
-                        <FigureGallery figures={figuresByUsage(draft.figures ?? [], 'analysis')} className="mt-3" />
+	                        <MarkdownWithInlineFigures className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed" content={analysisText} figures={analysisFigures} />
+                        <FigureGallery figures={unplacedAnalysisFigures} className="mt-3" />
                       </>
                     ) : (
                       <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">未设置解析</span>

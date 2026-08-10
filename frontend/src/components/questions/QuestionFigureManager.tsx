@@ -29,7 +29,9 @@ function figurePath(figure: QuestionFigure) {
 }
 
 function figureMarker(figure: QuestionFigure) {
-  return `<!-- DOC2X_FIGURE:${String(figure.blockId || figure.id || '').trim()} -->`
+  // Figure ids are stable, globally unique asset identifiers. blockId is kept
+  // as a legacy lookup alias so old OCR markers can still be rendered.
+  return `<!-- DOC2X_FIGURE:${String(figure.id || figure.blockId || '').trim()} -->`
 }
 
 function markerReferences(question: QuestionItem, figures: QuestionFigure[]) {

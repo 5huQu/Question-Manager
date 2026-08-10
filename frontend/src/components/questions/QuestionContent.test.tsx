@@ -43,6 +43,19 @@ describe('question figure rendering', () => {
     expect(children.map((child) => child.textContent?.trim())).toEqual(['标记前', '题干图 #1', '标记后'])
   })
 
+  it('keeps legacy block-id markers renderable after switching new markers to figure ids', async () => {
+    await act(async () => {
+      root.render(
+        <MarkdownWithInlineFigures
+          content={'标记前\n\n<!-- DOC2X_FIGURE:blk_p0_4 -->\n\n标记后'}
+          figures={[figure]}
+        />,
+      )
+    })
+
+    expect(container.querySelectorAll('img')).toHaveLength(1)
+  })
+
   it('does not append an inline figure again in the stem gallery', async () => {
     await act(async () => {
       root.render(

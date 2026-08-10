@@ -367,7 +367,9 @@ function bindMarkerInContent(item: { stemMarkdown: string; answerText: string; a
     const escapedMarkerId = markerId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const pattern = new RegExp(`<!--\\s*${escapedMarkerId}\\s*-->`, 'i')
     if (!pattern.test(content[field])) return null
-    const blockId = String(figure.blockId || figure.id || '').trim()
+    // Prefer the stable figure resource id for newly generated markers.  The
+    // block id remains an accepted legacy alias when rendering old content.
+    const blockId = String(figure.id || figure.blockId || '').trim()
     if (!blockId) return null
     content[field] = content[field].replace(pattern, `<!-- DOC2X_FIGURE:${blockId} -->`)
     return { content, blockId, usage: field }
