@@ -20,7 +20,7 @@ import { Modal } from '@/components/dialogs/Modal'
 import { Button, Input } from '@/components/ui'
 import { QuestionContentEditor } from '@/components/questions/editor'
 import type { QuestionContentValue } from '@/components/questions/editor/model'
-import type { ModelSplitApplyItem, ModelSplitPreview, ModelSplitPreviewItem } from '@/api/importV2'
+import type { ModelSplitApplyItem, ModelSplitPreview, ModelSplitPreviewItem, ModelSplitRequestOptions } from '@/api/importV2'
 import { AnimatePresence, motion } from 'motion/react'
 
 function translateWarning(value: string) {
@@ -50,6 +50,12 @@ const statusBadgeStyles = {
   success: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
 }
 
+const NOTE_PRESETS = [
+  '选择、填空题使用“题号. 答案 解析正文”格式，答案与解析紧接在同一行。',
+  '解析稿按题号排列，题号之后先给出答案，再给出该题解析。',
+  '原卷与答案解析是分开的两份识别稿，请按题号对应，不要把解析当作题干。',
+]
+
 function contentOf(item: ModelSplitPreviewItem): QuestionContentValue {
   return { stemMarkdown: item.stemMarkdown, answerText: item.answerText, analysisMarkdown: item.analysisMarkdown }
 }
@@ -74,13 +80,14 @@ export function ModelSplitDialog({
   loading: boolean
   applying: boolean
   onClose: () => void
-  onStart: () => void
+  onStart: (options?: ModelSplitRequestOptions) => void
   onApply: (items: ModelSplitApplyItem[]) => void
 }) {
   const [draftItems, setDraftItems] = useState<ModelSplitPreviewItem[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [filterMode, setFilterMode] = useState<'all' | 'review' | 'ready'>('all')
   const [showWarnings, setShowWarnings] = useState(false)
+  const [assistantNote, setAssistantNote] = useState('')
   const dirtyFieldsRef = useRef(new Set<string>())
   const selectedQuestionRef = useRef<HTMLButtonElement | null>(null)
 
@@ -166,6 +173,18 @@ export function ModelSplitDialog({
     onApply(draftItems.map(({ questionNo, stemMarkdown, answerText, analysisMarkdown }) => ({ questionNo, stemMarkdown, answerText, analysisMarkdown })))
   }
 
+  function startSplit() {
+    onStart({ note: assistantNote.trim() })
+  }
+
+  function appendNotePreset(value: string) {
+    setAssistantNote((current) => {
+      const note = current.trim()
+      if (note.includes(value)) return current
+      return note ? `${note}\n${value}` : value
+    })
+  }
+
   return (
     <Modal
       title="AI 模型拆题核对"
@@ -230,7 +249,7 @@ export function ModelSplitDialog({
               {loading ? '停止并关闭' : '取消'}
             </Button>
             {!preview || stream.phase === 'error' ? (
-              <Button size="sm" icon={loading ? LoaderCircle : stream.phase === 'error' ? RotateCcw : WandSparkles} onClick={onStart} disabled={loading}>
+              <Button size="sm" icon={loading ? LoaderCircle : stream.phase === 'error' ? RotateCcw : WandSparkles} onClick={startSplit} disabled={loading}>
                 {loading ? 'AI 识别拆分中...' : stream.phase === 'error' ? '重新生成' : '开始 AI 拆题'}
               </Button>
             ) : (
@@ -259,7 +278,35 @@ export function ModelSplitDialog({
               自动识别复杂试卷题目边界、格式化题号并关联答案解析。生成结果提供全界面实时预览与对比核对。
             </p>
           </div>
-          <Button size="sm" icon={WandSparkles} onClick={onStart} className="mt-2">
+          <div className="w-full max-w-2xl rounded-2xl border border-black/6 bg-white/90 p-3 text-left shadow-2xs dark:border-white/8 dark:bg-zinc-900/95">
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor="model-split-note" className="text-xs font-semibold text-zinc-800 dark:text-zinc-100">本卷识别备注 <span className="font-normal text-zinc-400">（可选）</span></label>
+              <span className="text-[11px] tabular-nums text-zinc-400">{assistantNote.length}/800</span>
+            </div>
+            <textarea
+              id="model-split-note"
+              value={assistantNote}
+              maxLength={800}
+              onChange={(event) => setAssistantNote(event.target.value)}
+              placeholder="例如：选择、填空题的解析格式为“题号. 答案 解析正文”，答案与解析在同一行。"
+              className="mt-2 min-h-20 w-full resize-y rounded-xl border border-black/8 bg-white/80 px-3 py-2 text-xs leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/8 dark:border-white/10 dark:bg-zinc-950/70 dark:text-zinc-100 dark:focus:border-zinc-500"
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-[11px] text-zinc-400">快捷说明</span>
+              {NOTE_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => appendNotePreset(preset)}
+                  className="rounded-full border border-black/8 bg-white/70 px-2.5 py-1 text-[11px] text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-white hover:text-zinc-900 active:scale-[0.98] dark:border-white/10 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                >
+                  {preset.startsWith('选择') ? '答案与解析同行' : preset.startsWith('解析稿') ? '答案在解析开头' : '原卷与解析分离'}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">备注仅用于本次模型识别，不会写入题库；OCR 正文、公式和图片标识符仍由本地原样重建。</p>
+          </div>
+          <Button size="sm" icon={WandSparkles} onClick={startSplit} className="mt-2">
             开始 AI 拆题
           </Button>
         </div>
@@ -282,7 +329,7 @@ export function ModelSplitDialog({
             <span className="text-sm font-semibold text-rose-700 dark:text-rose-300">AI 拆题未能完成</span>
             <p className="mt-1 max-w-lg text-xs leading-relaxed text-zinc-500">{stream.message}</p>
           </div>
-          <Button variant="outline" size="sm" icon={RotateCcw} onClick={onStart}>
+          <Button variant="outline" size="sm" icon={RotateCcw} onClick={startSplit}>
             重试 AI 拆题
           </Button>
         </div>

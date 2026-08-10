@@ -314,6 +314,10 @@ export type ModelSplitPreview = {
 
 export type ModelSplitApplyItem = Pick<ModelSplitPreviewItem, 'questionNo' | 'stemMarkdown' | 'answerText' | 'analysisMarkdown'>
 
+export type ModelSplitRequestOptions = {
+  note?: string
+}
+
 export type ModelSplitStreamEvent =
   | { type: 'started'; mode?: ImportV2ImportJobMode; documents?: Array<{ role: string; totalLines: number }>; totalLines?: number; message?: string }
   | { type: 'item'; role?: string; item: ModelSplitPreviewItem; index?: number; receivedItems?: number; totalItems?: number }
@@ -728,22 +732,23 @@ export const importV2Api = {
       body: JSON.stringify({}),
     })
   },
-  createModelSplitPreview(importJobId: string) {
+  createModelSplitPreview(importJobId: string, options: ModelSplitRequestOptions = {}) {
     return api<ModelSplitPreview>(`/api/import-flow-v2/jobs/${encodeURIComponent(importJobId)}/model-split`, {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({}),
+      body: JSON.stringify({ note: options.note || undefined }),
     })
   },
   async streamModelSplitPreview(
     importJobId: string,
     onEvent: (event: ModelSplitStreamEvent) => void,
+    options: ModelSplitRequestOptions = {},
     signal?: AbortSignal,
   ) {
     const response = await apiStream(`/api/import-flow-v2/jobs/${encodeURIComponent(importJobId)}/model-split/stream`, {
       method: 'POST',
       headers: { ...jsonHeaders, Accept: 'text/event-stream' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ note: options.note || undefined }),
       signal,
     })
     await readModelSplitEventStream(response, onEvent)

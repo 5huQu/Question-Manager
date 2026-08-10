@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { importV2Api, type ImportParserPreset, type ImportV2ImportJob, type ImportV2ImportJobDocumentDetail, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics, type ParseCandidatesRequest, type ParseCandidatesResult, type ModelSplitPreview } from '@/api/importV2'
+import { importV2Api, type ImportParserPreset, type ImportV2ImportJob, type ImportV2ImportJobDocumentDetail, type ImportV2OcrDocument, type ImportV2SourceDocument, type OcrFigureDiagnostics, type ParseCandidatesRequest, type ParseCandidatesResult, type ModelSplitPreview, type ModelSplitRequestOptions } from '@/api/importV2'
 import { settingsApi } from '@/api/settings'
 import { unsupportedImportReason } from '@/utils/importFiles'
 import { type MarkdownPreviewDocumentOption } from '@/components/import-v2/MarkdownStructurePreviewDialog'
@@ -1182,7 +1182,7 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
     setError('')
   }
 
-  async function handleStartModelSplit() {
+  async function handleStartModelSplit(options: ModelSplitRequestOptions = {}) {
     if (!activeImportJob || !canModelSplit) return
     modelSplitAbortRef.current?.abort()
     const controller = new AbortController()
@@ -1259,7 +1259,7 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
           return
         }
         if (event.type === 'error') throw new Error(event.message || '模型拆题失败。')
-      }, controller.signal)
+      }, options, controller.signal)
       if (!didFinish) throw new Error('模型拆题连接提前结束，请重新生成。')
     } catch (err) {
       if (controller.signal.aborted) return

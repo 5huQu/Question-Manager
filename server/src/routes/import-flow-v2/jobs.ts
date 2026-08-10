@@ -89,7 +89,7 @@ export function mountImportJobRoutes(app: Express) {
     catch (error) { sendRouteError(res, error) }
   })
   app.post(`${API_BASE}/jobs/:id/model-split`, async (req, res) => {
-    try { res.json(await createModelSplitPreview(routeId(req))) }
+    try { res.json(await createModelSplitPreview(routeId(req), req.body)) }
     catch (error) { sendRouteError(res, error) }
   })
   app.post(`${API_BASE}/jobs/:id/model-split/stream`, async (req, res) => {
@@ -107,7 +107,7 @@ export function mountImportJobRoutes(app: Express) {
       if (!res.writableEnded && !res.destroyed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
     }
     try {
-      await createModelSplitPreviewStream(routeId(req), ({ event, data }) => write(event, data), controller.signal)
+      await createModelSplitPreviewStream(routeId(req), req.body, ({ event, data }) => write(event, data), controller.signal)
     } catch (error) {
       write('error', { message: error instanceof Error ? error.message : '模型辅助拆题失败。' })
     } finally {
