@@ -643,6 +643,18 @@ export function ModelSplitDialog({
                     </div>
                   </div>
 
+                  {selected.cleanupNotes?.length ? (
+                    <div className="space-y-1.5 rounded-xl border border-sky-500/18 bg-sky-500/7 p-2.5 text-[11px] leading-relaxed text-sky-900 dark:text-sky-200">
+                      <div className="flex items-center gap-1.5 font-semibold">
+                        <Info className="size-3.5 text-sky-600 dark:text-sky-400" />
+                        模型清理记录
+                      </div>
+                      <ul className="space-y-1 pl-4">
+                        {selected.cleanupNotes.map((note, index) => <li key={`${note}-${index}`} className="list-disc">{note}</li>)}
+                      </ul>
+                    </div>
+                  ) : null}
+
                   {/* Issue Diagnostics */}
                   <div className="space-y-2 border-t border-black/6 pt-3 dark:border-white/8">
                     <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">结构提示</span>

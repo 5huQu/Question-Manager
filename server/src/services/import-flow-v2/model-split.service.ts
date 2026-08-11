@@ -46,6 +46,8 @@ type SplitItem = {
   analysis_line_ranges?: unknown
   answer_text?: unknown
   answer_evidence_text?: unknown
+  cleanup_operations?: unknown
+  /** @deprecated; kept so previews from the initial v4 contract still work. */
   analysis_trim_prefix?: unknown
   answer_source_text?: unknown
   analysis_start_source_text?: unknown
@@ -93,6 +95,8 @@ export type ModelSplitPreviewItem = {
   sourceStemMarkdown: string
   /** OCR 原稿中对应的完整答案解析片段，始终只读，用于和模型草稿对照。 */
   sourceSolutionMarkdown: string
+  /** 已逐字核验并应用的模型清理记录；不会修改右侧 OCR 原稿。 */
+  cleanupNotes: string[]
   sourceRefs: CandidateSourceRef[]
   issues: Array<{ code: string; severity: 'warning' | 'error'; message: string }>
 }
@@ -197,7 +201,12 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
         solution_line_ranges: 'Array<[start_line, end_line]>',
         answer_text: 'string copied exactly from the source; may come from any position inside the solution range',
         answer_evidence_text: 'optional short source excerpt containing the answer, copied exactly; may occur anywhere in the solution range',
-        analysis_trim_prefix: 'optional exact OCR prefix at the start of the solution range; only a question-number/answer label, never analysis content',
+        cleanup_operations: [{
+          field: '"stem" | "answer" | "analysis"',
+          action: '"trim_prefix" | "remove"',
+          exact_text: 'exact source text to remove; must be unique in the field for remove',
+          reason: 'Chinese reason such as 分值、题号和作答答案、考点标签、通用点评',
+        }],
       }],
       answer_table_entries: [{
         question_no: 'string',
@@ -649,15 +658,60 @@ function modelAnswerDraft(item: SplitItem) {
   return { answerText, evidenceText }
 }
 
-function analysisDraftFromSource(sourceMarkdown: string, item: SplitItem) {
-  const source = String(sourceMarkdown || '').trim()
-  const trimPrefix = typeof item.analysis_trim_prefix === 'string' ? item.analysis_trim_prefix : ''
-  // The model may mark only an exact OCR prefix for presentation removal. Keep
-  // the source separately for comparison; if the model quote differs by even
-  // one character, do not silently alter the draft.
-  if (!source || !trimPrefix || !source.startsWith(trimPrefix)) return source
-  const remainder = source.slice(trimPrefix.length).trimStart()
-  return remainder || source
+type CleanupField = 'stem' | 'answer' | 'analysis'
+type CleanupOperation = {
+  field: CleanupField
+  action: 'trim_prefix' | 'remove'
+  exactText: string
+  reason: string
+}
+
+function cleanupOperations(item: SplitItem): CleanupOperation[] {
+  const operations: CleanupOperation[] = []
+  if (Array.isArray(item.cleanup_operations)) {
+    for (const raw of item.cleanup_operations) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+      const record = raw as Record<string, unknown>
+      const field = String(record.field || '').trim()
+      const action = String(record.action || '').trim()
+      const exactText = typeof record.exact_text === 'string' ? record.exact_text : ''
+      if (!['stem', 'answer', 'analysis'].includes(field) || !['trim_prefix', 'remove'].includes(action) || !exactText) continue
+      operations.push({
+        field: field as CleanupField,
+        action: action as CleanupOperation['action'],
+        exactText,
+        reason: typeof record.reason === 'string' ? record.reason.trim() : '',
+      })
+    }
+  }
+  // Backwards compatibility for previews generated with the first v4 contract.
+  if (typeof item.analysis_trim_prefix === 'string' && item.analysis_trim_prefix) {
+    operations.push({ field: 'analysis', action: 'trim_prefix', exactText: item.analysis_trim_prefix, reason: '解析行首题号或答案标识' })
+  }
+  return operations
+}
+
+export function cleanupFieldDraft(field: CleanupField, value: string, operations: CleanupOperation[]) {
+  let draft = String(value || '').trim()
+  const notes: string[] = []
+  for (const operation of operations) {
+    if (operation.field !== field || !draft) continue
+    // A figure marker is a source asset reference, never presentation noise.
+    if (figureMarkerIds(operation.exactText).length > 0) continue
+    if (operation.action === 'trim_prefix') {
+      if (!draft.startsWith(operation.exactText)) continue
+      const next = draft.slice(operation.exactText.length).trimStart()
+      if (!next) continue
+      draft = next
+    } else {
+      const first = draft.indexOf(operation.exactText)
+      if (first < 0 || draft.indexOf(operation.exactText, first + operation.exactText.length) >= 0) continue
+      draft = `${draft.slice(0, first)}${draft.slice(first + operation.exactText.length)}`
+    }
+    const label = operation.action === 'trim_prefix' ? '剥离行首内容' : '移除内部内容'
+    notes.push(`${label}${operation.reason ? `：${operation.reason}` : ''}`)
+  }
+  return { value: draft.trim(), notes }
 }
 
 function isAnswerEvidenceInSource(answerText: string, evidenceText: string, sourceMarkdown: string) {
@@ -704,18 +758,26 @@ function candidateFromModelItem(
     ? { reason: String(item.number_repair.reason || '模型修复题号'), confidence: Math.max(0, Math.min(1, Number(item.number_repair.confidence || 0))) }
     : undefined
   const sourceStemMarkdown = role === 'solutions' ? '' : reconstructField(stemSegments, [])
-  const stemMarkdown = role === 'solutions' ? '' : removeLeadingQuestionMarker(sourceStemMarkdown)
-  // The model identifies complete source ranges and may quote a verified leading
-  // label (for example `3. B`) for display removal. The raw source stays intact
-  // for comparison, so this never rewrites or discards OCR provenance.
+  const operations = cleanupOperations(item)
+  // Stem cleanup runs after the project's standard question-number removal, so
+  // the model can quote only a score label such as `(5分)` instead of guessing
+  // how the OCR encoded the question number.
+  const stemCleanup = cleanupFieldDraft('stem', role === 'solutions' ? '' : removeLeadingQuestionMarker(sourceStemMarkdown), operations)
+  const stemMarkdown = stemCleanup.value
+  // The model identifies complete source ranges and may mark exact source text
+  // for presentation cleanup. The raw source stays intact for comparison.
   const sourceSolutionMarkdown = role === 'questions' ? '' : reconstructField(solutionSegments, [])
   const answerDraft = role === 'questions' ? { answerText: '', evidenceText: '' } : modelAnswerDraft(item)
-  const answerText = role === 'questions'
+  const rawAnswerText = role === 'questions'
     ? ''
     : answerDraft.answerText || reconstructField(answerSegments, answerSpans)
+  const answerCleanup = cleanupFieldDraft('answer', rawAnswerText, operations)
+  const answerText = answerCleanup.value
+  const analysisCleanup = cleanupFieldDraft('analysis', role === 'questions' ? '' : sourceSolutionMarkdown || reconstructField(analysisSegments, analysisSpans), operations)
   const analysisMarkdown = role === 'questions'
     ? ''
-    : analysisDraftFromSource(sourceSolutionMarkdown, item) || reconstructField(analysisSegments, analysisSpans)
+    : analysisCleanup.value
+  const cleanupNotes = [...stemCleanup.notes, ...answerCleanup.notes, ...analysisCleanup.notes]
   const answerEvidenceVerified = isAnswerEvidenceInSource(answerText, answerDraft.evidenceText, sourceSolutionMarkdown)
   const sourceRefs = [
     ...rangesForSegments(document, stemSegments, 'stem'),
@@ -791,6 +853,7 @@ function candidateFromModelItem(
       analysisMarkdown,
       sourceStemMarkdown,
       sourceSolutionMarkdown,
+      cleanupNotes,
       sourceRefs,
       issues: candidate.issues,
     },
@@ -969,6 +1032,7 @@ function finalizeCandidatePreviews(candidates: QuestionCandidate[], previewSeeds
       analysisMarkdown: candidate.analysisMarkdown,
       sourceStemMarkdown: seed?.sourceStemMarkdown || candidate.stemMarkdown,
       sourceSolutionMarkdown: seed?.sourceSolutionMarkdown || candidate.analysisMarkdown,
+      cleanupNotes: seed?.cleanupNotes || [],
       sourceRefs: candidate.sourceRefs,
       issues: candidate.issues,
     }
