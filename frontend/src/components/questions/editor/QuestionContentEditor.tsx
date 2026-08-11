@@ -93,12 +93,31 @@ function StructuredChoicesEditor({
               </button>
             </div>
             <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-              {suggestion.choices.map((choice) => (
-                <div key={choice.label} className={`${glass ? 'question-edit-glass-choice' : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950'} flex min-w-0 items-start gap-2 rounded-md border px-2.5 py-2`}>
-                  <span className="flex size-5 shrink-0 items-center justify-center rounded bg-zinc-100 text-[11px] font-semibold dark:bg-zinc-800">{choice.label}</span>
+              {suggestion.choices.map((choice) => {
+                const selected = selectedAnswerLabels?.includes(choice.label) || false
+                const interactive = Boolean(answerMode && onAnswerSelectionChange)
+                const className = `${glass ? 'question-edit-glass-choice' : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950'} flex min-w-0 items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all ${selected ? 'border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30 text-emerald-950 dark:border-emerald-500/50 dark:bg-emerald-950/30 dark:text-emerald-100 font-semibold' : ''}`
+                const content = <>
+                  <span className={`flex h-5.5 min-w-5.5 shrink-0 items-center justify-center gap-1 rounded px-1.5 text-[11px] font-bold transition-all ${selected ? 'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-zinc-950 shadow-2xs' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'}`}>
+                    <span>{choice.label}</span>
+                    {selected ? <Check className="size-3 stroke-[2.5]" /> : null}
+                  </span>
                   <MarkdownContent className="min-w-0 text-xs" content={choice.content} />
-                </div>
-              ))}
+                </>
+                return interactive ? (
+                  <button
+                    key={choice.label}
+                    type="button"
+                    aria-label={`${answerMode === 'single' ? '设置' : '切换'}答案选项 ${choice.label}`}
+                    aria-pressed={selected}
+                    title={`应用识别结果并${answerMode === 'single' ? '设置' : '切换'}选项 ${choice.label} 为答案`}
+                    className={`${className} hover:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400`}
+                    onClick={() => onAnswerSelectionChange?.(choice.label)}
+                  >
+                    {content}
+                  </button>
+                ) : <div key={choice.label} className={className}>{content}</div>
+              })}
             </div>
           </div>
         ) : null}
@@ -158,17 +177,18 @@ function StructuredChoiceRow({
   }
 
   return (
-    <div className={`grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_2rem] items-start gap-2 rounded-lg border bg-white p-2.5 focus-within:ring-1 dark:bg-zinc-950 ${selected ? 'border-zinc-900 bg-zinc-50 focus-within:border-zinc-900 focus-within:ring-zinc-400 dark:border-zinc-100 dark:bg-zinc-900/40 dark:focus-within:border-zinc-100 dark:focus-within:ring-zinc-600' : 'border-zinc-200 focus-within:border-zinc-500 focus-within:ring-zinc-300 dark:border-zinc-800'}`}>
+    <div className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)_2rem] items-start gap-2.5 rounded-lg border bg-white p-2.5 focus-within:ring-1 dark:bg-zinc-950 ${selected ? 'border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30 focus-within:border-emerald-500 focus-within:ring-emerald-400 dark:border-emerald-500/50 dark:bg-emerald-950/30 dark:ring-emerald-500/30 dark:focus-within:border-emerald-500 dark:focus-within:ring-emerald-500' : 'border-zinc-200 focus-within:border-zinc-500 focus-within:ring-zinc-300 dark:border-zinc-800'}`}>
       {answerMode && onAnswerSelectionChange ? (
         <button
           type="button"
           aria-label={`${answerMode === 'single' ? '设置' : '切换'}答案选项 ${choice.label}`}
           aria-pressed={selected}
           title={answerMode === 'single' ? `将选项 ${choice.label} 设为答案` : `${selected ? '取消' : '选择'}答案选项 ${choice.label}`}
-          className={`mt-1 flex size-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${selected ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'}`}
+          className={`mt-1 flex h-7 min-w-7 shrink-0 items-center justify-center gap-1 rounded-md px-1.5 text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${selected ? 'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-zinc-950 shadow-2xs' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'}`}
           onClick={onAnswerSelectionChange}
         >
-          {selected ? <Check className="size-3.5" /> : choice.label}
+          <span>{choice.label}</span>
+          {selected ? <Check className="size-3.5 stroke-[2.5]" /> : null}
         </button>
       ) : <span className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">{choice.label}</span>}
       <RichMarkdownEditor
@@ -249,13 +269,14 @@ export function QuestionContentEditor({
   const warnings = useMemo(() => detectCompatibilityWarnings(value), [value])
   const stem = useMemo(() => splitChoices(value.stemMarkdown), [value.stemMarkdown])
   const answerMode = useMemo(() => choiceAnswerMode(questionType), [questionType])
-  const selectedAnswerLabels = useMemo(
-    () => answerMode ? extractChoiceAnswerLabels(value.answerText, stem.choices, answerMode) : [],
-    [answerMode, stem.choices, value.answerText],
-  )
   const choiceSuggestion = useMemo(
     () => stem.choices.length ? null : suggestChoiceConversion(value.stemMarkdown),
     [stem.choices.length, value.stemMarkdown],
+  )
+  const answerChoices = stem.choices.length ? stem.choices : choiceSuggestion?.choices || []
+  const selectedAnswerLabels = useMemo(
+    () => answerMode ? extractChoiceAnswerLabels(value.answerText, answerChoices, answerMode) : [],
+    [answerChoices, answerMode, value.answerText],
   )
   const compact = variant === 'compact'
   const aiOptimizing = aiOptimizationStatus === 'running'
@@ -302,7 +323,28 @@ export function QuestionContentEditor({
     } else {
       selected.add(label)
     }
-    updateField('answerText', serializeChoiceAnswerLabels(stem.choices, Array.from(selected)))
+    updateField('answerText', serializeChoiceAnswerLabels(answerChoices, Array.from(selected)))
+  }
+
+  function applySuggestionAndToggleAnswerSelection(label: string) {
+    if (!answerMode || !choiceSuggestion) return
+    const selected = new Set(selectedAnswerLabels)
+    if (answerMode === 'single') {
+      if (selected.has(label)) selected.clear()
+      else {
+        selected.clear()
+        selected.add(label)
+      }
+    } else if (selected.has(label)) {
+      selected.delete(label)
+    } else {
+      selected.add(label)
+    }
+    onChange({
+      ...value,
+      stemMarkdown: joinChoices(choiceSuggestion.body, choiceSuggestion.choices),
+      answerText: serializeChoiceAnswerLabels(choiceSuggestion.choices, Array.from(selected)),
+    })
   }
 
   async function optimizeWithAi(content: AiAssistantQuestionContent) {
@@ -467,7 +509,7 @@ export function QuestionContentEditor({
               : undefined}
             answerMode={answerMode}
             selectedAnswerLabels={selectedAnswerLabels}
-            onAnswerSelectionChange={answerMode ? toggleAnswerSelection : undefined}
+            onAnswerSelectionChange={answerMode ? choiceSuggestion ? applySuggestionAndToggleAnswerSelection : toggleAnswerSelection : undefined}
             onChange={(choices) => updateField('stemMarkdown', joinChoices(stem.body, choices))}
           />
         ) : null}

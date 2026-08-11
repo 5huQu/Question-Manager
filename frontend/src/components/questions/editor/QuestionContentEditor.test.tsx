@@ -76,6 +76,28 @@ describe('QuestionContentEditor', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...value, answerText: 'A、B' })
   })
 
+  it('highlights a legacy recognized answer and applies structured choices when the preview option is clicked', async () => {
+    const onChange = vi.fn()
+    const value = {
+      ...initial,
+      stemMarkdown: '题干\n\nA. 甲 B. 乙\n\nC. 丙 D. 丁',
+      answerText: 'D',
+    }
+    await act(async () => {
+      root.render(<QuestionContentEditor entityKey="question:legacy-choice-answer" value={value} questionType="单选题" onChange={onChange} />)
+    })
+
+    const selected = container.querySelector<HTMLButtonElement>('[aria-label="设置答案选项 D"]')!
+    expect(selected.getAttribute('aria-pressed')).toBe('true')
+    const optionC = container.querySelector<HTMLButtonElement>('[aria-label="设置答案选项 C"]')!
+    await act(async () => { optionC.click() })
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...value,
+      stemMarkdown: '题干\n\nA. 甲\nB. 乙\nC. 丙\nD. 丁',
+      answerText: 'C',
+    })
+  })
+
   it('opens the formula keyboard directly from the rich toolbar and a structured choice', async () => {
     await act(async () => {
       root.render(<QuestionContentEditor entityKey="question:formula-entry" value={initial} onChange={() => undefined} />)
