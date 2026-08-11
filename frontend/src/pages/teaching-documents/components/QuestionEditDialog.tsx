@@ -263,6 +263,7 @@ export function QuestionEditDialog(props: {
               ) : (
                 <QuestionContentEditor
                   entityKey={`teaching-question-${block.id}`}
+                  questionType={draft.questionType}
                   className="h-full min-h-0"
                   surface="glass"
                   hideFooter

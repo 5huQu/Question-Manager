@@ -24,6 +24,8 @@ export interface ChoiceConversionSuggestion {
   choices: StructuredChoice[]
 }
 
+export type ChoiceAnswerMode = 'single' | 'multiple'
+
 // Empty choices are valid while a question is being composed. In particular,
 // joinChoices trims the final line's trailing space, leaving the last choice
 // as `D.` until the user enters its content.
@@ -45,6 +47,42 @@ export function splitChoices(markdown: string): { body: string; choices: Structu
 export function joinChoices(body: string, choices: StructuredChoice[]): string {
   if (!choices.length) return body
   return `${body.trimEnd()}\n\n${choices.map((choice) => `${choice.label}. ${choice.content.trim()}`).join('\n')}`.trim()
+}
+
+/** Return the answer interaction allowed by the question type, if any. */
+export function choiceAnswerMode(questionType?: string): ChoiceAnswerMode | null {
+  const normalized = String(questionType || '').replace(/\s/g, '')
+  if (/多(?:选|项选择)/.test(normalized)) return 'multiple'
+  if (/单(?:选|项选择)/.test(normalized)) return 'single'
+  return null
+}
+
+/**
+ * Extract a pure choice answer without changing the stored answer text.
+ * The conservative full-string match deliberately leaves explanatory answers
+ * such as “B，因为……” unselected rather than highlighting a false positive.
+ */
+export function extractChoiceAnswerLabels(
+  answerText: string,
+  choices: StructuredChoice[],
+  mode: ChoiceAnswerMode,
+): string[] {
+  const available = new Set(choices.map((choice) => choice.label.toUpperCase()))
+  const source = String(answerText || '').normalize('NFKC').trim().toUpperCase()
+  if (!source || !available.size) return []
+  const withoutPrefix = source.replace(/^(?:(?:参考)?答案(?:\s*[:：为是])?|故选|故(?:答案)?(?:为|是)?|应选|正确选项|选项)\s*/, '')
+  const compact = withoutPrefix.replace(/[\s,，、;；:：.。/\\&()（）\[\]【】*_`~]/g, '')
+  if (!compact || !/^[A-Z]+$/.test(compact)) return []
+
+  const labels = Array.from(compact)
+  if (labels.some((label) => !available.has(label)) || new Set(labels).size !== labels.length) return []
+  if (mode === 'single' && labels.length !== 1) return []
+  return choices.map((choice) => choice.label).filter((label) => labels.includes(label))
+}
+
+export function serializeChoiceAnswerLabels(choices: StructuredChoice[], labels: string[]): string {
+  const selected = new Set(labels)
+  return choices.map((choice) => choice.label).filter((label) => selected.has(label)).join('、')
 }
 
 /**

@@ -116,6 +116,7 @@ export function LayoutQuestionContentSheet(props: Props) {
 
         <QuestionContentEditor
           entityKey={`layout:${props.draftId}:${props.relationId}`}
+          questionType={props.item.questionType}
           value={editor.value}
           savedValue={initialValue}
           onChange={editor.setValue}

@@ -5,7 +5,7 @@ import { RichMarkdownEditor } from './RichMarkdownEditor'
 import { FormulaEditorDialog } from './FormulaEditorDialog'
 import { AiPromptHelperDialog } from '@/components/dialogs/AiPromptHelperDialog'
 import { aiAssistantApi, type AiAssistantQuestionContent } from '@/api/aiAssistant'
-import { contentEquals, detectCompatibilityWarnings, joinChoices, splitChoices, suggestChoiceConversion, type ChoiceConversionSuggestion, type QuestionContentValue, type QuestionEditorVariant, type StructuredChoice } from './model'
+import { choiceAnswerMode, contentEquals, detectCompatibilityWarnings, extractChoiceAnswerLabels, joinChoices, serializeChoiceAnswerLabels, splitChoices, suggestChoiceConversion, type ChoiceAnswerMode, type ChoiceConversionSuggestion, type QuestionContentValue, type QuestionEditorVariant, type StructuredChoice } from './model'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 export interface QuestionEditorConflict {
@@ -22,6 +22,8 @@ export interface QuestionContentEditorProps {
   onCancel?: () => void
   title?: string
   description?: string
+  /** Enables answer-option selection for 单选题 / 多选题. */
+  questionType?: string
   variant?: QuestionEditorVariant
   saving?: boolean
   disabled?: boolean
@@ -56,6 +58,9 @@ function StructuredChoicesEditor({
   suggestion,
   onChange,
   onApplySuggestion,
+  answerMode,
+  selectedAnswerLabels,
+  onAnswerSelectionChange,
   surface = 'solid',
 }: {
   entityKey: string
@@ -63,6 +68,9 @@ function StructuredChoicesEditor({
   suggestion?: ChoiceConversionSuggestion | null
   onChange: (choices: StructuredChoice[]) => void
   onApplySuggestion?: () => void
+  answerMode?: ChoiceAnswerMode | null
+  selectedAnswerLabels?: string[]
+  onAnswerSelectionChange?: (label: string) => void
   surface?: 'solid' | 'glass'
 }) {
   const glass = surface === 'glass'
@@ -103,7 +111,10 @@ function StructuredChoicesEditor({
   return (
     <div className="space-y-2 rounded-lg border border-zinc-200 bg-zinc-50/30 p-3 dark:border-zinc-800 dark:bg-zinc-900/10">
       <div className="flex items-center justify-between">
-        <span className="text-[13px] font-medium text-zinc-500">结构化选项</span>
+        <div>
+          <span className="text-[13px] font-medium text-zinc-500">结构化选项</span>
+          {answerMode ? <p className="mt-0.5 text-[11px] text-zinc-500">点击选项字母即可{answerMode === 'single' ? '设置' : '勾选'}答案</p> : null}
+        </div>
         <button type="button" className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-50" onClick={() => onChange([])}>转为普通正文</button>
       </div>
       <div className="grid grid-cols-1 gap-2">
@@ -112,6 +123,9 @@ function StructuredChoicesEditor({
             key={choice.label}
             id={`${entityKey}-choice-${choice.label}`}
             choice={choice}
+            answerMode={answerMode}
+            selected={selectedAnswerLabels?.includes(choice.label) || false}
+            onAnswerSelectionChange={onAnswerSelectionChange ? () => onAnswerSelectionChange(choice.label) : undefined}
             onChange={(content) => onChange(choices.map((item, itemIndex) => itemIndex === index ? { ...item, content } : item))}
           />
         ))}
@@ -120,7 +134,21 @@ function StructuredChoicesEditor({
   )
 }
 
-function StructuredChoiceRow({ id, choice, onChange }: { id: string; choice: StructuredChoice; onChange: (content: string) => void }) {
+function StructuredChoiceRow({
+  id,
+  choice,
+  answerMode,
+  selected,
+  onAnswerSelectionChange,
+  onChange,
+}: {
+  id: string
+  choice: StructuredChoice
+  answerMode?: ChoiceAnswerMode | null
+  selected: boolean
+  onAnswerSelectionChange?: () => void
+  onChange: (content: string) => void
+}) {
   const [formulaOpen, setFormulaOpen] = useState(false)
 
   function insertFormula(latex: string) {
@@ -130,8 +158,19 @@ function StructuredChoiceRow({ id, choice, onChange }: { id: string; choice: Str
   }
 
   return (
-    <div className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_2rem] items-start gap-2 rounded-lg border border-zinc-200 bg-white p-2.5 focus-within:border-zinc-500 focus-within:ring-1 focus-within:ring-zinc-300 dark:border-zinc-800 dark:bg-zinc-950">
-      <span className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">{choice.label}</span>
+    <div className={`grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_2rem] items-start gap-2 rounded-lg border bg-white p-2.5 focus-within:ring-1 dark:bg-zinc-950 ${selected ? 'border-zinc-900 bg-zinc-50 focus-within:border-zinc-900 focus-within:ring-zinc-400 dark:border-zinc-100 dark:bg-zinc-900/40 dark:focus-within:border-zinc-100 dark:focus-within:ring-zinc-600' : 'border-zinc-200 focus-within:border-zinc-500 focus-within:ring-zinc-300 dark:border-zinc-800'}`}>
+      {answerMode && onAnswerSelectionChange ? (
+        <button
+          type="button"
+          aria-label={`${answerMode === 'single' ? '设置' : '切换'}答案选项 ${choice.label}`}
+          aria-pressed={selected}
+          title={answerMode === 'single' ? `将选项 ${choice.label} 设为答案` : `${selected ? '取消' : '选择'}答案选项 ${choice.label}`}
+          className={`mt-1 flex size-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${selected ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'}`}
+          onClick={onAnswerSelectionChange}
+        >
+          {selected ? <Check className="size-3.5" /> : choice.label}
+        </button>
+      ) : <span className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">{choice.label}</span>}
       <RichMarkdownEditor
         id={id}
         label={`选项 ${choice.label}`}
@@ -176,6 +215,7 @@ export function QuestionContentEditor({
   onCancel,
   title = '编辑题目内容',
   description = '内容以 Markdown 保存，公式与表格可视化编辑。',
+  questionType,
   variant = 'full',
   saving = false,
   disabled = false,
@@ -208,6 +248,11 @@ export function QuestionContentEditor({
   const dirty = dirtyOverride ?? !contentEquals(value, savedValue ?? baseline.current)
   const warnings = useMemo(() => detectCompatibilityWarnings(value), [value])
   const stem = useMemo(() => splitChoices(value.stemMarkdown), [value.stemMarkdown])
+  const answerMode = useMemo(() => choiceAnswerMode(questionType), [questionType])
+  const selectedAnswerLabels = useMemo(
+    () => answerMode ? extractChoiceAnswerLabels(value.answerText, stem.choices, answerMode) : [],
+    [answerMode, stem.choices, value.answerText],
+  )
   const choiceSuggestion = useMemo(
     () => stem.choices.length ? null : suggestChoiceConversion(value.stemMarkdown),
     [stem.choices.length, value.stemMarkdown],
@@ -241,6 +286,23 @@ export function QuestionContentEditor({
 
   function updateField(field: EditorField, next: string) {
     onChange({ ...value, [field]: next })
+  }
+
+  function toggleAnswerSelection(label: string) {
+    if (!answerMode) return
+    const selected = new Set(selectedAnswerLabels)
+    if (answerMode === 'single') {
+      if (selected.has(label)) selected.clear()
+      else {
+        selected.clear()
+        selected.add(label)
+      }
+    } else if (selected.has(label)) {
+      selected.delete(label)
+    } else {
+      selected.add(label)
+    }
+    updateField('answerText', serializeChoiceAnswerLabels(stem.choices, Array.from(selected)))
   }
 
   async function optimizeWithAi(content: AiAssistantQuestionContent) {
@@ -403,6 +465,9 @@ export function QuestionContentEditor({
             onApplySuggestion={choiceSuggestion
               ? () => updateField('stemMarkdown', joinChoices(choiceSuggestion.body, choiceSuggestion.choices))
               : undefined}
+            answerMode={answerMode}
+            selectedAnswerLabels={selectedAnswerLabels}
+            onAnswerSelectionChange={answerMode ? toggleAnswerSelection : undefined}
             onChange={(choices) => updateField('stemMarkdown', joinChoices(stem.body, choices))}
           />
         ) : null}

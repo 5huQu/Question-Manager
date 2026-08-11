@@ -280,6 +280,7 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
               ) : mode === 'form' ? (
                 <QuestionContentEditor
                   entityKey={`${entityType}:${String(draft.id || 'new')}`}
+                  questionType={draft.questionType}
                   value={contentDraft.value}
                   savedValue={initialContent}
                   onChange={(value) => {

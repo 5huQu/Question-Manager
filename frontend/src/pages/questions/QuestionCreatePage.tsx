@@ -320,6 +320,7 @@ export function QuestionCreatePage() {
           <QuestionContentEditor
             entityKey="question:new"
             title="题干、答案与解析"
+            questionType={singleDraft.questionType}
             value={singleContentDraft.value}
             savedValue={EMPTY_CONTENT}
             onChange={singleContentDraft.setValue}

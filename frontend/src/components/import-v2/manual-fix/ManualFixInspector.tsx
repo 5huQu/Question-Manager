@@ -76,6 +76,7 @@ export function ManualFixInspector(props: Props) {
             ) : null}
             <QuestionContentEditor
               entityKey={`candidate:${String(props.candidate?.id || 'unknown')}:${props.contentRevision || 1}`}
+              questionType={props.candidate?.questionType}
               value={{ stemMarkdown: props.stemMarkdown, answerText: props.answerText, analysisMarkdown: props.analysisMarkdown }}
               savedValue={{
                 stemMarkdown: String(props.candidate?.stemMarkdown || ''),

@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { aiAssistantApi, type AiAssistantContentFormatResult } from '@/api/aiAssistant'
 import { QuestionContentEditor } from './QuestionContentEditor'
-import { joinChoices, splitChoices, suggestChoiceConversion, type QuestionContentValue } from './model'
+import { choiceAnswerMode, extractChoiceAnswerLabels, joinChoices, splitChoices, suggestChoiceConversion, type QuestionContentValue } from './model'
 
 const initial: QuestionContentValue = {
   stemMarkdown: '计算 $x+1$。\n\nA. 1\nB. 2\nC. 3\nD. 4',
@@ -49,6 +49,31 @@ describe('QuestionContentEditor', () => {
     const optionA = container.querySelector<HTMLElement>('[role="textbox"][aria-label="选项 A"]')
     expect(optionA).not.toBeNull()
     expect(optionA?.className).toContain('min-h-20')
+  })
+
+  it('highlights a selected single-choice answer and replaces it when another option is clicked', async () => {
+    const onChange = vi.fn()
+    await act(async () => {
+      root.render(<QuestionContentEditor entityKey="question:single-choice" value={initial} questionType="单选题" onChange={onChange} />)
+    })
+
+    const selected = container.querySelector<HTMLButtonElement>('[aria-label="设置答案选项 B"]')!
+    expect(selected.getAttribute('aria-pressed')).toBe('true')
+    const optionC = container.querySelector<HTMLButtonElement>('[aria-label="设置答案选项 C"]')!
+    await act(async () => { optionC.click() })
+    expect(onChange).toHaveBeenLastCalledWith({ ...initial, answerText: 'C' })
+  })
+
+  it('toggles multiple-choice answers in structured options', async () => {
+    const onChange = vi.fn()
+    const value = { ...initial, answerText: 'B' }
+    await act(async () => {
+      root.render(<QuestionContentEditor entityKey="question:multiple-choice" value={value} questionType="多选题" onChange={onChange} />)
+    })
+
+    const optionA = container.querySelector<HTMLButtonElement>('[aria-label="切换答案选项 A"]')!
+    await act(async () => { optionA.click() })
+    expect(onChange).toHaveBeenLastCalledWith({ ...value, answerText: 'A、B' })
   })
 
   it('opens the formula keyboard directly from the rich toolbar and a structured choice', async () => {
@@ -237,5 +262,16 @@ describe('structured choice helpers', () => {
         { label: 'D', content: '丁' },
       ],
     })
+  })
+
+  it('recognizes common answer-key formats only for choice question types', () => {
+    const choices = splitChoices(initial.stemMarkdown).choices
+    expect(choiceAnswerMode('单项选择题')).toBe('single')
+    expect(choiceAnswerMode('多选题')).toBe('multiple')
+    expect(choiceAnswerMode('填空题')).toBeNull()
+    expect(extractChoiceAnswerLabels('故选 B', choices, 'single')).toEqual(['B'])
+    expect(extractChoiceAnswerLabels('答案为 **A**', choices, 'single')).toEqual(['A'])
+    expect(extractChoiceAnswerLabels('答案：A，C', choices, 'multiple')).toEqual(['A', 'C'])
+    expect(extractChoiceAnswerLabels('B，因为导数为零', choices, 'single')).toEqual([])
   })
 })
