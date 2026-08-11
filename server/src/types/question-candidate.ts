@@ -23,6 +23,7 @@ export type CandidateIssueCode =
   | 'markdown_render_error'
   | 'possible_presentation_noise'
   | 'manual_review_required'
+  | 'model_source_fragment_unverified'
   | 'model_source_fragment_rejected'
   | 'image_download_failed'
 

@@ -659,13 +659,7 @@ function reconstructField(segments: SplitSegment[], spans: InlineSpan[]) {
 function solutionFromSourceFragments(
   item: SplitItem,
   segments: SplitSegment[],
-  diagnostics: string[],
-  itemLabel: string,
 ) {
-  const reject = (reason: string) => {
-    diagnostics.push(`${itemLabel}的答案解析边界未通过 OCR 原文核验：${reason}`)
-    return { answerText: '', analysisMarkdown: '', accepted: false as const, reason }
-  }
   const hasSourceFragments = item.solution_line_ranges !== undefined
     || item.solution_segment_ids !== undefined
     || item.answer_source_text !== undefined
@@ -678,6 +672,19 @@ function solutionFromSourceFragments(
     : typeof item.analysis_source_text === 'string' ? item.analysis_source_text : ''
   const sourceText = sourceAfterQuestionMarker(segments.map((segment) => segment.text).join(''))
   const sourceWithoutTrailingWhitespace = sourceText.replace(/\s+$/u, '')
+  const useModelFallback = (reason: string) => {
+    // A model preview is an editable review surface. Exact source matching remains
+    // valuable provenance, but should not erase an otherwise useful answer such as
+    // `B` when OCR encoded it as `$\\mathrm{B}$`. Keep the model fields, flag the
+    // item for review, and let the user decide in the visual editor.
+    const modelAnalysis = analysisStartSourceText.trim()
+    return {
+      answerText: answerSourceText.trim(),
+      analysisMarkdown: modelAnalysis.length > 32 ? modelAnalysis : sourceWithoutTrailingWhitespace.trim(),
+      accepted: false as const,
+      reason,
+    }
+  }
   const analysisAnchorPositions: number[] = []
   if (analysisStartSourceText) {
     let cursor = sourceWithoutTrailingWhitespace.indexOf(analysisStartSourceText, Math.max(0, answerSourceText.length))
@@ -688,13 +695,13 @@ function solutionFromSourceFragments(
   }
   const analysisStart = analysisAnchorPositions[0] ?? sourceWithoutTrailingWhitespace.length
   const beforeAnalysis = sourceWithoutTrailingWhitespace.slice(answerSourceText.length, analysisStart)
-  if (!sourceWithoutTrailingWhitespace) return reject('模型没有提供可核验的答案解析原文范围。')
-  if (!answerSourceText && !analysisStartSourceText) return reject('模型没有给出答案或解析起始片段。')
-  if (!sourceWithoutTrailingWhitespace.startsWith(answerSourceText)) return reject('模型给出的答案片段不是 OCR 原文的开头。')
-  if (analysisStartSourceText && analysisAnchorPositions.length === 0) return reject('模型给出的解析起始片段未在 OCR 原文中找到。')
-  if (analysisAnchorPositions.length > 1) return reject('解析起始片段在 OCR 原文中出现多次，无法唯一确定边界。')
-  if (answerSourceText.length > analysisStart) return reject('解析起始片段落在答案片段内部。')
-  if (/\S/u.test(beforeAnalysis)) return reject('答案结束与解析起始之间仍有未归属的 OCR 正文。')
+  if (!sourceWithoutTrailingWhitespace) return useModelFallback('模型没有提供可核验的答案解析原文范围。')
+  if (!answerSourceText && !analysisStartSourceText) return useModelFallback('模型没有给出答案或解析起始片段。')
+  if (!sourceWithoutTrailingWhitespace.startsWith(answerSourceText)) return useModelFallback('模型给出的答案片段不是 OCR 原文的开头。')
+  if (analysisStartSourceText && analysisAnchorPositions.length === 0) return useModelFallback('模型给出的解析起始片段未在 OCR 原文中找到。')
+  if (analysisAnchorPositions.length > 1) return useModelFallback('解析起始片段在 OCR 原文中出现多次，无法唯一确定边界。')
+  if (answerSourceText.length > analysisStart) return useModelFallback('解析起始片段落在答案片段内部。')
+  if (/\S/u.test(beforeAnalysis)) return useModelFallback('答案结束与解析起始之间仍有未归属的 OCR 正文。')
   const answerEnd = answerSourceText.length
   return {
     answerText: sourceWithoutTrailingWhitespace.slice(0, answerEnd).trim(),
@@ -740,9 +747,9 @@ function candidateFromModelItem(
     ? { reason: String(item.number_repair.reason || '模型修复题号'), confidence: Math.max(0, Math.min(1, Number(item.number_repair.confidence || 0))) }
     : undefined
   const stemMarkdown = role === 'solutions' ? '' : removeLeadingQuestionMarker(reconstructField(stemSegments, []))
-  const sourceFragments = role === 'questions' ? undefined : solutionFromSourceFragments(item, solutionSegments, diagnostics, label)
-  const answerText = role === 'questions' ? '' : sourceFragments?.accepted ? sourceFragments.answerText : reconstructField(answerSegments, answerSpans)
-  const analysisMarkdown = role === 'questions' ? '' : sourceFragments?.accepted ? sourceFragments.analysisMarkdown : reconstructField(analysisSegments, analysisSpans)
+  const sourceFragments = role === 'questions' ? undefined : solutionFromSourceFragments(item, solutionSegments)
+  const answerText = role === 'questions' ? '' : sourceFragments ? sourceFragments.answerText : reconstructField(answerSegments, answerSpans)
+  const analysisMarkdown = role === 'questions' ? '' : sourceFragments ? sourceFragments.analysisMarkdown : reconstructField(analysisSegments, analysisSpans)
   const sourceRefs = [
     ...rangesForSegments(document, stemSegments, 'stem'),
     ...rangesForSegments(document, solutionSegments, 'answer'),
@@ -765,9 +772,9 @@ function candidateFromModelItem(
   if (!stemMarkdown && role !== 'solutions') issues.push({ code: 'missing_stem', severity: 'error', message: `${label}缺少题干。` })
   if (sourceFragments && !sourceFragments.accepted) {
     issues.push({
-      code: 'model_source_fragment_rejected',
+      code: 'model_source_fragment_unverified',
       severity: 'warning',
-      message: `${label}的模型答案解析边界未通过 OCR 原文核验（${sourceFragments.reason}）。为避免改写公式或正文，系统未写入答案和解析。`,
+      message: `${label}的模型答案解析未逐字通过 OCR 原文核验（${sourceFragments.reason}）。已保留模型返回，请人工确认。`,
     })
   }
   if (!answerText && role !== 'questions') issues.push({ code: 'missing_answer', severity: 'warning', message: `${label}缺少答案。` })
@@ -793,7 +800,7 @@ function candidateFromModelItem(
     issues,
     parseDiagnostics: [
       ...(repair ? [{ code: 'model_repaired_question_no', severity: repair.confidence >= 0.8 ? 'info' as const : 'warning' as const, questionNo, message: `模型根据上下文将 OCR 题号「${rawQuestionNo}」修复为「${questionNo}」：${repair.reason}` }] : []),
-      ...(sourceFragments && !sourceFragments.accepted ? [{ code: 'model_source_fragment_rejected', severity: 'warning' as const, questionNo, message: `${label}的模型答案解析边界未通过 OCR 原文核验：${sourceFragments.reason}` }] : []),
+      ...(sourceFragments && !sourceFragments.accepted ? [{ code: 'model_source_fragment_unverified', severity: 'warning' as const, questionNo, message: `${label}的模型答案解析未逐字通过 OCR 原文核验：${sourceFragments.reason}。已保留模型返回，需人工确认。` }] : []),
     ],
     parserConfigSnapshot: { source: 'model-assisted-source-fragment-split-v2', rawQuestionNo: rawQuestionNo || undefined, numberRepair: repair || undefined },
     createdAt: timestamp,
