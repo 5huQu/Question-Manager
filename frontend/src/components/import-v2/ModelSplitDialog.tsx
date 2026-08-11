@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { Modal } from '@/components/dialogs/Modal'
 import { Button, Input } from '@/components/ui'
+import { MarkdownContent } from '@/components/MarkdownContent'
 import { QuestionContentEditor } from '@/components/questions/editor'
 import type { QuestionContentValue } from '@/components/questions/editor/model'
 import type { ModelSplitApplyItem, ModelSplitPreview, ModelSplitPreviewItem, ModelSplitRequestOptions } from '@/api/importV2'
@@ -54,6 +55,7 @@ const statusBadgeStyles = {
 const NOTE_PRESETS = [
   '选择、填空题使用“题号. 答案 解析正文”格式，答案与解析紧接在同一行。',
   '解析稿按题号排列，题号之后先给出答案，再给出该题解析。',
+  '选择题答案位于解析末尾（如“故选 A”）；请提取答案，但完整保留原解析。',
   '原卷与答案解析是分开的两份识别稿，请按题号对应，不要把解析当作题干。',
 ]
 
@@ -139,7 +141,7 @@ export function ModelSplitDialog({
   const reviewCount = draftItems.filter((item) => issueState(item).tone !== 'success').length
   const readyCount = draftItems.length - reviewCount
   const repairCount = draftItems.filter((item) => item.numberRepair).length
-  const hasBlockingDiagnostics = Boolean(preview?.diagnostics.length)
+  const hasDiagnostics = Boolean(preview?.diagnostics.length)
   const diagnosticCount = preview?.diagnostics.length || 0
   const status = selected ? issueState(selected) : null
   const translatedWarnings = useMemo(() => (preview?.warnings || []).map(translateWarning), [preview?.warnings])
@@ -198,13 +200,13 @@ export function ModelSplitDialog({
   return (
     <Modal
       title="AI 模型拆题核对"
-      desc="基于智能视觉与上下文语义判断题目边界和题号，保留原生公式及图片标识符。"
+      desc="模型草稿可编辑，OCR 原稿只读对照；确认后才会写入候选题。公式和图片标识符保持原样。"
       wide
       locked
       surface="glass"
       onClose={applying ? () => undefined : onClose}
       footer={
-        <div className="question-edit-glass-footer flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-black/6 dark:border-white/8 bg-white/70 backdrop-blur-xl dark:bg-zinc-950/70">
+        <div className="question-edit-glass-footer flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-black/6 dark:border-white/8 bg-white/35 dark:bg-black/25">
           <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
             {preview ? (
               <>
@@ -267,7 +269,7 @@ export function ModelSplitDialog({
                 size="sm"
                 icon={applying ? LoaderCircle : Check}
                 onClick={apply}
-                disabled={loading || !isComplete || applying || hasBlockingDiagnostics || !preview.id || !draftItems.length}
+                disabled={loading || !isComplete || applying || !preview.id || !draftItems.length}
                 className="bg-zinc-900 text-white shadow-sm hover:bg-zinc-800 active:scale-[0.98] dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 {applying ? '应用中...' : loading ? '等待 AI 生成完成' : '应用全部结果'}
@@ -278,8 +280,8 @@ export function ModelSplitDialog({
       }
     >
       {!preview && !loading ? (
-        <div className="question-edit-glass-inner flex min-h-60 flex-col items-center justify-center gap-3 rounded-2xl border border-black/6 p-8 text-center dark:border-white/8">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-zinc-100 text-zinc-600 shadow-2xs dark:bg-zinc-800 dark:text-zinc-300">
+        <div className="flex min-h-60 flex-col items-center justify-center gap-5 p-4 sm:p-6 text-center">
+          <div className="flex size-13 items-center justify-center rounded-2xl border border-black/6 bg-white/65 shadow-2xs dark:border-white/10 dark:bg-white/10">
             <Sparkles className="size-6 text-zinc-700 dark:text-zinc-200" />
           </div>
           <div>
@@ -288,7 +290,7 @@ export function ModelSplitDialog({
               自动识别复杂试卷题目边界、格式化题号并关联答案解析。生成结果提供全界面实时预览与对比核对。
             </p>
           </div>
-          <div className="w-full max-w-2xl rounded-2xl border border-black/6 bg-white/90 p-3 text-left shadow-2xs dark:border-white/8 dark:bg-zinc-900/95">
+          <div className="w-full max-w-2xl rounded-2xl border border-black/6 bg-white/92 p-4 text-left shadow-md dark:border-white/8 dark:bg-zinc-900/94">
             <div className="flex items-center justify-between gap-3">
               <label htmlFor="model-split-note" className="text-xs font-semibold text-zinc-800 dark:text-zinc-100">本卷识别备注 <span className="font-normal text-zinc-400">（可选）</span></label>
               <span className="text-[11px] tabular-nums text-zinc-400">{assistantNote.length}/800</span>
@@ -299,24 +301,30 @@ export function ModelSplitDialog({
               maxLength={800}
               onChange={(event) => setAssistantNote(event.target.value)}
               placeholder="例如：选择、填空题的解析格式为“题号. 答案 解析正文”，答案与解析在同一行。"
-              className="mt-2 min-h-20 w-full resize-y rounded-xl border border-black/8 bg-white/80 px-3 py-2 text-xs leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/8 dark:border-white/10 dark:bg-zinc-950/70 dark:text-zinc-100 dark:focus:border-zinc-500"
+              className="mt-2.5 min-h-24 w-full resize-y rounded-xl border border-black/8 bg-white/75 px-3 py-2.5 text-xs leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/8 dark:border-white/10 dark:bg-zinc-950/75 dark:text-zinc-100 dark:focus:border-zinc-500"
             />
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
               <span className="mr-1 text-[11px] text-zinc-400">快捷说明</span>
               {NOTE_PRESETS.map((preset) => (
                 <button
                   key={preset}
                   type="button"
                   onClick={() => appendNotePreset(preset)}
-                  className="rounded-full border border-black/8 bg-white/70 px-2.5 py-1 text-[11px] text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-white hover:text-zinc-900 active:scale-[0.98] dark:border-white/10 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                  className="rounded-full border border-black/8 bg-white/80 px-2.5 py-1 text-[11px] text-zinc-600 transition-all hover:border-zinc-300 hover:bg-white hover:text-zinc-900 active:scale-[0.98] dark:border-white/10 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 shadow-2xs"
                 >
-                  {preset.startsWith('选择') ? '答案与解析同行' : preset.startsWith('解析稿') ? '答案在解析开头' : '原卷与解析分离'}
+                  {preset.startsWith('选择、')
+                    ? '答案与解析同行'
+                    : preset.startsWith('解析稿')
+                      ? '答案在解析开头'
+                      : preset.startsWith('选择题')
+                        ? '答案在解析末尾'
+                        : '原卷与解析分离'}
                 </button>
               ))}
             </div>
             <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">备注仅用于本次模型识别，不会写入题库；OCR 正文、公式和图片标识符仍由本地原样重建。</p>
           </div>
-          <Button size="sm" icon={WandSparkles} onClick={startSplit} className="mt-2">
+          <Button size="sm" icon={WandSparkles} onClick={startSplit} className="mt-1">
             开始 AI 拆题
           </Button>
         </div>
@@ -365,7 +373,7 @@ export function ModelSplitDialog({
                 <span className="min-w-0 truncate text-zinc-500 dark:text-zinc-400">{stream.message}</span>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {hasBlockingDiagnostics ? (
+                {hasDiagnostics ? (
                   <button
                     type="button"
                     onClick={() => setShowDiagnostics((value) => !value)}
@@ -373,7 +381,7 @@ export function ModelSplitDialog({
                     className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/25 bg-rose-500/10 px-2.5 py-1 text-[11px] font-medium text-rose-800 transition-colors hover:bg-rose-500/20 active:scale-[0.98] dark:text-rose-200"
                   >
                     <ShieldAlert className="size-3.5 text-rose-600 dark:text-rose-400" />
-                    <span>安全核验 ({diagnosticCount})</span>
+                    <span>结构提示 ({diagnosticCount})</span>
                     <ChevronDown className={`size-3 transition-transform duration-200 motion-reduce:transition-none ${showDiagnostics ? 'rotate-180' : ''}`} />
                   </button>
                 ) : null}
@@ -404,9 +412,9 @@ export function ModelSplitDialog({
                   <div className="flex items-start gap-2">
                     <ShieldAlert className="mt-0.5 size-4 shrink-0 text-rose-600 dark:text-rose-400" />
                     <div className="min-w-0">
-                      <div className="font-semibold text-rose-800 dark:text-rose-200">安全核验未通过，结果尚不能一键应用</div>
+                      <div className="font-semibold text-rose-800 dark:text-rose-200">模型结构存在提示，请对照 OCR 原稿后确认</div>
                       <p className="mt-1 text-[11px] leading-relaxed text-rose-800/80 dark:text-rose-200/80">
-                        系统没有采用未能与 OCR 原文对应的模型内容，以避免改写公式或正文。请重新生成，或关闭此面板后在题目核对页人工修正。
+                        这类提示不再阻止应用。模型草稿与 OCR 原稿会同时保留，你可以在本面板修正后再应用，后续仍会进入普通题目核对流程。
                       </p>
                     </div>
                   </div>
@@ -442,7 +450,7 @@ export function ModelSplitDialog({
           {/* 3-Column macOS Split View Layout */}
           <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[230px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_250px]">
             {/* Sidebar: Question List */}
-            <aside className="question-edit-glass-inner flex min-h-0 flex-col overflow-hidden rounded-2xl border border-black/6 bg-white/70 dark:border-white/8 dark:bg-zinc-900/70 shadow-2xs">
+            <aside className="question-edit-glass-inner flex min-h-0 flex-col overflow-hidden rounded-2xl border border-black/6 bg-white/85 dark:border-white/8 dark:bg-zinc-900/85 shadow-2xs">
               <div className="shrink-0 border-b border-black/6 px-3.5 py-3 dark:border-white/8">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">拆分结果</span>
@@ -534,7 +542,7 @@ export function ModelSplitDialog({
 
             {/* Main Canvas: Question Content Editor */}
             {selected ? (
-              <main className="question-edit-glass-inner flex min-h-0 flex-col overflow-hidden rounded-2xl border border-black/6 bg-white/80 p-3.5 dark:border-white/8 dark:bg-zinc-900/80 shadow-2xs">
+              <main className="question-edit-glass-inner flex min-h-0 flex-col overflow-hidden rounded-2xl border border-black/6 bg-white/92 p-3.5 dark:border-white/8 dark:bg-zinc-900/94 shadow-2xs">
                 {/* Header Bar */}
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-black/6 pb-3 dark:border-white/8">
                   <div className="flex items-center gap-3">
@@ -568,6 +576,11 @@ export function ModelSplitDialog({
                   </div>
                 ) : null}
 
+                <div className="mb-3 flex items-center gap-2 rounded-xl border border-sky-500/18 bg-sky-500/8 px-3 py-2 text-[11px] leading-relaxed text-sky-900 dark:text-sky-200">
+                  <Info className="size-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
+                  <span><strong className="font-semibold">模型草稿（可编辑）</strong>：右侧保留同一题的 OCR 原稿，可直接对照后修改。</span>
+                </div>
+
                 {/* Main Content Editor */}
                 <QuestionContentEditor
                   key={`model-split:${preview.id}:${selectedIndex}`}
@@ -586,17 +599,41 @@ export function ModelSplitDialog({
               <div className="flex items-center justify-center text-sm text-zinc-500">暂无题目</div>
             )}
 
-            {/* Right Panel: Inspector Panel */}
-            <aside className="question-edit-glass-inner flex min-h-0 flex-col overflow-y-auto rounded-2xl border border-black/6 bg-white/70 p-3.5 dark:border-white/8 dark:bg-zinc-900/70 shadow-2xs space-y-4">
+            {/* Right Panel: OCR source comparison and diagnostics */}
+            <aside className="question-edit-glass-inner flex min-h-0 flex-col overflow-y-auto rounded-2xl border border-black/6 bg-white/85 p-3.5 dark:border-white/8 dark:bg-zinc-900/85 shadow-2xs space-y-4">
               <div className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 border-b border-black/6 pb-2.5 dark:border-white/8">
                 <FileText className="size-4 text-zinc-500" />
-                核对诊断与来源
+                OCR 原稿对照与核对
               </div>
 
               {selected ? (
                 <>
-                  {/* Issue Diagnostics */}
                   <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">OCR 原稿（只读）</span>
+                      <span className="rounded-full border border-black/6 bg-white/70 px-2 py-0.5 text-[10px] font-medium text-zinc-500 dark:border-white/8 dark:bg-zinc-800/80 dark:text-zinc-400">不会随草稿修改</span>
+                    </div>
+                    <div className="max-h-72 space-y-3 overflow-y-auto rounded-xl border border-black/6 bg-white/65 p-2.5 shadow-inner dark:border-white/8 dark:bg-zinc-950/35">
+                      {selected.sourceStemMarkdown ? (
+                        <section>
+                          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">题干原稿</div>
+                          <MarkdownContent className="text-xs leading-relaxed text-zinc-700 dark:text-zinc-300" content={selected.sourceStemMarkdown} />
+                        </section>
+                      ) : null}
+                      {selected.sourceSolutionMarkdown ? (
+                        <section className={selected.sourceStemMarkdown ? 'border-t border-black/6 pt-2.5 dark:border-white/8' : ''}>
+                          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">答案与解析原稿</div>
+                          <MarkdownContent className="text-xs leading-relaxed text-zinc-700 dark:text-zinc-300" content={selected.sourceSolutionMarkdown} />
+                        </section>
+                      ) : null}
+                      {!selected.sourceStemMarkdown && !selected.sourceSolutionMarkdown ? (
+                        <p className="text-xs text-zinc-400">本次预览未提供 OCR 原稿片段；请重新生成以查看对照。</p>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* Issue Diagnostics */}
+                  <div className="space-y-2 border-t border-black/6 pt-3 dark:border-white/8">
                     <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">结构提示</span>
                     {selected.issues.length ? (
                       <div className="space-y-2">

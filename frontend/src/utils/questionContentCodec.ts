@@ -13,6 +13,7 @@ const CHOICE_MARKER = /^\s*([A-D])\s*[.．、:：]\s*(.*)$/
 const TABLE_SEPARATOR_CELL = /^:?-{3,}:?$/
 const UNSUPPORTED_BLOCK = /^(?:\s{0,3}(?:#{1,6}\s|>|[-+*]\s|\d+[.)]\s|```|~~~)|\s*<!--|\s*<\/?[A-Za-z]|\s*!\[[^\]]*\]\()/
 const DOC2X_FIGURE_MARKER = /^\s*<!--\s*DOC2X_FIGURE:[^>\s]+\s*-->\s*$/
+const NUMBERED_STEP_MARKER = /^\s*\d+[.)]\s+\S/
 
 export function sanitizePastedHtml(html: string): string {
   if (!html) return ''
@@ -158,6 +159,18 @@ function rawNode(markdown: string, reason: 'unsupported-markdown' | 'unsafe-html
   }
 }
 
+/**
+ * OCR solution documents commonly use `1. ...` as a plain step label rather
+ * than a semantic Markdown list. A standalone step can be edited by the
+ * visual editor without losing any source text, so it should not trigger the
+ * unsupported-Markdown warning. Multi-item and nested lists remain raw.
+ */
+function isStandaloneNumberedStep(block: string) {
+  const lines = block.split('\n')
+  if (!NUMBERED_STEP_MARKER.test(lines[0])) return false
+  return lines.slice(1).every((line) => !NUMBERED_STEP_MARKER.test(line) && !/^\s{2,}(?:[-+*]|\d+[.)])\s+\S/.test(line))
+}
+
 export function markdownToEditorDocument(source: string): EditorDocumentV1 {
   const normalized = normalizeLatexMathDelimiters(String(source ?? '').replace(/\r\n?/g, '\n'))
   const sanitized = sanitizeMarkdown(normalized)
@@ -213,7 +226,7 @@ export function markdownToEditorDocument(source: string): EditorDocumentV1 {
     const block = blockLines.join('\n')
     const reason = sanitized.changed && /<\/?[A-Za-z]|<!--/.test(block) ? 'unsafe-html-removed' : 'unsupported-markdown'
     if (DOC2X_FIGURE_MARKER.test(block)) rawNode(block, 'unsupported-markdown', content, warnings, false)
-    else if (UNSUPPORTED_BLOCK.test(block) || /(?:\*\*|__|~~|`)[^\n]+(?:\*\*|__|~~|`)/.test(block)) rawNode(block, reason, content, warnings)
+    else if ((UNSUPPORTED_BLOCK.test(block) && !isStandaloneNumberedStep(block)) || /(?:\*\*|__|~~|`)[^\n]+(?:\*\*|__|~~|`)/.test(block)) rawNode(block, reason, content, warnings)
     else content.push({ type: 'paragraph', content: parseInline(block) })
   }
 

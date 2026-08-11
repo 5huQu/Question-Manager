@@ -18,6 +18,13 @@ const candidate = {
 }
 
 assert.equal(assertWithSchema(candidate, candidateSchema), candidate)
+assert.equal(
+  assertWithSchema({
+    ...candidate,
+    issues: [{ code: 'model_source_fragment_unverified', severity: 'warning', message: '模型内容保留，需人工确认。' }],
+  }, candidateSchema).issues[0].code,
+  'model_source_fragment_unverified',
+)
 assert.throws(
   () => assertWithSchema({ ...candidate, figures: [{ ...candidate.figures[0], bbox: [1, 2, '3', 4] }] }, candidateSchema),
   /figures\[0\]\.bbox\[2\].*有限数字/,

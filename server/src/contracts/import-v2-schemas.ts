@@ -19,6 +19,10 @@ const candidateIssueCodes = [
   'missing_question_no', 'duplicate_question_no', 'missing_stem', 'missing_answer', 'missing_analysis', 'choice_options_unrecognized',
   'missing_solution', 'solution_conflict', 'unmatched_solution', 'unplaced_figure', 'possible_cross_page',
   'formula_parse_error', 'markdown_render_error', 'possible_presentation_noise', 'manual_review_required',
+  // Model-assisted splitting preserves an answer/analysis even when its exact
+  // OCR source fragment cannot be verified. It is a review warning, not an
+  // invalid candidate response.
+  'model_source_fragment_unverified', 'model_source_fragment_rejected',
   'image_download_failed',
 ] as const
 

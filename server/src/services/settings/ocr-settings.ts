@@ -5,6 +5,14 @@ import { storageRoot, pythonRoot } from '../../config.js'
 import { parseJson } from '../../utils/json.js'
 import { pythonCommand, pythonEnv } from './python.js'
 import { readAppSettings, writeAppSettings } from './app-settings.js'
+import {
+  DEFAULT_MODEL_SPLIT_SYSTEM_PROMPT,
+  DEFAULT_MODEL_SPLIT_USER_PROMPT,
+} from '../import-flow-v2/model-split-prompt.js'
+import {
+  CLASSIFICATION_CONTEXT_BLOCK_SAMPLE,
+  CLASSIFICATION_PAYLOAD_SAMPLE,
+} from './classification-prompt.js'
 
 type OcrProvider = 'legacy' | 'doc2x' | 'glm'
 
@@ -35,6 +43,7 @@ export function readAiAssistantConfig() {
     apiBaseUrl: values.OCR_CLEANUP_API_BASE_URL || 'https://api.deepseek.com',
     apiKey: process.env.OCR_CLEANUP_API_KEY || values.OCR_CLEANUP_API_KEY || '',
     model: values.OCR_CLEANUP_MODEL || 'deepseek-v4-flash',
+    ...readModelSplitPromptSettings(),
   }
 }
 
@@ -52,6 +61,32 @@ export function ocrPromptSettingsPath() {
   const configDir = path.join(storageRoot, 'config')
   fs.mkdirSync(configDir, { recursive: true })
   return path.join(configDir, 'ocr_prompt_settings.json')
+}
+
+function readStoredPromptSettings() {
+  const promptPath = ocrPromptSettingsPath()
+  return fs.existsSync(promptPath)
+    ? parseJson<Record<string, string>>(fs.readFileSync(promptPath, 'utf8'), {})
+    : {}
+}
+
+/**
+ * Model splitting reads this path for every request. Keep it separate from
+ * readOcrPromptSettings(), whose OCR defaults may invoke the Python runner.
+ */
+export function readModelSplitPromptSettings() {
+  const payload = readStoredPromptSettings()
+  const legacySupplement = String(payload.model_split_prompt || '').trim()
+  const systemPrompt = String(payload.model_split_system_prompt || '').trim()
+  const userPrompt = String(payload.model_split_user_prompt || '').trim()
+  return {
+    // `model_split_prompt` was briefly used as an appended hint. Preserve it
+    // as part of the full prompt if a local beta build happened to save one.
+    modelSplitSystemPrompt: systemPrompt || (legacySupplement
+      ? `${DEFAULT_MODEL_SPLIT_SYSTEM_PROMPT}\n\n补充版式要求：\n${legacySupplement}`
+      : DEFAULT_MODEL_SPLIT_SYSTEM_PROMPT),
+    modelSplitUserPrompt: userPrompt || DEFAULT_MODEL_SPLIT_USER_PROMPT,
+  }
 }
 
 export function normalizeOcrProvider(value: unknown): OcrProvider {
@@ -94,6 +129,7 @@ export function readEffectivePromptDefaults() {
     cleanupUserPrompt: '',
     classificationSystemPrompt: '',
     classificationUserPrompt: '',
+    ...readModelSplitPromptSettings(),
   }
   try {
     const code = [
@@ -133,7 +169,7 @@ export function readOcrPromptSettings() {
   const promptPath = ocrPromptSettingsPath()
   const defaults = readEffectivePromptDefaults()
   if (!fs.existsSync(promptPath)) return defaults
-  const payload = parseJson<Record<string, string>>(fs.readFileSync(promptPath, 'utf8'), {})
+  const payload = readStoredPromptSettings()
   const promptValue = (key: string, fallback: string) => {
     const value = String(payload[key] || '')
     if (key === 'classification_system_prompt' && value.trim().startsWith(LEGACY_CLASSIFICATION_SYSTEM_PROMPT_PREFIX)) {
@@ -150,6 +186,12 @@ export function readOcrPromptSettings() {
     cleanupUserPrompt: promptValue('cleanup_user_prompt', defaults.cleanupUserPrompt),
     classificationSystemPrompt: promptValue('classification_system_prompt', defaults.classificationSystemPrompt),
     classificationUserPrompt: promptValue('classification_user_prompt', defaults.classificationUserPrompt),
+    // Read-only preview fields so the Settings page can display the full chain:
+    // system prompt = base template + auto-appended batch context block; user
+    // prompt = base template with {payload} substituted by the model input JSON.
+    classificationContextBlock: CLASSIFICATION_CONTEXT_BLOCK_SAMPLE,
+    classificationPayloadSample: CLASSIFICATION_PAYLOAD_SAMPLE,
+    ...readModelSplitPromptSettings(),
   }
 }
 
@@ -164,6 +206,8 @@ export function writeOcrPromptSettings(input: Record<string, unknown>) {
     cleanup_user_prompt: String(input.cleanupUserPrompt ?? existing.cleanupUserPrompt ?? ''),
     classification_system_prompt: String(input.classificationSystemPrompt ?? existing.classificationSystemPrompt ?? ''),
     classification_user_prompt: String(input.classificationUserPrompt ?? existing.classificationUserPrompt ?? ''),
+    model_split_system_prompt: String(input.modelSplitSystemPrompt ?? existing.modelSplitSystemPrompt ?? ''),
+    model_split_user_prompt: String(input.modelSplitUserPrompt ?? existing.modelSplitUserPrompt ?? ''),
   }
   fs.writeFileSync(ocrPromptSettingsPath(), `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
   return readOcrPromptSettings()

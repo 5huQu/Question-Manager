@@ -344,6 +344,14 @@ export type OcrSettings = {
   cleanupUserPrompt: string
   classificationSystemPrompt: string
   classificationUserPrompt: string
+  /** 只读：自动追加到分类 System Prompt 末尾的批次上下文与分类策略块（示例渲染）。 */
+  classificationContextBlock: string
+  /** 只读：分类 User Prompt 中 {payload} 的示例 JSON，用于完整链路预览。 */
+  classificationPayloadSample: string
+  /** 模型辅助拆题使用的完整 System Prompt。 */
+  modelSplitSystemPrompt: string
+  /** 模型辅助拆题使用的完整 User Prompt 模板，保留 {payload} 以注入本次 OCR 数据。 */
+  modelSplitUserPrompt: string
 }
 
 export type SlicerRuleEntry = {

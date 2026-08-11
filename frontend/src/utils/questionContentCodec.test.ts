@@ -55,6 +55,15 @@ describe('questionContentCodec', () => {
     expect(editorDocumentToMarkdown(document)).toBe(markdown)
   })
 
+  it('keeps standalone numbered solution steps visually editable without a warning', () => {
+    const markdown = '1. 求函数的定义域：\n\n由根式性质可得：$x^2 - 2x \\ge 0$。'
+    const document = markdownToEditorDocument(markdown)
+
+    expect(document.content[0]).toMatchObject({ type: 'paragraph' })
+    expect(document.warnings).toHaveLength(0)
+    expect(editorDocumentToMarkdown(document)).toBe(markdown)
+  })
+
   it('preserves Doc2X figure markers without treating internal metadata as unsupported Markdown', () => {
     const markdown = '解析前\n\n<!-- DOC2X_FIGURE:asset-1 -->\n\n解析后'
     const document = markdownToEditorDocument(markdown)

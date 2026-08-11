@@ -435,7 +435,7 @@ export function SettingsPage() {
         {activeTab === 'ai' && (
           <SettingsCard
             title="AI 助手与自动标签"
-            desc="用于题目批次自动标签和难度评估。"
+            desc="用于题目批次自动标签、难度评估，以及模型辅助拆题的版式识别。"
             footer={<SaveButton label="保存 AI 助手设置" loading={isSaving} onClick={() => save('AI 助手')} />}
           >
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -483,6 +483,59 @@ export function SettingsPage() {
                   onChange={(value) => setDraft({ ...draft, classificationUserPrompt: value })}
                 />
                 <p className="text-[11px] text-zinc-400">`classification_context` 会随每道题一起传给模型，用于自动选择分类语境。</p>
+              </Field>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-900/20">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">完整链路预览</h4>
+                <span className="text-[11px] text-zinc-400 dark:text-zinc-500">只读，随上方模板实时更新</span>
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-zinc-500 dark:text-zinc-400">
+                System Prompt 为“基础模板 + 系统自动追加的批次上下文与分类策略”；User Prompt 中的 {'{payload}'} 会被替换为待分类 JSON（下方为示例结构与值）。实际运行时按当前批次的学段、科目、资料类型等填充。
+              </p>
+              <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div>
+                  <p className="mb-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">System Prompt（完整请求）</p>
+                  <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-all rounded border border-zinc-200 bg-white p-2.5 text-[11px] leading-5 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
+                    {[draft.classificationSystemPrompt?.trim(), draft.classificationContextBlock].filter(Boolean).join('\n\n')}
+                  </pre>
+                </div>
+                <div>
+                  <p className="mb-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">User Prompt（完整请求，{'{payload}'} 已替换为示例）</p>
+                  <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-all rounded border border-zinc-200 bg-white p-2.5 text-[11px] leading-5 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
+                    {(draft.classificationUserPrompt ?? '').includes('{payload}')
+                      ? (draft.classificationUserPrompt ?? '').replace('{payload}', draft.classificationPayloadSample ?? '')
+                      : [draft.classificationUserPrompt, draft.classificationPayloadSample].filter(Boolean).join('\n\n')}
+                  </pre>
+                </div>
+              </div>
+            </div>
+
+            <SectionTitle className="pt-2">模型辅助拆题 Prompt</SectionTitle>
+            <div className="grid grid-cols-1 gap-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+              <p className="text-[11px] leading-5 text-zinc-400">
+                这里展示并配置模型辅助拆题的完整请求模板。默认值就是当前内置 Prompt；修改后从下一次拆题开始生效。
+              </p>
+              <Field label="模型拆题 System Prompt">
+                <TextArea
+                  mono
+                  rows={18}
+                  value={draft.modelSplitSystemPrompt ?? ''}
+                  onChange={(value) => setDraft({ ...draft, modelSplitSystemPrompt: value })}
+                />
+              </Field>
+              <Field label="模型拆题 User Prompt 模板">
+                <TextArea
+                  mono
+                  rows={7}
+                  value={draft.modelSplitUserPrompt ?? ''}
+                  placeholder="{payload}"
+                  onChange={(value) => setDraft({ ...draft, modelSplitUserPrompt: value })}
+                />
+                <p className="mt-1.5 text-[11px] leading-5 text-zinc-400">
+                  使用 <code>{'{payload}'}</code> 插入本次完整的动态输入：文档角色、行号规则、输出 JSON Schema、用户识别备注与带行号 OCR Markdown。若删除该占位符，系统仍会在模板末尾追加该输入，避免模型拿不到识别稿。
+                </p>
               </Field>
             </div>
           </SettingsCard>
