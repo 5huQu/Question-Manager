@@ -46,6 +46,10 @@ type SplitItem = {
   analysis_line_ranges?: unknown
   answer_text?: unknown
   answer_evidence_text?: unknown
+  /** 仅描述题型；正文仍必须由本地从 OCR 行范围重建。 */
+  question_type?: unknown
+  /** 原卷中的选择项定位与内容，供本地逐字核验后结构化。 */
+  options?: unknown
   cleanup_operations?: unknown
   /** @deprecated; kept so previews from the initial v4 contract still work. */
   analysis_trim_prefix?: unknown
@@ -185,10 +189,10 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
   const payload = {
     document_role: role,
     instructions: role === 'solutions'
-      ? '这是答案解析文档。每题答案/解析使用完整的 solution_line_ranges，并提取 answer_text（可选 answer_evidence_text）；不要生成题干范围，也不要使用 answer_line_ranges 或 analysis_line_ranges；如有汇总答案表，同时提取 answer_table_entries。'
+      ? '这是答案解析文档。每题答案/解析使用完整的 solution_line_ranges，并提取 answer_text（可选 answer_evidence_text）；不要生成题干范围；question_type 固定为 other 且 options 必须为 []；不要使用 answer_line_ranges 或 analysis_line_ranges；如有汇总答案表，同时提取 answer_table_entries。'
       : role === 'questions'
-        ? '这是原卷文档。只返回 stem_line_ranges，不要生成答案或解析范围；通常不应存在 answer_table_entries。'
-        : '这是同一份原卷与答案解析文档。题干使用 stem_line_ranges；每题答案/解析使用完整的 solution_line_ranges，并提取 answer_text（可选 answer_evidence_text）；不要使用 answer_line_ranges 或 analysis_line_ranges；如有汇总答案表，同时提取 answer_table_entries。',
+        ? '这是原卷文档。只返回 stem_line_ranges，并识别 question_type 与 options；不要生成答案或解析范围；通常不应存在 answer_table_entries。'
+        : '这是同一份原卷与答案解析文档。题干使用 stem_line_ranges，并识别 question_type 与 options；每题答案/解析使用完整的 solution_line_ranges，并提取 answer_text（可选 answer_evidence_text）；不要使用 answer_line_ranges 或 analysis_line_ranges；如有汇总答案表，同时提取 answer_table_entries。',
     line_numbering: '1-based, inclusive; L000001 means line 1',
     output_schema: {
       schema_version: 'model-split-draft-v4',
@@ -201,6 +205,12 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
         solution_line_ranges: 'Array<[start_line, end_line]>',
         answer_text: 'string copied exactly from the source; may come from any position inside the solution range',
         answer_evidence_text: 'optional short source excerpt containing the answer, copied exactly; may occur anywhere in the solution range',
+        question_type: '"single_choice" | "multiple_choice" | "fill_blank" | "short_answer" | "proof" | "other"',
+        options: [{
+          label: '"A" | "B" | "C" | "D"',
+          content_markdown: 'exact option content with its label removed',
+          source_text: 'the complete exact OCR source option, including its label',
+        }],
         cleanup_operations: [{
           field: '"stem" | "answer" | "analysis"',
           action: '"trim_prefix" | "remove"',
@@ -714,6 +724,83 @@ export function cleanupFieldDraft(field: CleanupField, value: string, operations
   return { value: draft.trim(), notes }
 }
 
+type ModelQuestionType = 'single_choice' | 'multiple_choice' | 'fill_blank' | 'short_answer' | 'proof' | 'other'
+type VerifiedChoiceOption = { label: 'A' | 'B' | 'C' | 'D'; content: string; sourceText: string }
+
+function modelQuestionType(value: unknown) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  const allowed: ModelQuestionType[] = ['single_choice', 'multiple_choice', 'fill_blank', 'short_answer', 'proof', 'other']
+  if (!allowed.includes(normalized as ModelQuestionType)) return ''
+  switch (normalized as ModelQuestionType) {
+    case 'single_choice': return '单选题'
+    case 'multiple_choice': return '多选题'
+    case 'fill_blank': return '填空题'
+    case 'short_answer':
+    case 'proof': return '解答题'
+    default: return ''
+  }
+}
+
+function countExactOccurrences(source: string, fragment: string) {
+  if (!fragment) return 0
+  let count = 0
+  let offset = 0
+  while (true) {
+    const found = source.indexOf(fragment, offset)
+    if (found < 0) return count
+    count += 1
+    offset = found + fragment.length
+  }
+}
+
+function sourceOptionContent(label: string, sourceText: string) {
+  return sourceText.replace(new RegExp(`^\\s*${label}\\s*[.．、:：)）]\\s*`, 'i'), '').trim()
+}
+
+/**
+ * The model may recognize inline A-D options, but is never trusted to rewrite
+ * them. We only convert the editor draft when every option can be located once
+ * in the selected OCR source and in the post-cleanup draft, in A-D order.
+ */
+function verifiedChoiceOptions(item: SplitItem, sourceStem: string, draftStem: string) {
+  if (!Array.isArray(item.options) || item.options.length !== 4) return null
+  const options: VerifiedChoiceOption[] = []
+  for (const [index, raw] of item.options.entries()) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+    const record = raw as Record<string, unknown>
+    const label = String(record.label || '').trim().toUpperCase()
+    const expectedLabel = String.fromCharCode(65 + index) as VerifiedChoiceOption['label']
+    const sourceText = typeof record.source_text === 'string' ? record.source_text.trim() : ''
+    const content = typeof record.content_markdown === 'string' ? record.content_markdown.trim() : ''
+    const exactContent = sourceOptionContent(expectedLabel, sourceText)
+    if (label !== expectedLabel || !sourceText || !exactContent || content !== exactContent) return null
+    if (countExactOccurrences(sourceStem, sourceText) !== 1 || countExactOccurrences(draftStem, sourceText) !== 1) return null
+    options.push({ label: expectedLabel, content: exactContent, sourceText })
+  }
+
+  const positions = options.map((option) => draftStem.indexOf(option.sourceText))
+  if (positions.some((position) => position < 0) || positions.some((position, index) => index > 0 && position <= positions[index - 1])) return null
+  let previousEnd = positions[0]
+  for (const option of options) {
+    const position = draftStem.indexOf(option.sourceText)
+    if (!/^\s*$/.test(draftStem.slice(previousEnd, position))) return null
+    previousEnd = position + option.sourceText.length
+  }
+  return { options, firstStart: positions[0], finalEnd: previousEnd }
+}
+
+function structureVerifiedChoiceOptions(item: SplitItem, sourceStem: string, draftStem: string) {
+  const verified = verifiedChoiceOptions(item, sourceStem, draftStem)
+  if (!verified) return { stemMarkdown: draftStem, applied: false }
+  const before = draftStem.slice(0, verified.firstStart).trimEnd()
+  const after = draftStem.slice(verified.finalEnd).trim()
+  const choices = verified.options.map((option) => `${option.label}. ${option.content}`).join('\n')
+  return {
+    stemMarkdown: [before, choices, after].filter(Boolean).join('\n\n').trim(),
+    applied: true,
+  }
+}
+
 function isAnswerEvidenceInSource(answerText: string, evidenceText: string, sourceMarkdown: string) {
   if (!answerText || !sourceMarkdown) return true
   const source = compactEvidenceText(sourceMarkdown)
@@ -763,7 +850,10 @@ function candidateFromModelItem(
   // the model can quote only a score label such as `(5分)` instead of guessing
   // how the OCR encoded the question number.
   const stemCleanup = cleanupFieldDraft('stem', role === 'solutions' ? '' : removeLeadingQuestionMarker(sourceStemMarkdown), operations)
-  const stemMarkdown = stemCleanup.value
+  const structuredChoices = role === 'solutions'
+    ? { stemMarkdown: '', applied: false }
+    : structureVerifiedChoiceOptions(item, sourceStemMarkdown, stemCleanup.value)
+  const stemMarkdown = structuredChoices.stemMarkdown
   // The model identifies complete source ranges and may mark exact source text
   // for presentation cleanup. The raw source stays intact for comparison.
   const sourceSolutionMarkdown = role === 'questions' ? '' : reconstructField(solutionSegments, [])
@@ -777,7 +867,12 @@ function candidateFromModelItem(
   const analysisMarkdown = role === 'questions'
     ? ''
     : analysisCleanup.value
-  const cleanupNotes = [...stemCleanup.notes, ...answerCleanup.notes, ...analysisCleanup.notes]
+  const cleanupNotes = [
+    ...stemCleanup.notes,
+    ...(structuredChoices.applied ? ['已根据 OCR 原文核验并结构化 A、B、C、D 选项'] : []),
+    ...answerCleanup.notes,
+    ...analysisCleanup.notes,
+  ]
   const answerEvidenceVerified = isAnswerEvidenceInSource(answerText, answerDraft.evidenceText, sourceSolutionMarkdown)
   const sourceRefs = [
     ...rangesForSegments(document, stemSegments, 'stem'),
@@ -818,7 +913,7 @@ function candidateFromModelItem(
     stemMarkdown,
     answerText,
     analysisMarkdown,
-    questionType: normalizeQuestionType('', stemMarkdown, answerText),
+    questionType: normalizeQuestionType(modelQuestionType(item.question_type), stemMarkdown, answerText),
     knowledgePoints: [],
     solutionMethods: [],
     ...DEFAULT_IMPORT_METADATA,
