@@ -82,6 +82,8 @@ export type ModelSplitStreamEvent =
 
 export type ModelSplitPreviewItem = {
   questionNo: string
+  /** 从题干与答案推断的题型，仅用于模型拆题核对阶段的交互与展示。 */
+  questionType?: string
   rawQuestionNo?: string
   numberRepair?: { reason: string; confidence: number }
   stemMarkdown: string
@@ -781,6 +783,7 @@ function candidateFromModelItem(
     candidate,
     preview: {
       questionNo,
+      questionType: candidate.questionType,
       rawQuestionNo: rawQuestionNo || undefined,
       numberRepair: repair,
       stemMarkdown,
@@ -958,6 +961,7 @@ function finalizeCandidatePreviews(candidates: QuestionCandidate[], previewSeeds
     const seed = previewSeeds[index]
     return {
       questionNo: candidate.questionNo,
+      questionType: candidate.questionType,
       rawQuestionNo: seed?.rawQuestionNo,
       numberRepair: seed?.numberRepair,
       stemMarkdown: candidate.stemMarkdown,

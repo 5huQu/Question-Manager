@@ -23,6 +23,7 @@ import { MarkdownContent } from '@/components/MarkdownContent'
 import { QuestionContentEditor } from '@/components/questions/editor'
 import type { QuestionContentValue } from '@/components/questions/editor/model'
 import type { ModelSplitApplyItem, ModelSplitPreview, ModelSplitPreviewItem, ModelSplitRequestOptions } from '@/api/importV2'
+import { parseChoiceQuestion } from '@/utils/questionDisplay'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 
 function translateWarning(value: string) {
@@ -61,6 +62,15 @@ const NOTE_PRESETS = [
 
 function contentOf(item: ModelSplitPreviewItem): QuestionContentValue {
   return { stemMarkdown: item.stemMarkdown, answerText: item.answerText, analysisMarkdown: item.analysisMarkdown }
+}
+
+/** Keeps previews produced by an older server interactive until they are regenerated. */
+function questionTypeForEditor(item: ModelSplitPreviewItem) {
+  if (item.questionType) return item.questionType
+  const parsed = parseChoiceQuestion(item.stemMarkdown)
+  if (!parsed) return undefined
+  const letters = String(item.answerText || '').toUpperCase().match(/[A-D]/g) || []
+  return letters.length > 1 ? '多选题' : '单选题'
 }
 
 export function ModelSplitDialog({
@@ -585,6 +595,7 @@ export function ModelSplitDialog({
                 <QuestionContentEditor
                   key={`model-split:${preview.id}:${selectedIndex}`}
                   entityKey={`model-split:${preview.id}:${selectedIndex}`}
+                  questionType={questionTypeForEditor(selected)}
                   value={contentOf(selected)}
                   savedValue={contentOf(preview.items[selectedIndex] || selected)}
                   onChange={updateContent}

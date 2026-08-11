@@ -293,6 +293,7 @@ export type ParseCandidatesResult = {
 
 export type ModelSplitPreviewItem = {
   questionNo: string
+  questionType?: string
   rawQuestionNo?: string
   numberRepair?: { reason: string; confidence: number }
   stemMarkdown: string
