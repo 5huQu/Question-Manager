@@ -802,7 +802,10 @@ function candidateFromModelItem(
       ...(repair ? [{ code: 'model_repaired_question_no', severity: repair.confidence >= 0.8 ? 'info' as const : 'warning' as const, questionNo, message: `模型根据上下文将 OCR 题号「${rawQuestionNo}」修复为「${questionNo}」：${repair.reason}` }] : []),
       ...(sourceFragments && !sourceFragments.accepted ? [{ code: 'model_source_fragment_unverified', severity: 'warning' as const, questionNo, message: `${label}的模型答案解析未逐字通过 OCR 原文核验：${sourceFragments.reason}。已保留模型返回，需人工确认。` }] : []),
     ],
-    parserConfigSnapshot: { source: 'model-assisted-source-fragment-split-v2', rawQuestionNo: rawQuestionNo || undefined, numberRepair: repair || undefined },
+    // This field is reserved for the public parser configuration schema. Model
+    // split provenance belongs in diagnostics so candidate response validation
+    // stays compatible with ordinary parser-created candidates.
+    parserConfigSnapshot: {},
     createdAt: timestamp,
     updatedAt: timestamp,
   }
