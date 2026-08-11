@@ -46,6 +46,7 @@ type SplitItem = {
   analysis_line_ranges?: unknown
   answer_text?: unknown
   answer_evidence_text?: unknown
+  analysis_trim_prefix?: unknown
   answer_source_text?: unknown
   analysis_start_source_text?: unknown
   analysis_source_text?: unknown
@@ -194,6 +195,7 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
         solution_line_ranges: 'Array<[start_line, end_line]>',
         answer_text: 'string copied exactly from the source; may come from any position inside the solution range',
         answer_evidence_text: 'optional short source excerpt containing the answer, copied exactly; may occur anywhere in the solution range',
+        analysis_trim_prefix: 'optional exact OCR prefix at the start of the solution range; only a question-number/answer label, never analysis content',
       }],
       answer_table_entries: [{
         question_no: 'string',
@@ -645,6 +647,17 @@ function modelAnswerDraft(item: SplitItem) {
   return { answerText, evidenceText }
 }
 
+function analysisDraftFromSource(sourceMarkdown: string, item: SplitItem) {
+  const source = String(sourceMarkdown || '').trim()
+  const trimPrefix = typeof item.analysis_trim_prefix === 'string' ? item.analysis_trim_prefix : ''
+  // The model may mark only an exact OCR prefix for presentation removal. Keep
+  // the source separately for comparison; if the model quote differs by even
+  // one character, do not silently alter the draft.
+  if (!source || !trimPrefix || !source.startsWith(trimPrefix)) return source
+  const remainder = source.slice(trimPrefix.length).trimStart()
+  return remainder || source
+}
+
 function isAnswerEvidenceInSource(answerText: string, evidenceText: string, sourceMarkdown: string) {
   if (!answerText || !sourceMarkdown) return true
   const source = compactEvidenceText(sourceMarkdown)
@@ -690,10 +703,9 @@ function candidateFromModelItem(
     : undefined
   const sourceStemMarkdown = role === 'solutions' ? '' : reconstructField(stemSegments, [])
   const stemMarkdown = role === 'solutions' ? '' : removeLeadingQuestionMarker(sourceStemMarkdown)
-  // The model only identifies the answer and complete source ranges. The source
-  // range is deliberately retained intact as the editable analysis draft: answer
-  // labels can occur before, within, or after an explanation, and must never make
-  // us remove the surrounding OCR text.
+  // The model identifies complete source ranges and may quote a verified leading
+  // label (for example `3. B`) for display removal. The raw source stays intact
+  // for comparison, so this never rewrites or discards OCR provenance.
   const sourceSolutionMarkdown = role === 'questions' ? '' : reconstructField(solutionSegments, [])
   const answerDraft = role === 'questions' ? { answerText: '', evidenceText: '' } : modelAnswerDraft(item)
   const answerText = role === 'questions'
@@ -701,7 +713,7 @@ function candidateFromModelItem(
     : answerDraft.answerText || reconstructField(answerSegments, answerSpans)
   const analysisMarkdown = role === 'questions'
     ? ''
-    : sourceSolutionMarkdown || reconstructField(analysisSegments, analysisSpans)
+    : analysisDraftFromSource(sourceSolutionMarkdown, item) || reconstructField(analysisSegments, analysisSpans)
   const answerEvidenceVerified = isAnswerEvidenceInSource(answerText, answerDraft.evidenceText, sourceSolutionMarkdown)
   const sourceRefs = [
     ...rangesForSegments(document, stemSegments, 'stem'),
