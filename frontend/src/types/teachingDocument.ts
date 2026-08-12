@@ -17,7 +17,7 @@ export type { FigureLayoutPreset } from '@/utils/teachingDocument/figureLayoutPr
 
 // ─── 文档类型 ────────────────────────────────────────────────────────────────
 
-export type TeachingDocumentType = 'worksheet' | 'exam' | 'lecture'
+export type TeachingDocumentType = 'worksheet' | 'exam' | 'lecture' | 'wrong-question-collection'
 
 // ─── 行内节点 ────────────────────────────────────────────────────────────────
 

@@ -30,13 +30,13 @@ function isInlineFigure(figure: QuestionFigure, inlineIds: Set<string>) {
   return figureMarkerIds(figure).some((id) => inlineIds.has(id))
 }
 
-function InlineFigure({ figure, index, showCaption = true }: { figure: QuestionFigure; index: number; showCaption?: boolean }) {
+function InlineFigure({ figure, index, showCaption = true, bare = false }: { figure: QuestionFigure; index: number; showCaption?: boolean; bare?: boolean }) {
   const [preview, setPreview] = useState(false)
   const [error, setError] = useState(false)
   return (
     <>
-      <figure className="my-3 w-full max-w-[26rem] overflow-hidden rounded-lg border bg-white">
-        <button className="flex h-48 w-full cursor-zoom-in justify-center bg-white p-2 text-left" onClick={() => !error && setPreview(true)} type="button">
+      <figure className={`my-3 w-full max-w-[26rem] ${bare ? '' : 'overflow-hidden rounded-lg border bg-white'}`}>
+        <button className={`flex w-full cursor-zoom-in justify-center text-left ${bare ? '' : 'h-48 bg-white p-2'}`} onClick={() => !error && setPreview(true)} type="button">
           {error ? (
             <div className="flex h-32 w-full items-center justify-center bg-zinc-50 text-xs text-zinc-400">
               图片加载失败
@@ -44,7 +44,7 @@ function InlineFigure({ figure, index, showCaption = true }: { figure: QuestionF
           ) : (
             <img
               alt={figureAlt(figure, index)}
-              className="block h-full w-full object-contain bg-white"
+              className={`block w-full object-contain ${bare ? 'h-auto' : 'h-full bg-white'}`}
               src={assetUrl(String(figure.path || ''))}
               onError={() => setError(true)}
             />
@@ -65,11 +65,14 @@ export function MarkdownWithInlineFigures({
   figures = [],
   className = '',
   showFigureCaptions = true,
+  bareFigures = false,
 }: {
   content: string
   figures?: QuestionFigure[]
   className?: string
   showFigureCaptions?: boolean
+  /** 讲义和打印预览直接呈现原图，不额外包一层白底卡片。 */
+  bareFigures?: boolean
 }) {
   const source = String(content || '')
   const figureById = new Map<string, QuestionFigure>()
@@ -91,6 +94,7 @@ export function MarkdownWithInlineFigures({
         index={index}
         key={`figure-${match[1]}-${index}`}
         showCaption={showFigureCaptions}
+        bare={bareFigures}
       />,
     )
     cursor = match.index + match[0].length
@@ -207,6 +211,7 @@ export function ChoiceOptions({
   optionIndexOffset = 0,
   optionDomAttributes,
   showFigureCaptions = true,
+  bareFigures = false,
   choiceLayoutBlockId,
   inlineContent,
   editableText = false,
@@ -219,6 +224,8 @@ export function ChoiceOptions({
   optionIndexOffset?: number
   optionDomAttributes?: (optionIndex: number) => Record<string, string | number | undefined>
   showFigureCaptions?: boolean
+  /** 直接以原图比例渲染，供讲义等纸面文档使用。 */
+  bareFigures?: boolean
   /** 讲义测量树使用，关联本次实际测得的列数与题目块。 */
   choiceLayoutBlockId?: string
   inlineContent?: Record<string, TeachingInline[]>
@@ -331,6 +338,8 @@ export function ChoiceOptions({
                 className="choice-markdown"
                 content={option.content}
                 figures={figures.filter((figure) => String(figure.optionLabel || '').toUpperCase() === option.label)}
+                showFigureCaptions={showFigureCaptions}
+                bareFigures={bareFigures}
               />
             )}
             <FigureGallery
@@ -344,6 +353,8 @@ export function ChoiceOptions({
               className="mt-2"
               compact
               showCaption={showFigureCaptions}
+              naturalAspectRatio={bareFigures}
+              bare={bareFigures}
             />
           </div>
         </div>
@@ -358,6 +369,7 @@ export function FigureGallery({
   compact = false,
   showCaption = true,
   naturalAspectRatio = false,
+  bare = false,
   onSelect,
 }: {
   figures: QuestionFigure[]
@@ -366,6 +378,8 @@ export function FigureGallery({
   showCaption?: boolean
   /** 文档排版中的明确尺寸覆盖使用图片原始比例，默认图库行为保持不变。 */
   naturalAspectRatio?: boolean
+  /** 不渲染卡片容器，直接展示原图。 */
+  bare?: boolean
   onSelect?: (figure: QuestionFigure) => void
 }) {
   const [preview, setPreview] = useState<QuestionFigure | null>(null)
@@ -382,12 +396,12 @@ export function FigureGallery({
           return (
           <figure
             key={resourceKey}
-            className={`overflow-hidden rounded-lg border bg-white ${naturalAspectRatio ? 'w-full' : ''} ${compact ? 'max-w-40' : 'max-w-[26rem]'}`}
+            className={`${bare ? '' : 'overflow-hidden rounded-lg border bg-white'} ${naturalAspectRatio ? 'w-full' : ''} ${compact ? 'max-w-40' : 'max-w-[26rem]'}`}
             data-teaching-resource="image"
             data-teaching-resource-id={resourceId}
             data-teaching-resource-status={hasFailed ? 'error' : 'ready'}
           >
-            <button className={`flex w-full justify-center bg-white p-2 text-left ${naturalAspectRatio ? 'h-auto min-h-0' : compact ? 'h-32' : 'h-44'} ${hasFailed ? 'cursor-default' : onSelect ? 'cursor-pointer' : 'cursor-zoom-in'}`} onClick={() => {
+            <button className={`flex w-full justify-center text-left ${bare ? '' : 'bg-white p-2'} ${naturalAspectRatio || bare ? 'h-auto min-h-0' : compact ? 'h-32' : 'h-44'} ${hasFailed ? 'cursor-default' : onSelect ? 'cursor-pointer' : 'cursor-zoom-in'}`} onClick={() => {
               if (hasFailed) return
               if (onSelect) onSelect(figure)
               else setPreview(figure)
@@ -399,7 +413,7 @@ export function FigureGallery({
               ) : (
                 <img
                   alt={figureAlt(figure, index)}
-                  className={`block w-full object-contain bg-white ${naturalAspectRatio ? 'h-auto' : 'h-full'}`}
+                  className={`block w-full object-contain ${bare ? '' : 'bg-white'} ${naturalAspectRatio || bare ? 'h-auto' : 'h-full'}`}
                   src={assetUrl(String(figure.path || ''))}
                   onError={() => setFailed((current) => new Set(current).add(resourceKey))}
                 />

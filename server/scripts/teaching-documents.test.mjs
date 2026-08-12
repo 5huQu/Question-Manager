@@ -43,6 +43,15 @@ try {
     headingFont: 'heiti', headingLatinFont: 'arial', headingNumberFont: 'times', marginPreset: 'normal', questionSpacing: 'normal',
   })
 
+  const wrongQuestionCollection = await json('/api/teaching-documents', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: '错题集', documentType: 'wrong-question-collection' }),
+  })
+  assert.equal(wrongQuestionCollection.response.status, 201)
+  assert.equal(wrongQuestionCollection.body.content.documentType, 'wrong-question-collection')
+  assert.equal(wrongQuestionCollection.body.content.style.typographyPreset, 'exam')
+
   const originalUnknown = { nested: ['kept', { value: 1 }] }
   const content = {
     version: 1,

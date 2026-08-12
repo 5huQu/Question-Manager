@@ -29,6 +29,7 @@ export {
 export type { TeachingDocumentCommand, TeachingDocumentHistory } from './editorState'
 export { TeachingDocumentAutosave } from './autosave'
 export type { AutosaveState } from './autosave'
+export { questionOnlyDocument } from './wrongQuestionCollection'
 export {
   TYPOGRAPHY_PRESETS,
   typographyPresetForDocumentType,

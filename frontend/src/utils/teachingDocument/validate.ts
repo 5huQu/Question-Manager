@@ -555,7 +555,7 @@ export function parseTeachingDocument(json: unknown): { document: TeachingDocume
   }
 
   const documentType = String(root.documentType || '')
-  if (!['worksheet', 'exam', 'lecture'].includes(documentType)) {
+  if (!['worksheet', 'exam', 'lecture', 'wrong-question-collection'].includes(documentType)) {
     issues.push({
       level: 'warning',
       code: 'unknown-document-type',
@@ -582,7 +582,7 @@ export function parseTeachingDocument(json: unknown): { document: TeachingDocume
 
   const document: TeachingDocumentV1 = {
     version: 1,
-    documentType: (['worksheet', 'exam', 'lecture'].includes(documentType) ? documentType : 'worksheet') as TeachingDocumentV1['documentType'],
+    documentType: (['worksheet', 'exam', 'lecture', 'wrong-question-collection'].includes(documentType) ? documentType : 'worksheet') as TeachingDocumentV1['documentType'],
     title: typeof root.title === 'string' ? root.title : '未命名文档',
     metadata: root.metadata && typeof root.metadata === 'object' && !Array.isArray(root.metadata) ? root.metadata as Record<string, unknown> : {},
     content: blocks,

@@ -5,7 +5,7 @@
  * 讲义编辑器中的题目渲染、答案开关、分值覆盖等能力直接生效。
  */
 
-import type { TeachingBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { TeachingBlock, TeachingDocumentType, TeachingDocumentV1 } from '@/types/teachingDocument'
 import { generateBlockId } from './validate'
 
 export type ExamImportEntry = {
@@ -41,38 +41,47 @@ export function groupExamEntriesByType(entries: ExamImportEntry[]): Array<[strin
 }
 
 /**
- * 将题目列表构建为一份试卷型讲义文档：
- * 每个题型一个大题标题（如"一、单选题（共 3 题，共 15 分）"），题目全卷连续编号。
+ * 将题目列表构建为教学文档：
+ * - exam（默认）：每个题型一个大题标题（如"一、单选题（共 3 题，共 15 分）"），题目全卷连续编号。
+ * - wrong-question-collection：错题集只呈现题目，不生成大题标题，题目按篮子顺序连续排列。
  */
-export function buildExamDocumentFromQuestions(entries: ExamImportEntry[], title: string): TeachingDocumentV1 {
-  const groups = groupExamEntriesByType(entries)
-  const content: TeachingBlock[] = []
-
-  groups.forEach(([type, items], groupIndex) => {
-    const groupScore = items.reduce((sum, entry) => sum + entry.score, 0)
-    content.push({
-      type: 'heading',
-      id: generateBlockId('heading'),
-      level: 3,
-      content: [{ type: 'text', text: `${sectionLabel(groupIndex)}、${type}（共 ${items.length} 题，共 ${formatScore(groupScore)} 分）` }],
-    })
-    for (const entry of items) {
-      content.push({
-        type: 'question',
-        id: generateBlockId('question'),
-        questionId: entry.questionId,
-        display: {
-          showAnswer: false,
-          showAnalysis: false,
-          scoreOverride: entry.score,
-        },
-      })
-    }
+export function buildExamDocumentFromQuestions(
+  entries: ExamImportEntry[],
+  title: string,
+  documentType: TeachingDocumentType = 'exam',
+): TeachingDocumentV1 {
+  const questionBlock = (entry: ExamImportEntry): TeachingBlock => ({
+    type: 'question',
+    id: generateBlockId('question'),
+    questionId: entry.questionId,
+    display: {
+      showAnswer: false,
+      showAnalysis: false,
+      scoreOverride: entry.score,
+    },
   })
+
+  const content: TeachingBlock[] = documentType === 'wrong-question-collection'
+    ? entries.map(questionBlock)
+    : (() => {
+      const groups = groupExamEntriesByType(entries)
+      const blocks: TeachingBlock[] = []
+      groups.forEach(([type, items], groupIndex) => {
+        const groupScore = items.reduce((sum, entry) => sum + entry.score, 0)
+        blocks.push({
+          type: 'heading',
+          id: generateBlockId('heading'),
+          level: 3,
+          content: [{ type: 'text', text: `${sectionLabel(groupIndex)}、${type}（共 ${items.length} 题，共 ${formatScore(groupScore)} 分）` }],
+        })
+        blocks.push(...items.map(questionBlock))
+      })
+      return blocks
+    })()
 
   return {
     version: 1,
-    documentType: 'exam',
+    documentType,
     title,
     metadata: {},
     content,

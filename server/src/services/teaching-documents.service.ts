@@ -10,7 +10,7 @@ import { imageDimensions } from '../utils/image-operations.js'
 import { sanitizeSvg } from './teaching-documents/svg-sanitizer.js'
 import { compileTikz } from './teaching-documents/tikz-renderer.js'
 
-const DOCUMENT_TYPES = new Set(['worksheet', 'exam', 'lecture'])
+const DOCUMENT_TYPES = new Set(['worksheet', 'exam', 'lecture', 'wrong-question-collection'])
 const KNOWN_BLOCK_TYPES = new Set([
   'heading', 'paragraph', 'blockMath', 'figure', 'question', 'box',
   'divider', 'spacer', 'pageBreak', 'rawMarkdown', 'table', 'unknown',
@@ -43,7 +43,7 @@ export type TeachingDocumentIssue = {
 export type TeachingDocumentRecord = {
   id: string
   title: string
-  documentType: 'worksheet' | 'exam' | 'lecture'
+  documentType: 'worksheet' | 'exam' | 'lecture' | 'wrong-question-collection'
   schemaVersion: number
   revision: number
   content: JsonObject

@@ -9,6 +9,7 @@ import {
 } from '@/utils/teachingDocument'
 import { PrintChrome } from './PrintChrome'
 import { PaperPageView, type PaperPageViewProps } from './PaperPageView'
+import { showsDocumentTitle } from '@/utils/teachingDocument/wrongQuestionCollection'
 
 export interface A3TwoColumnSheetViewProps {
   pages: [PaginatedPage, PaginatedPage?]
@@ -45,7 +46,7 @@ export function A3TwoColumnSheetView({
   style,
 }: A3TwoColumnSheetViewProps) {
   const [leftPage, rightPage] = pages
-  const reserveDocumentHeader = sheetIndex === 0 && Boolean(document.title)
+  const reserveDocumentHeader = sheetIndex === 0 && showsDocumentTitle(document)
   const headerSlots = pageHeaderSlots(printLayout, sheetIndex)
   const footerSlots = pageFooterSlots(printLayout)
   const overlayHorizontalStyle = {

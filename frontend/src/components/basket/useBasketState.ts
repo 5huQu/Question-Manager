@@ -234,7 +234,7 @@ export function useBasketState(options?: { initialPaperId?: string | null }) {
     }
   }
 
-  /** 将当前组卷生成正式试卷文档，题目按题型分大题，随后跳转文档编辑器。 */
+  /** 将当前组卷生成正式试卷文档（题目按题型分大题）；错题本模式生成错题集文档（仅题目），随后跳转文档编辑器。 */
   async function importToTeachingDocument() {
     if (importingDocument || !activeQuestions.length) return
     setImportingDocument(true)
@@ -244,9 +244,11 @@ export function useBasketState(options?: { initialPaperId?: string | null }) {
         questionType: entry.item.questionType || '',
         score: Number(entry.score || getDefaultScore(entry.item.questionType)),
       }))
-      const title = localTitle.trim() || '未命名试卷'
-      const content = buildExamDocumentFromQuestions(entries, title)
-      const record = await teachingDocumentsApi.createDocument({ title, documentType: 'exam', content })
+      const isWrongQuestionCollection = pageVariant === 'error_notebook'
+      const documentType = isWrongQuestionCollection ? 'wrong-question-collection' : 'exam'
+      const title = localTitle.trim() || (isWrongQuestionCollection ? '未命名错题集' : '未命名试卷')
+      const content = buildExamDocumentFromQuestions(entries, title, documentType)
+      const record = await teachingDocumentsApi.createDocument({ title, documentType, content })
       navigate(`/teaching-documents/${encodeURIComponent(record.id)}`)
     } catch (error) {
       alert(error instanceof Error ? error.message : String(error))

@@ -18,6 +18,7 @@ import { TEACHING_DOM } from '@/utils/teachingDocument'
 import { headingLabelByBlockId } from '@/utils/teachingDocument'
 import { BlockRenderer, type FigureResolution, type QuestionResolution, type TeachingDocumentResolvers } from './blocks/BlockRenderer'
 import { teachingDocumentLayoutCssVars } from '@/utils/teachingDocument/lectureFonts'
+import { showsDocumentTitle } from '@/utils/teachingDocument/wrongQuestionCollection'
 import 'katex/dist/katex.min.css'
 
 export interface TeachingDocumentRendererProps {
@@ -66,7 +67,7 @@ export function TeachingDocumentFrame({
         [TEACHING_DOM.documentSurface]: surface,
       }}
     >
-      {showTitle && document.title ? (
+      {showTitle && showsDocumentTitle(document) ? (
         <header className="td-document-header mb-8 text-center" {...{ [TEACHING_DOM.documentHeader]: '' }}>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
             {document.title}

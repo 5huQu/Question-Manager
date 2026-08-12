@@ -390,7 +390,7 @@ function FigureBlockView({
           ref={imageRef}
           src={url}
           alt={block.alt || block.caption || '文档图片'}
-          className={`block h-auto max-h-[70vh] w-full rounded-lg border border-zinc-200 object-contain transition-opacity dark:border-zinc-800 ${imageState === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
+          className={`block h-auto max-h-[70vh] w-full object-contain transition-opacity ${imageState === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
           loading={eagerImages ? 'eager' : 'lazy'}
           onLoad={() => setImageState('loaded')}
           onError={() => setImageState('error')}
@@ -528,6 +528,7 @@ function QuestionRegionContent({
           figures={visibleFigures}
           showCaption={false}
           naturalAspectRatio={hasExplicitLayout}
+          bare
           onSelect={() => layoutEditor?.onFigureSelect?.(figureKey)}
         />
         {layoutEditor?.selected ? (
@@ -561,6 +562,7 @@ function QuestionRegionContent({
           layout={questionLayoutOverride(region.layout)}
           optionIndexOffset={region.optionStart}
           showFigureCaptions={false}
+          bareFigures
           choiceLayoutBlockId={choiceLayoutBlockId}
           className="td-question-options"
           optionDomAttributes={(optionIndex) => ({
@@ -612,6 +614,7 @@ function QuestionRegionContent({
             content={region.markdown}
             figures={region.figures}
             showFigureCaptions={false}
+            bareFigures
           />
         )}
       </div>

@@ -135,6 +135,20 @@ describe('TeachingDocumentRenderer fallbacks', () => {
     expect(html).not.toContain('试卷')
   })
 
+  it('hides the document title for wrong-question-collection documents', () => {
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer
+        document={{
+          ...documentWith([]),
+          documentType: 'wrong-question-collection',
+          title: '期中错题集',
+        }}
+      />,
+    )
+    expect(html).not.toContain('期中错题集')
+    expect(html).not.toContain('td-document-header')
+  })
+
   it('renders a loading image with an intrinsic-size-safe height cap', () => {
     const html = renderToStaticMarkup(
       <TeachingDocumentRenderer

@@ -9,6 +9,14 @@ const documentTypeLabels: Record<TeachingDocumentType, string> = {
   exam: '试卷',
   lecture: '讲义',
   worksheet: '练习单',
+  'wrong-question-collection': '错题集',
+}
+
+const documentTypeDescriptions: Record<TeachingDocumentType, string> = {
+  exam: '正式试卷排版',
+  lecture: '阅读讲义排版',
+  worksheet: '练习单排版',
+  'wrong-question-collection': '仅题目排版，隐藏标题与章节',
 }
 
 export default function TeachingDocumentsPage() {
@@ -140,7 +148,7 @@ export default function TeachingDocumentsPage() {
                   }`}
                 >
                   <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{label}</span>
-                  <span className="text-xs text-zinc-500">{type === 'lecture' ? '阅读讲义排版' : type === 'exam' ? '正式试卷排版' : '正式试卷排版'}</span>
+                  <span className="text-xs text-zinc-500">{documentTypeDescriptions[type]}</span>
                 </button>
               ))}
             </div>

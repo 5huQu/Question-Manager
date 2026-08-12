@@ -72,6 +72,7 @@ Use question display options to make student-facing material:
 - `lecture`: use `{ "typographyPreset": "lecture", "marginPreset": "normal", "questionSpacing": "normal" }`; organize explanation and teaching cards.
 - `worksheet`: use the exam typography preset with student-facing question display; hide answer and analysis unless explicitly producing a teacher version.
 - `exam`: use `{ "typographyPreset": "exam", "marginPreset": "compact", "questionSpacing": "compact" }`; hide answer and analysis by default.
+- `wrong-question-collection`: use the exam typography preset; the editor and print output keep only `question` blocks (top-level and inside cards) and hide all headings, paragraphs, and other blocks, so author it question-first.
 
 Never persist arbitrary HTML, CSS, base64, remote URLs, file URLs, or absolute `legacyPath` paths. Do not use `unknown` nodes in newly authored material. Preflight JSON before API writes.
 

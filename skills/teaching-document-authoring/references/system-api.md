@@ -24,7 +24,7 @@ Content-Type: application/json
 { "title": "函数单调性", "documentType": "lecture" }
 ```
 
-The `201` response contains `id`, `revision: 1`, `content`, `assets`, and `issues`. Valid document types are `lecture`, `worksheet`, and `exam`.
+The `201` response contains `id`, `revision: 1`, `content`, `assets`, and `issues`. Valid document types are `lecture`, `worksheet`, `exam`, and `wrong-question-collection`.
 
 Read a document before updating it:
 

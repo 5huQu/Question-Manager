@@ -68,4 +68,19 @@ describe('buildExamDocumentFromQuestions', () => {
     expect(doc.content).toEqual([])
     expect(doc.title).toBe('空卷')
   })
+
+  it('错题集模式不生成大题标题，仅按顺序排列题目块', () => {
+    const doc = buildExamDocumentFromQuestions([
+      entry('q1', '单选题', 5),
+      entry('q2', '单选题', 5),
+      entry('q3', '解答题', 15),
+    ], '期中错题集', 'wrong-question-collection')
+
+    expect(doc.documentType).toBe('wrong-question-collection')
+    expect(doc.content).toHaveLength(3)
+    expect(doc.content.every((block) => block.type === 'question')).toBe(true)
+    expect((doc.content[0] as QuestionBlock).questionId).toBe('q1')
+    expect((doc.content[1] as QuestionBlock).questionId).toBe('q2')
+    expect((doc.content[2] as QuestionBlock).display?.scoreOverride).toBe(15)
+  })
 })

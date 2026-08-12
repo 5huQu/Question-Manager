@@ -55,6 +55,7 @@ import { PaperPageView } from '@/components/teaching-document/PaperPageView'
 import { A3TwoColumnSheetView } from '@/components/teaching-document/A3TwoColumnSheetView'
 import { assetUrl } from '@/utils/questionDisplay'
 import { documentForPrintVariant, type TeachingDocumentPrintVariant } from '@/utils/teachingDocument/printVariant'
+import { questionOnlyDocument } from '@/utils/teachingDocument'
 import '@/components/teaching-document/teaching-document.css'
 import '@/components/teaching-document/print.css'
 
@@ -132,7 +133,7 @@ export default function TeachingDocumentPrintPage() {
 
   const sourceDocument: TeachingDocumentV1 | null = record?.content || null
   const document = useMemo(
-    () => sourceDocument ? documentForPrintVariant(sourceDocument, printVariant) : null,
+    () => sourceDocument ? documentForPrintVariant(questionOnlyDocument(sourceDocument), printVariant) : null,
     [sourceDocument, printVariant],
   )
   useEffect(() => {

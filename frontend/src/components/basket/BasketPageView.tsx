@@ -279,7 +279,7 @@ export function BasketPageView({
               {([
                 { value: 'student', icon: EyeOff, label: '不显示', desc: '学生版' },
                 { value: 'teacher', icon: BookOpen, label: '详尽解析', desc: '教师版' },
-                { value: 'error_notebook', icon: NotebookPen, label: '错题本', desc: '紧凑排版' },
+                { value: 'error_notebook', icon: NotebookPen, label: '错题本', desc: '仅题目排版' },
               ] as const).map((option) => {
                 const selected = pageVariant === option.value
                 const Icon = option.icon
@@ -299,7 +299,7 @@ export function BasketPageView({
             </div>
           </div>
 
-          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">试卷版本以上方选择为准。生成试卷文档后，可在文档编辑器中选择学生版或教师版导出；PDF 仅作为备选输出。</p>
+          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">试卷版本以上方选择为准。生成试卷文档后，可在文档编辑器中选择学生版或教师版导出；选择错题本时生成错题集文档（仅题目排版）。PDF 仅作为备选输出。</p>
 
             <div className="grid grid-cols-3 divide-x divide-zinc-200/80 border-t border-zinc-200/80 pt-3 dark:divide-zinc-800 dark:border-zinc-800">
               <div className="px-1 text-center">
@@ -326,16 +326,20 @@ export function BasketPageView({
           <button
             onClick={() => void importToTeachingDocument()}
             disabled={importingDocument || !active.data?.questionCount}
-            title="将当前题目一键生成试卷文档，题目按题型自动分组，随后可在文档编辑器中继续编辑"
+            title={pageVariant === 'error_notebook'
+              ? '生成错题集文档：仅保留题目，隐藏标题与章节，随后可在文档编辑器中继续编辑'
+              : '将当前题目一键生成试卷文档，题目按题型自动分组，随后可在文档编辑器中继续编辑'}
             className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-md bg-zinc-900 py-2.5 text-xs font-semibold text-zinc-50 transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
           >
             <NotebookPen className="size-3.5" />
-            {importingDocument ? '正在生成试卷文档…' : '生成试卷文档'}
+            {importingDocument
+              ? (pageVariant === 'error_notebook' ? '正在生成错题集文档…' : '正在生成试卷文档…')
+              : (pageVariant === 'error_notebook' ? '生成错题集文档' : '生成试卷文档')}
           </button>
           <button
             onClick={() => void createLayoutDraft()}
             disabled={exporting || !active.data?.questionCount || pageVariant === 'error_notebook'}
-            title={pageVariant === 'error_notebook' ? '错题本使用固定紧凑版式，可直接导出。' : undefined}
+            title={pageVariant === 'error_notebook' ? '错题本请通过「生成错题集文档」进入文档编辑器排版预览。' : undefined}
             className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-md border border-zinc-300 bg-white py-2.5 text-xs font-semibold text-zinc-800 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
           >
             <Settings2 className="size-3.5" />

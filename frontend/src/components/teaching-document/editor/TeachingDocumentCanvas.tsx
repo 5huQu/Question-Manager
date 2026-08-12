@@ -26,6 +26,7 @@ import {
   type PaperSpec,
   type PrintLayoutSpec,
 } from '@/utils/teachingDocument'
+import { showsDocumentTitle } from '@/utils/teachingDocument/wrongQuestionCollection'
 import { DocumentEditor } from './DocumentEditor'
 import { usePagination } from './usePagination'
 import type { TeachingDocumentLayoutCoordinator } from './layoutCoordinator'
@@ -453,14 +454,16 @@ export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
               } : undefined}
               style={paginated ? { width: `${contentWidthPx}px` } : undefined}
             >
-              <header
-                className="td-document-header mb-8 text-center"
-                {...{ 'data-teaching-document-header': '' }}
-              >
-                <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-                  {document.title || '未命名文档'}
-                </h1>
-              </header>
+              {showsDocumentTitle(document) ? (
+                <header
+                  className="td-document-header mb-8 text-center"
+                  {...{ 'data-teaching-document-header': '' }}
+                >
+                  <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+                    {document.title || '未命名文档'}
+                  </h1>
+                </header>
+              ) : null}
 
               {document.content.length ? (
                 <DocumentEditor

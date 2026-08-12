@@ -13,6 +13,7 @@ import {
   createTeachingDocumentHistory,
   executeTeachingDocumentCommand,
   hasFatalTeachingDocumentIssues,
+  questionOnlyDocument,
   questionSequenceSignature,
   renumberAutomaticQuestionNumbers,
   redoTeachingDocument,
@@ -115,12 +116,15 @@ export function useTeachingDocumentEditor(documentId: string) {
     setLoading(true)
     try {
       const loaded = await teachingDocumentsApi.getDocument(documentId)
-      setRecord(loaded)
-      setHistory(createTeachingDocumentHistory(loaded.content))
+      // 错题集文档只呈现题目（标题、章节等块隐藏），编辑与保存均以过滤后的内容为准。
+      const workingContent = questionOnlyDocument(loaded.content)
+      const workingRecord = { ...loaded, content: workingContent }
+      setRecord(workingRecord)
+      setHistory(createTeachingDocumentHistory(workingContent))
       setConflict(null)
       setSaveError('')
       setSaveState('saved')
-      configureAutosave(loaded)
+      configureAutosave(workingRecord)
       requestLayout('structure')
       setLoadError('')
     } catch (error) {
