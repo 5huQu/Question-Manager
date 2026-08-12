@@ -461,6 +461,15 @@ export function SettingsPage() {
               <Field label="AI 助手模型名称">
                 <TextInput mono value={draft.cleanupModel ?? ''} placeholder="deepseek-v4-flash" onChange={(value) => setDraft({ ...draft, cleanupModel: value })} />
               </Field>
+              <Field label="模型拆题最大输出 Token (4096-131072)">
+                <TextInput
+                  mono
+                  value={String(draft.modelSplitMaxTokens ?? 65536)}
+                  placeholder="65536"
+                  onChange={(value) => setDraft({ ...draft, modelSplitMaxTokens: Number.parseInt(value, 10) || 65536 })}
+                />
+                <p className="mt-1 text-[11px] leading-5 text-zinc-400">默认 65536。整卷含完整解析时请保持较高值；模型若因长度截断，会在拆题窗口明确提示。</p>
+              </Field>
             </div>
             <SectionTitle className="pt-2">自动分类 Prompt</SectionTitle>
             <div className="grid grid-cols-1 gap-4 border-t border-zinc-100 pt-4 dark:border-zinc-800 md:grid-cols-2">

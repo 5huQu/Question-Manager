@@ -352,6 +352,8 @@ export type OcrSettings = {
   modelSplitSystemPrompt: string
   /** 模型辅助拆题使用的完整 User Prompt 模板，保留 {payload} 以注入本次 OCR 数据。 */
   modelSplitUserPrompt: string
+  /** 模型辅助拆题的单次最大输出 Token，范围 4096 - 131072。 */
+  modelSplitMaxTokens: number
 }
 
 export type SlicerRuleEntry = {

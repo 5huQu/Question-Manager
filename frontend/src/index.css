@@ -768,6 +768,16 @@ input[type=number] {
   overflow: hidden;
 }
 
+/* The OCR comparison column is a fixed-height pane inside the locked modal.
+   Override the shared glass surface's clipping deliberately so its source and
+   diagnostics remain reachable without moving the whole dialog. */
+.model-split-ocr-panel {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 /* 标签页 Segmented Control 控制器 */
 .question-edit-glass-tabs {
   border: 1px solid rgb(0 0 0 / 8%);

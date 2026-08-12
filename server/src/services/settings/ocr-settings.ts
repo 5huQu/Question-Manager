@@ -18,6 +18,9 @@ type OcrProvider = 'legacy' | 'doc2x' | 'glm'
 
 const SIMPLIFIED_CLASSIFICATION_SYSTEM_PROMPT = '你是题库分类工具。'
 const LEGACY_CLASSIFICATION_SYSTEM_PROMPT_PREFIX = '你是高中数学题目分类工具。'
+const DEFAULT_MODEL_SPLIT_MAX_TOKENS = 65_536
+const MIN_MODEL_SPLIT_MAX_TOKENS = 4_096
+const MAX_MODEL_SPLIT_MAX_TOKENS = 131_072
 
 export function ocrEnvPath() {
   const configDir = path.join(storageRoot, 'config')
@@ -70,6 +73,12 @@ function readStoredPromptSettings() {
     : {}
 }
 
+export function clampModelSplitMaxTokens(value: unknown, fallback = DEFAULT_MODEL_SPLIT_MAX_TOKENS) {
+  const parsed = Number.parseInt(String(value ?? ''), 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(MIN_MODEL_SPLIT_MAX_TOKENS, Math.min(parsed, MAX_MODEL_SPLIT_MAX_TOKENS))
+}
+
 /**
  * Model splitting reads this path for every request. Keep it separate from
  * readOcrPromptSettings(), whose OCR defaults may invoke the Python runner.
@@ -86,6 +95,7 @@ export function readModelSplitPromptSettings() {
       ? `${DEFAULT_MODEL_SPLIT_SYSTEM_PROMPT}\n\n补充版式要求：\n${legacySupplement}`
       : DEFAULT_MODEL_SPLIT_SYSTEM_PROMPT),
     modelSplitUserPrompt: userPrompt || DEFAULT_MODEL_SPLIT_USER_PROMPT,
+    modelSplitMaxTokens: clampModelSplitMaxTokens(payload.model_split_max_tokens),
   }
 }
 
@@ -208,6 +218,7 @@ export function writeOcrPromptSettings(input: Record<string, unknown>) {
     classification_user_prompt: String(input.classificationUserPrompt ?? existing.classificationUserPrompt ?? ''),
     model_split_system_prompt: String(input.modelSplitSystemPrompt ?? existing.modelSplitSystemPrompt ?? ''),
     model_split_user_prompt: String(input.modelSplitUserPrompt ?? existing.modelSplitUserPrompt ?? ''),
+    model_split_max_tokens: String(clampModelSplitMaxTokens(input.modelSplitMaxTokens ?? existing.modelSplitMaxTokens)),
   }
   fs.writeFileSync(ocrPromptSettingsPath(), `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
   return readOcrPromptSettings()

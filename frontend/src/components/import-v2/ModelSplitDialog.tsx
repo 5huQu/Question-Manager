@@ -12,6 +12,7 @@ import {
   Info,
   LoaderCircle,
   Radio,
+  Replace,
   RotateCcw,
   ShieldAlert,
   Sparkles,
@@ -62,6 +63,24 @@ const NOTE_PRESETS = [
 
 function contentOf(item: ModelSplitPreviewItem): QuestionContentValue {
   return { stemMarkdown: item.stemMarkdown, answerText: item.answerText, analysisMarkdown: item.analysisMarkdown }
+}
+
+const replacementFieldLabel: Record<NonNullable<ModelSplitPreviewItem['suggestedReplacements']>[number]['field'], string> = {
+  stemMarkdown: '题干与选项',
+  answerText: '答案',
+  analysisMarkdown: '解析',
+}
+
+function exactOccurrences(source: string, fragment: string) {
+  if (!fragment) return 0
+  let count = 0
+  let cursor = 0
+  while (true) {
+    const index = source.indexOf(fragment, cursor)
+    if (index < 0) return count
+    count += 1
+    cursor = index + fragment.length
+  }
 }
 
 /** Keeps previews produced by an older server interactive until they are regenerated. */
@@ -189,6 +208,19 @@ export function ModelSplitDialog({
 
   function updateContent(value: QuestionContentValue) {
     updateSelected(value)
+  }
+
+  function canApplySuggestedReplacement(replacement: NonNullable<ModelSplitPreviewItem['suggestedReplacements']>[number]) {
+    if (!selected) return false
+    return exactOccurrences(selected[replacement.field], replacement.exactText) === 1
+  }
+
+  function applySuggestedReplacement(replacement: NonNullable<ModelSplitPreviewItem['suggestedReplacements']>[number]) {
+    if (!selected || !canApplySuggestedReplacement(replacement)) return
+    const current = selected[replacement.field]
+    updateSelected({
+      [replacement.field]: current.replace(replacement.exactText, replacement.replacementText),
+    } as Partial<ModelSplitPreviewItem>)
   }
 
   function apply() {
@@ -458,7 +490,7 @@ export function ModelSplitDialog({
           </div>
 
           {/* 3-Column macOS Split View Layout */}
-          <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[230px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_250px]">
+          <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-3 lg:grid-cols-[230px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_250px]">
             {/* Sidebar: Question List */}
             <aside className="question-edit-glass-inner flex min-h-0 flex-col overflow-hidden rounded-2xl border border-black/6 bg-white/85 dark:border-white/8 dark:bg-zinc-900/85 shadow-2xs">
               <div className="shrink-0 border-b border-black/6 px-3.5 py-3 dark:border-white/8">
@@ -611,7 +643,7 @@ export function ModelSplitDialog({
             )}
 
             {/* Right Panel: OCR source comparison and diagnostics */}
-            <aside className="question-edit-glass-inner flex min-h-0 flex-col overflow-y-auto rounded-2xl border border-black/6 bg-white/85 p-3.5 dark:border-white/8 dark:bg-zinc-900/85 shadow-2xs space-y-4">
+            <aside className="question-edit-glass-inner model-split-ocr-panel flex min-h-0 flex-col rounded-2xl border border-black/6 bg-white/85 p-3.5 dark:border-white/8 dark:bg-zinc-900/85 shadow-2xs space-y-4">
               <div className="flex items-center gap-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 border-b border-black/6 pb-2.5 dark:border-white/8">
                 <FileText className="size-4 text-zinc-500" />
                 OCR 原稿对照与核对
@@ -655,6 +687,52 @@ export function ModelSplitDialog({
                     </div>
                   ) : null}
 
+                  {selected.suggestedReplacements?.length ? (
+                    <div className="space-y-2 rounded-xl border border-violet-500/20 bg-violet-500/7 p-2.5 text-[11px] leading-relaxed text-violet-950 dark:text-violet-100">
+                      <div className="flex items-center gap-1.5 font-semibold">
+                        <Sparkles className="size-3.5 text-violet-600 dark:text-violet-400" />
+                        可采用的模型建议
+                      </div>
+                      <p className="text-[10px] text-violet-800/75 dark:text-violet-200/75">不会自动修改；确认无误后，可将建议替换写入左侧草稿。</p>
+                      <div className="space-y-2">
+                        {selected.suggestedReplacements.map((replacement, index) => {
+                          const applicable = canApplySuggestedReplacement(replacement)
+                          return (
+                            <div key={`${replacement.field}-${replacement.exactText}-${index}`} className="rounded-lg border border-violet-500/16 bg-white/55 p-2 dark:bg-zinc-950/30">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <span className="font-semibold text-violet-800 dark:text-violet-200">{replacementFieldLabel[replacement.field]}</span>
+                                  <MarkdownContent className="mt-1 text-[10px] leading-relaxed text-violet-800/70 [&_p]:my-0 dark:text-violet-200/70" content={replacement.reason} />
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  icon={Replace}
+                                  onClick={() => applySuggestedReplacement(replacement)}
+                                  disabled={!applicable || applying}
+                                  title={applicable ? '采用模型建议并写入左侧草稿' : '当前草稿中未能唯一定位原文，请手动确认'}
+                                  className="h-7 shrink-0 border-violet-500/25 bg-white/75 px-2 text-[10px] text-violet-800 hover:bg-violet-500/10 dark:bg-zinc-900/80 dark:text-violet-200"
+                                >
+                                  {applicable ? '采用建议' : '需手动确认'}
+                                </Button>
+                              </div>
+                              <div className="mt-1.5 grid gap-1 text-[10px]">
+                                <div className="max-h-16 overflow-y-auto rounded bg-rose-500/7 px-1.5 py-1 text-rose-800 dark:text-rose-200">
+                                  <span className="mr-1 font-semibold text-rose-700/75 dark:text-rose-200/75">原文</span>
+                                  <MarkdownContent className="inline leading-relaxed [&_p]:inline [&_.katex-display]:my-0" content={replacement.exactText} />
+                                </div>
+                                <div className="max-h-16 overflow-y-auto rounded bg-emerald-500/8 px-1.5 py-1 text-emerald-800 dark:text-emerald-200">
+                                  <span className="mr-1 font-semibold text-emerald-700/75 dark:text-emerald-200/75">建议</span>
+                                  <MarkdownContent className="inline leading-relaxed [&_p]:inline [&_.katex-display]:my-0" content={replacement.replacementText} />
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
                   {/* Issue Diagnostics */}
                   <div className="space-y-2 border-t border-black/6 pt-3 dark:border-white/8">
                     <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">结构提示</span>
@@ -671,7 +749,7 @@ export function ModelSplitDialog({
                           >
                             <div className="flex items-start gap-1.5 font-medium">
                               {issue.severity === 'error' ? <CircleAlert className="size-3.5 shrink-0 text-rose-500 mt-0.5" /> : <AlertTriangle className="size-3.5 shrink-0 text-amber-500 mt-0.5" />}
-                              <span>{issue.message}</span>
+                              <MarkdownContent className="min-w-0 leading-relaxed [&_p]:my-0" content={issue.message} />
                             </div>
                           </div>
                         ))}

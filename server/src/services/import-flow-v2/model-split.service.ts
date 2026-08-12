@@ -50,6 +50,12 @@ type SplitItem = {
   question_type?: unknown
   /** 原卷中的选择项定位与内容，供本地逐字核验后结构化。 */
   options?: unknown
+  /** 模型直出模式下的可编辑候选内容。 */
+  stem_markdown?: unknown
+  analysis_markdown?: unknown
+  source_line_ranges?: unknown
+  issues?: unknown
+  suggested_replacements?: unknown
   cleanup_operations?: unknown
   /** @deprecated; kept so previews from the initial v4 contract still work. */
   analysis_trim_prefix?: unknown
@@ -101,6 +107,13 @@ export type ModelSplitPreviewItem = {
   sourceSolutionMarkdown: string
   /** 已逐字核验并应用的模型清理记录；不会修改右侧 OCR 原稿。 */
   cleanupNotes: string[]
+  /** 用户确认后才会应用的模型文本建议；不会自动改写草稿。 */
+  suggestedReplacements: Array<{
+    field: 'stemMarkdown' | 'answerText' | 'analysisMarkdown'
+    exactText: string
+    replacementText: string
+    reason: string
+  }>
   sourceRefs: CandidateSourceRef[]
   issues: Array<{ code: string; severity: 'warning' | 'error'; message: string }>
 }
@@ -189,10 +202,10 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
   const payload = {
     document_role: role,
     instructions: role === 'solutions'
-      ? '这是答案解析文档。每题答案/解析使用完整的 solution_line_ranges，并提取 answer_text（可选 answer_evidence_text）；不要生成题干范围；question_type 固定为 other 且 options 必须为 []；不要使用 answer_line_ranges 或 analysis_line_ranges；如有汇总答案表，同时提取 answer_table_entries。'
+      ? '这是答案解析文档。使用直出候选模式：为每题直接生成 answer_text、analysis_markdown、source_line_ranges 和 issues；不生成 stem_markdown，question_type 固定为 other，options 必须为 []。source_line_ranges 指向该题完整 OCR 原稿；如有汇总答案表，同时提取 answer_table_entries。'
       : role === 'questions'
-        ? '这是原卷文档。只返回 stem_line_ranges，并识别 question_type 与 options；不要生成答案或解析范围；通常不应存在 answer_table_entries。'
-        : '这是同一份原卷与答案解析文档。题干使用 stem_line_ranges，并识别 question_type 与 options；每题答案/解析使用完整的 solution_line_ranges，并提取 answer_text（可选 answer_evidence_text）；不要使用 answer_line_ranges 或 analysis_line_ranges；如有汇总答案表，同时提取 answer_table_entries。',
+        ? '这是原卷文档。使用直出候选模式：为每题直接生成 stem_markdown、question_type、options、source_line_ranges 和 issues；answer_text 与 analysis_markdown 必须为空字符串。source_line_ranges 指向该题完整 OCR 原稿；通常不应存在 answer_table_entries。'
+        : '这是同一份原卷与答案解析文档。使用直出候选模式：为每题直接生成 stem_markdown、answer_text、analysis_markdown、question_type、options、source_line_ranges 和 issues。source_line_ranges 指向该题完整 OCR 原稿；不要输出 stem_line_ranges、solution_line_ranges、answer_line_ranges 或 analysis_line_ranges。',
     line_numbering: '1-based, inclusive; L000001 means line 1',
     output_schema: {
       schema_version: 'model-split-draft-v4',
@@ -205,6 +218,9 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
         solution_line_ranges: 'Array<[start_line, end_line]>',
         answer_text: 'string copied exactly from the source; may come from any position inside the solution range',
         answer_evidence_text: 'optional short source excerpt containing the answer, copied exactly; may occur anywhere in the solution range',
+        stem_markdown: 'direct editable stem for full document mode, without question number, score, answer, analysis headings or commentary',
+        analysis_markdown: 'direct editable solution for full document mode, with solution steps retained and presentation headings removed',
+        source_line_ranges: 'Array<[start_line, end_line]> covering the complete OCR source for this question in full document mode',
         question_type: '"single_choice" | "multiple_choice" | "fill_blank" | "short_answer" | "proof" | "other"',
         options: [{
           label: '"A" | "B" | "C" | "D"',
@@ -216,6 +232,13 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
           action: '"trim_prefix" | "remove"',
           exact_text: 'exact source text to remove; must be unique in the field for remove',
           reason: 'Chinese reason such as 分值、题号和作答答案、考点标签、通用点评',
+        }],
+        issues: [{ code: 'string', field: 'string', message: 'Chinese description of OCR uncertainty' }],
+        suggested_replacements: [{
+          field: '"stem" | "answer" | "analysis"',
+          exact_text: 'the exact text currently retained in the corresponding direct draft field',
+          replacement_text: 'a proposed replacement for that exact text',
+          reason: 'Chinese reason for the suggestion',
         }],
       }],
       answer_table_entries: [{
@@ -249,6 +272,9 @@ function modelRequest(role: ModelSplitRole, segments: SplitSegment[], stream: bo
     ],
     temperature: 0,
     top_p: 0.1,
+    // Whole papers can contain complete worked solutions. Do not rely on a
+    // gateway's usually much smaller default output budget.
+    max_tokens: settings.modelSplitMaxTokens,
     stream,
     response_format: { type: 'json_object' },
     // DeepSeek V4 Flash defaults to thinking mode. Splitting is an extraction task,
@@ -334,6 +360,14 @@ function parseModelJson(text: string): ModelSplitPayload {
   throw new RouteError(502, '拆题模型没有返回合法 JSON。')
 }
 
+function finishReason(body: any) {
+  return String(body?.choices?.[0]?.finish_reason || '').trim().toLowerCase()
+}
+
+function lengthLimitError() {
+  return new RouteError(502, '模型输出达到长度上限，结果未完整生成。请在“设置 → AI 助手与分类”提高模型拆题最大输出 Token 后重新生成。')
+}
+
 function normalizeModelSplitOptions(body?: unknown): ModelSplitOptions {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return {}
   const raw = (body as { userNote?: unknown; note?: unknown }).userNote ?? (body as { note?: unknown }).note
@@ -361,8 +395,11 @@ async function callModel(role: ModelSplitRole, segments: SplitSegment[], options
       })
       const raw = await response.text()
       if (!response.ok) throw new Error(`模型服务返回 HTTP ${response.status}: ${raw.slice(0, 300)}`)
-      return parseModelJson(extractMessageContent(JSON.parse(raw)))
+      const body = JSON.parse(raw)
+      if (finishReason(body) === 'length') throw lengthLimitError()
+      return parseModelJson(extractMessageContent(body))
     } catch (error) {
+      if (error instanceof RouteError) throw error
       lastError = error instanceof Error ? error.message : String(error)
     }
   }
@@ -394,6 +431,7 @@ async function callModelStream(role: ModelSplitRole, segments: SplitSegment[], o
       const decoder = new TextDecoder()
       let sseBuffer = ''
       let emittedItems = 0
+      let finalFinishReason = ''
       const consumeEvent = (rawEvent: string) => {
         const data = rawEvent.split(/\r?\n/)
           .filter((line) => line.startsWith('data:'))
@@ -401,7 +439,9 @@ async function callModelStream(role: ModelSplitRole, segments: SplitSegment[], o
           .join('\n')
           .trim()
         if (!data || data === '[DONE]') return
-        const delta = extractDeltaContent(JSON.parse(data))
+        const body = JSON.parse(data)
+        finalFinishReason = finishReason(body) || finalFinishReason
+        const delta = extractDeltaContent(body)
         if (!delta) return
         for (const item of parser.push(delta)) {
           emittedItems += 1
@@ -418,6 +458,7 @@ async function callModelStream(role: ModelSplitRole, segments: SplitSegment[], o
         if (done) break
       }
       if (sseBuffer.trim()) consumeEvent(sseBuffer)
+      if (finalFinishReason === 'length') throw lengthLimitError()
       const payload = parser.payload()
       const items = Array.isArray(payload.items) ? payload.items as SplitItem[] : []
       if (!items.length) throw new Error('拆题模型没有返回题目。')
@@ -429,6 +470,7 @@ async function callModelStream(role: ModelSplitRole, segments: SplitSegment[], o
       }
       return payload
     } catch (error) {
+      if (error instanceof RouteError) throw error
       lastError = error instanceof Error ? error.message : String(error)
       if (emittedAny) throw new RouteError(502, `模型辅助拆题流中断：${lastError}`)
     }
@@ -553,9 +595,12 @@ function segmentIdsForRanges(value: unknown, segments: SplitSegment[]) {
 }
 
 function materializeLineRangeItem(item: SplitItem, segments: SplitSegment[]): SplitItem {
+  const directSourceIds = item.source_line_ranges === undefined ? undefined : segmentIdsForRanges(item.source_line_ranges, segments)
   return {
     ...item,
-    stem_segment_ids: item.stem_line_ranges === undefined ? item.stem_segment_ids : segmentIdsForRanges(item.stem_line_ranges, segments),
+    stem_segment_ids: item.stem_line_ranges === undefined
+      ? (directSourceIds || item.stem_segment_ids)
+      : segmentIdsForRanges(item.stem_line_ranges, segments),
     solution_segment_ids: item.solution_line_ranges === undefined ? item.solution_segment_ids : segmentIdsForRanges(item.solution_line_ranges, segments),
     answer_segment_ids: item.answer_line_ranges === undefined ? item.answer_segment_ids : segmentIdsForRanges(item.answer_line_ranges, segments),
     analysis_segment_ids: item.analysis_line_ranges === undefined ? item.analysis_segment_ids : segmentIdsForRanges(item.analysis_line_ranges, segments),
@@ -801,6 +846,75 @@ function structureVerifiedChoiceOptions(item: SplitItem, sourceStem: string, dra
   }
 }
 
+function structureDirectChoiceOptions(item: SplitItem, sourceStem: string, draftStem: string) {
+  if (!Array.isArray(item.options) || item.options.length !== 4) return { stemMarkdown: draftStem, applied: false }
+  const options: VerifiedChoiceOption[] = []
+  for (const [index, raw] of item.options.entries()) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { stemMarkdown: draftStem, applied: false }
+    const record = raw as Record<string, unknown>
+    const label = String(record.label || '').trim().toUpperCase()
+    const expectedLabel = String.fromCharCode(65 + index) as VerifiedChoiceOption['label']
+    const sourceText = typeof record.source_text === 'string' ? record.source_text.trim() : ''
+    const content = typeof record.content_markdown === 'string' ? record.content_markdown.trim() : ''
+    const exactContent = sourceOptionContent(expectedLabel, sourceText)
+    if (label !== expectedLabel || !sourceText || !exactContent || content !== exactContent || countExactOccurrences(sourceStem, sourceText) !== 1) {
+      return { stemMarkdown: draftStem, applied: false }
+    }
+    options.push({ label: expectedLabel, content: exactContent, sourceText })
+  }
+  // Models occasionally keep the original inline options in stem_markdown as
+  // well as returning `options`. Remove only those exact, source-verified
+  // strings, then append the canonical editor representation once.
+  let body = draftStem
+  for (const option of options) {
+    const index = body.indexOf(option.sourceText)
+    if (index >= 0) body = `${body.slice(0, index)}${body.slice(index + option.sourceText.length)}`
+  }
+  return {
+    stemMarkdown: [body.trim(), options.map((option) => `${option.label}. ${option.content}`).join('\n')].filter(Boolean).join('\n\n'),
+    applied: true,
+  }
+}
+
+function directModelIssues(value: unknown): QuestionCandidate['issues'] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((raw) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
+    const record = raw as Record<string, unknown>
+    const message = typeof record.message === 'string' ? record.message.trim() : ''
+    return message ? [{ code: 'manual_review_required' as const, severity: 'warning' as const, message }] : []
+  })
+}
+
+type ModelSuggestedReplacement = ModelSplitPreviewItem['suggestedReplacements'][number]
+
+function suggestedReplacements(value: unknown): ModelSuggestedReplacement[] {
+  if (!Array.isArray(value)) return []
+  const fieldMap: Record<string, ModelSuggestedReplacement['field']> = {
+    stem: 'stemMarkdown',
+    answer: 'answerText',
+    analysis: 'analysisMarkdown',
+  }
+  const seen = new Set<string>()
+  const replacements: ModelSuggestedReplacement[] = []
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const record = raw as Record<string, unknown>
+    const field = fieldMap[String(record.field || '').trim()]
+    const exactText = typeof record.exact_text === 'string' ? record.exact_text.trim() : ''
+    const replacementText = typeof record.replacement_text === 'string' ? record.replacement_text.trim() : ''
+    const reason = typeof record.reason === 'string' ? record.reason.trim() : ''
+    // Suggestions are only a compact, field-local manual action. They cannot
+    // introduce a giant rewritten answer or silently remove a whole field.
+    if (!field || !exactText || !replacementText || exactText === replacementText || exactText.length > 800 || replacementText.length > 800) continue
+    const key = `${field}\u0000${exactText}\u0000${replacementText}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    replacements.push({ field, exactText, replacementText, reason: reason || '模型建议替换 OCR 疑似误识别文本' })
+  }
+  return replacements.slice(0, 8)
+}
+
 function isAnswerEvidenceInSource(answerText: string, evidenceText: string, sourceMarkdown: string) {
   if (!answerText || !sourceMarkdown) return true
   const source = compactEvidenceText(sourceMarkdown)
@@ -844,7 +958,15 @@ function candidateFromModelItem(
   const repair = item.number_repair && item.number_repair.applied === true && rawQuestionNo && questionNo && rawQuestionNo !== questionNo
     ? { reason: String(item.number_repair.reason || '模型修复题号'), confidence: Math.max(0, Math.min(1, Number(item.number_repair.confidence || 0))) }
     : undefined
-  const sourceStemMarkdown = role === 'solutions' ? '' : reconstructField(stemSegments, [])
+  // In direct mode `source_line_ranges` are materialized into stem segments
+  // for every document role. Keep that OCR slice separately from its semantic
+  // destination: in a solutions document it is source *solution*, not stem.
+  const directSourceMarkdown = reconstructField(stemSegments, [])
+  const sourceStemMarkdown = role === 'solutions' ? '' : directSourceMarkdown
+  const directQuestionDraft = role === 'questions' && typeof item.stem_markdown === 'string'
+  const directSolutionDraft = role === 'solutions' && typeof item.analysis_markdown === 'string'
+  const directFullDraft = role === 'full' && typeof item.stem_markdown === 'string' && typeof item.analysis_markdown === 'string'
+  const usesDirectDraft = directQuestionDraft || directSolutionDraft || directFullDraft
   const operations = cleanupOperations(item)
   // Stem cleanup runs after the project's standard question-number removal, so
   // the model can quote only a score label such as `(5分)` instead of guessing
@@ -852,30 +974,39 @@ function candidateFromModelItem(
   const stemCleanup = cleanupFieldDraft('stem', role === 'solutions' ? '' : removeLeadingQuestionMarker(sourceStemMarkdown), operations)
   const structuredChoices = role === 'solutions'
     ? { stemMarkdown: '', applied: false }
-    : structureVerifiedChoiceOptions(item, sourceStemMarkdown, stemCleanup.value)
+    : (directQuestionDraft || directFullDraft)
+      ? structureDirectChoiceOptions(item, sourceStemMarkdown, String(item.stem_markdown || '').trim())
+      : structureVerifiedChoiceOptions(item, sourceStemMarkdown, stemCleanup.value)
   const stemMarkdown = structuredChoices.stemMarkdown
   // The model identifies complete source ranges and may mark exact source text
   // for presentation cleanup. The raw source stays intact for comparison.
-  const sourceSolutionMarkdown = role === 'questions' ? '' : reconstructField(solutionSegments, [])
+  const sourceSolutionMarkdown = role === 'questions' ? '' : usesDirectDraft ? directSourceMarkdown : reconstructField(solutionSegments, [])
   const answerDraft = role === 'questions' ? { answerText: '', evidenceText: '' } : modelAnswerDraft(item)
   const rawAnswerText = role === 'questions'
     ? ''
     : answerDraft.answerText || reconstructField(answerSegments, answerSpans)
   const answerCleanup = cleanupFieldDraft('answer', rawAnswerText, operations)
   const answerText = answerCleanup.value
-  const analysisCleanup = cleanupFieldDraft('analysis', role === 'questions' ? '' : sourceSolutionMarkdown || reconstructField(analysisSegments, analysisSpans), operations)
+  const analysisCleanup = cleanupFieldDraft('analysis', role === 'questions'
+    ? ''
+    : (directSolutionDraft || directFullDraft) ? String(item.analysis_markdown || '').trim() : sourceSolutionMarkdown || reconstructField(analysisSegments, analysisSpans), operations)
   const analysisMarkdown = role === 'questions'
     ? ''
     : analysisCleanup.value
   const cleanupNotes = [
     ...stemCleanup.notes,
+    ...(usesDirectDraft ? [role === 'questions'
+      ? '模型已直接生成可编辑题干与选项；右侧保留完整 OCR 原稿对照'
+      : role === 'solutions'
+        ? '模型已直接生成可编辑答案与解析；右侧保留完整 OCR 原稿对照'
+        : '模型已直接生成可编辑题干、答案与解析；右侧保留完整 OCR 原稿对照'] : []),
     ...(structuredChoices.applied ? ['已根据 OCR 原文核验并结构化 A、B、C、D 选项'] : []),
     ...answerCleanup.notes,
     ...analysisCleanup.notes,
   ]
-  const answerEvidenceVerified = isAnswerEvidenceInSource(answerText, answerDraft.evidenceText, sourceSolutionMarkdown)
+  const answerEvidenceVerified = usesDirectDraft || isAnswerEvidenceInSource(answerText, answerDraft.evidenceText, sourceSolutionMarkdown)
   const sourceRefs = [
-    ...rangesForSegments(document, stemSegments, 'stem'),
+    ...rangesForSegments(document, stemSegments, role === 'solutions' ? 'analysis' : 'stem'),
     ...rangesForSegments(document, solutionSegments, 'answer'),
     ...rangesForSegments(document, solutionSegments, 'analysis'),
     ...rangesForSegments(document, answerSegments, 'answer'),
@@ -884,14 +1015,15 @@ function candidateFromModelItem(
     ...rangesForSegments(document, analysisSpans.map((span) => span.segment), 'analysis'),
   ]
   const figures = [
-    ...stemSegments.flatMap((segment) => figuresForRange(document, { start: segment.start, end: segment.end }, 'stem')),
+    ...stemSegments.flatMap((segment) => figuresForRange(document, { start: segment.start, end: segment.end }, role === 'solutions' ? 'analysis' : 'stem')),
     ...solutionSegments.flatMap((segment) => figuresForRange(document, { start: segment.start, end: segment.end }, 'analysis')),
     ...answerSegments.flatMap((segment) => figuresForRange(document, { start: segment.start, end: segment.end }, 'analysis')),
     ...analysisSegments.flatMap((segment) => figuresForRange(document, { start: segment.start, end: segment.end }, 'analysis')),
     ...answerSpans.flatMap((span) => figuresForRange(document, { start: span.segment.start, end: span.segment.end }, 'analysis')),
     ...analysisSpans.flatMap((span) => figuresForRange(document, { start: span.segment.start, end: span.segment.end }, 'analysis')),
   ]
-  const issues: QuestionCandidate['issues'] = []
+  const issues: QuestionCandidate['issues'] = directModelIssues(item.issues)
+  const modelSuggestedReplacements = suggestedReplacements(item.suggested_replacements)
   if (!questionNo) issues.push({ code: 'missing_question_no', severity: 'error', message: `${label}缺少题号。` })
   if (!stemMarkdown && role !== 'solutions') issues.push({ code: 'missing_stem', severity: 'error', message: `${label}缺少题干。` })
   if (!answerEvidenceVerified) {
@@ -949,6 +1081,7 @@ function candidateFromModelItem(
       sourceStemMarkdown,
       sourceSolutionMarkdown,
       cleanupNotes,
+      suggestedReplacements: modelSuggestedReplacements,
       sourceRefs,
       issues: candidate.issues,
     },
@@ -1077,8 +1210,15 @@ function applyAnswerTableEntries(
   return warnings
 }
 
-function mergeSeparatedCandidates(questionCandidates: QuestionCandidate[], solutionCandidates: QuestionCandidate[]) {
+function mergeSeparatedCandidates(
+  questionCandidates: QuestionCandidate[],
+  solutionCandidates: QuestionCandidate[],
+  questionPreviews?: ModelSplitPreviewItem[],
+  solutionPreviews?: ModelSplitPreviewItem[],
+) {
   const solutions = new Map(solutionCandidates.map((candidate) => [candidate.questionNo, candidate]))
+  const solutionPreviewByQuestionNo = new Map((solutionPreviews || []).map((preview) => [preview.questionNo, preview]))
+  const questionPreviewByQuestionNo = new Map((questionPreviews || []).map((preview) => [preview.questionNo, preview]))
   const diagnostics: string[] = []
   for (const question of questionCandidates) {
     const solution = solutions.get(question.questionNo)
@@ -1091,7 +1231,22 @@ function mergeSeparatedCandidates(questionCandidates: QuestionCandidate[], solut
     question.analysisMarkdown = solution.analysisMarkdown
     question.sourceRefs.push(...solution.sourceRefs)
     question.figures.push(...solution.figures)
+    for (const issue of solution.issues) {
+      if (!question.issues.some((existing) => existing.code === issue.code && existing.message === issue.message)) question.issues.push(issue)
+    }
+    for (const diagnostic of solution.parseDiagnostics) {
+      if (!question.parseDiagnostics.some((existing) => existing.code === diagnostic.code && existing.message === diagnostic.message)) question.parseDiagnostics.push(diagnostic)
+    }
     if (question.parseDiagnostics.length === 0 && solution.parseDiagnostics.length > 0) question.parseDiagnostics = solution.parseDiagnostics
+    const questionPreview = questionPreviewByQuestionNo.get(question.questionNo)
+    const solutionPreview = solutionPreviewByQuestionNo.get(question.questionNo)
+    if (questionPreview && solutionPreview) {
+      // The final review dialog must compare the cleaned solution draft with
+      // the solution OCR, not with an already-cleaned candidate field.
+      questionPreview.sourceSolutionMarkdown = solutionPreview.sourceSolutionMarkdown
+      questionPreview.cleanupNotes = [...questionPreview.cleanupNotes, ...solutionPreview.cleanupNotes]
+      questionPreview.suggestedReplacements = [...questionPreview.suggestedReplacements, ...solutionPreview.suggestedReplacements]
+    }
   }
   for (const solution of solutionCandidates) {
     if (!questionCandidates.some((question) => question.questionNo === solution.questionNo)) diagnostics.push(`解析文档中的第 ${solution.questionNo || '未知'} 题未匹配到原卷题干。`)
@@ -1128,6 +1283,7 @@ function finalizeCandidatePreviews(candidates: QuestionCandidate[], previewSeeds
       sourceStemMarkdown: seed?.sourceStemMarkdown || candidate.stemMarkdown,
       sourceSolutionMarkdown: seed?.sourceSolutionMarkdown || candidate.analysisMarkdown,
       cleanupNotes: seed?.cleanupNotes || [],
+      suggestedReplacements: seed?.suggestedReplacements || [],
       sourceRefs: candidate.sourceRefs,
       issues: candidate.issues,
     }
@@ -1275,7 +1431,7 @@ export async function createModelSplitPreviewStream(jobId: string, body: unknown
   const [questionResult, solutionResult] = results
   for (const message of questionResult.warnings) emit({ event: 'warning', data: { role: questionRole, message } })
   for (const message of solutionResult.warnings) emit({ event: 'warning', data: { role: 'solutions', message } })
-  const mergeDiagnostics = mergeSeparatedCandidates(questionResult.candidates, solutionResult.candidates)
+  const mergeDiagnostics = mergeSeparatedCandidates(questionResult.candidates, solutionResult.candidates, questionResult.previews, solutionResult.previews)
   const finalized = finalizeCandidatePreviews(questionResult.candidates, questionResult.previews)
   const preview: ModelSplitPreview = { id: randomUUID(), importJobId: job.id, mode: job.mode, items: finalized.previews, diagnostics: [...questionResult.diagnostics, ...solutionResult.diagnostics, ...mergeDiagnostics, ...finalized.diagnostics], warnings: [...questionResult.warnings, ...solutionResult.warnings], candidates: questionResult.candidates, createdAt: nowIso() }
   previews.set(preview.id, preview)
@@ -1307,7 +1463,7 @@ export async function createModelSplitPreview(jobId: string, body?: unknown) {
   const solutionSource = requireSourceDocument(solutionDocument.sourceDocumentId)
   const solutionOcr = loadOcrDocument(latestOcrDocumentForSource(solutionSource.id).id)
   const [questionResult, solutionResult] = await Promise.all([questionPromise, splitDocument('solutions', solutionOcr, metadata, options)])
-  const mergeDiagnostics = mergeSeparatedCandidates(questionResult.candidates, solutionResult.candidates)
+  const mergeDiagnostics = mergeSeparatedCandidates(questionResult.candidates, solutionResult.candidates, questionResult.previews, solutionResult.previews)
   const finalized = finalizeCandidatePreviews(questionResult.candidates, questionResult.previews)
   const preview: ModelSplitPreview = { id: randomUUID(), importJobId: job.id, mode: job.mode, items: finalized.previews, diagnostics: [...questionResult.diagnostics, ...solutionResult.diagnostics, ...mergeDiagnostics, ...finalized.diagnostics], warnings: [...questionResult.warnings, ...solutionResult.warnings], candidates: questionResult.candidates, createdAt: nowIso() }
   previews.set(preview.id, preview)

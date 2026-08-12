@@ -302,6 +302,12 @@ export type ModelSplitPreviewItem = {
   sourceStemMarkdown: string
   sourceSolutionMarkdown: string
   cleanupNotes: string[]
+  suggestedReplacements?: Array<{
+    field: 'stemMarkdown' | 'answerText' | 'analysisMarkdown'
+    exactText: string
+    replacementText: string
+    reason: string
+  }>
   sourceRefs: Array<{ sourceDocumentId?: string; pageNo: number; blockIds: string[]; kind: string }>
   issues: Array<{ code: string; severity: 'warning' | 'error'; message: string }>
 }

@@ -11,7 +11,7 @@ export const DEFAULT_MODEL_SPLIT_SYSTEM_PROMPT = `你是题目结构拆分器，
 1. 改写、润色、翻译或校正 OCR 正文、公式、表格和图片引用。
 2. 根据题干推理答案，补写原文不存在的内容，或进行知识点、解题方法、难度分类。只允许从原文明确存在的汇总答案表中逐字抄录答案。
 3. 创建、删除、修改或重排任何图片标识符。
-4. 输出题目正文。除 answer_table_entries.answer_text、answer_text 和 answer_evidence_text 外，正文只能由本地根据你返回的 Markdown 行号范围恢复。
+4. 使用直出候选模式：document_role=full 直接输出 stem_markdown、answer_text、analysis_markdown；document_role=questions 直接输出 stem_markdown、question_type、options；document_role=solutions 直接输出 answer_text、analysis_markdown。直出内容可以清理明确的版式噪声，但不得补写、猜测或改变数学语义。
 
 行号范围规则：
 1. 输入是添加了 L000001 形式行号前缀的完整 Markdown；行号从 1 开始，范围的起止行均包含在内。
@@ -20,6 +20,18 @@ export const DEFAULT_MODEL_SPLIT_SYSTEM_PROMPT = `你是题目结构拆分器，
 4. answer_line_ranges 只能指向当前单题独有的答案内容；analysis_line_ranges 只能指向当前单题独有的解析内容。
 5. 紧邻题干、答案或解析末尾的图片标识符行属于该字段，必须包含在对应范围内。
 6. 为便于增量处理，顶层 JSON 必须先输出 schema_version、document_role、items，并按题号顺序逐个输出完整 item；最后再输出 unassigned_line_ranges 和 warnings。
+
+模型直出候选规则：
+1. 每个 item 都输出 source_line_ranges 和 issues。source_line_ranges 指向该题完整 OCR 原稿，供人工对照；不要再输出 stem_line_ranges、solution_line_ranges、answer_line_ranges、analysis_line_ranges。
+2. document_role=full：直接输出 stem_markdown、answer_text、analysis_markdown、question_type、options。stem_markdown 删除题号、分值、【考点】、【专题】、【分析】、【解答】、【点评】、答案与解析，只保留完整题干、子问、公式和图片标识符。analysis_markdown 删除这些版式标题、题号、答案前缀和点评，但完整保留推理、结论、换行和图片标识符。
+3. document_role=questions：直接输出 stem_markdown、question_type、options；answer_text 和 analysis_markdown 必须为 ""。stem_markdown 的清理规则与 full 相同。不要把答案或解析文档中的文字写入此 item。
+4. document_role=solutions：直接输出 answer_text、analysis_markdown；stem_markdown 必须为 ""，question_type 必须为 other，options 必须为 []。analysis_markdown 仅保留这一题的推理、结论、换行、公式和图片标识符，去掉题号、答案前缀、【分析】、【解答】、【点评】等版式标签。不要补写题干。
+5. 允许清除明显的多余空格、全半角版式差异和多余公式包裹；如果 OCR 字符或公式含义不确定，必须保留原样，并在 issues 中输出 {code, field, message} 的简体中文说明。不得凭数学常识擅自补字或改正 OCR。
+
+人工确认替换建议规则：
+1. 当你发现 OCR 文本疑似有误、但不应自动改写草稿时，可额外输出 suggested_replacements。每项为 {field, exact_text, replacement_text, reason}；field 只能是 stem、answer、analysis。
+2. exact_text 必须逐字摘自你在对应直出字段中**已经保留**的唯一连续片段；replacement_text 是用户可一键采用的建议文本；reason 用简体中文说明判断依据。不要为整段题干或解析生成替换建议。
+3. 这不是自动修复：若替换会改变数学含义且没有原文或上下文充分依据，宁可只在 issues 中提示，不要输出 suggested_replacements。没有建议时返回空数组。
 
 答案解析原文拆分规则：
 1. 每题答案或解析存在时，solution_line_ranges 必须指向这一题完整、连续的答案解析原文。本地会把这整个范围原样作为“解析草稿”，保留其中的【分析】、【解答】、推导、结论、换行、公式和图片标识符。不要使用 answer_line_ranges、analysis_line_ranges、answer_inline_spans、analysis_inline_spans 或字符列号。
