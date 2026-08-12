@@ -33,11 +33,17 @@ export function FloatingBlockToolbar(props: {
   const reduced = useReducedMotion()
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
   const [formulaDialogOpen, setFormulaDialogOpen] = useState(false)
+  const [formulaDialogInitialLatex, setFormulaDialogInitialLatex] = useState('')
   const formulaSelectionRef = useRef<{ from: number; to: number } | null>(null)
 
   const openFormulaKeyboard = () => {
-    const selection = props.textEditor?.state.selection
+    const editor = props.textEditor
+    const selection = editor?.state.selection
     formulaSelectionRef.current = selection ? { from: selection.from, to: selection.to } : null
+    const selected = selection && !selection.empty && editor
+      ? editor.state.doc.textBetween(selection.from, selection.to, '\n')
+      : ''
+    setFormulaDialogInitialLatex(selected)
     setFormulaDialogOpen(true)
   }
 
@@ -146,6 +152,7 @@ export function FloatingBlockToolbar(props: {
         <FormulaEditorDialog
           title="插入行内公式"
           displayMode={false}
+          initialLatex={formulaDialogInitialLatex}
           onApply={insertFormulaAtSavedSelection}
           onClose={() => {
             formulaSelectionRef.current = null

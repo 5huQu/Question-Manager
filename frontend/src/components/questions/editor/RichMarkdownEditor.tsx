@@ -136,6 +136,7 @@ function TableActionBar({ editor }: { editor: Editor }) {
 export function RichMarkdownEditor({ id, label, value, onChange, placeholder = '输入内容…', minHeight = 'min-h-36', sourceMinHeight = 'min-h-[28rem]', compact = false, hideHeader = false, hideToolbar = false, onSaveRequest, surface = 'solid' }: RichMarkdownEditorProps) {
   const [sourceMode, setSourceMode] = useState(() => containsUnsupportedRawContent(value))
   const [formulaMode, setFormulaMode] = useState<'inline' | 'block' | null>(null)
+  const [formulaInitial, setFormulaInitial] = useState('')
   const [tableActive, setTableActive] = useState(false)
   const latestValue = useRef(value)
   latestValue.current = value
@@ -209,6 +210,13 @@ export function RichMarkdownEditor({ id, label, value, onChange, placeholder = '
 
   if (!editor) return <div className={`${minHeight} animate-pulse rounded-lg border ${glass ? 'question-edit-glass-editor' : 'border-zinc-200 bg-zinc-50/40 dark:border-zinc-800 dark:bg-zinc-900/20'}`} />
 
+  const openFormulaDialog = (mode: 'inline' | 'block') => {
+    const selection = editor.state.selection
+    const selected = selection.empty ? '' : editor.state.doc.textBetween(selection.from, selection.to, '\n')
+    setFormulaInitial(selected)
+    setFormulaMode(mode)
+  }
+
   return (
     <section aria-label={hideHeader ? label : undefined} aria-labelledby={hideHeader ? undefined : `${id}-label`} className="space-y-1.5">
       {!hideHeader ? <div className="flex items-center justify-between gap-3">
@@ -239,8 +247,8 @@ export function RichMarkdownEditor({ id, label, value, onChange, placeholder = '
                   <IconButton label="项目符号列表" active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}><List className="size-4" /></IconButton>
                   <IconButton label="有序列表" active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered className="size-4" /></IconButton>
                   <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-800" />
-                  <IconButton label="打开行内公式键盘" onClick={() => setFormulaMode('inline')}><Sigma className="size-4" /></IconButton>
-                  <IconButton label="打开块级公式键盘" onClick={() => setFormulaMode('block')}><Braces className="size-4" /></IconButton>
+                  <IconButton label="打开行内公式键盘" onClick={() => openFormulaDialog('inline')}><Sigma className="size-4" /></IconButton>
+                  <IconButton label="打开块级公式键盘" onClick={() => openFormulaDialog('block')}><Braces className="size-4" /></IconButton>
                   <IconButton label="插入三列表格" onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}><Table2 className="size-4" /></IconButton>
                   <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-800" />
                   <IconButton label="插入填空线" onClick={() => editor.chain().focus().insertContent('___').run()}><TextCursorInput className="size-4" /></IconButton>
@@ -256,6 +264,7 @@ export function RichMarkdownEditor({ id, label, value, onChange, placeholder = '
         <FormulaEditorDialog
           title={formulaMode === 'inline' ? '插入行内公式' : '插入块级公式'}
           displayMode={formulaMode === 'block'}
+          initialLatex={formulaInitial}
           onClose={() => { setFormulaMode(null); editor.chain().focus().run() }}
           onApply={(latex) => {
             editor.chain().focus().insertContent({ type: formulaMode === 'inline' ? 'formulaInline' : 'formulaBlock', attrs: { latex } }).run()
