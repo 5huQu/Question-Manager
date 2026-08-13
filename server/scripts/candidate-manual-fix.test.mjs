@@ -30,6 +30,7 @@ const {
   finalizeCandidateFixSession,
   getCandidateFixSession,
   reopenCandidateFixSession,
+  renderCandidateSourceDocumentPage,
   saveCandidateFixRegions,
 } = await import('../dist/services/candidate-fix/candidate-fix.service.js')
 const candidateService = await import('../dist/services/import-flow-v2/candidate.service.js')
@@ -94,6 +95,15 @@ try {
   assert.equal(initialAnalysisFigureRegion?.sourceDocumentId, solutionDocId)
   const restoredSession = createOrRestoreCandidateFixSession(candidateId)
   assert.equal(restoredSession.id, session.id)
+
+  db.prepare(`
+    INSERT INTO source_documents (id, title, original_file_name, file_path, file_type, page_count, provider, status, created_at, updated_at)
+    VALUES ('src_doc_markdown', 'Doc2X Markdown', 'doc2x-original.md', 'import-flow-v2/source-documents/src_doc_markdown/doc2x-original.md', 'markdown', 1, 'doc2x', 'parsed', '2026-06-25T00:00:00Z', '2026-06-25T00:00:00Z')
+  `).run()
+  assert.throws(
+    () => renderCandidateSourceDocumentPage('src_doc_markdown', 1),
+    (error) => error?.status === 409 && /没有可用的 PDF 原卷预览/.test(error?.message || ''),
+  )
 
   db.prepare('UPDATE question_candidates SET figures_json = ?, source_refs_json = ? WHERE id = ?').run('[]', '[]', candidateId)
   

@@ -580,6 +580,9 @@ export const importV2Api = {
       body: JSON.stringify({ sourceDocument }),
     })
   },
+  getSourceDocument(sourceDocumentId: string) {
+    return api<{ sourceDocument: ImportV2SourceDocument }>('/api/import-flow-v2/source-documents/' + encodeURIComponent(sourceDocumentId))
+  },
   startSourceDocumentOcr(sourceDocumentId: string, options?: { provider?: ImportV2OcrProvider; force?: boolean } | ImportV2OcrProvider) {
     const payload = typeof options === 'string' ? { provider: options } : options || {}
     return api<{ sourceDocument: ImportV2SourceDocument; task: ImportV2OcrTask }>('/api/import-flow-v2/source-documents/' + encodeURIComponent(sourceDocumentId) + '/ocr', {

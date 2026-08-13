@@ -324,6 +324,9 @@ export function reopenCandidateFixSession(sessionId: string) {
 export function renderCandidateSourceDocumentPage(sourceDocumentId: string, pageNum: number) {
   const document = sourceRepo.getSourceDocument(sourceDocumentId)
   if (!document) throw new RouteError(404, '源资料文件不存在。')
+  if (document.fileType !== 'pdf') {
+    throw new RouteError(409, '该资料没有可用的 PDF 原卷预览。Doc2X Markdown 导入包可继续编辑文字和题图，但不能进行原卷框选。')
+  }
   if (!Number.isInteger(pageNum) || pageNum < 1 || (document.pageCount > 0 && pageNum > document.pageCount)) throw new RouteError(400, '页码超出源资料范围。')
   const pageDir = path.join(dataDir, 'import-flow-v2', 'source-documents', sourceDocumentId, 'annotation-pages')
   const pagePath = path.join(pageDir, `page_${pageNum}.png`)

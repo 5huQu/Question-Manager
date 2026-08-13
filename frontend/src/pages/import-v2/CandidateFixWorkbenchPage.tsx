@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { LoaderCircle } from 'lucide-react'
+import { FileWarning, LoaderCircle } from 'lucide-react'
 import { importV2Api } from '@/api/importV2'
 import type { BBoxCanvasBox } from '@/components/questions/BBoxCanvas'
 import type { BBox } from '@/types'
@@ -98,6 +98,8 @@ export default function CandidateFixWorkbenchPage() {
   const [currentPage, setCurrentPage] = useState<number>(1)
   const [sourceProfiles, setSourceProfiles] = useState<Record<string, SourceProfile>>({})
   const [activeSourceDocumentId, setActiveSourceDocumentId] = useState('')
+  const [sourceFileTypes, setSourceFileTypes] = useState<Record<string, string>>({})
+  const [loadingSourceFileTypes, setLoadingSourceFileTypes] = useState(false)
   const [pageBrowseMode, setPageBrowseMode] = useState<'manual' | 'continuous'>('continuous')
   const [regionView, setRegionView] = useState<'all' | 'question' | 'solution'>('all')
   const [initialFocusTarget, setInitialFocusTarget] = useState<{ sourceRunId?: string; page: number; regionId?: string } | null>(null)
@@ -114,6 +116,8 @@ export default function CandidateFixWorkbenchPage() {
   const maxPages = Math.max(1, Number(activeProfile?.pageCount || 1))
   const pdfName = activeProfile?.pdfName || '原始 PDF 文件'
   const sourceProfileEntries = Object.entries(sourceProfiles)
+  const activeSourceFileType = sourceFileTypes[activeSourceDocumentId]
+  const sourcePreviewAvailable = activeSourceFileType === 'pdf'
 
   // Restore editor-local state after the controller has loaded the candidate/session.
   useEffect(() => {
@@ -144,6 +148,31 @@ export default function CandidateFixWorkbenchPage() {
         setInitialFocusTarget({ sourceRunId: candidate.sourceDocumentId, page: 1 })
       }
   }, [candidate?.id, session?.id])
+
+  useEffect(() => {
+    const sourceIds = Object.keys(sourceProfiles)
+    if (!sourceIds.length) {
+      setSourceFileTypes({})
+      setLoadingSourceFileTypes(false)
+      return
+    }
+    let active = true
+    setLoadingSourceFileTypes(true)
+    Promise.all(sourceIds.map(async (id) => {
+      const { sourceDocument } = await importV2Api.getSourceDocument(id)
+      return [id, sourceDocument.fileType] as const
+    }))
+      .then((items) => {
+        if (active) setSourceFileTypes(Object.fromEntries(items))
+      })
+      .catch(() => {
+        if (active) setSourceFileTypes({})
+      })
+      .finally(() => {
+        if (active) setLoadingSourceFileTypes(false)
+      })
+    return () => { active = false }
+  }, [sourceProfiles])
 
   function initialQuestionRegion(regionList: Region[]) {
     return regionList
@@ -678,9 +707,18 @@ export default function CandidateFixWorkbenchPage() {
       <div className="grid h-auto grid-cols-1 items-stretch gap-5 overflow-visible xl:h-[calc(100vh-7rem)] xl:min-h-[680px] xl:grid-cols-12 xl:overflow-hidden">
         {/* 左侧：PDF 渲染展示与划框区域 (5格) */}
         <div className="flex min-h-[640px] flex-col overflow-hidden rounded-xl border bg-zinc-50/50 shadow-sm transition-colors duration-200 xl:col-span-5 xl:min-h-0 dark:bg-zinc-955">
-          <ManualFixViewerToolbar pageBrowseMode={pageBrowseMode} regionView={regionView} sourceProfiles={sourceProfileEntries} activeSourceDocumentId={activeSourceDocumentId} currentPage={currentPage} maxPages={maxPages} onBrowseModeChange={setPageBrowseMode} onRegionViewChange={handleRegionViewChange} onSourceChange={(sourceId) => { setActiveSourceDocumentId(sourceId); setCurrentPage(1); setRect({ x: 0, y: 0, width: 0, height: 0 }); setSelectedRegionId(null) }} onPageChange={(page) => { setCurrentPage(Math.min(maxPages, Math.max(1, page))); setRect({ x: 0, y: 0, width: 0, height: 0 }); setSelectedRegionId(null) }} />
-
-          <ManualFixDocumentViewer candidate={candidate} activeSourceDocumentId={activeSourceDocumentId} currentPage={currentPage} pageBrowseMode={pageBrowseMode} pageNumbers={pageNumbers} rect={rect} scrollAreaRef={scrollAreaRef} pageContainerRefs={pageContainerRefs} getPageImageRef={getPageImageRef} canvasBoxesForPage={canvasBoxesForPage} selectedBoxIdForPage={selectedBoxIdForPage} onSelectBoxId={handleSelectBoxId} onRectChange={handleRectChange} onDeleteSelected={handleDeleteSelected} onNaturalSizeReady={(size, page) => { if (currentPage === page) setNaturalSize(size) }} onFocusPage={(page) => focusPage(page, { scroll: true })} />
+          {sourcePreviewAvailable ? (
+            <>
+              <ManualFixViewerToolbar pageBrowseMode={pageBrowseMode} regionView={regionView} sourceProfiles={sourceProfileEntries} activeSourceDocumentId={activeSourceDocumentId} currentPage={currentPage} maxPages={maxPages} onBrowseModeChange={setPageBrowseMode} onRegionViewChange={handleRegionViewChange} onSourceChange={(sourceId) => { setActiveSourceDocumentId(sourceId); setCurrentPage(1); setRect({ x: 0, y: 0, width: 0, height: 0 }); setSelectedRegionId(null) }} onPageChange={(page) => { setCurrentPage(Math.min(maxPages, Math.max(1, page))); setRect({ x: 0, y: 0, width: 0, height: 0 }); setSelectedRegionId(null) }} />
+              <ManualFixDocumentViewer candidate={candidate} activeSourceDocumentId={activeSourceDocumentId} currentPage={currentPage} pageBrowseMode={pageBrowseMode} pageNumbers={pageNumbers} rect={rect} scrollAreaRef={scrollAreaRef} pageContainerRefs={pageContainerRefs} getPageImageRef={getPageImageRef} canvasBoxesForPage={canvasBoxesForPage} selectedBoxIdForPage={selectedBoxIdForPage} onSelectBoxId={handleSelectBoxId} onRectChange={handleRectChange} onDeleteSelected={handleDeleteSelected} onNaturalSizeReady={(size, page) => { if (currentPage === page) setNaturalSize(size) }} onFocusPage={(page) => focusPage(page, { scroll: true })} />
+            </>
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+              <FileWarning className="mb-3 size-8 text-zinc-300 dark:text-zinc-700" />
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{loadingSourceFileTypes ? '正在核验原卷预览…' : '已禁用 PDF 原卷预览'}</p>
+              <p className="mt-2 max-w-sm text-xs leading-5 text-zinc-500 dark:text-zinc-400">Doc2X 导入包只包含 Markdown 与题图，不含可供框选的原始 PDF。你仍可在右侧核对和编辑题目内容、管理或补传题图。</p>
+            </div>
+          )}
         </div>
 
         <ManualFixInspector
@@ -711,10 +749,11 @@ export default function CandidateFixWorkbenchPage() {
           onDeleteFigure={handleDeleteFigure}
           onAddFigureRegion={handleAddFigureRegion}
           onUploadFigure={handleUploadFigure}
-          onCopyStemPdfScreenshot={() => copyPdfSelection('question')}
-          onCopyAnalysisPdfScreenshot={() => copyPdfSelection('solution')}
+          onCopyStemPdfScreenshot={sourcePreviewAvailable ? () => copyPdfSelection('question') : undefined}
+          onCopyAnalysisPdfScreenshot={sourcePreviewAvailable ? () => copyPdfSelection('solution') : undefined}
           uploadingFigure={uploadingFigure}
           figureUploadError={figureUploadError}
+          sourcePreviewAvailable={sourcePreviewAvailable}
         />
       </div>
     </div>

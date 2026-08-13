@@ -38,6 +38,7 @@ interface Props {
   onCopyAnalysisPdfScreenshot?: () => Promise<void>
   uploadingFigure?: boolean
   figureUploadError?: string
+  sourcePreviewAvailable?: boolean
 }
 
 const tabs: Array<{ value: ManualFixTab; label: string; icon: typeof FileText }> = [
@@ -48,6 +49,7 @@ const tabs: Array<{ value: ManualFixTab; label: string; icon: typeof FileText }>
 
 export function ManualFixInspector(props: Props) {
   const figureInputRef = useRef<HTMLInputElement | null>(null)
+  const sourcePreviewAvailable = props.sourcePreviewAvailable ?? true
   const selectedRegion = props.regions.find((region) => region.id === props.selectedRegionId)
   return (
     <aside className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm xl:col-span-7 dark:border-zinc-800 dark:bg-zinc-950">
@@ -109,9 +111,9 @@ export function ManualFixInspector(props: Props) {
               <p className="text-[13px] font-medium text-zinc-500">新增选区</p>
               <p className="text-xs leading-5 text-zinc-500">先在左侧拖出范围，再选择其类型；创建后可拖动边缘继续调整。</p>
               <div className="grid grid-cols-3 gap-2 pt-2">
-                <Button size="xs" variant="outline" icon={Plus} onClick={() => props.onAddRegion('question')}>题干</Button>
-                <Button size="xs" variant="outline" icon={Plus} onClick={() => props.onAddRegion('solution')}>解析</Button>
-                <Button size="xs" variant="outline" icon={Plus} onClick={() => props.onAddRegion('shared_answer_key')}>题图</Button>
+                <Button size="xs" variant="outline" icon={Plus} disabled={!sourcePreviewAvailable} onClick={() => props.onAddRegion('question')}>题干</Button>
+                <Button size="xs" variant="outline" icon={Plus} disabled={!sourcePreviewAvailable} onClick={() => props.onAddRegion('solution')}>解析</Button>
+                <Button size="xs" variant="outline" icon={Plus} disabled={!sourcePreviewAvailable} onClick={() => props.onAddRegion('shared_answer_key')}>题图</Button>
               </div>
             </div>
             <div className="border-t border-zinc-100 pt-4 dark:border-zinc-900">
@@ -125,7 +127,7 @@ export function ManualFixInspector(props: Props) {
                 </div>
               ) : <div className="rounded-xl border border-dashed border-zinc-200 p-8 text-center text-xs text-zinc-400 dark:border-zinc-800">在左侧选择一个图框以查看和调整属性</div>}
             </div>
-            <Button variant="outline" size="sm" icon={Trash2} onClick={props.onCleanHeaderFooter}>清理页眉页脚窄条</Button>
+            <Button variant="outline" size="sm" icon={Trash2} disabled={!sourcePreviewAvailable} onClick={props.onCleanHeaderFooter}>清理页眉页脚窄条</Button>
           </div>
         )}
 
@@ -135,7 +137,7 @@ export function ManualFixInspector(props: Props) {
               <p className="text-[13px] font-medium text-zinc-500">补充题图</p>
               <p className="text-xs leading-5 text-zinc-500">在左侧拖出范围后框选，或从本地上传一张图片。</p>
               <div className="grid grid-cols-2 gap-2">
-                <Button size="sm" variant="outline" icon={ImagePlus} onClick={props.onAddFigureRegion}>框选题图</Button>
+                <Button size="sm" variant="outline" icon={ImagePlus} disabled={!sourcePreviewAvailable} onClick={props.onAddFigureRegion}>框选题图</Button>
                 <Button size="sm" variant="outline" icon={props.uploadingFigure ? LoaderCircle : FileUp} disabled={props.uploadingFigure} onClick={() => figureInputRef.current?.click()}>{props.uploadingFigure ? '上传中...' : '上传题图'}</Button>
                 <input
                   ref={figureInputRef}
