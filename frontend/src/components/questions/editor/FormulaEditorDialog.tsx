@@ -2,10 +2,45 @@ import { createElement, useEffect, useRef, useState, type KeyboardEvent } from '
 import { createPortal } from 'react-dom'
 import katex from 'katex'
 import { Braces, Code2, FileText, ImagePlus, Sparkles, X } from 'lucide-react'
+import type { VirtualKeyboardLayout } from 'mathlive'
 import { MarkdownContent } from '../../MarkdownContent'
 
 type MathFieldElement = HTMLElement & { value: string; focus(): void }
 type MathliveStatus = 'loading' | 'ready' | 'error'
+
+/** 三角形符号键盘：在 MathLive 虚拟键盘中追加一个「三角」页签。 */
+const TRIANGLE_LAYOUT: VirtualKeyboardLayout = {
+  id: 'triangle',
+  label: '三角',
+  tooltip: 'keyboard.tooltip.triangle',
+  rows: [
+    [
+      { latex: '\\triangle', label: '△' },
+      { latex: '\\bigtriangleup', label: '△' },
+      { latex: '\\bigtriangledown', label: '▽' },
+      { latex: '\\blacktriangle', label: '▲' },
+      { latex: '\\blacktriangledown', label: '▼' },
+      { latex: '\\vartriangle', label: '△' },
+      { latex: '\\triangleq', label: '≜' },
+    ],
+    [
+      { latex: '\\angle', label: '∠' },
+      { latex: '\\measuredangle', label: '∡' },
+      { latex: '\\sphericalangle', label: '∢' },
+      { latex: '\\parallel', label: '∥' },
+      { latex: '\\nparallel', label: '∦' },
+      { latex: '\\perp', label: '⊥' },
+    ],
+    [
+      { latex: '\\cong', label: '≅' },
+      { latex: '\\not\\cong', label: '≇' },
+      { latex: '\\sim', label: '∼' },
+      { latex: '\\backsim', label: '∽' },
+      { latex: '\\nsim', label: '≁' },
+      { latex: '\\approx', label: '≈' },
+    ],
+  ],
+}
 
 let mathliveSetupPromise: Promise<void> | null = null
 
@@ -18,6 +53,7 @@ function setupMathlive() {
         'keyboard.tooltip.greek': '希腊字母',
         'keyboard.tooltip.numeric': '数字',
         'keyboard.tooltip.alphabetic': '拉丁字母',
+        'keyboard.tooltip.triangle': '三角形符号',
         'tooltip.copy to clipboard': '复制到剪贴板',
         'tooltip.cut to clipboard': '剪切到剪贴板',
         'tooltip.paste from clipboard': '从剪贴板粘贴',
@@ -99,6 +135,10 @@ function setupMathlive() {
       },
     }
     MathfieldElement.locale = 'zh-CN'
+    const keyboard = window.mathVirtualKeyboard
+    if (keyboard) {
+      keyboard.layouts = ['default', TRIANGLE_LAYOUT]
+    }
   }).catch((error) => {
     mathliveSetupPromise = null
     throw error
