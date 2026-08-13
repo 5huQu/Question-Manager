@@ -84,6 +84,31 @@ describe('question figure rendering', () => {
     expect(container.textContent).not.toContain('选项图 #1')
   })
 
+  it('renders an inline option marker even when the saved figure usage is stale', async () => {
+    const staleOptionFigure = { ...figure, id: 'doc2x_option_a', usage: 'stem', category: 'question', optionLabel: '' }
+    await act(async () => {
+      root.render(
+        <QuestionMarkdownContent
+          content={'选择正确答案。\nA. <!-- DOC2X_FIGURE:doc2x_option_a -->\nB. 乙\nC. 丙\nD. 丁'}
+          figures={[staleOptionFigure]}
+        />,
+      )
+    })
+
+    expect(container.querySelectorAll('img')).toHaveLength(1)
+    expect(container.textContent).toContain('选项图 A #1')
+    expect(container.textContent).not.toContain('DOC2X_FIGURE')
+  })
+
+  it('does not show a raw marker when its image cannot be resolved', async () => {
+    await act(async () => {
+      root.render(<MarkdownWithInlineFigures content={'<!-- DOC2X_FIGURE:missing_figure -->'} figures={[]} />)
+    })
+
+    expect(container.textContent).not.toContain('DOC2X_FIGURE')
+    expect(container.querySelectorAll('img')).toHaveLength(0)
+  })
+
   it('can hide figure captions on teaching-document surfaces', async () => {
     await act(async () => {
       root.render(<FigureGallery figures={[figure]} showCaption={false} />)

@@ -101,7 +101,14 @@ export function MarkdownWithInlineFigures({
     index += 1
   }
   const remainder = source.slice(cursor)
-  if (remainder.trim() || !nodes.length) nodes.push(<MarkdownContent className={className} content={remainder || source} key={`text-${index}`} />)
+  // Do not leak an internal marker when its figure was deleted or has not
+  // reached this render surface yet.  The previous `!nodes.length` fallback
+  // rendered the whole source again for a marker-only option, exposing
+  // `<!-- DOC2X_FIGURE:... -->` to reviewers.
+  if (remainder.trim()) nodes.push(<MarkdownContent className={className} content={remainder} key={`text-${index}`} />)
+  else if (!nodes.length && withoutInlineFigureMarkers(source)) {
+    nodes.push(<MarkdownContent className={className} content={source} key={`text-${index}`} />)
+  }
   return <>{nodes}</>
 }
 
@@ -166,10 +173,30 @@ export function QuestionContent({ blocks, figures = [], className = '', prefix }
 
 export function QuestionMarkdownContent({ content, figures = [], className = '', prefix }: { content: string; figures?: QuestionFigure[]; className?: string; prefix?: string }) {
   const stemFigures = figuresByUsage(figures, 'stem')
-  const optionFigures = figuresByUsage(figures, 'options')
   const parsedChoice = parseChoiceQuestion(content)
   const stemContent = parsedChoice?.stem || content
   const inlineIds = inlineFigureIds(content)
+  // A marker placed inside an option is an explicit placement instruction.
+  // It must override a stale `usage: stem` / missing `optionLabel` left by an
+  // earlier parser run, otherwise the image is removed from the stem gallery
+  // but never reaches the corresponding option renderer.
+  const inlineOptionLabelByFigure = new Map<QuestionFigure, string>()
+  for (const option of parsedChoice?.options || []) {
+    const optionInlineIds = inlineFigureIds(option.content)
+    for (const figure of figures) {
+      if (figureMarkerIds(figure).some((id) => optionInlineIds.has(id))) {
+        inlineOptionLabelByFigure.set(figure, option.label)
+      }
+    }
+  }
+  const optionFigures = figures
+    .map((figure) => {
+      const inlineOptionLabel = inlineOptionLabelByFigure.get(figure)
+      return inlineOptionLabel
+        ? { ...figure, usage: 'options', category: 'options', optionLabel: inlineOptionLabel }
+        : figure
+    })
+    .filter((figure) => figuresByUsage([figure], 'options').length > 0)
   // A marker is an explicit placement request and wins over a stale usage
   // field. This also prevents an already-inline image from appearing again in
   // the fallback gallery below.
