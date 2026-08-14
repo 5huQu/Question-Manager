@@ -1,6 +1,6 @@
 import { describe,expect,it } from 'vitest'
 import type { QuestionFigure } from '@/types'
-import { figureDisplayLabels, parseChoiceQuestion } from './questionDisplay'
+import { figureDisplayLabels, orderQuestionFiguresByUsage, parseChoiceQuestion } from './questionDisplay'
 
 describe('figureDisplayLabels', () => {
  it('uses semantic names and numbers each usage in display order', () => {
@@ -16,6 +16,21 @@ describe('figureDisplayLabels', () => {
    '题干图 2',
    '选项图 1 · 选项 A',
    '解析图 1',
+  ])
+ })
+})
+
+describe('orderQuestionFiguresByUsage', () => {
+ it('orders the editor view by semantic section while preserving order within each section', () => {
+  const figures = [
+   { id: 'analysis-1', usage: 'analysis' },
+   { id: 'stem-1', usage: 'stem' },
+   { id: 'answer-1', usage: 'answer' },
+   { id: 'stem-2', usage: 'stem' },
+  ] as QuestionFigure[]
+
+  expect(orderQuestionFiguresByUsage(figures).map((figure) => figure.id)).toEqual([
+   'stem-1', 'stem-2', 'answer-1', 'analysis-1',
   ])
  })
 })

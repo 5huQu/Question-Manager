@@ -20,7 +20,7 @@ import {
   type UploadDocumentMode,
 } from './importV2PageModel'
 import { buildCandidateReviewModel } from './candidateReviewModel'
-import { candidateDetailPath, candidateReviewPath, importJobDocumentPath, legacySourceDocumentPath } from './importV2Routes'
+import { candidateDetailPath, candidateReviewPath, importJobDocumentPath, importJobQuestionsPath, legacySourceDocumentPath } from './importV2Routes'
 import { fetchCandidates, fetchImportJob, fetchOcrDocuments, fetchParserPresets, fetchSourceDocuments, invalidateImportV2Queries } from './importV2Queries'
 
 export function useImportV2Workspace(view: 'document' | 'candidate') {
@@ -250,6 +250,23 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
 
   function navigateToCandidate(sourceDocumentId: string, candidateId: string, options?: { replace?: boolean }) {
     navigate(candidateUrl(sourceDocumentId, candidateId), { replace: options?.replace ?? true })
+  }
+
+  // 全部题目核对入库后跳转到批次查看页面（批次题目结果）。
+  function batchQuestionsUrl() {
+    const importJobId = activeImportJob?.id || currentImportJobId || ''
+    return importJobId ? importJobQuestionsPath(importJobId) : ''
+  }
+
+  function navigateToBatchQuestions() {
+    const url = batchQuestionsUrl()
+    if (url) navigate(url, { replace: true })
+  }
+
+  function allQuestionsCommitted(items: UnifiedQuestion[], extraCommittedIds: Iterable<string> = []) {
+    if (items.length === 0) return false
+    const extra = new Set(extraCommittedIds)
+    return items.every((item) => item.status === 'committed' || committedIds.has(item.id) || extra.has(item.id))
   }
 
   function setReviewTab(nextTab: 'all' | 'ready' | 'warning' | 'error') {
@@ -726,6 +743,10 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
       if (ocrDoc) setSelectedOcrId(ocrDoc.id)
       const result = await fetchCandidates(item.id, { force: Boolean(options.showLoadedNotice) })
       const unified = (result.items || []).map(fromCandidate)
+      if (isCandidatesRoute && unified.length > 0 && unified.every((item) => item.status === 'committed')) {
+        navigateToBatchQuestions()
+        return
+      }
       if (isCandidatesRoute && unified.length === 0) {
         setShowCheckArea(false); setActiveStepTab('upload')
         navigateToDocument(item.id, { replace: true })
@@ -926,6 +947,7 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
       setCommittedIds((prev) => new Set([...prev, q.id]))
       showNotice('该题目已成功确认入库')
       await loadLists()
+      if (allQuestionsCommitted(questions, [q.id])) navigateToBatchQuestions()
     } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
     finally { setBusy('') }
   }
@@ -1337,6 +1359,7 @@ export function useImportV2Workspace(view: 'document' | 'candidate') {
       setCommittedIds((prev) => { const next = new Set(prev); committedIdsSet.forEach(id => next.add(id)); return next })
       setSelectedIds(new Set())
       await loadLists()
+      if (allQuestionsCommitted(questions, committedIdsSet)) navigateToBatchQuestions()
     } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
     finally { setBusy('') }
   }

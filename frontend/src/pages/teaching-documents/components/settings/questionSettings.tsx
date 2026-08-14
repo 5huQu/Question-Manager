@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { ArrowDown, ArrowUp, Database, ImagePlus, Pencil, Trash2 } from 'lucide-react'
 import type { QuestionItem } from '@/types'
 import type { QuestionBlock, TeachingBlock } from '@/types/teachingDocument'
-import { figureDisplayLabels, parseChoiceQuestion } from '@/utils/questionDisplay'
+import { figureDisplayLabels, orderQuestionFiguresByUsage, parseChoiceQuestion, questionFigureUsage } from '@/utils/questionDisplay'
 import { InspectorSlider } from '@/components/ui/InspectorSlider'
+import { DEFAULT_QUESTION_FIGURE_WIDTH_MM } from '@/utils/teachingDocument/figureLayoutPresets'
 import { Divider, Field, fieldClass, Section } from './common'
 
 export function QuestionSettings(props: {
@@ -18,7 +19,8 @@ export function QuestionSettings(props: {
   const [uploading, setUploading] = useState(false)
   const { block } = props
   const answerSpace = block.display?.answerSpace
-  const figureLabels = figureDisplayLabels(props.question?.figures || [])
+  const orderedFigures = orderQuestionFiguresByUsage(props.question?.figures || [])
+  const figureLabels = figureDisplayLabels(orderedFigures)
   const hasChoices = Boolean(props.question && parseChoiceQuestion(props.question.stemMarkdown)?.options.length)
 
   return (
@@ -148,15 +150,17 @@ export function QuestionSettings(props: {
 
       {props.question?.figures?.length ? (
         <Section title="题图尺寸">
-          {props.question.figures.map((figure, index) => {
+          {orderedFigures.map((figure, index) => {
             const key = figure.id || figure.blockId || `figure-${index + 1}`
             const override = block.display?.figureOverrides?.[key]
             const displayLabel = figureLabels[index]
+            const sameUsageCount = orderedFigures.slice(index).findIndex((candidate) => questionFigureUsage(candidate) !== questionFigureUsage(figure))
+            const availableInSection = sameUsageCount < 0 ? orderedFigures.length - index : sameUsageCount
             return (
               <div key={key} className="space-y-2 border-b border-zinc-200/60 pb-3 dark:border-zinc-800/60 last:border-b-0">
                 <InspectorSlider
                   label={displayLabel}
-                  value={override?.widthMm ?? 100}
+                  value={override?.widthMm ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM}
                   min={20}
                   max={240}
                   step={1}
@@ -178,7 +182,7 @@ export function QuestionSettings(props: {
                       ...block.display,
                       figureOverrides: {
                         ...block.display?.figureOverrides,
-                        [key]: { ...override, widthMm: override?.widthMm ?? 100, alignment: event.target.value as 'left' | 'center' | 'right' },
+                        [key]: { ...override, widthMm: override?.widthMm ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM, alignment: event.target.value as 'left' | 'center' | 'right' },
                       },
                     } })}
                   >
@@ -187,6 +191,34 @@ export function QuestionSettings(props: {
                     <option value="right">右对齐</option>
                   </select>
                 </Field>
+                <Field label="图片排版">
+                  <select
+                    className={fieldClass}
+                    value={override?.groupWithNext ? String(override.groupColumns || 2) : 'single'}
+                    onChange={(event) => props.onUpdate({ display: {
+                      ...block.display,
+                      figureOverrides: {
+                        ...block.display?.figureOverrides,
+                        [key]: {
+                          ...override,
+                          ...(event.target.value !== 'single'
+                            ? {
+                                widthMm: override?.widthMm ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM,
+                                groupWithNext: true,
+                                groupColumns: Number(event.target.value) as 2 | 3 | 4,
+                              }
+                            : { groupWithNext: undefined, groupColumns: undefined }),
+                        },
+                      },
+                    } })}
+                  >
+                    <option value="single">单独一行</option>
+                    <option value="2" disabled={availableInSection < 2}>与后 1 张并排（共 2 张）</option>
+                    <option value="3" disabled={availableInSection < 3}>与后 2 张并排（共 3 张）</option>
+                    <option value="4" disabled={availableInSection < 4}>与后 3 张并排（共 4 张）</option>
+                  </select>
+                </Field>
+                {override?.groupWithNext ? <p className="text-[11px] leading-4 text-zinc-500">只会合并同一用途的后续图片；总宽度超出当前版心时会自动等比缩小，当前宽度是每张图的目标宽度。</p> : null}
               </div>
             )
           })}
@@ -253,7 +285,7 @@ export function QuestionSettings(props: {
                 </Field>
                 <InspectorSlider
                   label="图片宽度"
-                  value={figure.widthMm || 100}
+                  value={figure.widthMm || DEFAULT_QUESTION_FIGURE_WIDTH_MM}
                   min={20}
                   max={240}
                   step={1}

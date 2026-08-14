@@ -220,6 +220,10 @@ export interface QuestionFigurePlacement {
   widthMm?: number
   alignment?: FigureAlignment
   layoutPreset?: FigureLayoutPreset
+  /** 与紧随其后的题图组合为一行两列；仅对连续的题图生效。 */
+  groupWithNext?: boolean
+  /** 并排组的列数；图片会按当前版心自动等比缩小，避免横向溢出。 */
+  groupColumns?: 2 | 3 | 4
   slot?: QuestionFigureSlot
   order?: number
 }

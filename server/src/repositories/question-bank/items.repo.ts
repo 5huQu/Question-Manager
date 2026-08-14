@@ -22,6 +22,7 @@ export function listQuestionBankItems(filters: {
   difficulty: string
   page: number
   pageSize: number
+  excludeIds: string[]
 }) {
   let whereSql = `
     WHERE (? = '' OR search_text LIKE ? OR source_title LIKE ? OR chapter LIKE ? OR knowledge_points_json LIKE ? OR solution_methods_json LIKE ?)
@@ -62,6 +63,16 @@ export function listQuestionBankItems(filters: {
     smList.forEach(sm => {
       filterParams.push(`%${sm}%`)
     })
+  }
+
+  // Exclude questions already present in the target document (picker use case).
+  // Split into several NOT IN groups so the statement stays far below SQLite's
+  // per-statement variable limit even for very large documents.
+  const EXCLUDE_CHUNK_SIZE = 500
+  for (let i = 0; i < filters.excludeIds.length; i += EXCLUDE_CHUNK_SIZE) {
+    const chunk = filters.excludeIds.slice(i, i + EXCLUDE_CHUNK_SIZE)
+    whereSql += ` AND id NOT IN (${chunk.map(() => '?').join(', ')})`
+    filterParams.push(...chunk)
   }
 
   const totalRow = db.prepare(`SELECT COUNT(*) AS count FROM question_bank_items ${whereSql}`).get(...filterParams) as { count: number }

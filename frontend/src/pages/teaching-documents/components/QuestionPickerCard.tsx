@@ -2,9 +2,10 @@
  * 题目选择卡片（轻量版）
  * 复用 QuestionBankDraftCard 视觉风格：元信息行 + 题干预览 + 操作按钮，
  * 去掉编辑/篮子/展开解析等重逻辑，专注于"选中即添加"场景。
+ * 已在文档中的题目由列表接口排除，不会出现在这里。
  */
 
-import { Check, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { QuestionMarkdownContent } from '@/components/questions/QuestionContent'
 import type { QuestionItem } from '@/types'
 import { difficultyLabel10, displaySource } from '@/utils/questionDisplay'
@@ -12,11 +13,9 @@ import { richBlocksPlainText } from '@/components/RichContent'
 
 export function QuestionPickerCard({
   item,
-  isAdded,
   onPick,
 }: {
   item: QuestionItem
-  isAdded: boolean
   onPick: (item: QuestionItem) => void
 }) {
   const stem = item.stemMarkdown || richBlocksPlainText(item.problemBlocks)
@@ -27,13 +26,8 @@ export function QuestionPickerCard({
   return (
     <button
       type="button"
-      disabled={isAdded}
       onClick={() => onPick(item)}
-      className={`group relative w-full rounded-2xl p-3.5 text-left transition-all duration-200 ${
-        isAdded
-          ? 'border border-dashed border-black/8 bg-black/2 opacity-60 dark:border-white/10 dark:bg-white/2 cursor-not-allowed'
-          : 'question-edit-glass-preview border border-black/6 bg-white/80 hover:bg-white hover:shadow-md hover:border-black/12 hover:-translate-y-0.5 dark:border-white/8 dark:bg-zinc-900/80 dark:hover:bg-zinc-900 dark:hover:border-white/16'
-      }`}
+      className="group relative w-full rounded-2xl p-3.5 text-left transition-all duration-200 question-edit-glass-preview border border-black/6 bg-white/80 hover:bg-white hover:shadow-md hover:border-black/12 hover:-translate-y-0.5 dark:border-white/8 dark:bg-zinc-900/80 dark:hover:bg-zinc-900 dark:hover:border-white/16"
     >
       {/* 元信息行 */}
       <div className="flex items-center gap-1.5">
@@ -54,15 +48,9 @@ export function QuestionPickerCard({
           {difficultyLabel10(item)}
         </span>
         <span className="ml-auto flex items-center gap-1">
-          {isAdded ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100/80 px-2.5 py-1 text-[11px] font-medium text-zinc-400 dark:bg-zinc-800/80 dark:text-zinc-500">
-              <Check className="size-3" />已在文档中
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-zinc-900 px-3 py-1 text-[11px] font-medium text-zinc-50 shadow-xs transition-transform duration-200 group-hover:scale-105 active:scale-95 dark:bg-zinc-100 dark:text-zinc-900">
-              <Plus className="size-3" />添加
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1 rounded-full bg-zinc-900 px-3 py-1 text-[11px] font-medium text-zinc-50 shadow-xs transition-transform duration-200 group-hover:scale-105 active:scale-95 dark:bg-zinc-100 dark:text-zinc-900">
+            <Plus className="size-3" />添加
+          </span>
         </span>
       </div>
 

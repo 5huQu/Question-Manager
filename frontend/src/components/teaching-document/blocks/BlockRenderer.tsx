@@ -50,7 +50,7 @@ import {
   type QuestionFigureRegion,
   type QuestionAnswerSpaceRegion,
 } from '@/utils/teachingDocument/layout/questionRegions'
-import { resolveFigureLayout } from '@/utils/teachingDocument/figureLayoutPresets'
+import { DEFAULT_QUESTION_FIGURE_WIDTH_MM, resolveFigureLayout } from '@/utils/teachingDocument/figureLayoutPresets'
 import { CSS_PIXELS_PER_MM } from '@/utils/teachingDocument/layout/paper'
 import { rawMarkdownSegments } from '@/utils/teachingDocument/layout/rawMarkdownSegments'
 import type { ChoiceLayoutOverrides } from '@/utils/choiceLayout'
@@ -502,13 +502,17 @@ function QuestionRegionContent({
     const figureKey = figureRegion.figureKey || figureRegion.key
     const resolvedLayout = resolveFigureLayout({
       preset: figureRegion.layoutPreset,
-      explicitWidthMm: figureRegion.widthOverrideMm,
+      explicitWidthMm: figureRegion.widthOverrideMm ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM,
       legacyAlignment: figureRegion.alignmentOverride,
       containerWidthMm: layoutEditor?.contentWidthMm || 160,
     })
-    const hasExplicitLayout = Boolean(figureRegion.layoutPreset || figureRegion.widthOverrideMm || figureRegion.alignmentOverride)
-    const widthStyle = hasExplicitLayout ? { width: `${resolvedLayout.widthMm * CSS_PIXELS_PER_MM}px`, maxWidth: '100%' } : undefined
-    const alignClass = hasExplicitLayout ? { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[resolvedLayout.alignment] : ''
+    const figureColumns = figureRegion.groupFigureKeys?.length || 1
+    const groupedWidthMm = Math.min(
+      layoutEditor?.contentWidthMm || 160,
+      resolvedLayout.widthMm * figureColumns + Math.max(0, figureColumns - 1) * 4,
+    )
+    const widthStyle = { width: `${groupedWidthMm * CSS_PIXELS_PER_MM}px`, maxWidth: '100%' }
+    const alignClass = { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[resolvedLayout.alignment]
     const trimTrailingSpacing = item?.kind === 'whole-question-region' && item.trimTrailingSpacing
     const figureSpacingClass = trimTrailingSpacing ? 'mt-3 mb-0' : 'my-3'
     if (figureRegion.asset) {
@@ -527,8 +531,9 @@ function QuestionRegionContent({
         <FigureGallery
           figures={visibleFigures}
           showCaption={false}
-          naturalAspectRatio={hasExplicitLayout}
+          naturalAspectRatio
           bare
+          columns={figureColumns >= 2 && figureColumns <= 4 ? figureColumns as 2 | 3 | 4 : undefined}
           onSelect={() => layoutEditor?.onFigureSelect?.(figureKey)}
         />
         {layoutEditor?.selected ? (

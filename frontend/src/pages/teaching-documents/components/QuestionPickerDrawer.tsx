@@ -72,7 +72,8 @@ export function QuestionPickerDrawer({
     difficulty: difficulty || undefined,
     knowledgePoint: knowledgePoint.join(',') || undefined,
     solutionMethod: solutionMethod.join(',') || undefined,
-  }), [page, query, stage, questionType, difficulty, knowledgePoint, solutionMethod])
+    excludeIds: excludeIds.length ? excludeIds : undefined,
+  }), [page, query, stage, questionType, difficulty, knowledgePoint, solutionMethod, excludeIds])
 
   const bank = useAsync<QuestionBankResponse | null>(
     () => (open ? questionBankApi.listItems(params) : Promise.resolve(null)),
@@ -106,7 +107,6 @@ export function QuestionPickerDrawer({
   const items = bank.data?.items ?? []
   const totalItems = bank.data?.totalItems ?? 0
   const totalPages = bank.data?.totalPages ?? 1
-  const excludeSet = useMemo(() => new Set(excludeIds), [excludeIds])
 
   function handleClearAll() {
     setStage('')
@@ -243,7 +243,6 @@ export function QuestionPickerDrawer({
                       <QuestionPickerCard
                         key={item.id}
                         item={item}
-                        isAdded={excludeSet.has(item.id)}
                         onPick={onPick}
                       />
                     ))

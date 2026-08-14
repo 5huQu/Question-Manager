@@ -90,6 +90,12 @@ export interface QuestionFigureRegion extends QuestionRegionDescriptor {
   /** 讲义级对齐覆盖 */
   alignmentOverride?: FigureAlignment
   layoutPreset?: FigureLayoutPreset
+  /** 当前图作为两图并排的起始图时为 true。 */
+  groupWithNext?: boolean
+  /** 并排组需要容纳的连续题图数量。 */
+  groupColumns?: 2 | 3 | 4
+  /** 并排组中的题图 key，用于保持选择与尺寸覆盖稳定。 */
+  groupFigureKeys?: string[]
 }
 
 export interface QuestionOptionsRowRegion extends QuestionRegionDescriptor {
@@ -305,6 +311,8 @@ function contentRegions(input: {
       widthOverrideMm: override?.widthMm,
       alignmentOverride: override?.alignment,
       layoutPreset: override?.layoutPreset,
+      groupWithNext: override?.groupWithNext,
+      groupColumns: override?.groupColumns,
     })
     if (!override?.slot) index += 1
     cursor = marker.index + marker[0].length
@@ -331,6 +339,8 @@ function contentRegions(input: {
       widthOverrideMm: override?.widthMm,
       alignmentOverride: override?.alignment,
       layoutPreset: override?.layoutPreset,
+      groupWithNext: override?.groupWithNext,
+      groupColumns: override?.groupColumns,
     })
     index += 1
   })
@@ -403,6 +413,48 @@ export function applyQuestionFigurePlacements(
     next.splice(insertionIndex(next, slot), 0, ...values.map((value) => value.region))
   }
   return next
+}
+
+/**
+ * 将用户标记为“与下一张并排”的连续题图合成一个不可分页的图组区域。
+ * 只合并同一题干/解析区域中的题库题图；文档插图和被移动到其他位置的题图保持独立，
+ * 避免改变用户明确指定的插入顺序。
+ */
+export function groupAdjacentQuestionFigures(regions: QuestionRuntimeRegion[]) {
+  const grouped: QuestionRuntimeRegion[] = []
+  for (let index = 0; index < regions.length; index += 1) {
+    const current = regions[index]
+    const next = regions[index + 1]
+    if (current.kind === 'figure'
+      && current.groupWithNext
+      && !current.asset) {
+      const desiredColumns = current.groupColumns || 2
+      const members: QuestionFigureRegion[] = [current]
+      for (let offset = 1; offset < desiredColumns; offset += 1) {
+        const candidate = regions[index + offset]
+        if (candidate?.kind !== 'figure'
+          || candidate.asset
+          || candidate.owner !== current.owner
+          || candidate.figures.length !== 1) break
+        members.push(candidate)
+      }
+      if (members.length < 2) {
+        grouped.push(current)
+        continue
+      }
+      grouped.push({
+        ...current,
+        figures: members.flatMap((member) => member.figures),
+        groupFigureKeys: members.map((member) => member.figureKey || member.key),
+        groupWithNext: undefined,
+        groupColumns: undefined,
+      })
+      index += members.length - 1
+      continue
+    }
+    grouped.push(current)
+  }
+  return grouped
 }
 
 /** 题号（及可选分数）对应的行内内容，加粗题号、分数不加粗。 */
@@ -520,6 +572,7 @@ export function createQuestionRuntimeModel(
   const stemMarkdown = parsedChoice?.stem || normalizedStemMarkdown || '题干为空'
   const stemFigures = figuresByUsage(question.figures, 'stem')
   const optionFigures = figuresByUsage(question.figures, 'options')
+  const answerFigures = figuresByUsage(question.figures, 'answer')
   const analysisFigures = figuresByUsage(question.figures, 'analysis')
   const regions: QuestionRuntimeRegion[] = []
   const placed: PlacedFigure[] = []
@@ -539,6 +592,8 @@ export function createQuestionRuntimeModel(
         widthOverrideMm: placement.widthMm,
         alignmentOverride: placement.alignment,
         layoutPreset: placement.layoutPreset,
+        groupWithNext: placement.groupWithNext,
+        groupColumns: placement.groupColumns,
       },
     })
   }
@@ -627,7 +682,7 @@ export function createQuestionRuntimeModel(
       kind: 'answer',
       splitPolicy: 'never',
       markdown: question.answerText,
-      figures: question.figures,
+      figures: answerFigures,
       inlineContent: inlineContentOrFallback(inlineContent, key, question.answerText),
     })
   }
@@ -664,6 +719,8 @@ export function createQuestionRuntimeModel(
         widthOverrideMm: figure.widthMm,
         alignmentOverride: figure.alignment,
         layoutPreset: figure.layoutPreset,
+        groupWithNext: figure.groupWithNext,
+        groupColumns: figure.groupColumns,
       },
     })
   }
@@ -689,6 +746,6 @@ export function createQuestionRuntimeModel(
     displayNumber,
     score,
     questionType: question.questionType,
-    regions: applyQuestionFigurePlacements(regions, placed, block.display),
+    regions: groupAdjacentQuestionFigures(applyQuestionFigurePlacements(regions, placed, block.display)),
   }
 }

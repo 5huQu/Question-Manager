@@ -130,6 +130,7 @@ export function SolutionDisclosure({
   className?: string
 }) {
   const [open, setOpen] = useState(false)
+  const answerFigures = figuresByUsage(figures, 'answer')
   const analysisFigures = figuresByUsage(figures, 'analysis')
   const answerMarkdown = answerText || richBlocksPlainText(answerBlocks)
   const analysisText = analysisMarkdown || richBlocksPlainText(analysisBlocks)
@@ -149,11 +150,11 @@ export function SolutionDisclosure({
           <div className="mt-3 space-y-3">
             <section className="rounded-xl border bg-zinc-50 p-3">
               <p className="mb-1 text-xs text-zinc-500">答案</p>
-              {hasAnswer ? <MarkdownWithInlineFigures className="text-sm leading-6" content={answerMarkdown} figures={figures} /> : <span className="text-xs text-zinc-400">暂无答案</span>}
+              {hasAnswer ? <MarkdownWithInlineFigures className="text-sm leading-6" content={answerMarkdown} figures={answerFigures} /> : <span className="text-xs text-zinc-400">暂无答案</span>}
             </section>
             <section className="rounded-xl border bg-zinc-50 p-3">
               <p className="mb-1 text-xs text-zinc-500">解析</p>
-              {hasAnalysis ? <MarkdownWithInlineFigures className="text-sm leading-6" content={analysisText} figures={figures} /> : <span className="text-xs text-zinc-400">暂无解析</span>}
+              {hasAnalysis ? <MarkdownWithInlineFigures className="text-sm leading-6" content={analysisText} figures={analysisFigures} /> : <span className="text-xs text-zinc-400">暂无解析</span>}
               <FigureGallery figures={analysisFigures.filter((figure) => !isInlineFigure(figure, inlineIds))} className="mt-3" />
             </section>
           </div>
@@ -397,6 +398,7 @@ export function FigureGallery({
   showCaption = true,
   naturalAspectRatio = false,
   bare = false,
+  columns,
   onSelect,
 }: {
   figures: QuestionFigure[]
@@ -407,6 +409,8 @@ export function FigureGallery({
   naturalAspectRatio?: boolean
   /** 不渲染卡片容器，直接展示原图。 */
   bare?: boolean
+  /** 指定图片列数时不使用响应式图库默认列数。 */
+  columns?: 1 | 2 | 3 | 4
   onSelect?: (figure: QuestionFigure) => void
 }) {
   const [preview, setPreview] = useState<QuestionFigure | null>(null)
@@ -415,7 +419,7 @@ export function FigureGallery({
   if (!visible.length) return null
   return (
     <>
-      <div className={`grid gap-3 ${compact ? 'grid-cols-1' : 'sm:grid-cols-2'} ${className}`}>
+      <div className={`grid gap-3 ${columns === 1 ? 'grid-cols-1' : columns === 2 ? 'grid-cols-2' : columns === 3 ? 'grid-cols-3' : columns === 4 ? 'grid-cols-4' : compact ? 'grid-cols-1' : 'sm:grid-cols-2'} ${className}`}>
         {visible.map((figure, index) => {
           const resourceId = String(figure.id || figure.blockId || figure.path || index)
           const resourceKey = `${resourceId}:${String(figure.path || '')}`

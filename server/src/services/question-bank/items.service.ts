@@ -25,6 +25,11 @@ export const questionFigureUpload = candidateFigureUpload.single('file')
 export function listItems(query: Record<string, unknown>) {
   const requestedPage = Number.parseInt(String(query.page || '1'), 10)
   const requestedPageSize = Number.parseInt(String(query.pageSize || '20'), 10)
+  // excludeIds 可能以逗号分隔字符串或重复参数数组的形式到达（已含文档中的题目）。
+  const rawExclude = Array.isArray(query.excludeIds)
+    ? query.excludeIds.flatMap((value) => String(value ?? '').split(','))
+    : String(query.excludeIds ?? '').split(',')
+  const excludeIds = [...new Set(rawExclude.map((id) => id.trim()).filter(Boolean))]
   return repo.listQuestionBankItems({
     q: String(query.q || '').trim(),
     stage: String(query.stage || '').trim(),
@@ -34,6 +39,7 @@ export function listItems(query: Record<string, unknown>) {
     difficulty: String(query.difficulty || '').trim(),
     page: Number.isFinite(requestedPage) ? requestedPage : 1,
     pageSize: Math.min(100, Math.max(1, Number.isFinite(requestedPageSize) ? requestedPageSize : 20)),
+    excludeIds,
   })
 }
 

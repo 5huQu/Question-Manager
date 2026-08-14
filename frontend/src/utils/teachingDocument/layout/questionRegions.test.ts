@@ -218,6 +218,34 @@ describe('createQuestionRuntimeModel', () => {
     expect(figureRegion.alignmentOverride).toBe('center')
   })
 
+  it('groups up to four consecutive stem figures and preserves their order', () => {
+    const figures: QuestionFigure[] = [
+      { id: 'fig-1', blockId: 'block-1', path: '/assets/fig1.png', usage: 'stem' },
+      { id: 'fig-2', blockId: 'block-2', path: '/assets/fig2.png', usage: 'stem' },
+      { id: 'fig-3', blockId: 'block-3', path: '/assets/fig3.png', usage: 'stem' },
+    ]
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'question-block',
+      questionId: 'question-1',
+      display: { figureOverrides: { 'fig-1': { groupWithNext: true, groupColumns: 3, widthMm: 60 } } },
+    }
+    const model = createQuestionRuntimeModel(block, question({
+      stemMarkdown: '题干。\n\n<!-- DOC2X_FIGURE:fig-1 -->\n<!-- DOC2X_FIGURE:fig-2 -->\n<!-- DOC2X_FIGURE:fig-3 -->',
+      questionType: '解答题',
+      figures,
+      hasFigures: true,
+    }))
+    const figureRegions = model.regions.filter((region) => region.kind === 'figure') as QuestionFigureRegion[]
+    expect(figureRegions).toHaveLength(1)
+    expect(figureRegions[0]).toMatchObject({
+      figureKey: 'fig-1',
+      groupFigureKeys: ['fig-1', 'fig-2', 'fig-3'],
+      widthOverrideMm: 60,
+    })
+    expect(figureRegions[0].figures.map((figure) => figure.id)).toEqual(['fig-1', 'fig-2', 'fig-3'])
+  })
+
   it('does not modify regions when figureOverrides is absent', () => {
     const figures: QuestionFigure[] = [
       { id: 'fig-1', blockId: 'block-1', path: '/assets/fig1.png', usage: 'stem' },
@@ -295,6 +323,26 @@ describe('createQuestionRuntimeModel', () => {
     expect(figureRegion).toBeDefined()
     expect(figureRegion.widthOverrideMm).toBe(100)
     expect(figureRegion.alignmentOverride).toBe('right')
+  })
+
+  it('keeps answer figures out of the stem and analysis regions', () => {
+    const figures: QuestionFigure[] = [
+      { id: 'stem-fig', path: '/assets/stem.png', usage: 'stem' },
+      { id: 'answer-fig', path: '/assets/answer.png', usage: 'answer' },
+      { id: 'analysis-fig', path: '/assets/analysis.png', usage: 'analysis' },
+    ]
+    const model = createQuestionRuntimeModel({
+      type: 'question', id: 'question-block', questionId: 'question-1', display: { showAnswer: true, showAnalysis: true },
+    }, question({
+      stemMarkdown: '题干。\n\n<!-- DOC2X_FIGURE:stem-fig -->',
+      answerText: '答案。<!-- DOC2X_FIGURE:answer-fig -->',
+      analysisMarkdown: '解析。\n\n<!-- DOC2X_FIGURE:analysis-fig -->',
+      figures,
+    }))
+    const answerRegion = model.regions.find((region) => region.kind === 'answer')
+    expect(answerRegion?.kind === 'answer' && answerRegion.figures.map((figure) => figure.id)).toEqual(['answer-fig'])
+    expect((model.regions.filter((region) => region.kind === 'figure') as QuestionFigureRegion[])
+      .flatMap((region) => region.figures.map((figure) => figure.id))).toEqual(['stem-fig', 'analysis-fig'])
   })
 
   it('applies figureOverrides using blockId when id is absent', () => {

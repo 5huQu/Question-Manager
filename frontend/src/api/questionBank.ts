@@ -10,6 +10,8 @@ export type QuestionBankListParams = {
   difficulty?: string
   page?: number
   pageSize?: number
+  /** 已在目标文档中的题目 id，列表会将其排除（不显示）。 */
+  excludeIds?: string[]
 }
 
 export type QuestionFigurePayload = {
@@ -69,6 +71,11 @@ function buildQuery(params: QuestionBankListParams = {}) {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null || value === '') continue
+    if (Array.isArray(value)) {
+      const joined = value.filter((item) => item !== undefined && item !== null && item !== '').join(',')
+      if (joined) query.set(key, joined)
+      continue
+    }
     query.set(key, String(value))
   }
   const queryString = query.toString()

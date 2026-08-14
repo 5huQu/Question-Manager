@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronDown, ChevronUp, Database, LoaderCircle, RefreshCcw, Replace, Tags } from 'lucide-react'
+import { ChevronDown, ChevronUp, Database, FilePlus2, LoaderCircle, Replace, Tags } from 'lucide-react'
 import { collectionsApi } from '@/api/collections'
 import { importV2Api, type ImportV2JobQuestionsResponse } from '@/api/importV2'
 import { questionBankApi } from '@/api/questionBank'
+import { teachingDocumentsApi } from '@/api/teachingDocuments'
 import { basketUpdatedEvent, notifyBasketUpdated } from '@/components/QuestionBasket'
+import { getDefaultScore } from '@/components/basket/constants'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { WorkbenchQuestionCard } from '@/components/questions/WorkbenchQuestionCard'
 import { Button, Empty, Input, SelectFilter } from '@/components/ui'
 import { useAsync } from '@/hooks/useAsync'
 import type { QuestionItem } from '@/types'
+import { buildExamDocumentFromQuestions } from '@/utils/teachingDocument/importFromBasket'
 import { addQuestionToBasket, BASKET_COLLECTION_ID } from '@/utils/questionBasket'
 import { importJobDocumentPath } from './importV2Routes'
 
@@ -19,6 +22,7 @@ export function ImportJobQuestionsPage() {
   const decodedJobId = decodeURIComponent(jobId)
   const [localItems, setLocalItems] = useState<QuestionItem[]>([])
   const [replacingBasket, setReplacingBasket] = useState(false)
+  const [creatingDocument, setCreatingDocument] = useState(false)
   const [classifying, setClassifying] = useState(false)
   const [query, setQuery] = useState('')
   const [stage, setStage] = useState('')
@@ -97,6 +101,28 @@ export function ImportJobQuestionsPage() {
     finally{setReplacingBasket(false)}
   }
 
+  async function createExamDocument() {
+    if (creatingDocument || !localItems.length) return
+    setCreatingDocument(true)
+    try {
+      const title = data?.importJob.paperTitle || data?.importJob.title || '导入批次试卷'
+      const content = buildExamDocumentFromQuestions(
+        localItems.map((item) => ({
+          questionId: item.id,
+          questionType: item.questionType || '',
+          score: Number(item.totalScore) > 0 ? Number(item.totalScore) : getDefaultScore(item.questionType),
+        })),
+        title,
+      )
+      const record = await teachingDocumentsApi.createDocument({ title, documentType: 'exam', content })
+      navigate(`/teaching-documents/${encodeURIComponent(record.id)}`)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : String(error))
+    } finally {
+      setCreatingDocument(false)
+    }
+  }
+
   if (loading) return <Empty text="读取中..." />
   if (error || !data) return <Empty text={error || '导入批次不存在或无题目数据'} />
 
@@ -166,8 +192,15 @@ export function ImportJobQuestionsPage() {
           >
             返回导入批次
           </Button>
-          <Button size="sm" variant="outline" onClick={reload} icon={RefreshCcw} className="sf-pressable rounded-xl">
-            刷新
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={createExamDocument}
+            icon={creatingDocument ? LoaderCircle : FilePlus2}
+            disabled={creatingDocument || !items.length}
+            className="sf-pressable rounded-xl"
+          >
+            {creatingDocument ? '建立中...' : '建立试卷文档'}
           </Button>
           <Button
             size="sm"

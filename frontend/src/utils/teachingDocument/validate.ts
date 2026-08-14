@@ -233,12 +233,18 @@ function parseFigureOverrides(raw: unknown): QuestionDisplayOptions['figureOverr
       ? entry.alignment as 'left' | 'center' | 'right'
       : undefined
     const layoutPreset = isFigureLayoutPreset(entry.layoutPreset) ? entry.layoutPreset : undefined
+    const groupWithNext = entry.groupWithNext === true ? true : undefined
+    const groupColumns = [2, 3, 4].includes(Number(entry.groupColumns))
+      ? Number(entry.groupColumns) as 2 | 3 | 4
+      : undefined
     const slot = VALID_FIGURE_SLOTS.has(entry.slot as QuestionFigureSlot) ? entry.slot as QuestionFigureSlot : undefined
     const order = Number(entry.order)
     const placement: QuestionFigurePlacement = {
       ...(Number.isFinite(widthMm) && widthMm > 0 ? { widthMm } : {}),
       ...(alignment ? { alignment } : {}),
       ...(layoutPreset ? { layoutPreset } : {}),
+      ...(groupWithNext ? { groupWithNext } : {}),
+      ...(groupWithNext && groupColumns ? { groupColumns } : {}),
       ...(slot ? { slot } : {}),
       ...(Number.isFinite(order) ? { order } : {}),
     }
@@ -263,10 +269,16 @@ function parseInsertedFigures(raw: unknown): QuestionInsertedFigure[] | undefine
     const alignment = typeof node.alignment === 'string' && ['left', 'center', 'right'].includes(node.alignment)
       ? node.alignment as 'left' | 'center' | 'right' : undefined
     const layoutPreset = isFigureLayoutPreset(node.layoutPreset) ? node.layoutPreset : undefined
+    const groupWithNext = node.groupWithNext === true ? true : undefined
+    const groupColumns = [2, 3, 4].includes(Number(node.groupColumns))
+      ? Number(node.groupColumns) as 2 | 3 | 4
+      : undefined
     const placement: QuestionFigurePlacement = {
       ...(Number.isFinite(widthMm) && widthMm > 0 ? { widthMm } : {}),
       ...(alignment ? { alignment } : {}),
       ...(layoutPreset ? { layoutPreset } : {}),
+      ...(groupWithNext ? { groupWithNext } : {}),
+      ...(groupWithNext && groupColumns ? { groupColumns } : {}),
     }
     result.push({
       id,
@@ -429,6 +441,7 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
           if (value && typeof value === 'object') {
             const entry = value as Record<string, unknown>
             if (entry.layoutPreset != null && !isFigureLayoutPreset(entry.layoutPreset)) issues.push({ level: 'warning', blockId: extractId(node, 'q', index), code: 'invalid-figure-preset', message: `图片覆盖 "${key}" 的排版预设无效。` })
+            if (entry.groupColumns != null && ![2, 3, 4].includes(Number(entry.groupColumns))) issues.push({ level: 'warning', blockId: extractId(node, 'q', index), code: 'invalid-figure-group-columns', message: `图片覆盖 "${key}" 的并排列数无效。` })
             if (entry.slot != null && !VALID_FIGURE_SLOTS.has(entry.slot as QuestionFigureSlot)) issues.push({ level: 'warning', blockId: extractId(node, 'q', index), code: 'invalid-figure-slot', message: `图片覆盖 "${key}" 的位置无效。` })
           }
         }

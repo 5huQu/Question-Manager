@@ -196,10 +196,13 @@ export function figuresByUsage(figures: QuestionFigure[], target: string) {
     const usage = String(figure.usage || '').trim()
     const category = String(figure.category || '').trim()
     if (target === 'stem') {
-      if (usage === 'analysis' || category === 'analysis') {
+      if (usage === 'answer' || usage === 'analysis' || category === 'answer' || category === 'analysis') {
         return false
       }
       return !usage || usage === 'stem' || usage === 'question' || category === 'question'
+    }
+    if (target === 'answer') {
+      return usage === 'answer' || category === 'answer'
     }
     if (target === 'analysis') {
       return usage === 'analysis' || category === 'analysis'
@@ -209,7 +212,27 @@ export function figuresByUsage(figures: QuestionFigure[], target: string) {
 }
 
 export function figureUsageLabel(usage: string) {
-  return { stem: '题干图', analysis: '解析图', options: '选项图' }[usage] || usage || '题图'
+  return { stem: '题干图', answer: '答案图', analysis: '解析图', options: '选项图' }[usage] || usage || '题图'
+}
+
+export type QuestionFigureUsage = 'stem' | 'options' | 'answer' | 'analysis'
+
+/** 题图在编辑器中的语义分组；未标注或历史 question 用途统一归入题干。 */
+export function questionFigureUsage(figure: Record<string, unknown> | undefined): QuestionFigureUsage {
+  const usage = String(figure?.usage || figure?.category || 'stem')
+  return ['stem', 'options', 'answer', 'analysis'].includes(usage) ? usage as QuestionFigureUsage : 'stem'
+}
+
+/**
+ * 资源写入顺序不代表文档阅读顺序。所有题图管理与讲义排版配置都使用此稳定视图：
+ * 题干（含选项）→ 答案 → 解析；同组内保持原有顺序。
+ */
+export function orderQuestionFiguresByUsage(figures: QuestionFigure[]) {
+  const rank: Record<QuestionFigureUsage, number> = { stem: 0, options: 1, answer: 2, analysis: 3 }
+  return figures
+    .map((figure, index) => ({ figure, index }))
+    .sort((left, right) => rank[questionFigureUsage(left.figure)] - rank[questionFigureUsage(right.figure)] || left.index - right.index)
+    .map(({ figure }) => figure)
 }
 
 export function figureDisplayLabels(figures: QuestionFigure[]) {
@@ -225,8 +248,7 @@ export function figureDisplayLabels(figures: QuestionFigure[]) {
 }
 
 export function reviewFigureUsage(figure: Record<string, unknown> | undefined) {
-  const usage = String(figure?.usage || figure?.category || 'stem')
-  return ['stem', 'analysis', 'options'].includes(usage) ? usage : 'stem'
+  return questionFigureUsage(figure)
 }
 
 export function isFormulaSuspectFigure(figure: Record<string, unknown> | undefined) {

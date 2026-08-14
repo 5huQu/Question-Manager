@@ -312,7 +312,7 @@ describe('parse - 新字段解析', () => {
           display: {
             showAnswer: true,
             answerSpace: { heightMm: 30, style: 'lines' },
-            figureOverrides: { fig1: { widthMm: 60, alignment: 'left' } },
+            figureOverrides: { fig1: { widthMm: 60, alignment: 'left', groupWithNext: true, groupColumns: 3 } },
           },
         },
       ],
@@ -320,7 +320,7 @@ describe('parse - 新字段解析', () => {
     const { document } = parseTeachingDocument(json)
     const q = document!.content[0] as { display?: Record<string, unknown> }
     expect(q.display?.answerSpace).toEqual({ heightMm: 30, style: 'lines' })
-    expect(q.display?.figureOverrides).toEqual({ fig1: { widthMm: 60, alignment: 'left' } })
+    expect(q.display?.figureOverrides).toEqual({ fig1: { widthMm: 60, alignment: 'left', groupWithNext: true, groupColumns: 3 } })
   })
 
   it('非法 answerSpace 解析为 undefined', () => {

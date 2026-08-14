@@ -40,6 +40,7 @@ import {
   markdownToTeachingBlocks,
   newTeachingBlock,
   blocksForRawMarkdownFigureInsertion,
+  TEACHING_DOM,
   type PaperSpec,
   type PrintLayoutSpec,
 } from '@/utils/teachingDocument'
@@ -103,6 +104,27 @@ function buildSelectedLocationIndex(document: TeachingDocumentV1): Map<string, S
     }
   }
   return map
+}
+
+/**
+ * 大纲导航只能滚动真实可见的编辑/打印节点。
+ * 预览期间测量树与编辑画布仍保持挂载，不能使用全局 querySelector 的第一个结果。
+ */
+function scrollToVisibleTeachingBlock(blockId: string, canvasMode: TeachingCanvasMode): boolean {
+  const escapedId = CSS.escape(blockId)
+  const selectors = canvasMode === 'a4'
+    ? [
+        `[${TEACHING_DOM.paperPage}] [${TEACHING_DOM.blockId}="${escapedId}"]`,
+        `[${TEACHING_DOM.paperPage}] [${TEACHING_DOM.sourceBlockId}="${escapedId}"]`,
+      ]
+    : [`[data-block-id="${escapedId}"]`]
+  const candidates = selectors.flatMap((selector) => (
+    Array.from(window.document.querySelectorAll<HTMLElement>(selector))
+  ))
+  const target = candidates.find((node) => !node.closest('[data-teaching-measure-root]'))
+  if (!target) return false
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  return true
 }
 
 function mergeTextStyle(current: TeachingTextStyle | undefined, patch: Partial<TeachingTextStyle>): TeachingTextStyle | undefined {
@@ -468,12 +490,15 @@ export default function TeachingDocumentEditorPage() {
   function selectFromOutline(blockId: string) {
     // 大纲导航的明确意图是居中目标，不沿用点击对象时的原视口锚点。
     selectAndShow(blockId, false)
-    // 滚动到对应块（注意：局部 document 为文档数据，DOM 查询须走 window.document）
-    requestAnimationFrame(() => {
-      window.document
-        .querySelector(`[data-block-id="${CSS.escape(blockId)}"]`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    })
+    // 预览页采用窗口化挂载，选中状态更新后目标页可能要到下一帧才挂载。
+    // 只查询真实编辑/打印节点，避免命中隐藏测量树或隐藏编辑画布。
+    const scrollToTarget = (remainingFrames: number) => {
+      requestAnimationFrame(() => {
+        if (scrollToVisibleTeachingBlock(blockId, canvasMode) || remainingFrames <= 0) return
+        scrollToTarget(remainingFrames - 1)
+      })
+    }
+    scrollToTarget(canvasMode === 'a4' ? 2 : 0)
   }
 
   function updateSelected(patch: Partial<TeachingBlock>, mergeKey?: string) {
