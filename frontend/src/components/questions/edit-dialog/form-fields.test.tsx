@@ -92,4 +92,58 @@ describe('MultiTagSelector', () => {
       .map((button) => button.textContent?.trim())
     expect(optionNames).toEqual(['函数', '几何', '概率'])
   })
+
+  it('supports expanding a group and selecting all of its child tags', async () => {
+    function Harness() {
+      const [values, setValues] = useState<string[]>([])
+      return (
+        <MultiTagSelector
+          label="知识点"
+          help="帮助"
+          options={[]}
+          groups={[{ id: 'func', name: '函数', options: [{ name: '单调性' }, { name: '奇偶性' }] }]}
+          values={values}
+          onChange={setValues}
+        />
+      )
+    }
+
+    await act(async () => root.render(<Harness />))
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')?.click())
+    await act(async () => document.body.querySelector<HTMLButtonElement>('button[aria-label="展开函数"]')?.click())
+    const groupButton = Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="option"]'))
+      .find((button) => button.textContent?.includes('函数'))
+    await act(async () => groupButton?.click())
+
+    expect(document.body.textContent).toContain('单调性')
+    expect(document.body.textContent).toContain('奇偶性')
+    expect(document.body.textContent).toContain('已选择 2 项')
+  })
+
+  it('filters grouped options through the selected knowledge points', async () => {
+    await act(async () => {
+      root.render(
+        <MultiTagSelector
+          label="解题方法"
+          help="帮助"
+          options={[]}
+          groups={[{
+            id: 'methods',
+            name: '函数方法',
+            options: [
+              { name: '图象法', appliesTo: ['函数单调性'] },
+              { name: '配方法', appliesTo: ['二次函数'] },
+            ],
+          }]}
+          filterOption={(option) => option.appliesTo?.includes('函数单调性') ?? false}
+          values={[]}
+          onChange={() => undefined}
+        />,
+      )
+    })
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')?.click())
+    await act(async () => document.body.querySelector<HTMLButtonElement>('button[aria-label="展开函数方法"]')?.click())
+    expect(document.body.textContent).toContain('图象法')
+    expect(document.body.textContent).not.toContain('配方法')
+  })
 })

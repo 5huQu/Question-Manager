@@ -15,7 +15,7 @@ import { QuestionFigureManager } from '@/components/questions/QuestionFigureMana
 import { difficultyBadgeVariant, difficultyLabel10, difficultyLabelFromScore10, figuresByUsage } from '@/utils/questionDisplay'
 import { draftAnalysisText, draftAnswerText, draftProblemText, paragraphBlocksFromText } from '@/utils/jsonCleanup'
 import { gradeOptionsForTeachingStages } from '@/utils/stages'
-import { LabeledInput, LabeledSelect, MultiTagSelector } from './form-fields'
+import { LabeledInput, LabeledSelect, MultiTagSelector, type MultiTagGroup } from './form-fields'
 
 const DOC2X_FIGURE_MARKER = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/gi
 
@@ -93,6 +93,32 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
   const metadataStageOptions = draft.stage && !configuredStageOptions.includes(draft.stage)
     ? [...configuredStageOptions, draft.stage]
     : configuredStageOptions
+
+  const knowledgePointGroups = useMemo<MultiTagGroup[]>(() => {
+    const libraries = tagLibraries.data?.libraries?.filter((library) => library.libraryType === 'knowledge_point') ?? []
+    return libraries.flatMap((library) => library.chapters.map((chapter) => ({
+      id: `${library.code}:${chapter.code}`,
+      name: chapter.name,
+      options: chapter.knowledgePoints.map((point) => ({ name: point.name })),
+    })))
+  }, [tagLibraries.data])
+
+  const solutionMethodGroups = useMemo<MultiTagGroup[]>(() => {
+    const libraries = tagLibraries.data?.libraries?.filter((library) => library.libraryType === 'method_tag') ?? []
+    return libraries.flatMap((library) => library.chapters.map((chapter) => ({
+      id: `${library.code}:${chapter.code}`,
+      name: chapter.name,
+      options: chapter.knowledgePoints.map((point) => ({ name: point.name, appliesTo: point.appliesTo })),
+    })))
+  }, [tagLibraries.data])
+
+  const methodFilter = useMemo(() => {
+    const selectedKnowledgePoints = (draft.knowledgePoints ?? []).map((value) => String(value).trim()).filter(Boolean)
+    if (!selectedKnowledgePoints.length) return undefined
+    return (option: { name: string; appliesTo?: string[] }) => (
+      option.appliesTo?.some((knowledgePoint) => selectedKnowledgePoints.includes(knowledgePoint)) ?? false
+    )
+  }, [draft.knowledgePoints?.join('|')])
 
   function updateDraft(patch: Partial<QuestionItem>) {
     setDraft((current) => ({ ...current, ...patch }))
@@ -329,8 +355,23 @@ export function EditDialog({ draft, setDraft, onClose, onSave, onManageFigures, 
                       />
                     </div>
                     <LabeledInput label="难度分 1-10" help="保存时同步显示难度标签。" value={String(draft.difficultyScore10 ?? '')} onChange={(value) => updateDraft({ difficultyScore10: Number(value), difficultyLabel: difficultyLabelFromScore10(Number(value)) })} />
-                    <MultiTagSelector label="知识点" help="搜索并勾选多个知识点；再次点击可取消选择。" options={tagLibraries.data?.knowledgePoints ?? []} values={draft.knowledgePoints ?? []} onChange={(values) => updateDraft({ knowledgePoints: values })} />
-                    <MultiTagSelector label="解题方法" help="搜索并勾选多个解题方法；再次点击可取消选择。" options={tagLibraries.data?.solutionMethods ?? []} values={draft.solutionMethods ?? []} onChange={(values) => updateDraft({ solutionMethods: values })} />
+                    <MultiTagSelector
+                      label="知识点"
+                      help="先展开章节，再勾选具体知识点；支持多选。"
+                      options={tagLibraries.data?.knowledgePoints ?? []}
+                      groups={knowledgePointGroups}
+                      values={draft.knowledgePoints ?? []}
+                      onChange={(values) => updateDraft({ knowledgePoints: values })}
+                    />
+                    <MultiTagSelector
+                      label="解题方法"
+                      help={draft.knowledgePoints?.length ? '已按所选知识点筛选适用方法；支持多选。' : '先选择知识点，可仅显示对应的解题方法。'}
+                      options={tagLibraries.data?.solutionMethods ?? []}
+                      groups={solutionMethodGroups}
+                      filterOption={methodFilter}
+                      values={draft.solutionMethods ?? []}
+                      onChange={(values) => updateDraft({ solutionMethods: values })}
+                    />
                   </div>
                 </div>
               ) : null}

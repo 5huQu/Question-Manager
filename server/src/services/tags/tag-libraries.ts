@@ -228,6 +228,9 @@ export function readTagLibraries() {
     difficultyLabel10(Number(row.difficulty_score_10 || 0)),
   ])
   return {
+    // Keep the flat lists for existing consumers, and expose the normalized
+    // hierarchy for editors that need chapter/group-aware selection.
+    libraries,
     // 选项既要覆盖标签库，也要覆盖已经写入题库但尚未进入标签库的历史数据。
     knowledgePoints: uniqueTags([...knowledgePoints, ...bankKnowledgePoints]),
     solutionMethods: uniqueTags([...solutionMethods, ...bankSolutionMethods]),

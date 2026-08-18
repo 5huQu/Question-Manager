@@ -75,12 +75,16 @@ export function MultiTagSelector({
   options,
   values,
   onChange,
+  groups,
+  filterOption,
 }: {
   label: string
   help: string
   options: string[]
   values: string[]
   onChange: (values: string[]) => void
+  groups?: MultiTagGroup[]
+  filterOption?: (option: MultiTagOption) => boolean
 }) {
   const cleanValues = values.map((value) => String(value).trim()).filter(Boolean)
   // Keep the source order stable when a value is checked. Prepending selected
@@ -89,6 +93,7 @@ export function MultiTagSelector({
   const mergedOptions = Array.from(new Set([...normalizedOptions, ...cleanValues]))
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -99,6 +104,18 @@ export function MultiTagSelector({
       ? mergedOptions.filter((option) => option.toLocaleLowerCase().includes(normalizedQuery))
       : mergedOptions
   }, [mergedOptions.join('|'), query])
+  const visibleGroups = useMemo(() => {
+    if (!groups?.length) return []
+    const normalizedQuery = query.trim().toLocaleLowerCase()
+    return groups.map((group) => {
+      const availableOptions = group.options.filter((option) => filterOption?.(option) ?? true)
+      const groupMatches = group.name.toLocaleLowerCase().includes(normalizedQuery)
+      const optionsInSearch = normalizedQuery && !groupMatches
+        ? availableOptions.filter((option) => option.name.toLocaleLowerCase().includes(normalizedQuery))
+        : availableOptions
+      return { ...group, options: optionsInSearch, groupMatches }
+    }).filter((group) => !normalizedQuery || group.groupMatches || group.options.length > 0)
+  }, [groups, query, filterOption])
 
   useEffect(() => {
     if (!open) return
@@ -121,6 +138,13 @@ export function MultiTagSelector({
 
   function removeTag(value: string) {
     onChange(cleanValues.filter((item) => item !== value))
+  }
+
+  function toggleGroup(group: MultiTagGroup) {
+    const names = group.options.map((option) => option.name)
+    const allSelected = names.length > 0 && names.every((name) => cleanValues.includes(name))
+    if (allSelected) onChange(cleanValues.filter((value) => !names.includes(value)))
+    else onChange([...cleanValues, ...names.filter((name) => !cleanValues.includes(name))])
   }
 
   return (
@@ -184,8 +208,64 @@ export function MultiTagSelector({
               ) : null}
             </div>
           </div>
-          <div className="max-h-52 overflow-y-auto p-1" role="listbox" aria-multiselectable="true" aria-label={labelText}>
-            {filteredOptions.length ? (
+          <div className="max-h-64 overflow-y-auto p-1" role="listbox" aria-multiselectable="true" aria-label={labelText}>
+            {groups?.length ? (
+              visibleGroups.length ? visibleGroups.map((group) => {
+                const expanded = expandedGroups[group.id] ?? Boolean(query.trim())
+                const selectedCount = group.options.filter((option) => cleanValues.includes(option.name)).length
+                const allSelected = group.options.length > 0 && selectedCount === group.options.length
+                const indeterminate = selectedCount > 0 && !allSelected
+                return (
+                  <div key={group.id} className="mb-1 last:mb-0">
+                    <div className="flex items-center gap-1 rounded-lg px-1 py-1 hover:bg-black/3 dark:hover:bg-white/5">
+                      <button
+                        type="button"
+                        aria-label={`${expanded ? '收起' : '展开'}${group.name}`}
+                        onClick={() => setExpandedGroups((current) => ({ ...current, [group.id]: !expanded }))}
+                        className="flex size-5 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                      >
+                        <ChevronDown className={`size-3 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                      </button>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={allSelected}
+                        onClick={() => toggleGroup(group)}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      >
+                        <span className={`flex size-4 shrink-0 items-center justify-center rounded border ${allSelected || indeterminate ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900' : 'border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900'}`}>
+                          {allSelected ? <Check className="size-3" /> : indeterminate ? <span className="h-px w-2 bg-current" /> : null}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-zinc-700 dark:text-zinc-200">{group.name}</span>
+                        {selectedCount > 0 ? <span className="text-[10px] tabular-nums text-zinc-400">{selectedCount}/{group.options.length}</span> : null}
+                      </button>
+                    </div>
+                    {expanded && group.options.length ? (
+                      <div className="ml-6 space-y-0.5 border-l border-zinc-200 pl-2 dark:border-zinc-700">
+                        {group.options.map((option) => {
+                          const checked = cleanValues.includes(option.name)
+                          return (
+                            <button
+                              key={option.name}
+                              type="button"
+                              role="option"
+                              aria-selected={checked}
+                              onClick={() => toggleTag(option.name)}
+                              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${checked ? 'bg-zinc-100 font-medium text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50' : 'text-zinc-600 hover:bg-black/3 dark:text-zinc-300 dark:hover:bg-white/5'}`}
+                            >
+                              <span className={`flex size-4 shrink-0 items-center justify-center rounded border ${checked ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900' : 'border-zinc-300 bg-white dark:border-zinc-600 dark:bg-zinc-900'}`}>
+                                {checked ? <Check className="size-3" /> : null}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate">{option.name}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              }) : <p className="px-2.5 py-5 text-center text-xs text-zinc-400">没有匹配项</p>
+            ) : filteredOptions.length ? (
               filteredOptions.map((option) => {
                 const checked = cleanValues.includes(option)
                 return (
@@ -239,6 +319,17 @@ export function MultiTagSelector({
       ) : null}
     </div>
   )
+}
+
+export type MultiTagOption = {
+  name: string
+  appliesTo?: string[]
+}
+
+export type MultiTagGroup = {
+  id: string
+  name: string
+  options: MultiTagOption[]
 }
 
 export function LabeledTextarea({

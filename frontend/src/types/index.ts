@@ -390,6 +390,7 @@ export type TagLibraries = {
   stages: string[]
   questionTypes: string[]
   difficultyLabels: string[]
+  libraries?: LearningTagLibrary[]
 }
 
 export type SliceReviewItem = {
