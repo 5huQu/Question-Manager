@@ -444,6 +444,18 @@ export type ImportV2ImportJobDetail = {
   stats: ImportV2ImportJobStats
 }
 
+export type ImportV2ImportJobListResponse = {
+  items: ImportV2ImportJobDetail[]
+  total: number
+  filterOptions: {
+    stages: string[]
+    subjects: string[]
+    provinces: string[]
+    cities: string[]
+    years: string[]
+  }
+}
+
 export type ImportV2JobQuestionsResponse = ImportV2ImportJobDetail & {
   items: QuestionItem[]
   filterOptions: {
@@ -784,7 +796,7 @@ export const importV2Api = {
   },
   listImportJobs(query?: Record<string, string>) {
     const q = query ? '?' + new URLSearchParams(query).toString() : ''
-    return api<{ items: ImportV2ImportJobDetail[] }>('/api/import-flow-v2/jobs' + q)
+    return api<ImportV2ImportJobListResponse>('/api/import-flow-v2/jobs' + q)
   },
   updateImportJob(jobId: string, payload: Partial<ImportV2ImportJob>) {
     return api<{ importJob: ImportV2ImportJob; documents: ImportV2ImportJobDocumentDetail[] }>('/api/import-flow-v2/jobs/' + encodeURIComponent(jobId), {

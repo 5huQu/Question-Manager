@@ -61,6 +61,8 @@ const gaokaoProvinceNames = [
 ]
 
 export const gaokaoRegionOptions: GaokaoRegionOption[] = [
+  { value: '全国大纲卷', label: '全国大纲卷', provinces: '' },
+  { value: '新课标全国卷', label: '新课标全国卷', provinces: '' },
   {
     value: '全国一卷 / 新课标全国 I 卷',
     label: '全国一卷 / 新课标全国 I 卷',

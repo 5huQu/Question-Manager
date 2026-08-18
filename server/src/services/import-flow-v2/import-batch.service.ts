@@ -37,6 +37,109 @@ export type ImportJobDetailResponse = {
 
 type SqlValue = string | number | bigint | null | Buffer
 
+type ImportJobListFilters = {
+  where: string[]
+  values: SqlValue[]
+}
+
+const IMPORT_JOB_STATUS_CTE = `
+  WITH candidate_stats AS (
+    SELECT
+      source_document_id,
+      COUNT(*) AS candidate_count,
+      SUM(CASE WHEN status = 'committed' THEN 1 ELSE 0 END) AS committed_count
+    FROM question_candidates
+    GROUP BY source_document_id
+  ),
+  job_stats AS (
+    SELECT
+      document.job_id,
+      COUNT(source.id) AS document_count,
+      SUM(CASE WHEN source.status = 'ocr_running' THEN 1 ELSE 0 END) AS running_count,
+      SUM(CASE WHEN source.status = 'ocr_failed' THEN 1 ELSE 0 END) AS failed_count,
+      SUM(CASE WHEN source.status = 'uploaded' THEN 1 ELSE 0 END) AS uploaded_count,
+      SUM(CASE WHEN source.status = 'ocr_succeeded' THEN 1 ELSE 0 END) AS ocr_succeeded_count,
+      COALESCE(SUM(candidate_stats.candidate_count), 0) AS candidate_count,
+      COALESCE(SUM(candidate_stats.committed_count), 0) AS committed_count
+    FROM import_job_documents document
+    LEFT JOIN source_documents source ON source.id = document.source_document_id
+    LEFT JOIN candidate_stats ON candidate_stats.source_document_id = document.source_document_id
+    GROUP BY document.job_id
+  ),
+  job_statuses AS (
+    SELECT
+      job_id,
+      CASE
+        WHEN running_count > 0 THEN 'ocr_running'
+        WHEN uploaded_count > 0 THEN 'waiting_ocr'
+        WHEN failed_count > 0 AND failed_count = document_count THEN 'ocr_failed'
+        WHEN failed_count > 0 THEN 'partial_ocr_failed'
+        WHEN candidate_count > 0 AND committed_count = candidate_count THEN 'all_committed'
+        WHEN candidate_count > 0 AND committed_count > 0 THEN 'partial_committed'
+        WHEN candidate_count > 0 THEN 'pending_review'
+        WHEN ocr_succeeded_count > 0 THEN 'parsed'
+        ELSE 'waiting_ocr'
+      END AS status_key
+    FROM job_stats
+  )
+`
+
+function importJobListFilters(query: Record<string, unknown>): ImportJobListFilters {
+  const where: string[] = []
+  const values: SqlValue[] = []
+  const addExact = (column: string, value: unknown) => {
+    const normalized = String(value || '').trim()
+    if (!normalized) return
+    where.push(`job.${column} = ?`)
+    values.push(normalized)
+  }
+
+  const keyword = String(query.query || '').trim()
+  if (keyword) {
+    where.push(`(job.title LIKE ? OR job.paper_title LIKE ? OR job.batch_name LIKE ?)`)
+    const pattern = `%${keyword}%`
+    values.push(pattern, pattern, pattern)
+  }
+  addExact('stage', query.stage)
+  addExact('subject', query.subject)
+  addExact('paper_kind', query.paperKind)
+  addExact('province', query.province)
+  addExact('city', query.city)
+  if (String(query.examYear || '').trim()) {
+    const examYear = Number(query.examYear)
+    if (Number.isFinite(examYear)) {
+      where.push('job.exam_year = ?')
+      values.push(Math.floor(examYear))
+    }
+  }
+  const status = String(query.status || '').trim()
+  if (status) {
+    where.push(`COALESCE(job_statuses.status_key, 'waiting_ocr') = ?`)
+    values.push(status)
+  }
+
+  return { where, values }
+}
+
+function importJobFilterOptions() {
+  const distinctValues = (column: 'stage' | 'subject' | 'province' | 'city' | 'exam_year') => {
+    const rows = db.prepare(`
+      SELECT DISTINCT ${column} AS value
+      FROM import_jobs
+      WHERE TRIM(COALESCE(${column}, '')) <> ''
+      ORDER BY ${column} COLLATE NOCASE
+    `).all() as Array<{ value: string | number }>
+    return rows.map((row) => String(row.value))
+  }
+  return {
+    stages: distinctValues('stage'),
+    subjects: distinctValues('subject'),
+    provinces: distinctValues('province'),
+    cities: distinctValues('city'),
+    years: distinctValues('exam_year').sort((left, right) => Number(right) - Number(left)),
+  }
+}
+
 function requireImportJob(jobId: string) {
   const importJob = importJobRepo.getImportJob(jobId)
   if (!importJob) throw new RouteError(404, '导入批次不存在。')
@@ -134,12 +237,22 @@ export function getImportJobDetail(jobId: string): ImportJobDetailResponse {
 export function listImportJobsWithStats(query: Record<string, unknown> = {}) {
   const limit = Math.max(1, Math.min(200, Math.floor(Number(query.limit || 100))))
   const offset = Math.max(0, Math.floor(Number(query.offset || 0)))
-  const rows = db.prepare(`
-    SELECT *
-    FROM import_jobs
+  const filters = importJobListFilters(query)
+  const whereClause = filters.where.length ? `WHERE ${filters.where.join(' AND ')}` : ''
+  const totalRow = db.prepare(`${IMPORT_JOB_STATUS_CTE}
+    SELECT COUNT(*) AS count
+    FROM import_jobs job
+    LEFT JOIN job_statuses ON job_statuses.job_id = job.id
+    ${whereClause}
+  `).get(...filters.values) as { count: number }
+  const rows = db.prepare(`${IMPORT_JOB_STATUS_CTE}
+    SELECT job.*
+    FROM import_jobs job
+    LEFT JOIN job_statuses ON job_statuses.job_id = job.id
+    ${whereClause}
     ORDER BY updated_at DESC, created_at DESC
     LIMIT ? OFFSET ?
-  `).all(limit, offset) as ImportJobRow[]
+  `).all(...filters.values, limit, offset) as ImportJobRow[]
   const importJobs = rows.map(importJobRepo.mapImportJob)
   const documentRows = importJobRepo.listImportJobDocumentStats(importJobs.map((job) => job.id))
   const documentsByJobId = new Map<string, ImportJobDocumentDetail[]>()
@@ -168,6 +281,8 @@ export function listImportJobsWithStats(query: Record<string, unknown> = {}) {
   ])))
   const questionCounts = importJobRepo.countQuestionsForImportJobList(importJobs.map((job) => job.id), importSourceIds)
   return {
+    total: Number(totalRow.count || 0),
+    filterOptions: importJobFilterOptions(),
     items: importJobs.map((importJob) => {
       const documents = documentsByJobId.get(importJob.id) || []
       const documentStats = documents.map((document) => document.sourceDocument.importStats!)

@@ -8,7 +8,7 @@ process.env.QUESTION_DATA_DIR = tempRoot
 process.env.QUESTION_AUTH_MODE = 'disabled'
 
 const { closeDatabase } = await import('../dist/index.js')
-const { createSourceDocument } = await import('../dist/repositories/source-documents.repo.js')
+const { createSourceDocument, getSourceDocument } = await import('../dist/repositories/source-documents.repo.js')
 const { createOcrDocument } = await import('../dist/repositories/ocr-documents.repo.js')
 const {
   createImportJob,
@@ -22,6 +22,7 @@ const {
   listImportJobQuestions,
   resolveImportJobForLegacyRunId,
   refreshQuestionFormatStateForExport,
+  updateImportJob,
 } = await import('../dist/services/import-flow-v2/import-flow-v2.service.js')
 const { updateQuestionCandidate: persistQuestionCandidate } = await import('../dist/repositories/question-candidates.repo.js')
 const { db } = await import('../dist/db/connection.js')
@@ -123,7 +124,28 @@ try {
   assert.match(singleResult.items[0].analysisMarkdown, /1\+1=2/)
   assert.equal(singleResult.items[0].paperTitle, 'Import Job Single Paper')
 
-  console.log('2. Parsing separated questions and solutions into the same candidates...')
+  console.log('2. Updating one batch field preserves the remaining metadata...')
+  updateImportJob(singleJob.importJob.id, {
+    paperTitle: '2019 年新课标 II 卷',
+    batchName: '2019 年高考真题',
+    paperKind: 'gaokao_real',
+    province: '全国二卷 / 新课标全国 II 卷',
+    examYear: 2019,
+  })
+  const partiallyUpdatedJob = updateImportJob(singleJob.importJob.id, { province: '全国甲卷' })
+  assert.equal(partiallyUpdatedJob.importJob.paperTitle, '2019 年新课标 II 卷')
+  assert.equal(partiallyUpdatedJob.importJob.batchName, '2019 年高考真题')
+  assert.equal(partiallyUpdatedJob.importJob.paperKind, 'gaokao_real')
+  assert.equal(partiallyUpdatedJob.importJob.examYear, 2019)
+  assert.equal(partiallyUpdatedJob.importJob.province, '全国甲卷')
+  assert.equal(getSourceDocument(fullSource.id)?.paperTitle, '2019 年新课标 II 卷')
+  assert.equal(getSourceDocument(fullSource.id)?.province, '全国甲卷')
+  const partiallyUpdatedCandidate = listQuestionCandidatesForSource(fullSource.id, {}).items[0]
+  assert.equal(partiallyUpdatedCandidate?.paperKind, 'gaokao_real')
+  assert.equal(partiallyUpdatedCandidate?.examYear, 2019)
+  assert.equal(partiallyUpdatedCandidate?.province, '全国甲卷')
+
+  console.log('3. Parsing separated questions and solutions into the same candidates...')
   const questionsSource = makeSourceDocument('src_job_questions', 'Questions Source', { paperTitle: 'Source Paper Should Be Overridden' })
   const solutionsSource = makeSourceDocument('src_job_solutions', 'Solutions Source')
   const questionsMarkdown = [
@@ -184,7 +206,7 @@ try {
   assert.equal(q2.paperTitle, 'Import Job Separated Paper')
   assert.equal(q2.batchName, 'Separated Batch')
 
-  console.log('3. Committing a merged candidate to the bank...')
+  console.log('4. Committing a merged candidate to the bank...')
   const commitResult = await commitQuestionCandidate(q2.id, { skipAutoClassification: true })
   assert.equal(commitResult.candidate.status, 'committed')
   assert.equal(commitResult.item.answerText, '4')
@@ -197,7 +219,7 @@ try {
   assert.deepEqual(separatedQuestions.filterOptions.stages, ['高三'])
   assert.deepEqual(separatedQuestions.filterOptions.questionTypes, ['解答题'])
 
-  console.log('4. Verifying direct OCRDocument parsing is unchanged...')
+  console.log('5. Verifying direct OCRDocument parsing is unchanged...')
   const directSource = makeSourceDocument('src_direct_parse', 'Direct Parse Source')
   const directMarkdown = [
     '1. 已知 $b=4$，求 $2b$。',
@@ -254,7 +276,7 @@ try {
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM question_bank_items WHERE import_source_id = ?').get(rollbackSource.id).count, 0)
   assert.notEqual(listQuestionCandidatesForSource(rollbackSource.id, {}).items[0]?.status, 'committed')
 
-  console.log('5. Listing candidates recalculates stale persisted validation issues...')
+  console.log('6. Listing candidates recalculates stale persisted validation issues...')
   const staleSource = makeSourceDocument('src_live_validation', 'Live Validation Source')
   const staleMarkdown = [
     '1. 已知 $c=5$，求 $c$。',
@@ -281,7 +303,7 @@ try {
   const reviewResult = listQuestionCandidatesForSource(staleSource.id, { status: 'needs_review' })
   assert.equal(reviewResult.items.some((item) => item.id === staleResult.items[0].id), false)
 
-  console.log('6. Skipping candidates removes them from review without banking them...')
+  console.log('7. Skipping candidates removes them from review without banking them...')
   const skipSource = makeSourceDocument('src_skip_candidates', 'Skip Candidates Source')
   const skipMarkdown = [
     '1. 第一题。',
@@ -312,7 +334,7 @@ try {
   assert.equal(listQuestionCandidatesForSource(skipSource.id, {}).items.length, 1)
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM question_bank_items WHERE import_source_id = ?').get(skipSource.id).count, 1)
 
-  console.log('7. Export preflight clears stale blocked format state...')
+  console.log('8. Export preflight clears stale blocked format state...')
   const staleBlockedId = commitResult.item.id
   db.prepare(`
     UPDATE question_bank_items

@@ -51,6 +51,7 @@ try {
   const result = listImportJobsWithStats({ limit: 200 })
   const elapsedMs = performance.now() - startedAt
   assert.equal(result.items.length, 200)
+  assert.equal(result.total, 200)
   assert.equal(result.items[0].documents.length, 2)
   assert.deepEqual(result.items[0].stats, {
     sourceDocumentCount: 2,
@@ -61,6 +62,12 @@ try {
     needsReviewCount: 2,
     blockedCount: 0,
   })
+  const secondPage = listImportJobsWithStats({ limit: 25, offset: 25 })
+  assert.equal(secondPage.items.length, 25)
+  assert.equal(secondPage.total, 200)
+  const nameSearch = listImportJobsWithStats({ query: 'Performance Job 19', limit: 200 })
+  assert.equal(nameSearch.total, 11)
+  assert.equal(nameSearch.items.every((item) => item.importJob.title.includes('Performance Job 19')), true)
   assert.ok(elapsedMs < 2000, `aggregate job listing took ${elapsedMs.toFixed(1)}ms`)
   console.log(`ImportJob aggregate list test passed in ${elapsedMs.toFixed(1)}ms.`)
 } finally {

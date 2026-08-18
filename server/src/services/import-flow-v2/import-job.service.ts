@@ -454,20 +454,21 @@ export function deleteImportJob(id: string) {
 
 export function updateImportJob(id: string, body: Record<string, unknown>) {
   const importJob = requireImportJob(id)
+  const input: Parameters<typeof importJobRepo.updateImportJob>[1] = {}
 
-  const updated = importJobRepo.updateImportJob(importJob.id, {
-    title: body.title === undefined ? undefined : String(body.title),
-    province: body.province === undefined ? undefined : String(body.province),
-    city: body.city === undefined ? undefined : String(body.city),
-    paperTitle: body.paperTitle === undefined ? undefined : String(body.paperTitle),
-    batchName: body.batchName === undefined ? undefined : String(body.batchName),
-    stage: body.stage === undefined ? undefined : String(body.stage),
-    subject: body.subject === undefined ? undefined : String(body.subject),
-    paperKind: body.paperKind === undefined ? undefined : String(body.paperKind) as any,
-    examYear: body.examYear === undefined ? undefined : (body.examYear ? Number(body.examYear) : null) as any,
-    sourceOrg: body.sourceOrg === undefined ? undefined : String(body.sourceOrg),
-    status: body.status === undefined ? undefined : String(body.status) as any,
-  })
+  if ('title' in body) input.title = String(body.title)
+  if ('province' in body) input.province = String(body.province)
+  if ('city' in body) input.city = String(body.city)
+  if ('paperTitle' in body) input.paperTitle = String(body.paperTitle)
+  if ('batchName' in body) input.batchName = String(body.batchName)
+  if ('stage' in body) input.stage = String(body.stage)
+  if ('subject' in body) input.subject = String(body.subject)
+  if ('paperKind' in body) input.paperKind = String(body.paperKind) as any
+  if ('examYear' in body) input.examYear = (body.examYear ? Number(body.examYear) : null) as any
+  if ('sourceOrg' in body) input.sourceOrg = String(body.sourceOrg)
+  if ('status' in body) input.status = String(body.status) as any
+
+  const updated = importJobRepo.updateImportJob(importJob.id, input)
 
   if (!updated) throw new RouteError(500, '更新导入任务失败。')
 

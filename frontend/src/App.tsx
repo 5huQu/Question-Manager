@@ -180,6 +180,7 @@ export default function App() {
 
   const isCandidateReview = location.pathname.startsWith('/tools/import/') && location.pathname.includes('/candidates')
   const isImportUpload = location.pathname === '/tools/import/upload'
+  const isImportJobsList = location.pathname === '/tools/import'
 
   return (
     <SidebarProvider className={`h-screen overflow-hidden bg-background text-[var(--app-body-text)] text-foreground transition-colors duration-150 ${darkMode ? 'dark' : ''}`}>
@@ -198,10 +199,10 @@ export default function App() {
               : undefined
           } />
         )}
-        <div className={`flex-1 ${location.pathname === '/questions' || isCandidateReview ? 'overflow-hidden flex flex-col h-[calc(100vh-3.5rem)]' : 'overflow-auto'}`} data-slot="app-scroll-container">
+        <div className={`flex-1 ${location.pathname === '/questions' || isCandidateReview || isImportJobsList ? 'overflow-hidden flex flex-col h-[calc(100vh-3.5rem)]' : 'overflow-auto'}`} data-slot="app-scroll-container">
           <div
             className={`flex w-full flex-col ${
-              location.pathname === '/questions'
+              location.pathname === '/questions' || isImportJobsList
                 ? 'h-full p-4 md:p-5 pb-2 md:pb-2 gap-0 max-w-none'
                 : isCandidateReview || isImportUpload
                 ? 'h-full p-0 gap-0 max-w-none'

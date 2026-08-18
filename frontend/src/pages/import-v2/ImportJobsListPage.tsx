@@ -5,6 +5,8 @@ import {
   Play,
   LoaderCircle,
   Trash2,
+  Search,
+  X,
   ChevronDown,
   ChevronRight,
   Edit2,
@@ -14,11 +16,12 @@ import {
   RefreshCcw,
   Eye,
 } from 'lucide-react'
-import { importV2Api, type ImportV2ImportJob, type ImportV2ImportJobDetail, type PaperKind, type SourceMetadataDraft } from '@/api/importV2'
+import { importV2Api, type ImportV2ImportJob, type ImportV2ImportJobDetail, type ImportV2ImportJobListResponse, type PaperKind, type SourceMetadataDraft } from '@/api/importV2'
 import { settingsApi } from '@/api/settings'
 import { SearchableSelect } from '@/components/SearchableSelect'
-import { PageTitle, Panel, Badge, Button } from '@/components/ui'
+import { Badge, Button } from '@/components/ui'
 import { Modal } from '@/components/dialogs/Modal'
+import { BankPagination } from '@/components/questions/workbench/BankPagination'
 import { useAsync } from '@/hooks/useAsync'
 import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling'
 import { cityOptionsForProvince, gaokaoRegionOptions, isGaokaoRegion, provinceForCity, provinceOptions, yearOptionsFromServerYear } from '@/utils/metadataOptions'
@@ -36,11 +39,22 @@ const paperKindOptions: Array<{ value: PaperKind; label: string }> = [
 
 const subjectOptions = ['语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理']
 const stageOptions = ['小学', '初中', '高中', '高一', '高二', '高三']
+const pageSizeOptions = [20, 50, 100]
+
+const emptyFilterOptions: ImportV2ImportJobListResponse['filterOptions'] = {
+  stages: [],
+  subjects: [],
+  provinces: [],
+  cities: [],
+  years: [],
+}
 
 export default function ImportJobsListPage() {
   const navigate = useNavigate()
   const health = useAsync(() => settingsApi.getHealth(), [])
   const [jobs, setJobs] = useState<ImportV2ImportJobDetail[]>([])
+  const [totalJobs, setTotalJobs] = useState(0)
+  const [filterOptions, setFilterOptions] = useState<ImportV2ImportJobListResponse['filterOptions']>(emptyFilterOptions)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -51,6 +65,10 @@ export default function ImportJobsListPage() {
   const [cityFilter, setCityFilter] = useState('')
   const [yearFilter, setYearFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(pageSizeOptions[0])
 
   // 折叠状态，记录展开的 jobId
   const [expandedJobIds, setExpandedJobIds] = useState<Set<string>>(new Set())
@@ -67,11 +85,31 @@ export default function ImportJobsListPage() {
     ? [editForm.city, ...editCityOptions]
     : editCityOptions
 
+  const listQuery = useMemo(() => {
+    const query: Record<string, string> = {
+      limit: String(pageSize),
+      offset: String((page - 1) * pageSize),
+    }
+    if (searchQuery) query.query = searchQuery
+    if (stageFilter) query.stage = stageFilter
+    if (subjectFilter) query.subject = subjectFilter
+    if (paperKindFilter) query.paperKind = paperKindFilter
+    if (provinceFilter) query.province = provinceFilter
+    if (cityFilter) query.city = cityFilter
+    if (yearFilter) query.examYear = yearFilter
+    if (statusFilter) query.status = statusFilter
+    return query
+  }, [cityFilter, page, pageSize, paperKindFilter, provinceFilter, searchQuery, stageFilter, statusFilter, subjectFilter, yearFilter])
+
+  const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize))
+
   async function fetchJobs(silent = false) {
     if (!silent) setLoading(true)
     try {
-      const res = await importV2Api.listImportJobs()
+      const res = await importV2Api.listImportJobs(listQuery)
       setJobs(res.items || [])
+      setTotalJobs(res.total || 0)
+      setFilterOptions(res.filterOptions || emptyFilterOptions)
 
       // 检查是否有文档仍在进行 OCR 识别
       const running = (res.items || []).some(job =>
@@ -87,14 +125,31 @@ export default function ImportJobsListPage() {
   }
 
   useEffect(() => {
-    fetchJobs()
-  }, [])
+    void fetchJobs()
+  }, [listQuery])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const nextQuery = searchInput.trim()
+      if (nextQuery !== searchQuery) {
+        setSearchQuery(nextQuery)
+        setPage(1)
+      }
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [searchInput, searchQuery])
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
   useVisibilityAwarePolling(async (signal) => {
-    const res = await importV2Api.listImportJobs()
+    const res = await importV2Api.listImportJobs(listQuery)
     if (signal.aborted) return
     const items = res.items || []
     setJobs(items)
+    setTotalJobs(res.total || 0)
+    setFilterOptions(res.filterOptions || emptyFilterOptions)
     setHasRunningOcr(items.some((job) =>
       job.documents.some((doc) => ['uploaded', 'ocr_running'].includes(doc.sourceDocument.status))
     ))
@@ -106,49 +161,12 @@ export default function ImportJobsListPage() {
   })
 
   const stageFilterOptions = useMemo(() => {
-    return Array.from(new Set([...stageOptions, ...jobs.map(job => job.importJob.stage).filter(Boolean)]))
-  }, [jobs])
+    return Array.from(new Set([...stageOptions, ...filterOptions.stages]))
+  }, [filterOptions.stages])
 
   const subjectFilterOptions = useMemo(() => {
-    return Array.from(new Set([...subjectOptions, ...jobs.map(job => job.importJob.subject).filter(Boolean)]))
-  }, [jobs])
-
-  const filteredJobs = useMemo(() => {
-    return jobs.filter(job => {
-      if (stageFilter && job.importJob.stage !== stageFilter) return false
-      if (subjectFilter && job.importJob.subject !== subjectFilter) return false
-      if (paperKindFilter && job.importJob.paperKind !== paperKindFilter) return false
-      if (provinceFilter && (job.importJob.province || '') !== provinceFilter) return false
-      if (cityFilter && (job.importJob.city || '') !== cityFilter) return false
-      if (yearFilter && String(job.importJob.examYear || '') !== yearFilter) return false
-      if (statusFilter && getJobStatusKey(job) !== statusFilter) return false
-      return true
-    })
-  }, [jobs, paperKindFilter, provinceFilter, cityFilter, yearFilter, stageFilter, subjectFilter, statusFilter])
-
-  function getJobStatusKey(job: ImportV2ImportJobDetail): string {
-    const totalDocs = job.documents.length
-    const runningDocs = job.documents.filter(d => d.sourceDocument.status === 'ocr_running').length
-    const failedDocs = job.documents.filter(d => d.sourceDocument.status === 'ocr_failed').length
-    const uploadedDocs = job.documents.filter(d => d.sourceDocument.status === 'uploaded').length
-
-    if (runningDocs > 0) return 'ocr_running'
-    if (uploadedDocs > 0) return 'waiting_ocr'
-    if (failedDocs > 0 && failedDocs === totalDocs) return 'ocr_failed'
-    if (failedDocs > 0) return 'partial_ocr_failed'
-
-    const candidateCount = job.stats.candidateCount || 0
-    const committedCount = job.stats.committedCandidateCount || 0
-    if (candidateCount > 0) {
-      if (committedCount === candidateCount) return 'all_committed'
-      if (committedCount > 0) return 'partial_committed'
-      return 'pending_review'
-    }
-
-    const firstStatus = job.documents[0]?.sourceDocument.status
-    if (firstStatus === 'ocr_succeeded') return 'parsed'
-    return 'waiting_ocr'
-  }
+    return Array.from(new Set([...subjectOptions, ...filterOptions.subjects]))
+  }, [filterOptions.subjects])
 
   const statusFilterOptions = useMemo(() => {
     const labelMap: Record<string, string> = {
@@ -162,9 +180,8 @@ export default function ImportJobsListPage() {
       all_committed: '已全部入库',
     }
     const order = ['waiting_ocr', 'ocr_running', 'ocr_failed', 'partial_ocr_failed', 'parsed', 'pending_review', 'partial_committed', 'all_committed']
-    const present = new Set(jobs.map(getJobStatusKey))
-    return order.filter(key => present.has(key)).map(key => labelMap[key])
-  }, [jobs])
+    return order.map(key => labelMap[key])
+  }, [])
 
   const statusLabelToKey = useMemo(() => {
     const map: Record<string, string> = {
@@ -181,23 +198,25 @@ export default function ImportJobsListPage() {
   }, [])
 
   const provinceFilterOptions = useMemo(() => {
-    return Array.from(new Set(jobs.map(job => job.importJob.province).filter(Boolean)))
-  }, [jobs])
+    return filterOptions.provinces
+  }, [filterOptions.provinces])
 
   const cityFilterOptions = useMemo(() => {
     if (provinceFilter) {
-      return Array.from(new Set(jobs.filter(job => job.importJob.province === provinceFilter).map(job => job.importJob.city).filter(Boolean)))
+      return cityOptionsForProvince(provinceFilter)
     }
-    return Array.from(new Set(jobs.map(job => job.importJob.city).filter(Boolean)))
-  }, [jobs, provinceFilter])
+    return filterOptions.cities
+  }, [filterOptions.cities, provinceFilter])
 
   const yearFilterOptions = useMemo(() => {
-    return Array.from(new Set(jobs.map(job => job.importJob.examYear).filter(Boolean).map(String))).sort((a, b) => Number(a) - Number(b))
-  }, [jobs])
+    return Array.from(new Set([...filterOptions.years, ...yearOptions])).sort((a, b) => Number(b) - Number(a))
+  }, [filterOptions.years, yearOptions])
 
-  const hasActiveFilters = Boolean(stageFilter || subjectFilter || paperKindFilter || provinceFilter || cityFilter || yearFilter || statusFilter)
+  const hasActiveFilters = Boolean(searchQuery || stageFilter || subjectFilter || paperKindFilter || provinceFilter || cityFilter || yearFilter || statusFilter)
 
   function resetFilters() {
+    setSearchInput('')
+    setSearchQuery('')
     setStageFilter('')
     setSubjectFilter('')
     setPaperKindFilter('')
@@ -205,6 +224,7 @@ export default function ImportJobsListPage() {
     setCityFilter('')
     setYearFilter('')
     setStatusFilter('')
+    setPage(1)
   }
 
   function toggleExpand(jobId: string) {
@@ -401,9 +421,9 @@ export default function ImportJobsListPage() {
   }
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="flex h-full min-h-0 flex-col gap-4">
       {/* SF Glass macOS Style Header Toolbar */}
-      <div className="sf-glass p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="sf-glass shrink-0 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="sf-title-large text-zinc-900 dark:text-zinc-50 tracking-tight flex items-center gap-2.5">
             资料导入中心
@@ -421,36 +441,58 @@ export default function ImportJobsListPage() {
       </div>
 
       {notice && (
-        <div className="sf-glass px-4 py-3 rounded-xl border-emerald-500/20 bg-emerald-50/50 text-xs text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300 flex items-center gap-2.5 shadow-sm animate-in fade-in duration-200">
+        <div className="sf-glass shrink-0 px-4 py-3 rounded-xl border-emerald-500/20 bg-emerald-50/50 text-xs text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300 flex items-center gap-2.5 shadow-sm animate-in fade-in duration-200">
           <Badge variant="success" className="h-4 px-1.5 rounded">成功</Badge>
           <span>{notice}</span>
         </div>
       )}
       {error && (
-        <div className="sf-glass px-4 py-3 rounded-xl border-red-500/20 bg-red-50/50 text-xs text-red-700 dark:bg-red-950/20 dark:text-red-300 flex items-center gap-2.5 shadow-sm animate-in fade-in duration-200">
+        <div className="sf-glass shrink-0 px-4 py-3 rounded-xl border-red-500/20 bg-red-50/50 text-xs text-red-700 dark:bg-red-950/20 dark:text-red-300 flex items-center gap-2.5 shadow-sm animate-in fade-in duration-200">
           <Badge variant="danger" className="h-4 px-1.5 rounded">错误</Badge>
           <span>{error}</span>
         </div>
       )}
 
-      <Panel title="导入批次列表" className="sf-glass rounded-2xl overflow-visible">
+      <section className="sf-glass flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm">
+        <div className="flex min-h-0 flex-1 flex-col">
         {loading && jobs.length === 0 ? (
-          <div className="flex h-36 items-center justify-center">
+          <div className="flex min-h-0 flex-1 items-center justify-center">
             <LoaderCircle className="size-6 animate-spin text-zinc-400" />
           </div>
-        ) : jobs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 border border-dashed border-zinc-200/60 dark:border-zinc-800/60 rounded-2xl bg-white/40 dark:bg-zinc-900/30">
+        ) : totalJobs === 0 && !hasActiveFilters ? (
+          <div className="m-4 flex min-h-0 flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-zinc-200/60 bg-white/40 p-12 dark:border-zinc-800/60 dark:bg-zinc-900/30">
             <FileText className="size-10 text-zinc-300 dark:text-zinc-600 mb-3" />
             <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">暂无导入批次，点击右上方“新建导入”开始上传文件</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/20 lg:flex-row lg:items-center lg:justify-between">
-              <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[840px] lg:grid-cols-7">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0 border-b border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-800 dark:bg-zinc-900/20">
+              <div className="grid grid-cols-2 gap-2 xl:grid-cols-[minmax(14rem,1.5fr)_repeat(7,minmax(0,1fr))]">
+                <div className="relative col-span-2 xl:col-span-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
+                  <input
+                    type="search"
+                    value={searchInput}
+                    onChange={(event) => setSearchInput(event.target.value)}
+                    placeholder="搜索批次名称"
+                    className="h-9 w-full rounded-md border border-zinc-200 bg-white pl-9 pr-8 text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-1 focus:ring-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-600"
+                  />
+                  {searchInput ? (
+                    <button
+                      type="button"
+                      onClick={() => setSearchInput('')}
+                      className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                      title="清除搜索"
+                      aria-label="清除搜索"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  ) : null}
+                </div>
                 <SearchableSelect
                   value={stageFilter}
                   options={stageFilterOptions}
-                  onChange={setStageFilter}
+                  onChange={(value) => { setStageFilter(value); setPage(1) }}
                   placeholder="全部学段"
                   searchPlaceholder="搜索学段"
                   allowClear
@@ -458,7 +500,7 @@ export default function ImportJobsListPage() {
                 <SearchableSelect
                   value={subjectFilter}
                   options={subjectFilterOptions}
-                  onChange={setSubjectFilter}
+                  onChange={(value) => { setSubjectFilter(value); setPage(1) }}
                   placeholder="全部科目"
                   searchPlaceholder="搜索科目"
                   allowClear
@@ -466,7 +508,7 @@ export default function ImportJobsListPage() {
                 <SearchableSelect
                   value={paperKindFilter ? (paperKindOptions.find(o => o.value === paperKindFilter)?.label || '') : ''}
                   options={paperKindOptions.map(o => o.label)}
-                  onChange={(label) => setPaperKindFilter(paperKindOptions.find(o => o.label === label)?.value || '')}
+                  onChange={(label) => { setPaperKindFilter(paperKindOptions.find(o => o.label === label)?.value || ''); setPage(1) }}
                   placeholder="全部类型"
                   searchPlaceholder="搜索类型"
                   allowClear
@@ -479,6 +521,7 @@ export default function ImportJobsListPage() {
                     if (cityFilter && province && !cityOptionsForProvince(province).includes(cityFilter)) {
                       setCityFilter('')
                     }
+                    setPage(1)
                   }}
                   placeholder="全部省份"
                   searchPlaceholder="搜索省份"
@@ -487,7 +530,7 @@ export default function ImportJobsListPage() {
                 <SearchableSelect
                   value={cityFilter}
                   options={cityFilterOptions}
-                  onChange={setCityFilter}
+                  onChange={(value) => { setCityFilter(value); setPage(1) }}
                   placeholder="全部城市"
                   searchPlaceholder="搜索城市"
                   allowClear
@@ -495,7 +538,7 @@ export default function ImportJobsListPage() {
                 <SearchableSelect
                   value={yearFilter}
                   options={yearFilterOptions}
-                  onChange={setYearFilter}
+                  onChange={(value) => { setYearFilter(value); setPage(1) }}
                   placeholder="全部年份"
                   searchPlaceholder="搜索年份"
                   allowClear
@@ -503,15 +546,14 @@ export default function ImportJobsListPage() {
                 <SearchableSelect
                   value={statusFilter ? (statusFilterOptions.find(label => statusLabelToKey[label] === statusFilter) || '') : ''}
                   options={statusFilterOptions}
-                  onChange={(label) => setStatusFilter(label ? (statusLabelToKey[label] || '') : '')}
+                  onChange={(label) => { setStatusFilter(label ? (statusLabelToKey[label] || '') : ''); setPage(1) }}
                   placeholder="全部状态"
                   searchPlaceholder="搜索状态"
                   allowClear
                 />
               </div>
-              <div className="flex items-center justify-between gap-3 text-[11px] text-zinc-500 dark:text-zinc-400">
-                <span>显示 {filteredJobs.length} / {jobs.length} 个批次</span>
-                {hasActiveFilters ? (
+              {hasActiveFilters ? (
+                <div className="mt-2 flex justify-end">
                   <button
                     type="button"
                     onClick={resetFilters}
@@ -519,18 +561,18 @@ export default function ImportJobsListPage() {
                   >
                     重置筛选
                   </button>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
             </div>
-            {filteredJobs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-200 bg-zinc-50/10 p-10 dark:border-zinc-800">
+            {jobs.length === 0 ? (
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-10">
                 <FileText className="mb-3 size-8 text-zinc-300 dark:text-zinc-700" />
                 <p className="text-xs text-zinc-400 dark:text-zinc-500">没有匹配当前筛选条件的导入批次</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
+              <div className="min-h-0 flex-1 overflow-auto">
+                <table className="min-w-[980px] w-full text-left border-collapse">
+                  <thead className="sticky top-0 z-10">
                     <tr className="bg-zinc-50/70 dark:bg-zinc-900/40 text-[11px] font-semibold text-zinc-500 border-b border-zinc-200 dark:border-zinc-800 select-none">
                       <th className="py-2.5 px-3 w-8"></th>
                       <th className="py-2.5 px-3">试卷批次名称</th>
@@ -542,7 +584,7 @@ export default function ImportJobsListPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredJobs.map((job) => {
+                    {jobs.map((job) => {
                   const isExpanded = expandedJobIds.has(job.importJob.id)
                   const isSeparated = job.importJob.mode === 'separated_documents'
                   const ocrPending = job.documents.some(d => ['uploaded', 'ocr_failed'].includes(d.sourceDocument.status))
@@ -706,9 +748,27 @@ export default function ImportJobsListPage() {
                 </table>
               </div>
             )}
+            {totalJobs > 0 ? (
+              <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-zinc-200 bg-white/85 px-4 py-3 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/85 dark:text-zinc-400">
+                <div className="flex items-center gap-2">
+                  <span>每页</span>
+                  <select
+                    value={pageSize}
+                    onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1) }}
+                    className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-xs text-zinc-700 outline-none focus:ring-1 focus:ring-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300"
+                  >
+                    {pageSizeOptions.map((option) => <option key={option} value={option}>{option} 条</option>)}
+                  </select>
+                </div>
+                <div className="flex min-h-7 items-center justify-end">
+                  <BankPagination page={page} totalItems={totalJobs} pageSize={pageSize} setPage={setPage} />
+                </div>
+              </footer>
+            ) : null}
           </div>
         )}
-      </Panel>
+        </div>
+      </section>
 
       {/* 修改属性模态框 */}
       {editingJob && editForm && (() => {
