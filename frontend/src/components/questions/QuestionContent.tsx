@@ -399,6 +399,8 @@ export function FigureGallery({
   naturalAspectRatio = false,
   bare = false,
   columns,
+  columnRatios,
+  equalHeightPx,
   onSelect,
 }: {
   figures: QuestionFigure[]
@@ -411,6 +413,10 @@ export function FigureGallery({
   bare?: boolean
   /** 指定图片列数时不使用响应式图库默认列数。 */
   columns?: 1 | 2 | 3 | 4
+  /** 为并排题图指定每列相对宽度，避免所有图片被第一张图的宽度覆盖。 */
+  columnRatios?: number[]
+  /** 并排题图统一高度（像素）；图片仍使用 object-contain 保持比例。 */
+  equalHeightPx?: number
   onSelect?: (figure: QuestionFigure) => void
 }) {
   const [preview, setPreview] = useState<QuestionFigure | null>(null)
@@ -419,7 +425,13 @@ export function FigureGallery({
   if (!visible.length) return null
   return (
     <>
-      <div className={`grid gap-3 ${columns === 1 ? 'grid-cols-1' : columns === 2 ? 'grid-cols-2' : columns === 3 ? 'grid-cols-3' : columns === 4 ? 'grid-cols-4' : compact ? 'grid-cols-1' : 'sm:grid-cols-2'} ${className}`}>
+      <div
+        className={`grid gap-3 ${columns === 1 ? 'grid-cols-1' : columns === 2 ? 'grid-cols-2' : columns === 3 ? 'grid-cols-3' : columns === 4 ? 'grid-cols-4' : compact ? 'grid-cols-1' : 'sm:grid-cols-2'} ${className}`}
+        style={{
+          ...(columnRatios?.length === visible.length ? { gridTemplateColumns: columnRatios.map((ratio) => `${Math.max(0.05, ratio)}fr`).join(' ') } : {}),
+          ...(equalHeightPx ? { height: `${equalHeightPx}px` } : {}),
+        }}
+      >
         {visible.map((figure, index) => {
           const resourceId = String(figure.id || figure.blockId || figure.path || index)
           const resourceKey = `${resourceId}:${String(figure.path || '')}`
@@ -427,24 +439,24 @@ export function FigureGallery({
           return (
           <figure
             key={resourceKey}
-            className={`${bare ? '' : 'overflow-hidden rounded-lg border bg-white'} ${naturalAspectRatio ? 'w-full' : ''} ${compact ? 'max-w-40' : 'max-w-[26rem]'}`}
+            className={`${bare ? '' : 'overflow-hidden rounded-lg border bg-white'} ${naturalAspectRatio || equalHeightPx ? 'w-full' : ''} ${compact ? 'max-w-40' : 'max-w-[26rem]'} ${equalHeightPx ? 'h-full' : ''}`}
             data-teaching-resource="image"
             data-teaching-resource-id={resourceId}
             data-teaching-resource-status={hasFailed ? 'error' : 'ready'}
           >
-            <button className={`flex w-full justify-center text-left ${bare ? '' : 'bg-white p-2'} ${naturalAspectRatio || bare ? 'h-auto min-h-0' : compact ? 'h-32' : 'h-44'} ${hasFailed ? 'cursor-default' : onSelect ? 'cursor-pointer' : 'cursor-zoom-in'}`} onClick={() => {
+            <button className={`flex w-full justify-center text-left ${bare ? '' : 'bg-white p-2'} ${equalHeightPx ? 'h-full' : naturalAspectRatio || bare ? 'h-auto min-h-0' : compact ? 'h-32' : 'h-44'} ${hasFailed ? 'cursor-default' : onSelect ? 'cursor-pointer' : 'cursor-zoom-in'}`} onClick={() => {
               if (hasFailed) return
               if (onSelect) onSelect(figure)
               else setPreview(figure)
             }} type="button">
               {hasFailed ? (
-                  <span className={`flex w-full items-center justify-center bg-zinc-50 text-xs text-zinc-400 ${naturalAspectRatio ? 'min-h-32' : 'h-full'}`}>
+                  <span className="flex h-full w-full items-center justify-center bg-zinc-50 text-xs text-zinc-400">
                   图片加载失败
                 </span>
               ) : (
                 <img
                   alt={figureAlt(figure, index)}
-                  className={`block w-full object-contain ${bare ? '' : 'bg-white'} ${naturalAspectRatio || bare ? 'h-auto' : 'h-full'}`}
+                  className={`block object-contain ${bare ? '' : 'bg-white'} ${equalHeightPx ? 'h-full w-full' : naturalAspectRatio || bare ? 'h-auto w-full' : 'h-full w-full'}`}
                   src={assetUrl(String(figure.path || ''))}
                   onError={() => setFailed((current) => new Set(current).add(resourceKey))}
                 />

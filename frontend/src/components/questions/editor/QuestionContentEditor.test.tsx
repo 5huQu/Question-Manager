@@ -37,6 +37,23 @@ describe('QuestionContentEditor', () => {
     expect(container.textContent).toContain('内容已保存')
   })
 
+  it('keeps option text visible when switching to the plain-body editor', async () => {
+    function Harness() {
+      const [value, setValue] = useState(initial)
+      return <QuestionContentEditor entityKey="question:plain-body" value={value} onChange={setValue} />
+    }
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+    const convertButton = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('转为普通正文'))!
+    await act(async () => { convertButton.click() })
+
+    expect(container.textContent).toContain('A. 1')
+    expect(container.textContent).toContain('D. 4')
+    expect(container.textContent).toContain('添加空白结构化选项')
+  })
+
   it('renders Doc2X delimiters and formulas inside multiline structured choices', async () => {
     const value = {
       ...initial,

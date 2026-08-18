@@ -233,18 +233,30 @@ function parseFigureOverrides(raw: unknown): QuestionDisplayOptions['figureOverr
       ? entry.alignment as 'left' | 'center' | 'right'
       : undefined
     const layoutPreset = isFigureLayoutPreset(entry.layoutPreset) ? entry.layoutPreset : undefined
+    const textWrap = ['top-bottom', 'square-left', 'square-right'].includes(String(entry.textWrap))
+      ? String(entry.textWrap) as QuestionFigurePlacement['textWrap']
+      : undefined
+    const wrapGapMm = Number(entry.wrapGapMm)
     const groupWithNext = entry.groupWithNext === true ? true : undefined
     const groupColumns = [2, 3, 4].includes(Number(entry.groupColumns))
       ? Number(entry.groupColumns) as 2 | 3 | 4
       : undefined
+    const groupMatchHeight = entry.groupMatchHeight === true ? true : undefined
+    const groupHeightMm = Number(entry.groupHeightMm)
     const slot = VALID_FIGURE_SLOTS.has(entry.slot as QuestionFigureSlot) ? entry.slot as QuestionFigureSlot : undefined
     const order = Number(entry.order)
     const placement: QuestionFigurePlacement = {
       ...(Number.isFinite(widthMm) && widthMm > 0 ? { widthMm } : {}),
       ...(alignment ? { alignment } : {}),
       ...(layoutPreset ? { layoutPreset } : {}),
+      ...(textWrap && textWrap !== 'top-bottom' ? { textWrap } : {}),
+      ...(textWrap === 'square-left' || textWrap === 'square-right'
+        ? { wrapGapMm: Number.isFinite(wrapGapMm) ? Math.max(0, Math.min(20, wrapGapMm)) : 4 }
+        : {}),
       ...(groupWithNext ? { groupWithNext } : {}),
       ...(groupWithNext && groupColumns ? { groupColumns } : {}),
+      ...(groupWithNext && groupMatchHeight ? { groupMatchHeight } : {}),
+      ...(groupWithNext && groupMatchHeight && Number.isFinite(groupHeightMm) && groupHeightMm > 0 ? { groupHeightMm } : {}),
       ...(slot ? { slot } : {}),
       ...(Number.isFinite(order) ? { order } : {}),
     }
@@ -269,6 +281,10 @@ function parseInsertedFigures(raw: unknown): QuestionInsertedFigure[] | undefine
     const alignment = typeof node.alignment === 'string' && ['left', 'center', 'right'].includes(node.alignment)
       ? node.alignment as 'left' | 'center' | 'right' : undefined
     const layoutPreset = isFigureLayoutPreset(node.layoutPreset) ? node.layoutPreset : undefined
+    const textWrap = ['top-bottom', 'square-left', 'square-right'].includes(String(node.textWrap))
+      ? String(node.textWrap) as QuestionFigurePlacement['textWrap']
+      : undefined
+    const wrapGapMm = Number(node.wrapGapMm)
     const groupWithNext = node.groupWithNext === true ? true : undefined
     const groupColumns = [2, 3, 4].includes(Number(node.groupColumns))
       ? Number(node.groupColumns) as 2 | 3 | 4
@@ -277,6 +293,10 @@ function parseInsertedFigures(raw: unknown): QuestionInsertedFigure[] | undefine
       ...(Number.isFinite(widthMm) && widthMm > 0 ? { widthMm } : {}),
       ...(alignment ? { alignment } : {}),
       ...(layoutPreset ? { layoutPreset } : {}),
+      ...(textWrap && textWrap !== 'top-bottom' ? { textWrap } : {}),
+      ...(textWrap === 'square-left' || textWrap === 'square-right'
+        ? { wrapGapMm: Number.isFinite(wrapGapMm) ? Math.max(0, Math.min(20, wrapGapMm)) : 4 }
+        : {}),
       ...(groupWithNext ? { groupWithNext } : {}),
       ...(groupWithNext && groupColumns ? { groupColumns } : {}),
     }
@@ -407,6 +427,10 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
         ? Number(node.groupColumns) as 1 | 2 | 3
         : 2
       const groupGapMm = Number(node.groupGapMm)
+      const wrapGapMm = Number(node.wrapGapMm)
+      const textWrap = ['top-bottom', 'square-left', 'square-right'].includes(String(node.textWrap))
+        ? String(node.textWrap) as FigureBlock['textWrap']
+        : undefined
       if (node.layoutPreset != null && !isFigureLayoutPreset(node.layoutPreset)) {
         issues.push({ level: 'warning', blockId: extractId(node, 'fig', index), code: 'invalid-figure-preset', message: `图片排版预设 "${String(node.layoutPreset)}" 无效，已回退旧字段。` })
       }
@@ -420,6 +444,10 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
         widthRatio: Number.isFinite(widthRatio) && widthRatio >= 0.1 && widthRatio <= 1 ? widthRatio : undefined,
         widthMm: Number.isFinite(widthMm) && widthMm > 0 ? widthMm : undefined,
         lockAspectRatio: typeof node.lockAspectRatio === 'boolean' ? node.lockAspectRatio : undefined,
+        textWrap,
+        wrapGapMm: textWrap === 'square-left' || textWrap === 'square-right'
+          ? (Number.isFinite(wrapGapMm) ? Math.max(0, Math.min(20, wrapGapMm)) : undefined)
+          : undefined,
         caption: typeof node.caption === 'string' ? node.caption : undefined,
         groupItems: groupItems.length ? groupItems : undefined,
         groupColumns: groupItems.length ? groupColumns : undefined,
@@ -442,6 +470,7 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
             const entry = value as Record<string, unknown>
             if (entry.layoutPreset != null && !isFigureLayoutPreset(entry.layoutPreset)) issues.push({ level: 'warning', blockId: extractId(node, 'q', index), code: 'invalid-figure-preset', message: `图片覆盖 "${key}" 的排版预设无效。` })
             if (entry.groupColumns != null && ![2, 3, 4].includes(Number(entry.groupColumns))) issues.push({ level: 'warning', blockId: extractId(node, 'q', index), code: 'invalid-figure-group-columns', message: `图片覆盖 "${key}" 的并排列数无效。` })
+            if (entry.groupHeightMm != null && (!Number.isFinite(Number(entry.groupHeightMm)) || Number(entry.groupHeightMm) <= 0)) issues.push({ level: 'warning', blockId: extractId(node, 'q', index), code: 'invalid-figure-group-height', message: `图片覆盖 "${key}" 的统一高度无效。` })
             if (entry.slot != null && !VALID_FIGURE_SLOTS.has(entry.slot as QuestionFigureSlot)) issues.push({ level: 'warning', blockId: extractId(node, 'q', index), code: 'invalid-figure-slot', message: `图片覆盖 "${key}" 的位置无效。` })
           }
         }

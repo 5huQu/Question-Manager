@@ -1,6 +1,8 @@
 import type { ImportV2Candidate, ImportV2ImportJobDocument, ImportV2SourceDocument } from '@/api/importV2'
 import { importIssueLabel } from '@/utils/importDiagnostics'
-import { provinceForCity } from '@/utils/metadataOptions'
+import { gaokaoRegionOptions, isGaokaoRegion, provinceForCity } from '@/utils/metadataOptions'
+
+export { gaokaoRegionOptions, isGaokaoRegion } from '@/utils/metadataOptions'
 
 export type UnifiedQuestion = {
   id: string
@@ -53,26 +55,6 @@ export const paperKindOptions: Array<{ value: PaperKind; label: string }> = [
 ]
 
 export const subjectOptions = ['语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理']
-
-export const gaokaoRegionOptions = [
-  {
-    value: '全国一卷 / 新课标全国 I 卷',
-    label: '全国一卷 / 新课标全国 I 卷',
-    provinces: '浙江、山东、江苏、河北、福建、湖北、湖南、广东、江西、安徽、河南',
-  },
-  {
-    value: '全国二卷 / 新课标全国 II 卷',
-    label: '全国二卷 / 新课标全国 II 卷',
-    provinces: '海南、重庆、贵州、广西、甘肃、四川、云南、辽宁、吉林、黑龙江、内蒙古、陕西、青海、宁夏、山西、新疆、西藏',
-  },
-  { value: '北京', label: '北京', provinces: '' },
-  { value: '上海', label: '上海', provinces: '' },
-  { value: '天津', label: '天津', provinces: '' },
-]
-
-export function isGaokaoRegion(value: string) {
-  return gaokaoRegionOptions.some((item) => item.value === value)
-}
 
 export function metadataDraftFromDoc(doc?: Partial<ImportV2SourceDocument> | null): SourceMetadataDraft {
   const watermark = doc?.metadata && typeof doc.metadata.watermark === 'object' && !Array.isArray(doc.metadata.watermark)

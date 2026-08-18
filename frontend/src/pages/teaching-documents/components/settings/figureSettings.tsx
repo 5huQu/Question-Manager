@@ -13,6 +13,7 @@ export function FigureSettings(props: {
   const [uploading, setUploading] = useState(false)
   const groupItems = block.groupItems || []
   const grouped = groupItems.length > 0
+  const textWrap = block.textWrap || 'top-bottom'
   const updateGroupItems = (items: typeof groupItems, mergeKey?: string) => props.onUpdate({ groupItems: items }, mergeKey)
 
   return (
@@ -158,6 +159,32 @@ export function FigureSettings(props: {
           <option value="right">右对齐</option>
         </select>
       </Field>
+      <Field label="文字环绕">
+        <select
+          className={fieldClass}
+          value={textWrap}
+          onChange={(event) => props.onUpdate({
+            textWrap: event.target.value as 'top-bottom' | 'square-left' | 'square-right',
+            wrapGapMm: event.target.value === 'top-bottom' ? undefined : (block.wrapGapMm ?? 4),
+          })}
+        >
+          <option value="top-bottom">上下型（独占一行）</option>
+          <option value="square-left">左侧图片，右侧文字环绕</option>
+          <option value="square-right">右侧图片，左侧文字环绕</option>
+        </select>
+      </Field>
+      {textWrap !== 'top-bottom' ? (
+        <InspectorSlider
+          label="文字间距"
+          value={block.wrapGapMm ?? 4}
+          min={0}
+          max={12}
+          step={1}
+          unit="mm"
+          presets={[0, 2, 4, 6]}
+          onChange={(val) => props.onUpdate({ wrapGapMm: val }, `figure-wrap-gap:${block.id}`)}
+        />
+      ) : null}
       <InspectorSlider
         label="图片宽度"
         value={block.widthMm || 80}

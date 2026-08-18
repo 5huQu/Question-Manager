@@ -99,6 +99,7 @@ export function PaperPageView({
     '--td-paper-content-height': `${paperMetrics.contentHeightPx}px`,
     ...style,
   } as CSSProperties
+  let flowWrapActive = false
 
   return (
     <section
@@ -169,6 +170,17 @@ export function PaperPageView({
           {page.items.map((item) => {
             const block = document.content[item.sourceIndex]
             if (!block || block.id !== item.blockId) return null
+            const isTextBlock = block.type === 'heading' || block.type === 'paragraph'
+            const isSideWrappedFigure = block.type === 'figure'
+              && (block.textWrap === 'square-left' || block.textWrap === 'square-right')
+            const flowWrappedText = flowWrapActive && isTextBlock
+            const clearFlowWrap = flowWrapActive && !isTextBlock && !isSideWrappedFigure
+            // 每个纸张页拥有独立文档流；图片不会跨越页边界继续影响下一页。
+            flowWrapActive = isSideWrappedFigure
+              ? true
+              : isTextBlock && flowWrapActive
+                ? true
+                : false
             if (item.kind === 'fragment'
               && item.fragmentType === 'paragraph'
               && block.type === 'paragraph') {
@@ -178,6 +190,7 @@ export function PaperPageView({
                   block={block}
                   item={item}
                   selected={selectedBlockId === block.id}
+                  flowWrapped={flowWrappedText}
                 />
               )
             }
@@ -191,6 +204,7 @@ export function PaperPageView({
                   item={item}
                   resolvers={layoutResolvers}
                   selectedBlockId={selectedBlockId}
+                  clearFlowWrap={clearFlowWrap}
                 />
               )
             }
@@ -214,6 +228,7 @@ export function PaperPageView({
                         : `题目不可用（ID: ${block.questionId || '未设置'}）`}
                     status={status === 'loading' ? 'loading' : status === 'error' ? 'error' : 'missing'}
                     tone={status === 'error' ? 'error' : 'neutral'}
+                    clearFlowWrap={clearFlowWrap}
                   />
                 )
               }
@@ -226,6 +241,7 @@ export function PaperPageView({
                   selected={selectedBlockId === block.id}
                   resolveFigure={resolvers.resolveFigure}
                   choiceLayoutOverrides={choiceLayoutOverrides}
+                  clearFlowWrap={clearFlowWrap}
                 />
               )
             }
@@ -240,6 +256,7 @@ export function PaperPageView({
                   ? '内容超过单页内容区高度，无法安全分页，导出已阻止。'
                   : undefined}
                 headingLabel={headingLabels.get(block.id)}
+                flowWrappedText={flowWrappedText}
               />
             )
           })}

@@ -90,12 +90,20 @@ export interface QuestionFigureRegion extends QuestionRegionDescriptor {
   /** 讲义级对齐覆盖 */
   alignmentOverride?: FigureAlignment
   layoutPreset?: FigureLayoutPreset
+  textWrap?: QuestionFigurePlacement['textWrap']
+  wrapGapMm?: number
   /** 当前图作为两图并排的起始图时为 true。 */
   groupWithNext?: boolean
   /** 并排组需要容纳的连续题图数量。 */
   groupColumns?: 2 | 3 | 4
   /** 并排组中的题图 key，用于保持选择与尺寸覆盖稳定。 */
   groupFigureKeys?: string[]
+  /** 并排组中每张题图的独立宽度覆盖。 */
+  groupFigureWidthOverrides?: Record<string, number>
+  /** 并排组按统一高度显示。 */
+  groupMatchHeight?: boolean
+  /** 并排组统一高度（毫米）。 */
+  groupHeightMm?: number
 }
 
 export interface QuestionOptionsRowRegion extends QuestionRegionDescriptor {
@@ -311,8 +319,12 @@ function contentRegions(input: {
       widthOverrideMm: override?.widthMm,
       alignmentOverride: override?.alignment,
       layoutPreset: override?.layoutPreset,
+      textWrap: override?.textWrap,
+      wrapGapMm: override?.wrapGapMm,
       groupWithNext: override?.groupWithNext,
       groupColumns: override?.groupColumns,
+      groupMatchHeight: override?.groupMatchHeight,
+      groupHeightMm: override?.groupHeightMm,
     })
     if (!override?.slot) index += 1
     cursor = marker.index + marker[0].length
@@ -339,8 +351,12 @@ function contentRegions(input: {
       widthOverrideMm: override?.widthMm,
       alignmentOverride: override?.alignment,
       layoutPreset: override?.layoutPreset,
+      textWrap: override?.textWrap,
+      wrapGapMm: override?.wrapGapMm,
       groupWithNext: override?.groupWithNext,
       groupColumns: override?.groupColumns,
+      groupMatchHeight: override?.groupMatchHeight,
+      groupHeightMm: override?.groupHeightMm,
     })
     index += 1
   })
@@ -446,6 +462,13 @@ export function groupAdjacentQuestionFigures(regions: QuestionRuntimeRegion[]) {
         ...current,
         figures: members.flatMap((member) => member.figures),
         groupFigureKeys: members.map((member) => member.figureKey || member.key),
+        groupFigureWidthOverrides: Object.fromEntries(
+          members.flatMap((member) => member.figureKey && member.widthOverrideMm != null
+            ? [[member.figureKey, member.widthOverrideMm] as const]
+            : []),
+        ),
+        groupMatchHeight: current.groupMatchHeight,
+        groupHeightMm: current.groupHeightMm,
         groupWithNext: undefined,
         groupColumns: undefined,
       })
@@ -455,6 +478,28 @@ export function groupAdjacentQuestionFigures(regions: QuestionRuntimeRegion[]) {
     grouped.push(current)
   }
   return grouped
+}
+
+/**
+ * 左右环绕题图的语义范围是整道题，而不是题图 marker 后面的半段题干。
+ * 将启用环绕的题图提升到所属 stem/analysis 内容起点，使题干文字在图片两侧自然排版。
+ */
+function hoistWrappedQuestionFigures(regions: QuestionRuntimeRegion[]) {
+  const next = [...regions]
+  for (let index = 0; index < next.length; index += 1) {
+    const region = next[index]
+    if (region.kind !== 'figure'
+      || region.groupFigureKeys?.length
+      || (region.textWrap !== 'square-left' && region.textWrap !== 'square-right')) continue
+    const ownerType = region.owner === 'analysis' ? 'analysis' : 'stem'
+    const firstOwnerIndex = next.findIndex((candidate) => candidate.type === ownerType
+      && (candidate.kind === 'paragraph' || candidate.kind === 'markdown'))
+    if (firstOwnerIndex >= 0 && index > firstOwnerIndex) {
+      next.splice(index, 1)
+      next.splice(firstOwnerIndex, 0, region)
+    }
+  }
+  return next
 }
 
 /** 题号（及可选分数）对应的行内内容，加粗题号、分数不加粗。 */
@@ -592,8 +637,12 @@ export function createQuestionRuntimeModel(
         widthOverrideMm: placement.widthMm,
         alignmentOverride: placement.alignment,
         layoutPreset: placement.layoutPreset,
+        textWrap: placement.textWrap,
+        wrapGapMm: placement.wrapGapMm,
         groupWithNext: placement.groupWithNext,
         groupColumns: placement.groupColumns,
+        groupMatchHeight: placement.groupMatchHeight,
+        groupHeightMm: placement.groupHeightMm,
       },
     })
   }
@@ -719,8 +768,12 @@ export function createQuestionRuntimeModel(
         widthOverrideMm: figure.widthMm,
         alignmentOverride: figure.alignment,
         layoutPreset: figure.layoutPreset,
+        textWrap: figure.textWrap,
+        wrapGapMm: figure.wrapGapMm,
         groupWithNext: figure.groupWithNext,
         groupColumns: figure.groupColumns,
+        groupMatchHeight: figure.groupMatchHeight,
+        groupHeightMm: figure.groupHeightMm,
       },
     })
   }
@@ -746,6 +799,6 @@ export function createQuestionRuntimeModel(
     displayNumber,
     score,
     questionType: question.questionType,
-    regions: groupAdjacentQuestionFigures(applyQuestionFigurePlacements(regions, placed, block.display)),
+    regions: hoistWrappedQuestionFigures(groupAdjacentQuestionFigures(applyQuestionFigurePlacements(regions, placed, block.display))),
   }
 }

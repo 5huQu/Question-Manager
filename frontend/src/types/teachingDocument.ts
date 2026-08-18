@@ -169,6 +169,9 @@ export interface FigureGroupItem {
   alt?: string
 }
 
+/** 文档图片与相邻正文之间的受控流式关系。 */
+export type FigureTextWrap = 'top-bottom' | 'square-left' | 'square-right'
+
 export interface FigureBlock {
   type: 'figure'
   id: string
@@ -184,6 +187,10 @@ export interface FigureBlock {
   widthMm?: number
   /** 是否锁定宽高比（默认 true） */
   lockAspectRatio?: boolean
+  /** 图片与后续正文的关系；缺省为上下型，兼容历史独占一行的行为。 */
+  textWrap?: FigureTextWrap
+  /** 左右环绕时图片与正文的间距（mm）。 */
+  wrapGapMm?: number
   caption?: string
   /** 存在时作为多图网格渲染；asset 保留为旧数据与单图兼容入口。 */
   groupItems?: FigureGroupItem[]
@@ -220,10 +227,18 @@ export interface QuestionFigurePlacement {
   widthMm?: number
   alignment?: FigureAlignment
   layoutPreset?: FigureLayoutPreset
+  /** 题目内图片与后续题目文字的受控流式关系。 */
+  textWrap?: FigureTextWrap
+  /** 左右环绕时图片与题目文字的间距（mm）。 */
+  wrapGapMm?: number
   /** 与紧随其后的题图组合为一行两列；仅对连续的题图生效。 */
   groupWithNext?: boolean
   /** 并排组的列数；图片会按当前版心自动等比缩小，避免横向溢出。 */
   groupColumns?: 2 | 3 | 4
+  /** 并排组按统一高度显示，图片内容保持原始比例。仅对组首图生效。 */
+  groupMatchHeight?: boolean
+  /** 并排组的目标高度（毫米）。仅在 groupMatchHeight 时生效。 */
+  groupHeightMm?: number
   slot?: QuestionFigureSlot
   order?: number
 }

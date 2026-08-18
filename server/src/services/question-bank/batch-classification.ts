@@ -6,6 +6,7 @@ import { RouteError } from '../../utils/http-error.js'
 import { pythonCommand } from '../settings/python.js'
 import { ocrRunnerEnv, readOcrSettings } from '../settings/ocr-settings.js'
 import { createId } from '../../utils/ids.js'
+import { readLearningTagLibraries, tagLibraryFilePath } from '../tags/tag-libraries.js'
 
 export type QuestionBatchClassificationScope =
   | { type: 'all'; id?: string }
@@ -46,6 +47,19 @@ function normalizeScope(scope: QuestionBatchClassificationScope) {
   return { type: scope.type, id }
 }
 
+function classificationRunnerEnv() {
+  const libraries = readLearningTagLibraries()
+  const knowledgeLibrary = libraries.find((library) => library.libraryType === 'knowledge_point' && library.isDefault)
+    || libraries.find((library) => library.libraryType === 'knowledge_point')
+  const methodLibrary = libraries.find((library) => library.libraryType === 'method_tag' && library.code === 'high_school_methods')
+    || libraries.find((library) => library.libraryType === 'method_tag')
+  return {
+    ...ocrRunnerEnv(),
+    ...(knowledgeLibrary ? { KNOWLEDGE_LIBRARY_PATH: tagLibraryFilePath(knowledgeLibrary.code) } : {}),
+    ...(methodLibrary ? { METHOD_LIBRARY_PATH: tagLibraryFilePath(methodLibrary.code) } : {}),
+  }
+}
+
 export function runQuestionBatchClassification(scope: QuestionBatchClassificationScope, options: { onlyMissing?: boolean } = {}): Promise<QuestionBatchClassificationReport> {
   const normalized = normalizeScope(scope)
   const scriptPath = path.join(sourceRoot, 'server', 'python', 'scripts', 'classify_question_bank.py')
@@ -64,7 +78,7 @@ export function runQuestionBatchClassification(scope: QuestionBatchClassificatio
     ],
     {
       cwd: pythonRoot,
-      env: ocrRunnerEnv(),
+      env: classificationRunnerEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   )
@@ -138,7 +152,7 @@ function runQuestionBatchClassificationWithProgress(scope: QuestionBatchClassifi
   const normalized = normalizeScope(scope)
   const scriptPath = path.join(sourceRoot, 'server', 'python', 'scripts', 'classify_question_bank.py')
   const settings = readOcrSettings()
-  const child = spawn(pythonCommand(), [scriptPath, '--scope-type', normalized.type, '--scope-id', normalized.id, '--concurrency', settings.cleanupConcurrency || '20', ...(options.onlyMissing === false ? [] : ['--only-missing'])], { cwd: pythonRoot, env: ocrRunnerEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(pythonCommand(), [scriptPath, '--scope-type', normalized.type, '--scope-id', normalized.id, '--concurrency', settings.cleanupConcurrency || '20', ...(options.onlyMissing === false ? [] : ['--only-missing'])], { cwd: pythonRoot, env: classificationRunnerEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
   return new Promise((resolve, reject) => {
     let stdout = ''; let stderr = ''
     let progressBuffer = ''

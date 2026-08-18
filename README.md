@@ -167,7 +167,7 @@ build-and-install-windows.cmd
 
 | 变量 | 作用 |
 | --- | --- |
-| `QUESTION_DATA_DIR` | SQLite、上传文件、题图、OCR 草稿和导出文件的根目录。 |
+| `QUESTION_DATA_DIR` | SQLite、上传文件、题图、OCR 草稿、导出文件和可编辑标签库的根目录。 |
 | `PYTHON_PATH` | 源码开发使用的 Python 可执行文件。 |
 | `XELATEX_PATH` | XeLaTeX 外部编译器路径。 |
 | `DVISVGM_PATH` | dvisvgm 外部 SVG 渲染器路径。 |
@@ -213,9 +213,12 @@ QUESTION_AUTH_MODE=single-admin
 PUBLIC_ORIGIN=https://question.example.com
 AUTH_COOKIE_SECURE=true
 AUTH_SESSION_DAYS=7
+QUESTION_DATA_DIR=/var/lib/question-manager
 HOST=127.0.0.1
 PORT=8797
 ```
+
+`QUESTION_DATA_DIR` 应指向服务运行账号可读写、且不随发布版本替换的目录；标签库、SQLite 与上传资料都会保存在这里。
 
 认证使用 SQLite 持久化的 Cookie Session（`HttpOnly`、`SameSite=Lax`，https 下使用 `__Host-qm_session`），密码用异步 `crypto.scrypt`（N=2^16, r=8, p=2）哈希；写请求同时校验 `X-QM-CSRF` 头与 `Origin`。登录限流：同一 IP 连续失败 5 次锁定 1 分钟，15 分钟窗口内最多 10 次尝试。
 

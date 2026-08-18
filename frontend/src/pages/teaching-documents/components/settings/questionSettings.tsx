@@ -7,6 +7,8 @@ import { InspectorSlider } from '@/components/ui/InspectorSlider'
 import { DEFAULT_QUESTION_FIGURE_WIDTH_MM } from '@/utils/teachingDocument/figureLayoutPresets'
 import { Divider, Field, fieldClass, Section } from './common'
 
+const DEFAULT_GROUP_HEIGHT_MM = 50
+
 export function QuestionSettings(props: {
   onUpdate: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
   onEditQuestion?: (blockId: string) => void
@@ -98,7 +100,7 @@ export function QuestionSettings(props: {
             onChange={(event) => props.onUpdate({ display: {
               ...block.display,
               answerSpace: event.target.checked
-                ? (block.display?.answerSpace || { heightMm: 30, style: 'blank' })
+                ? (block.display?.answerSpace || { heightMm: 40, style: 'blank' })
                 : undefined,
             } })}
           />
@@ -113,7 +115,7 @@ export function QuestionSettings(props: {
               max={200}
               step={1}
               unit="mm"
-              presets={[15, 30, 50, 80]}
+              presets={[15, 40, 50, 80]}
               onChange={(val) => props.onUpdate({ display: { ...block.display, answerSpace: {
                 heightMm: val,
                 style: answerSpace.style,
@@ -191,6 +193,46 @@ export function QuestionSettings(props: {
                     <option value="right">右对齐</option>
                   </select>
                 </Field>
+                <Field label="文字环绕">
+                  <select
+                    className={fieldClass}
+                    value={override?.textWrap || 'top-bottom'}
+                    disabled={Boolean(override?.groupWithNext)}
+                    onChange={(event) => props.onUpdate({ display: {
+                      ...block.display,
+                      figureOverrides: {
+                        ...block.display?.figureOverrides,
+                        [key]: {
+                          ...override,
+                          textWrap: event.target.value === 'top-bottom' ? undefined : event.target.value as 'square-left' | 'square-right',
+                          wrapGapMm: event.target.value === 'top-bottom' ? undefined : (override?.wrapGapMm ?? 4),
+                        },
+                      },
+                    } })}
+                  >
+                    <option value="top-bottom">上下型（独占一行）</option>
+                    <option value="square-left">左侧图片，右侧文字环绕</option>
+                    <option value="square-right">右侧图片，左侧文字环绕</option>
+                  </select>
+                </Field>
+                {override?.textWrap === 'square-left' || override?.textWrap === 'square-right' ? (
+                  <InspectorSlider
+                    label="文字间距"
+                    value={override.wrapGapMm ?? 4}
+                    min={0}
+                    max={12}
+                    step={1}
+                    unit="mm"
+                    presets={[0, 2, 4, 6]}
+                    onChange={(val) => props.onUpdate({ display: {
+                      ...block.display,
+                      figureOverrides: {
+                        ...block.display?.figureOverrides,
+                        [key]: { ...override, wrapGapMm: val },
+                      },
+                    } }, `question-figure-wrap-gap:${block.id}:${key}`)}
+                  />
+                ) : null}
                 <Field label="图片排版">
                   <select
                     className={fieldClass}
@@ -207,7 +249,10 @@ export function QuestionSettings(props: {
                                 groupWithNext: true,
                                 groupColumns: Number(event.target.value) as 2 | 3 | 4,
                               }
-                            : { groupWithNext: undefined, groupColumns: undefined }),
+                            : { groupWithNext: undefined, groupColumns: undefined, groupMatchHeight: undefined, groupHeightMm: undefined }),
+                          ...(event.target.value !== 'single'
+                            ? { textWrap: undefined, wrapGapMm: undefined }
+                            : {}),
                         },
                       },
                     } })}
@@ -218,7 +263,48 @@ export function QuestionSettings(props: {
                     <option value="4" disabled={availableInSection < 4}>与后 3 张并排（共 4 张）</option>
                   </select>
                 </Field>
-                {override?.groupWithNext ? <p className="text-[11px] leading-4 text-zinc-500">只会合并同一用途的后续图片；总宽度超出当前版心时会自动等比缩小，当前宽度是每张图的目标宽度。</p> : null}
+                {override?.groupWithNext ? (
+                  <div className="space-y-2 rounded-md bg-zinc-50/70 p-2 dark:bg-zinc-900/50">
+                    <label className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
+                      <input
+                        type="checkbox"
+                        className="size-3.5 rounded border-zinc-300"
+                        checked={Boolean(override.groupMatchHeight)}
+                        onChange={(event) => props.onUpdate({ display: {
+                          ...block.display,
+                          figureOverrides: {
+                            ...block.display?.figureOverrides,
+                            [key]: {
+                              ...override,
+                              groupMatchHeight: event.target.checked || undefined,
+                              groupHeightMm: event.target.checked ? (override.groupHeightMm ?? DEFAULT_GROUP_HEIGHT_MM) : undefined,
+                            },
+                          },
+                        } })}
+                      />
+                      并排图片统一高度（保持比例）
+                    </label>
+                    {override.groupMatchHeight ? (
+                      <InspectorSlider
+                        label="统一高度"
+                        value={override.groupHeightMm ?? DEFAULT_GROUP_HEIGHT_MM}
+                        min={15}
+                        max={160}
+                        step={1}
+                        unit="mm"
+                        presets={[30, 40, 50, 60, 80]}
+                        onChange={(val) => props.onUpdate({ display: {
+                          ...block.display,
+                          figureOverrides: {
+                            ...block.display?.figureOverrides,
+                            [key]: { ...override, groupMatchHeight: true, groupHeightMm: val },
+                          },
+                        } }, `figure-group-height:${block.id}:${key}`)}
+                      />
+                    ) : null}
+                    <p className="text-[11px] leading-4 text-zinc-500">只会合并同一用途的后续图片；版心不足时会整体缩小，图片不会变形。</p>
+                  </div>
+                ) : null}
               </div>
             )
           })}
@@ -283,6 +369,39 @@ export function QuestionSettings(props: {
                     <option value="analysis-end">解析末尾</option>
                   </select>
                 </Field>
+                <Field label="文字环绕">
+                  <select
+                    className={fieldClass}
+                    value={figure.textWrap || 'top-bottom'}
+                    onChange={(event) => props.onUpdate({ display: {
+                      ...block.display,
+                      insertedFigures: figures.map((item) => item.id === figure.id ? {
+                        ...item,
+                        textWrap: event.target.value === 'top-bottom' ? undefined : event.target.value as 'square-left' | 'square-right',
+                        wrapGapMm: event.target.value === 'top-bottom' ? undefined : (item.wrapGapMm ?? 4),
+                      } : item),
+                    } })}
+                  >
+                    <option value="top-bottom">上下型（独占一行）</option>
+                    <option value="square-left">左侧图片，右侧文字环绕</option>
+                    <option value="square-right">右侧图片，左侧文字环绕</option>
+                  </select>
+                </Field>
+                {figure.textWrap === 'square-left' || figure.textWrap === 'square-right' ? (
+                  <InspectorSlider
+                    label="文字间距"
+                    value={figure.wrapGapMm ?? 4}
+                    min={0}
+                    max={12}
+                    step={1}
+                    unit="mm"
+                    presets={[0, 2, 4, 6]}
+                    onChange={(val) => props.onUpdate({ display: {
+                      ...block.display,
+                      insertedFigures: figures.map((item) => item.id === figure.id ? { ...item, wrapGapMm: val } : item),
+                    } }, `inserted-figure-wrap-gap:${block.id}:${figure.id}`)}
+                  />
+                ) : null}
                 <InspectorSlider
                   label="图片宽度"
                   value={figure.widthMm || DEFAULT_QUESTION_FIGURE_WIDTH_MM}

@@ -177,6 +177,46 @@ describe('PaperPageView（纸张预览与打印页共享 renderer）', () => {
       .toBe(`${effectivePaperMetrics(printLayout).contentHeightPx}px`)
   })
 
+  it('keeps a side-wrapped figure and following paragraph in one paper flow', () => {
+    const documentWithWrap: TeachingDocumentV1 = {
+      ...teachingDoc,
+      content: [
+        {
+          type: 'figure',
+          id: 'wrapped-figure',
+          asset: { type: 'documentAsset', assetId: 'asset-1' },
+          alignment: 'left',
+          widthMm: 70,
+          textWrap: 'square-left',
+          wrapGapMm: 4,
+        },
+        {
+          type: 'paragraph',
+          id: 'wrapped-paragraph',
+          content: [{ type: 'text', text: '环绕图片右侧的正文。' }],
+        },
+      ],
+    }
+    const page = makePage(0, [
+      { kind: 'whole', blockId: 'wrapped-figure', blockType: 'figure', sourceIndex: 0 },
+      { kind: 'whole', blockId: 'wrapped-paragraph', blockType: 'paragraph', sourceIndex: 1 },
+    ])
+    const html = renderToStaticMarkup(
+      <PaperPageView
+        page={page}
+        document={documentWithWrap}
+        paper={DEFAULT_A4_PAPER}
+        printLayout={printLayout}
+        totalPages={1}
+        resolvers={{ resolveFigure: () => '/asset-1.png' }}
+      />,
+    )
+
+    expect(html).toContain('data-text-wrap="square-left"')
+    expect(html).toContain('float:left')
+    expect(html).toContain('td-block-shell-flow-text')
+  })
+
   it('renders a stable placeholder when the question resolver fails（whole-block path）', () => {
     const html = renderPage(makePage(0, [wholeQuestionItem()]), () => ({ status: 'missing' }))
     const root = document.createElement('div')

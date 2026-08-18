@@ -99,6 +99,7 @@ export function TeachingDocumentRenderer({
     probeChoiceLayouts,
   }
   const headingLabels = headingLabelByBlockId(document)
+  let flowWrapActive = false
   return (
     <TeachingDocumentFrame
       document={document}
@@ -106,16 +107,29 @@ export function TeachingDocumentRenderer({
       showTitle={showTitle}
       surface={surface}
     >
-      {document.content.map((block, index) => (
-        <BlockRenderer
-          key={`${block.id}:${index}`}
-          block={block}
-          resolvers={resolvers}
-          sourceIndex={index}
-          selectedBlockId={selectedBlockId}
-          headingLabel={headingLabels.get(block.id)}
-        />
-      ))}
+      {document.content.map((block, index) => {
+        const isTextBlock = block.type === 'heading' || block.type === 'paragraph'
+        const isSideWrappedFigure = block.type === 'figure'
+          && (block.textWrap === 'square-left' || block.textWrap === 'square-right')
+        const flowWrappedText = flowWrapActive && isTextBlock
+        // 一个新的图片锚点或任意独立块都结束前一个图片的文字环绕范围。
+        flowWrapActive = isSideWrappedFigure
+          ? true
+          : isTextBlock && flowWrapActive
+            ? true
+            : false
+        return (
+          <BlockRenderer
+            key={`${block.id}:${index}`}
+            block={block}
+            resolvers={resolvers}
+            sourceIndex={index}
+            selectedBlockId={selectedBlockId}
+            headingLabel={headingLabels.get(block.id)}
+            flowWrappedText={flowWrappedText}
+          />
+        )
+      })}
       {!document.content.length ? (
         <p className="py-12 text-center text-sm text-zinc-400">文档内容为空</p>
       ) : null}

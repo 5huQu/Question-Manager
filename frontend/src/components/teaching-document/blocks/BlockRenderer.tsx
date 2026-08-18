@@ -165,10 +165,13 @@ export function ParagraphFragmentRenderer({
   block,
   item,
   selected = false,
+  flowWrapped = false,
 }: {
   block: ParagraphBlock
   item: ParagraphFragmentPaginationItem | ParagraphBoxChildFragmentPaginationItem
   selected?: boolean
+  /** 同页前方存在左右环绕图片时，段落必须留在普通文档流中。 */
+  flowWrapped?: boolean
 }) {
   const boxChildItem = 'parentBlockId' in item ? item : undefined
   const marginClass = {
@@ -179,7 +182,7 @@ export function ParagraphFragmentRenderer({
   }[item.continuation]
   return (
     <div
-      className={`td-paragraph-fragment td-block-shell ${selected ? 'td-block-selected' : ''}`}
+      className={`td-paragraph-fragment td-block-shell ${flowWrapped ? 'td-block-shell-flow-text' : ''} ${selected ? 'td-block-selected' : ''}`}
       {...{
         [TEACHING_DOM.fragment]: '',
         [TEACHING_DOM.fragmentType]: 'paragraph',
@@ -242,11 +245,14 @@ function FigureBlockView({
   resolveFigure,
   eagerImages,
   onSelect,
+  flowWrapped = false,
 }: {
   block: FigureBlock
   resolveFigure?: (asset: FigureAssetRef) => FigureResolution
   eagerImages?: boolean
   onSelect?: () => void
+  /** 外层块已承担左右浮动和间距，内部图片改为填满锚点宽度。 */
+  flowWrapped?: boolean
 }) {
   const asset = block.asset
   const hasRef = asset.type === 'legacyPath'
@@ -297,8 +303,8 @@ function FigureBlockView({
     const columns = block.groupColumns || 2
     return (
       <div
-        className={`td-figure-group my-4 ${alignClass}`}
-        style={widthStyle}
+        className={`td-figure-group ${flowWrapped ? '' : `my-4 ${alignClass}`}`}
+        style={flowWrapped ? { width: '100%', maxWidth: '100%' } : widthStyle}
         data-block-id={block.id}
         data-block-type="figure"
         data-figure-columns={columns}
@@ -325,6 +331,7 @@ function FigureBlockView({
               }}
               resolveFigure={resolveFigure}
               eagerImages={eagerImages}
+              flowWrapped={flowWrapped}
             />
           ))}
         </div>
@@ -367,8 +374,8 @@ function FigureBlockView({
 
   return (
     <figure
-      className={`td-figure my-4 ${alignClass} ${onSelect ? 'cursor-pointer' : ''}`}
-      style={widthStyle}
+      className={`td-figure ${flowWrapped ? '' : `my-4 ${alignClass}`} ${onSelect ? 'cursor-pointer' : ''}`}
+      style={flowWrapped ? { width: '100%', maxWidth: '100%' } : widthStyle}
       data-block-id={block.id}
       data-block-type="figure"
       data-alignment={block.alignment}
@@ -500,43 +507,63 @@ function QuestionRegionContent({
     const figureRegion = region as QuestionFigureRegion
     const visibleFigures = region.figures.filter((figure) => Boolean(figure.path))
     const figureKey = figureRegion.figureKey || figureRegion.key
+    const groupedKeys = figureRegion.groupFigureKeys || [figureKey]
+    const groupWidthOverrides = figureRegion.groupFigureWidthOverrides || {}
+    const figureWidths = groupedKeys.map((key) => groupWidthOverrides[key] ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM)
+    const figureAspectRatios = visibleFigures.map((figure) => {
+      const width = Number(figure.width)
+      const height = Number(figure.height)
+      return Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0 ? width / height : 1
+    })
     const resolvedLayout = resolveFigureLayout({
       preset: figureRegion.layoutPreset,
-      explicitWidthMm: figureRegion.widthOverrideMm ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM,
+      explicitWidthMm: groupWidthOverrides[figureKey] ?? figureRegion.widthOverrideMm ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM,
       legacyAlignment: figureRegion.alignmentOverride,
       containerWidthMm: layoutEditor?.contentWidthMm || 160,
     })
     const figureColumns = figureRegion.groupFigureKeys?.length || 1
-    const groupedWidthMm = Math.min(
-      layoutEditor?.contentWidthMm || 160,
-      resolvedLayout.widthMm * figureColumns + Math.max(0, figureColumns - 1) * 4,
-    )
-    const widthStyle = { width: `${groupedWidthMm * CSS_PIXELS_PER_MM}px`, maxWidth: '100%' }
+    const textWrap = figureColumns === 1 ? figureRegion.textWrap || 'top-bottom' : 'top-bottom'
+    const sideWrapped = textWrap === 'square-left' || textWrap === 'square-right'
+    const contentWidthMm = layoutEditor?.contentWidthMm || 160
+    const gapMm = Math.max(0, figureColumns - 1) * 4
+    const equalHeightMm = figureRegion.groupMatchHeight ? (figureRegion.groupHeightMm || 50) : undefined
+    const desiredGroupWidthMm = equalHeightMm
+      ? equalHeightMm * figureAspectRatios.reduce((sum, ratio) => sum + ratio, 0) + gapMm
+      : figureWidths.reduce((sum, width) => sum + width, 0) + gapMm
+    const groupScale = Math.min(1, contentWidthMm / Math.max(desiredGroupWidthMm, 1))
+    const groupedWidthMm = Math.min(contentWidthMm, desiredGroupWidthMm)
+    const equalHeightPx = equalHeightMm ? equalHeightMm * groupScale * CSS_PIXELS_PER_MM : undefined
+    const widthStyle = sideWrapped
+      ? { width: '100%', maxWidth: '100%' }
+      : { width: `${groupedWidthMm * CSS_PIXELS_PER_MM}px`, maxWidth: '100%' }
     const alignClass = { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[resolvedLayout.alignment]
     const trimTrailingSpacing = item?.kind === 'whole-question-region' && item.trimTrailingSpacing
     const figureSpacingClass = trimTrailingSpacing ? 'mt-3 mb-0' : 'my-3'
     if (figureRegion.asset) {
       return (
-        <div className={`relative ${figureSpacingClass} ${alignClass}`} style={widthStyle}>
+        <div className={`relative ${sideWrapped ? '' : `${figureSpacingClass} ${alignClass}`}`} style={widthStyle}>
           <FigureBlockView
             block={{ type: 'figure', id: figureRegion.figureKey || figureRegion.key, asset: figureRegion.asset, alignment: resolvedLayout.alignment, widthMm: resolvedLayout.widthMm }}
             resolveFigure={resolveFigure}
             onSelect={() => layoutEditor?.onFigureSelect?.(figureKey)}
+            flowWrapped={sideWrapped}
           />
         </div>
       )
     }
     return visibleFigures.length ? (
-      <div className={`relative ${figureSpacingClass} ${alignClass}`} style={widthStyle}>
-        <FigureGallery
-          figures={visibleFigures}
-          showCaption={false}
-          naturalAspectRatio
-          bare
-          columns={figureColumns >= 2 && figureColumns <= 4 ? figureColumns as 2 | 3 | 4 : undefined}
-          onSelect={() => layoutEditor?.onFigureSelect?.(figureKey)}
-        />
-        {layoutEditor?.selected ? (
+      <div className={`relative ${sideWrapped ? '' : `${figureSpacingClass} ${alignClass}`}`} style={widthStyle}>
+          <FigureGallery
+            figures={visibleFigures}
+            showCaption={false}
+            naturalAspectRatio
+            bare
+            columns={figureColumns >= 2 && figureColumns <= 4 ? figureColumns as 2 | 3 | 4 : undefined}
+            columnRatios={equalHeightMm ? figureAspectRatios : figureWidths}
+            equalHeightPx={equalHeightPx}
+            onSelect={(figure) => layoutEditor?.onFigureSelect?.(String(figure.id || figure.blockId || figureKey))}
+          />
+        {layoutEditor?.selected && !equalHeightMm ? (
           <ImageResizeOverlay
             currentWidthMm={resolvedLayout.widthMm}
             maxWidthMm={layoutEditor.contentWidthMm}
@@ -689,10 +716,11 @@ export function QuestionRuntimeContent({
         .map((item) => model.regions.find((region) => region.key === item.regionKey))
         .filter((region): region is QuestionRuntimeRegion => Boolean(region))
     : model.regions
+  let flowWrapActive = false
 
   return (
     <div
-      className={`td-question ${marginClass}`}
+      className={`td-question flow-root ${marginClass}`}
       style={questionTypographyStyle(typography)}
       data-question-continuation={continuation}
       {...{
@@ -716,15 +744,42 @@ export function QuestionRuntimeContent({
         const analysisStart = isAnalysis && previousRegion?.type !== 'analysis'
         const analysisEnd = isAnalysis && nextRegion?.type !== 'analysis'
         const analysisJoinsAnswer = analysisStart && previousRegion?.kind === 'answer'
+        const isTextRegion = region.kind === 'paragraph' || region.kind === 'markdown'
+        const isSideWrappedFigure = region.kind === 'figure'
+          && !region.groupFigureKeys?.length
+          && (region.textWrap === 'square-left' || region.textWrap === 'square-right')
+        const flowWrappedText = flowWrapActive && isTextRegion
+        const clearFlowWrap = flowWrapActive && !isTextRegion && !isSideWrappedFigure
+        const regionStyle: CSSProperties | undefined = isSideWrappedFigure
+          ? {
+              float: region.textWrap === 'square-left' ? 'left' : 'right',
+              clear: 'both',
+              width: `${resolveFigureLayout({
+                preset: region.layoutPreset,
+                explicitWidthMm: region.widthOverrideMm ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM,
+                legacyAlignment: region.alignmentOverride,
+                containerWidthMm: layoutEditor?.contentWidthMm || 160,
+              }).widthMm * CSS_PIXELS_PER_MM}px`,
+              maxWidth: '100%',
+              margin: `0 ${region.textWrap === 'square-left' ? Math.max(0, region.wrapGapMm ?? 4) : 0}mm ${Math.max(0, region.wrapGapMm ?? 4)}mm ${region.textWrap === 'square-right' ? Math.max(0, region.wrapGapMm ?? 4) : 0}mm`,
+            }
+          : clearFlowWrap ? { clear: 'both' } : undefined
+        flowWrapActive = isSideWrappedFigure
+          ? true
+          : isTextRegion && flowWrapActive
+            ? true
+            : false
         return (
           <div
-            className={`td-question-region flow-root ${isAnalysis ? `td-question-analysis-region border-x border-blue-200/70 bg-blue-50/80 px-3 py-2 dark:border-blue-900/60 dark:bg-blue-950/30 ${analysisStart && !analysisJoinsAnswer ? 'rounded-t-md border-t' : ''} ${analysisStart && analysisJoinsAnswer ? 'border-t-0' : ''} ${analysisEnd ? 'rounded-b-md border-b' : ''}` : ''}`}
+            className={`td-question-region ${flowWrappedText ? 'td-question-region-flow-text' : 'flow-root'} ${isAnalysis ? `td-question-analysis-region border-x border-blue-200/70 bg-blue-50/80 px-3 py-2 dark:border-blue-900/60 dark:bg-blue-950/30 ${analysisStart && !analysisJoinsAnswer ? 'rounded-t-md border-t' : ''} ${analysisStart && analysisJoinsAnswer ? 'border-t-0' : ''} ${analysisEnd ? 'rounded-b-md border-b' : ''}` : ''}`}
             key={`${region.key}:${item?.kind === 'question-paragraph-fragment' ? item.fragmentIndex : 0}`}
+            style={regionStyle}
             {...{
               [TEACHING_DOM.questionRegion]: region.type,
               [TEACHING_DOM.questionRegionKey]: region.key,
               [TEACHING_DOM.questionRegionIndex]: region.index,
               [TEACHING_DOM.questionSplitPolicy]: region.splitPolicy,
+              'data-text-wrap': isSideWrappedFigure ? region.textWrap : undefined,
               ...(region.kind === 'options-row'
                 ? {
                     [TEACHING_DOM.questionOptionRow]: region.rowIndex,
@@ -796,6 +851,7 @@ export function QuestionFragmentRenderer({
   resolveFigure,
   choiceLayoutOverrides,
   probeChoiceLayouts,
+  clearFlowWrap = false,
 }: {
   block: QuestionBlock
   question: QuestionItem
@@ -804,10 +860,13 @@ export function QuestionFragmentRenderer({
   resolveFigure?: (asset: FigureAssetRef) => FigureResolution
   choiceLayoutOverrides?: ChoiceLayoutOverrides
   probeChoiceLayouts?: boolean
+  /** 前方环绕图片后的独立题目 fragment 从图片下方开始。 */
+  clearFlowWrap?: boolean
 }) {
   return (
     <div
       className={`td-question-fragment td-block-shell ${selected ? 'td-block-selected' : ''}`}
+      style={clearFlowWrap ? { clear: 'both' } : undefined}
       {...{
         [TEACHING_DOM.fragment]: '',
         [TEACHING_DOM.fragmentType]: 'question',
@@ -837,11 +896,13 @@ export function QuestionPlaceholder({
   message,
   status,
   tone = 'neutral',
+  clearFlowWrap = false,
 }: {
   block: QuestionBlock
   message: string
   status: 'loading' | 'error' | 'missing'
   tone?: 'neutral' | 'error'
+  clearFlowWrap?: boolean
 }) {
   return (
     <div
@@ -850,6 +911,7 @@ export function QuestionPlaceholder({
           ? 'border-red-300 bg-red-50/40 dark:border-red-900 dark:bg-red-950/20'
           : 'border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/30'
       }`}
+      style={clearFlowWrap ? { clear: 'both' } : undefined}
       data-block-id={block.id}
       data-block-type="question"
       data-question-state={tone}
@@ -1068,6 +1130,7 @@ export function BoxFragmentRenderer({
   titleEditable,
   onEditBoxTitle,
   onSelectBox,
+  clearFlowWrap = false,
 }: {
   block: BoxBlock
   item: BoxFragmentPaginationItem
@@ -1086,10 +1149,12 @@ export function BoxFragmentRenderer({
   onEditBoxTitle?: (boxId: string, title: string) => void
   /** 分页编辑器中，点击盒子标题栏时选中盒子。 */
   onSelectBox?: () => void
+  clearFlowWrap?: boolean
 }) {
   return (
     <div
       className={`td-box-fragment td-block-shell relative ${selectedBlockId === block.id ? 'td-block-selected' : ''}`}
+      style={clearFlowWrap ? { clear: 'both' } : undefined}
       {...{
         [TEACHING_DOM.fragment]: '',
         [TEACHING_DOM.fragmentType]: 'box',
@@ -1375,6 +1440,7 @@ export function BlockRenderer({
   boxTitleEditable,
   onEditBoxTitle,
   headingLabel,
+  flowWrappedText = false,
 }: {
   block: TeachingBlock
   resolvers: TeachingDocumentResolvers
@@ -1389,7 +1455,37 @@ export function BlockRenderer({
   onEditBoxTitle?: (boxId: string, title: string) => void
   /** 文档级章节编号引擎派生的标题前缀，不写入标题正文。 */
   headingLabel?: string
+  /** 前方左右环绕图片尚在当前文档流内，文本块需要允许逐行绕排。 */
+  flowWrappedText?: boolean
 }) {
+  const figureTextWrap = block.type === 'figure' ? block.textWrap || 'top-bottom' : 'top-bottom'
+  const figureSideWrapped = figureTextWrap === 'square-left' || figureTextWrap === 'square-right'
+  const supportsFlowWrap = block.type === 'heading' || block.type === 'paragraph'
+  const figureShellStyle: CSSProperties | undefined = block.type === 'figure'
+    ? figureSideWrapped
+      ? (() => {
+          const layout = resolveFigureLayout({
+            preset: block.layoutPreset,
+            explicitWidthMm: block.widthMm,
+            legacyAlignment: block.alignment,
+            legacyWidthRatio: block.widthRatio,
+            containerWidthMm: 160,
+          })
+          const gapMm = Math.max(0, block.wrapGapMm ?? 4)
+          return {
+            float: figureTextWrap === 'square-left' ? 'left' : 'right',
+            clear: 'both',
+            width: `${layout.widthMm * CSS_PIXELS_PER_MM}px`,
+            maxWidth: '100%',
+            margin: `0 ${figureTextWrap === 'square-left' ? gapMm : 0}mm ${gapMm}mm ${figureTextWrap === 'square-right' ? gapMm : 0}mm`,
+          }
+        })()
+      : { clear: 'both' }
+    : flowWrappedText && supportsFlowWrap
+      ? undefined
+      : supportsFlowWrap
+        ? undefined
+        : { clear: 'both' }
   let content: ReactNode
   switch (block.type) {
     case 'heading':
@@ -1405,7 +1501,7 @@ export function BlockRenderer({
       content = <TableBlockView block={block} />
       break
     case 'figure':
-      content = <FigureBlockView block={block} resolveFigure={resolvers.resolveFigure} eagerImages={resolvers.eagerImages} />
+      content = <FigureBlockView block={block} resolveFigure={resolvers.resolveFigure} eagerImages={resolvers.eagerImages} flowWrapped={figureSideWrapped} />
       break
     case 'tikz':
       content = <TikzBlockView block={block} resolveFigure={resolvers.resolveFigure} eagerImages={resolvers.eagerImages} />
@@ -1436,7 +1532,9 @@ export function BlockRenderer({
   }
   return (
     <div
-      className={`td-block-shell ${selectedBlockId === block.id ? 'td-block-selected' : ''}`}
+      className={`td-block-shell ${figureSideWrapped ? 'td-block-shell-wrapped' : ''} ${flowWrappedText && supportsFlowWrap ? 'td-block-shell-flow-text' : ''} ${selectedBlockId === block.id ? 'td-block-selected' : ''}`}
+      style={figureShellStyle}
+      data-text-wrap={block.type === 'figure' ? figureTextWrap : undefined}
       {...blockDomAttributes(block, parentBlockId, sourceIndex, childIndex, {
         rawMarkdownContainsTable: block.type === 'rawMarkdown'
           ? rawMarkdownContainsTable(block.markdown)

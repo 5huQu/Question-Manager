@@ -192,6 +192,67 @@ describe('TeachingDocumentRenderer fallbacks', () => {
     expect(html).toContain('右图')
   })
 
+  it('renders side-wrapped figures as flow anchors and lets following text wrap', () => {
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer
+        document={documentWith([
+          {
+            type: 'figure',
+            id: 'figure-wrap',
+            asset: { type: 'documentAsset', assetId: 'asset-1' },
+            alignment: 'left',
+            widthMm: 70,
+            textWrap: 'square-left',
+            wrapGapMm: 4,
+          },
+          {
+            type: 'paragraph',
+            id: 'paragraph-wrap',
+            content: [{ type: 'text', text: '这段文字会在图片右侧环绕。' }],
+          },
+          {
+            type: 'blockMath',
+            id: 'math-after-wrap',
+            latex: 'x^2',
+          },
+        ])}
+        resolveFigure={() => '/asset-1.png'}
+      />,
+    )
+
+    expect(html).toContain('data-text-wrap="square-left"')
+    expect(html).toContain('float:left')
+    expect(html).toContain('clear:both')
+    expect(html).toContain('td-block-shell-flow-text')
+  })
+
+  it('renders a side-wrapped question figure and keeps following stem text in flow', () => {
+    const question: QuestionItem = {
+      id: 'question-figure-wrap', serialNo: null, questionNo: '10', stage: '高中', questionType: '解答题',
+      difficultyScore: 3, difficultyScore10: 6, difficultyLabel: '中等', chapter: '', knowledgePoints: [], solutionMethods: [], sourceTitle: '', bankStatus: 'ready',
+      stemMarkdown: '观察下图。\n\n<!-- DOC2X_FIGURE:fig-wrap -->\n\n由图可知，继续计算即可。',
+      answerText: '', analysisMarkdown: '', totalScore: 12, scoringRubric: [], sliceImagePath: '',
+      figures: [{ id: 'fig-wrap', path: '/fig-wrap.png', usage: 'stem' }], sourceRunId: '', updatedAt: '', hasFigures: true,
+    }
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer
+        document={documentWith([{
+          type: 'question',
+          id: 'question-figure-wrap-block',
+          questionId: question.id,
+          display: { figureOverrides: { 'fig-wrap': { widthMm: 70, textWrap: 'square-left', wrapGapMm: 4 } } },
+        }])}
+        resolveQuestion={() => question}
+      />,
+    )
+
+    expect(html).toContain('data-text-wrap="square-left"')
+    expect(html).toContain('float:left')
+    expect(html).toContain('td-question-region-flow-text')
+    expect(html).toContain('td-question flow-root')
+    expect(html).toContain('继续计算即可')
+  })
+
   it('renders missing figure and question states clearly', () => {
     const html = renderToStaticMarkup(
       <TeachingDocumentRenderer

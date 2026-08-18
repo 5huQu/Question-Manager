@@ -252,6 +252,7 @@ export function QuestionContentEditor({
   onCopyAnalysisPdfScreenshot,
 }: QuestionContentEditorProps) {
   const [activeField, setActiveField] = useState<EditorField>('stemMarkdown')
+  const [showStructuredChoices, setShowStructuredChoices] = useState(true)
   const [saveError, setSaveError] = useState('')
   const [aiPromptOpen, setAiPromptOpen] = useState(false)
   const [aiOptimizationStatus, setAiOptimizationStatus] = useState<AiOptimizationStatus>('idle')
@@ -267,11 +268,12 @@ export function QuestionContentEditor({
   }
   const dirty = dirtyOverride ?? !contentEquals(value, savedValue ?? baseline.current)
   const warnings = useMemo(() => detectCompatibilityWarnings(value), [value])
-  const stem = useMemo(() => splitChoices(value.stemMarkdown), [value.stemMarkdown])
+  const parsedStem = useMemo(() => splitChoices(value.stemMarkdown), [value.stemMarkdown])
+  const stem = showStructuredChoices ? parsedStem : { body: value.stemMarkdown, choices: [] }
   const answerMode = useMemo(() => choiceAnswerMode(questionType), [questionType])
   const choiceSuggestion = useMemo(
-    () => stem.choices.length ? null : suggestChoiceConversion(value.stemMarkdown),
-    [stem.choices.length, value.stemMarkdown],
+    () => showStructuredChoices && stem.choices.length === 0 ? suggestChoiceConversion(value.stemMarkdown) : null,
+    [showStructuredChoices, stem.choices.length, value.stemMarkdown],
   )
   const answerChoices = stem.choices.length ? stem.choices : choiceSuggestion?.choices || []
   const selectedAnswerLabels = useMemo(
@@ -293,6 +295,7 @@ export function QuestionContentEditor({
     aiOriginalContent.current = null
     setAiOptimizationStatus('idle')
     setAiOptimizationError('')
+    setShowStructuredChoices(true)
   }, [entityKey])
 
   useEffect(() => {
@@ -398,6 +401,7 @@ export function QuestionContentEditor({
 
   function reset() {
     onChange(savedValue ?? baseline.current)
+    setShowStructuredChoices(true)
     setSaveError('')
   }
 
@@ -510,7 +514,13 @@ export function QuestionContentEditor({
             answerMode={answerMode}
             selectedAnswerLabels={selectedAnswerLabels}
             onAnswerSelectionChange={answerMode ? choiceSuggestion ? applySuggestionAndToggleAnswerSelection : toggleAnswerSelection : undefined}
-            onChange={(choices) => updateField('stemMarkdown', joinChoices(stem.body, choices))}
+            onChange={(choices) => {
+              if (!choices.length) {
+                setShowStructuredChoices(false)
+                return
+              }
+              updateField('stemMarkdown', joinChoices(stem.body, choices))
+            }}
           />
         ) : null}
         </div>

@@ -155,6 +155,27 @@ describe('question figure rendering', () => {
     expect(container.querySelector('img')?.className).toContain('h-full')
   })
 
+  it('supports independent columns at a shared image height for side-by-side question figures', async () => {
+    await act(async () => {
+      root.render(
+        <FigureGallery
+          figures={[figure, { ...figure, id: 'doc2x_asset_2', path: 'question_figures/doc2x_asset_2.png' }]}
+          showCaption={false}
+          naturalAspectRatio
+          columns={2}
+          columnRatios={[2, 1]}
+          equalHeightPx={120}
+        />,
+      )
+    })
+
+    const gallery = container.querySelector<HTMLElement>('div.grid')
+    expect(gallery?.style.gridTemplateColumns).toBe('2fr 1fr')
+    expect(gallery?.style.height).toBe('120px')
+    expect(container.querySelectorAll('img')).toHaveLength(2)
+    expect(container.querySelector('img')?.className).toContain('h-full')
+  })
+
   it('renders the image preview in the document body so global floating controls stay behind it', async () => {
     await act(async () => {
       root.render(<FigureGallery figures={[figure]} />)

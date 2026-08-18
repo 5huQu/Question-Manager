@@ -302,6 +302,10 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
   const layoutPreset = node.attrs.layoutPreset as FigureLayoutPreset | undefined
   const widthMm = node.attrs.widthMm != null ? Number(node.attrs.widthMm) : undefined
   const widthRatio = node.attrs.widthRatio != null ? Number(node.attrs.widthRatio) : undefined
+  const textWrap = (['top-bottom', 'square-left', 'square-right'].includes(String(node.attrs.textWrap))
+    ? String(node.attrs.textWrap)
+    : 'top-bottom') as NonNullable<FigureBlock['textWrap']>
+  const wrapGapMm = Math.max(0, Number(node.attrs.wrapGapMm) || 0)
   const caption = String(node.attrs.caption || '')
   const alt = String(node.attrs.alt || '')
   const groupItems = useMemo<NonNullable<FigureBlock['groupItems']>>(() => {
@@ -368,6 +372,16 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
 
   const resolvedLayout = resolveFigureLayout({ preset: layoutPreset, explicitWidthMm: widthMm, legacyAlignment: alignment, legacyWidthRatio: widthRatio, containerWidthMm: contentWidthMm })
   const alignClass = { left: 'mr-auto', center: 'mx-auto', right: 'ml-auto' }[resolvedLayout.alignment]
+  const isSideWrapped = textWrap === 'square-left' || textWrap === 'square-right'
+  const wrapperStyle: CSSProperties = isSideWrapped
+    ? {
+        float: textWrap === 'square-left' ? 'left' : 'right',
+        clear: 'both',
+        width: `${displayWidthMm}mm`,
+        maxWidth: '100%',
+        margin: `0 ${textWrap === 'square-left' ? wrapGapMm : 0}mm ${wrapGapMm}mm ${textWrap === 'square-right' ? wrapGapMm : 0}mm`,
+      }
+    : { clear: 'both' }
 
   /** pointerup 提交：钳制到内容区宽度后写入编辑器（一个 undo 步骤） */
   const handleCommitWidth = useCallback((mm: number) => {
@@ -377,7 +391,7 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
   }, [editor, blockId, contentWidthMm, mergeKey])
 
   return (
-    <NodeViewWrapper className={`td-figure my-4 ${selectionRing(selected)}`} data-block-id={blockId}>
+    <NodeViewWrapper className={`td-figure ${isSideWrapped ? '' : 'my-4'} ${selectionRing(selected)}`} style={wrapperStyle} data-block-id={blockId} data-text-wrap={textWrap}>
       {selected ? (
         <div className="mb-2 flex items-center justify-center gap-1" data-print-hide="">
           {([
@@ -407,9 +421,9 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
       ) : null}
       {groupItems.length ? (
         <div
-          className={`grid items-start ${alignClass}`}
+          className={`grid items-start ${isSideWrapped ? '' : alignClass}`}
           style={{
-            width: `${displayWidthMm}mm`,
+            width: isSideWrapped ? '100%' : `${displayWidthMm}mm`,
             maxWidth: '100%',
             gridTemplateColumns: `repeat(${groupColumns}, minmax(0, 1fr))`,
             gap: `${groupGapMm}mm`,
@@ -426,7 +440,7 @@ export function FigureNodeView({ node, selected, editor }: NodeViewProps) {
           <span className="text-sm">图片资源缺失</span>
         </div>
       ) : (
-        <figure className={alignClass} style={{ width: `${displayWidthMm}mm`, maxWidth: '100%' }}>
+        <figure className={isSideWrapped ? '' : alignClass} style={{ width: isSideWrapped ? '100%' : `${displayWidthMm}mm`, maxWidth: '100%' }}>
           <div className="relative flex min-h-32 w-full items-center justify-center">
             {imageState === 'loading' ? (
               <div className="absolute inset-0 flex min-h-32 items-center justify-center rounded-lg border border-dashed border-zinc-200 bg-zinc-50 text-xs text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900">
@@ -691,37 +705,6 @@ export function QuestionNodeView({ node, selected, updateAttributes }: NodeViewP
           <button type="button" title="上移" disabled={!selectedInsertedFigure || insertedFigures.findIndex((figure) => figure.id === selectedInsertedFigure.id) === 0} onClick={() => moveInsertedFigure(-1)} className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"><ArrowUp className="size-3.5" /></button>
           <button type="button" title="下移" disabled={!selectedInsertedFigure || insertedFigures.findIndex((figure) => figure.id === selectedInsertedFigure.id) === insertedFigures.length - 1} onClick={() => moveInsertedFigure(1)} className="rounded p-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"><ArrowDown className="size-3.5" /></button>
           <button type="button" title={selectedInsertedFigure ? '删除图片' : '清除图片覆盖'} onClick={selectedInsertedFigure ? deleteInsertedFigure : () => updateFigurePlacement(selectedInsertedFigureKey, {})} className="rounded p-1 text-red-500 hover:bg-red-50"><Trash2 className="size-3.5" /></button>
-        </div>
-      ) : null}
-      {selected && question.figures.length ? (
-        <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded border border-zinc-200 bg-zinc-50/70 p-2" data-print-hide="">
-          {question.figures.map((figure) => {
-            const key = figure.id || figure.blockId || ''
-            const override = display.figureOverrides?.[key]
-            return (
-              <div key={key} className="flex items-center gap-1">
-                <span className="text-[10px] text-zinc-500">题图 {key}</span>
-                <select aria-label={`题图 ${key} 位置`} value={override?.slot || ''} onChange={(event) => updateFigurePlacement(key, { slot: event.target.value || undefined })} className="h-7 rounded border border-zinc-200 bg-white px-1 text-[10px]">
-                  <option value="">原位置</option>
-                  <option value="stem-start">题干开头</option>
-                  <option value="stem-end">题干末尾</option>
-                  <option value="before-options">选项之前</option>
-                  <option value="after-options">选项之后</option>
-                  <option value="before-answer">答案之前</option>
-                  <option value="after-answer">答案之后</option>
-                  <option value="analysis-start">解析开头</option>
-                  <option value="analysis-end">解析末尾</option>
-                </select>
-                <select aria-label={`题图 ${key} 样式`} value={override?.layoutPreset || ''} onChange={(event) => updateFigurePlacement(key, { layoutPreset: event.target.value || undefined })} className="h-7 rounded border border-zinc-200 bg-white px-1 text-[10px]">
-                  <option value="">默认样式</option>
-                  <option value="block-center">居中插图</option>
-                  <option value="block-left">左对齐</option>
-                  <option value="block-right">右对齐</option>
-                  <option value="full-width">通栏</option>
-                </select>
-              </div>
-            )
-          })}
         </div>
       ) : null}
       {localContent ? (

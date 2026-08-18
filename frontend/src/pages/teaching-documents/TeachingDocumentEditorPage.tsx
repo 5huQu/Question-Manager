@@ -69,6 +69,7 @@ import {
 } from '@/components/teaching-document/editor/selection'
 import { EditorTopBar, type TeachingCanvasMode } from './components/EditorTopBar'
 import { PageSettingsDrawer } from './components/PageSettingsDrawer'
+import { AnswerSpaceSettingsPopover } from './components/AnswerSpaceSettingsPopover'
 import { ChromeSettingsPanel, FontSelect, paperFieldClass } from './components/DocumentSettingsPanels'
 import { PaperSettingsControl } from './components/PaperSettingsControl'
 import type { HeadingLevel } from './components/BlockInsertMenu'
@@ -249,7 +250,7 @@ export default function TeachingDocumentEditorPage() {
     return () => window.removeEventListener(TOP_LEVEL_MULTI_SELECT_EVENT, handleTopLevelMultiSelect)
   }, [])
   const [batchBlankEnabled, setBatchBlankEnabled] = useState(false)
-  const [batchBlankHeightMm, setBatchBlankHeightMm] = useState(30)
+  const [batchBlankHeightMm, setBatchBlankHeightMm] = useState(40)
   const [batchBlankSplitAcrossPages, setBatchBlankSplitAcrossPages] = useState(false)
   const documentFonts = useMemo(() => resolveDocumentFonts(editor.document?.style), [editor.document?.style])
   const questionSpacing = editor.document?.style?.questionSpacing || 'compact'
@@ -860,7 +861,7 @@ export default function TeachingDocumentEditorPage() {
             max={200}
             step={1}
             unit="mm"
-            presets={[15, 30, 50, 80, 120]}
+            presets={[15, 40, 50, 80, 120]}
             onChange={(val: number) => {
               setBatchBlankHeightMm(val)
               applyBatchAnswerSpace(true, val)
@@ -952,19 +953,18 @@ export default function TeachingDocumentEditorPage() {
             <span className="mx-0.5 h-3 w-px shrink-0 bg-zinc-300/70 dark:bg-zinc-700/70" />
             <button type="button" onClick={() => applyBatchAnswerSpace(!batchBlankEnabled)} className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-all ${batchBlankEnabled ? 'bg-zinc-900 text-white shadow-xs dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-600 hover:bg-zinc-200/50 dark:text-zinc-300 dark:hover:bg-zinc-800/50'}`} title="对全部解答题批量设置或取消留空">{batchBlankEnabled ? <Check className="size-3.5" /> : null}解答题留空</button>
             {batchBlankEnabled ? (
-              <label className="inline-flex shrink-0 items-center gap-1 cursor-pointer text-[11px] font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100 ml-0.5" title="留空跨页时不延续留空">
-                <input
-                  type="checkbox"
-                  className="size-3.5 rounded border-zinc-300 dark:border-zinc-700 accent-zinc-900 dark:accent-zinc-100"
-                  checked={batchBlankSplitAcrossPages}
-                  onChange={(event) => {
-                    const split = event.target.checked
-                    setBatchBlankSplitAcrossPages(split)
-                    applyBatchAnswerSpace(true, batchBlankHeightMm, split)
-                  }}
-                />
-                不跨页
-              </label>
+              <AnswerSpaceSettingsPopover
+                heightMm={batchBlankHeightMm}
+                splitAcrossPages={batchBlankSplitAcrossPages}
+                onHeightChange={(heightMm) => {
+                  setBatchBlankHeightMm(heightMm)
+                  applyBatchAnswerSpace(true, heightMm)
+                }}
+                onSplitAcrossPagesChange={(splitAcrossPages) => {
+                  setBatchBlankSplitAcrossPages(splitAcrossPages)
+                  applyBatchAnswerSpace(true, batchBlankHeightMm, splitAcrossPages)
+                }}
+              />
             ) : null}
           </div>
         </div>

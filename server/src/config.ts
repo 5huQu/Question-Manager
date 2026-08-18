@@ -14,7 +14,9 @@ export const storageRoot = path.resolve(process.env.QUESTION_DATA_DIR || sourceR
 export const dataDir = path.join(storageRoot, 'data')
 export const runsRoot = path.join(storageRoot, 'experiments', 'pdf_slicer', 'runs')
 export const sqlitePath = path.join(dataDir, 'question.sqlite')
-export const tagLibrariesDir = path.join(sourceRoot, 'server', 'tag_libraries')
+// 标签库是用户可编辑数据，不能写进可能只读的发布目录。发布包中的文件只作为首次启动的内置模板。
+export const tagLibrarySeedDir = path.join(sourceRoot, 'server', 'tag_libraries')
+export const tagLibrariesDir = path.join(dataDir, 'tag_libraries')
 export const pythonRoot = path.join(sourceRoot, 'server', 'python')
 export const pythonDataRoot = path.join(storageRoot, 'python')
 export const frontendDist = path.join(sourceRoot, 'frontend', 'dist')
@@ -75,4 +77,12 @@ fs.mkdirSync(dataDir, { recursive: true })
 fs.mkdirSync(runsRoot, { recursive: true })
 fs.mkdirSync(pythonDataRoot, { recursive: true })
 fs.mkdirSync(tagLibrariesDir, { recursive: true })
+if (fs.existsSync(tagLibrarySeedDir)) {
+  for (const fileName of fs.readdirSync(tagLibrarySeedDir)) {
+    if (!fileName.toLowerCase().endsWith('.json')) continue
+    const sourcePath = path.join(tagLibrarySeedDir, fileName)
+    const targetPath = path.join(tagLibrariesDir, fileName)
+    if (fs.statSync(sourcePath).isFile() && !fs.existsSync(targetPath)) fs.copyFileSync(sourcePath, targetPath)
+  }
+}
 fs.mkdirSync(uploadTempDir, { recursive: true })

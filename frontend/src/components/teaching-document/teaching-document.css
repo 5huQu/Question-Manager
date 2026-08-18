@@ -100,6 +100,27 @@
 }
 
 /*
+ * 左右环绕的后续文字不能建立新的 BFC，否则整个段落会一直缩在图片旁。
+ * 极小的内边距阻止段落外边距穿透测量边界，保持分页测量可预测。
+ */
+.td-block-shell-flow-text {
+  display: block;
+  padding-block: 0.01px;
+}
+
+/* 题目内部的题干/解析与左右环绕题图共用同一条普通文档流。 */
+.td-question-region-flow-text {
+  display: block;
+  padding-block: 0.01px;
+}
+
+/* 编辑器中的标题和段落是原生 ProseMirror 节点；其他 atom 块须从环绕图下方起排。 */
+.td-document-editor [data-text-wrap="square-left"] ~ [data-node-view-wrapper]:not([data-text-wrap="square-left"]):not([data-text-wrap="square-right"]),
+.td-document-editor [data-text-wrap="square-right"] ~ [data-node-view-wrapper]:not([data-text-wrap="square-left"]):not([data-text-wrap="square-right"]) {
+  clear: both;
+}
+
+/*
  * 编辑块选中态与悬浮态绘制在块的边缘外侧，保留足够的呼吸空间（inset: -4px -10px）。
  * 伪元素不参与排版；微小位移和阴影只表达层级，不改变分页测量尺寸。
  */

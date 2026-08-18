@@ -202,7 +202,7 @@ describe('createQuestionRuntimeModel', () => {
       questionId: 'question-1',
       display: {
         figureOverrides: {
-          'fig-1': { widthMm: 80, alignment: 'center' },
+          'fig-1': { widthMm: 80, alignment: 'center', textWrap: 'square-left', wrapGapMm: 4 },
         },
       },
     }
@@ -216,19 +216,39 @@ describe('createQuestionRuntimeModel', () => {
     expect(figureRegion).toBeDefined()
     expect(figureRegion.widthOverrideMm).toBe(80)
     expect(figureRegion.alignmentOverride).toBe('center')
+    expect(figureRegion.textWrap).toBe('square-left')
+    expect(figureRegion.wrapGapMm).toBe(4)
   })
 
-  it('groups up to four consecutive stem figures and preserves their order', () => {
+  it('anchors a side-wrapped figure at the start of its own stem flow', () => {
     const figures: QuestionFigure[] = [
-      { id: 'fig-1', blockId: 'block-1', path: '/assets/fig1.png', usage: 'stem' },
-      { id: 'fig-2', blockId: 'block-2', path: '/assets/fig2.png', usage: 'stem' },
-      { id: 'fig-3', blockId: 'block-3', path: '/assets/fig3.png', usage: 'stem' },
+      { id: 'fig-wrap', blockId: 'block-wrap', path: '/assets/fig-wrap.png', usage: 'stem' },
     ]
     const block: QuestionBlock = {
       type: 'question',
       id: 'question-block',
       questionId: 'question-1',
-      display: { figureOverrides: { 'fig-1': { groupWithNext: true, groupColumns: 3, widthMm: 60 } } },
+      display: { figureOverrides: { 'fig-wrap': { textWrap: 'square-left', wrapGapMm: 4 } } },
+    }
+    const model = createQuestionRuntimeModel(block, question({
+      stemMarkdown: '图片前的题干。\n\n<!-- DOC2X_FIGURE:fig-wrap -->\n\n图片后的题干。',
+      questionType: '解答题', figures, hasFigures: true,
+    }))
+
+    expect(model.regions.slice(0, 3).map((region) => region.kind)).toEqual(['figure', 'paragraph', 'paragraph'])
+  })
+
+  it('groups up to four consecutive stem figures and preserves their order', () => {
+    const figures: QuestionFigure[] = [
+      { id: 'fig-1', blockId: 'block-1', path: '/assets/fig1.png', usage: 'stem', width: 120, height: 80 },
+      { id: 'fig-2', blockId: 'block-2', path: '/assets/fig2.png', usage: 'stem', width: 80, height: 120 },
+      { id: 'fig-3', blockId: 'block-3', path: '/assets/fig3.png', usage: 'stem', width: 100, height: 100 },
+    ]
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'question-block',
+      questionId: 'question-1',
+      display: { figureOverrides: { 'fig-1': { groupWithNext: true, groupColumns: 3, widthMm: 60, groupMatchHeight: true, groupHeightMm: 50 }, 'fig-2': { widthMm: 90 } } },
     }
     const model = createQuestionRuntimeModel(block, question({
       stemMarkdown: '题干。\n\n<!-- DOC2X_FIGURE:fig-1 -->\n<!-- DOC2X_FIGURE:fig-2 -->\n<!-- DOC2X_FIGURE:fig-3 -->',
@@ -241,6 +261,9 @@ describe('createQuestionRuntimeModel', () => {
     expect(figureRegions[0]).toMatchObject({
       figureKey: 'fig-1',
       groupFigureKeys: ['fig-1', 'fig-2', 'fig-3'],
+      groupFigureWidthOverrides: { 'fig-1': 60, 'fig-2': 90 },
+      groupMatchHeight: true,
+      groupHeightMm: 50,
       widthOverrideMm: 60,
     })
     expect(figureRegions[0].figures.map((figure) => figure.id)).toEqual(['fig-1', 'fig-2', 'fig-3'])

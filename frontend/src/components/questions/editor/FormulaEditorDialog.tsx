@@ -8,6 +8,156 @@ import { MarkdownContent } from '../../MarkdownContent'
 type MathFieldElement = HTMLElement & { value: string; focus(): void }
 type MathliveStatus = 'loading' | 'ready' | 'error'
 
+/**
+ * 数字页键盘：复刻 MathLive 默认「数字」页签，并在 `<`、`>` 上补充长按变体
+ * （长按弹出 `≤`、`≥`），与键盘内其他带 variants 的按键实现方式一致。
+ */
+const NUMERIC_LAYOUT: VirtualKeyboardLayout = {
+  label: '123',
+  labelClass: 'MLK__tex-math',
+  tooltip: 'keyboard.tooltip.numeric',
+  rows: [
+    [
+      {
+        latex: 'x',
+        shift: 'y',
+        variants: [
+          'y',
+          'z',
+          't',
+          'r',
+          'x^2',
+          'x^n',
+          'x^{#?}',
+          'x_n',
+          'x_i',
+          'x_{#?}',
+          { latex: 'f(#?)', class: 'small' },
+          { latex: 'g(#?)', class: 'small' },
+        ],
+      },
+      { latex: 'n', shift: 'a', variants: ['i', 'j', 'p', 'k', 'a', 'u'] },
+      '[separator-5]',
+      '[7]',
+      '[8]',
+      '[9]',
+      '[/]',
+      '[separator-5]',
+      {
+        latex: '\\exponentialE',
+        shift: '\\ln',
+        variants: [
+          '\\exp',
+          '\\times 10^{#?}',
+          '\\ln',
+          '\\log_{10}',
+          '\\log',
+          '\\lg',
+          '\\operatorname{lb}',
+        ],
+      },
+      {
+        latex: '\\imaginaryI',
+        variants: ['\\Re', '\\Im', '\\imaginaryJ', '\\Vert #0 \\Vert'],
+      },
+      {
+        latex: '\\pi',
+        shift: '\\sin',
+        variants: [
+          '\\prod',
+          { latex: '\\theta', aside: 'theta' },
+          { latex: '\\rho', aside: 'rho' },
+          { latex: '\\tau', aside: 'tau' },
+          '\\sin',
+          '\\cos',
+          '\\tan',
+        ],
+      },
+    ],
+    [
+      {
+        label: '<',
+        latex: '<',
+        class: 'hide-shift',
+        variants: ['\\le'],
+        shift: { latex: '\\le', label: '≤' },
+      },
+      {
+        label: '>',
+        latex: '>',
+        class: 'hide-shift',
+        variants: ['\\ge'],
+        shift: { latex: '\\ge', label: '≥' },
+      },
+      '[separator-5]',
+      '[4]',
+      '[5]',
+      '[6]',
+      '[*]',
+      '[separator-5]',
+      {
+        class: 'hide-shift',
+        latex: '#@^2}',
+        shift: '#@^{\\prime}}',
+      },
+      {
+        latex: '#@^{#0}}',
+        class: 'hide-shift',
+        shift: '#@_{#?}',
+      },
+      {
+        class: 'hide-shift',
+        latex: '\\sqrt{#0}',
+        shift: { latex: '\\sqrt[#0]{#?}}' },
+      },
+    ],
+    [
+      '[(]',
+      '[)]',
+      '[separator-5]',
+      '[1]',
+      '[2]',
+      '[3]',
+      '[-]',
+      '[separator-5]',
+      {
+        latex: '\\int^{\\infty}_{0}\\!#?\\,\\mathrm{d}x',
+        class: 'small hide-shift',
+        shift: '\\int',
+        variants: [
+          { latex: '\\int_{#?}^{#?}', class: 'small' },
+          { latex: '\\int', class: 'small' },
+          { latex: '\\iint', class: 'small' },
+          { latex: '\\iiint', class: 'small' },
+          { latex: '\\oint', class: 'small' },
+          '\\mathrm{d}x',
+          { latex: '\\dfrac{\\mathrm{d}}{\\mathrm{d} x}', class: 'small' },
+          { latex: '\\frac{\\partial}{\\partial x}', class: 'small' },
+          '\\partial',
+        ],
+      },
+      {
+        class: 'hide-shift',
+        latex: '\\forall',
+        shift: '\\exists',
+      },
+      { label: '[backspace]', width: 1 },
+    ],
+    [
+      { label: '[shift]', width: 2 },
+      '[separator-5]',
+      '[0]',
+      '[.]',
+      '[=]',
+      '[+]',
+      '[separator-5]',
+      '[left]',
+      '[right]',
+      { label: '[action]', width: 1 },
+    ],
+  ],
+}
+
 /** 三角形符号键盘：在 MathLive 虚拟键盘中追加一个「三角」页签。 */
 const TRIANGLE_LAYOUT: VirtualKeyboardLayout = {
   id: 'triangle',
@@ -137,7 +287,7 @@ function setupMathlive() {
     MathfieldElement.locale = 'zh-CN'
     const keyboard = window.mathVirtualKeyboard
     if (keyboard) {
-      keyboard.layouts = ['default', TRIANGLE_LAYOUT]
+      keyboard.layouts = [NUMERIC_LAYOUT, 'symbols', 'alphabetic', 'greek', TRIANGLE_LAYOUT]
     }
   }).catch((error) => {
     mathliveSetupPromise = null

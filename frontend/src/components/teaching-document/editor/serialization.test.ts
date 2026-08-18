@@ -27,4 +27,19 @@ describe('teaching document editor serialization', () => {
     expect(editorNodeToBlock(blockToEditorNode(paragraph))).toEqual(paragraph)
     expect(editorNodeToBlock(blockToEditorNode(box))).toEqual(box)
   })
+
+  it('round-trips figure text wrapping and its gap', () => {
+    const figure: TeachingBlock = {
+      type: 'figure',
+      id: 'figure-wrap-1',
+      asset: { type: 'documentAsset', assetId: 'asset-1' },
+      alignment: 'left',
+      widthMm: 72,
+      lockAspectRatio: true,
+      textWrap: 'square-left',
+      wrapGapMm: 4,
+    }
+
+    expect(editorNodeToBlock(blockToEditorNode(figure))).toEqual(figure)
+  })
 })

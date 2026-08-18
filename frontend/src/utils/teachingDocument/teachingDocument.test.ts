@@ -114,6 +114,36 @@ describe('parseTeachingDocument', () => {
     })
   })
 
+  it('keeps controlled figure text wrapping and bounds its gap', () => {
+    const { document } = parseTeachingDocument({
+      version: 1,
+      documentType: 'lecture',
+      title: '图片环绕',
+      metadata: {},
+      content: [
+        {
+          type: 'figure',
+          id: 'left-wrap',
+          asset: { type: 'documentAsset', assetId: 'asset-1' },
+          alignment: 'left',
+          textWrap: 'square-left',
+          wrapGapMm: 99,
+        },
+        {
+          type: 'figure',
+          id: 'invalid-wrap',
+          asset: { type: 'documentAsset', assetId: 'asset-2' },
+          alignment: 'center',
+          textWrap: 'free-floating',
+          wrapGapMm: 6,
+        },
+      ],
+    })
+
+    expect(document?.content[0]).toMatchObject({ textWrap: 'square-left', wrapGapMm: 20 })
+    expect(document?.content[1]).toMatchObject({ textWrap: undefined, wrapGapMm: undefined })
+  })
+
   it('keeps only controlled question-spacing preferences', () => {
     const base = {
       version: 1,

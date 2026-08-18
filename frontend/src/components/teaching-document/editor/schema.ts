@@ -188,6 +188,8 @@ export const DocFigure = Node.create({
       widthMm: { default: null },
       widthRatio: { default: null },
       lockAspectRatio: { default: true },
+      textWrap: { default: 'top-bottom' },
+      wrapGapMm: { default: 4 },
       caption: { default: '' },
       alt: { default: '' },
       groupItems: { default: '[]' },

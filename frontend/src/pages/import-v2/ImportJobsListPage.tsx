@@ -21,7 +21,7 @@ import { PageTitle, Panel, Badge, Button } from '@/components/ui'
 import { Modal } from '@/components/dialogs/Modal'
 import { useAsync } from '@/hooks/useAsync'
 import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling'
-import { cityOptionsForProvince, provinceForCity, provinceOptions, yearOptionsFromServerYear } from '@/utils/metadataOptions'
+import { cityOptionsForProvince, gaokaoRegionOptions, isGaokaoRegion, provinceForCity, provinceOptions, yearOptionsFromServerYear } from '@/utils/metadataOptions'
 import { candidateReviewPath, importJobDocumentPath, importJobPath, importJobQuestionsPath } from './importV2Routes'
 
 const paperKindOptions: Array<{ value: PaperKind; label: string }> = [
@@ -36,20 +36,6 @@ const paperKindOptions: Array<{ value: PaperKind; label: string }> = [
 
 const subjectOptions = ['语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理']
 const stageOptions = ['小学', '初中', '高中', '高一', '高二', '高三']
-
-const gaokaoRegionOptions = [
-  { value: '全国甲卷', label: '全国甲卷' },
-  { value: '全国乙卷', label: '全国乙卷' },
-  { value: '新课标I卷', label: '新课标I卷' },
-  { value: '新课标II卷', label: '新课标II卷' },
-  { value: '北京', label: '北京' },
-  { value: '上海', label: '上海' },
-  { value: '天津', label: '天津' },
-]
-
-function isGaokaoRegion(val?: string) {
-  return gaokaoRegionOptions.some(item => item.value === val)
-}
 
 export default function ImportJobsListPage() {
   const navigate = useNavigate()
