@@ -1,248 +1,181 @@
 # Question Manager
 
-Question Manager 是一个本地优先的数学题库桌面工具，覆盖从整卷 OCR、候选题复核到题库维护、组卷和导出的完整流程。
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg)]()
+[![Node Version](https://img.shields.io/badge/node-%3E%3D24.0.0-green.svg)]()
 
-项目以 Electron、React、Express、SQLite 和 Python 构建，支持 macOS 与 Windows。真实试卷、题图、SQLite 数据库、OCR 响应与 API 密钥均不包含在开源仓库中。
+Question Manager 是一个本地优先（Local-first）的数学题库管理、试卷 OCR 识别与教学讲义排版工作台。
 
-## 适合处理的资料
+针对数学学科包含大量复杂公式、几何与函数图像、原卷与答案分离、跨页大题等痛点，系统提供从 **整卷识别 -> 题号智能切分 -> 可视化校对与图文绑定 -> 标准化题库管理 -> 讲义/试卷排版 -> 双版本（学生版/教师版）高清导出** 的完整流程。
 
-- 单份试卷或讲义
-- 题干与答案/解析在同一 PDF 中的混合资料
-- 原卷与解析分开的配套 PDF
-- 跨页大题、含几何图、函数图、选项图或解析图的数学资料
+---
 
-## 核心能力
+## 目录
 
-下面列出当前实现的主要能力和已知限制；更具体的行为以代码、测试和导入 V2 文档为准。
+- [特性一览](#特性一览)
+- [快速开始](#快速开始)
+  - [桌面客户端安装](#桌面客户端安装)
+  - [OCR 引擎配置](#ocr-引擎配置)
+- [使用工作流](#使用工作流)
+  - [1. 资料导入与整卷识别](#1-资料导入与整卷识别)
+  - [2. 候选题复核与手动修正](#2-候选题复核与手动修正)
+  - [3. 标准化题库与知识标签](#3-标准化题库与知识标签)
+  - [4. 教学文档排版与试题篮组卷](#4-教学文档排版与试题篮组卷)
+  - [5. 双版本导出与打印](#5-双版本导出与打印)
+- [可选外部工具](#可选外部工具)
+- [源码运行与构建](#源码运行与构建)
+- [开源许可](#开源许可)
 
-- **V2 整卷导入**：统一处理 PDF 与图片资料，持久化 OCR 任务，并从 `OCRDocument` 生成候选题。
-- **导入格式边界**：正式资料导入接受 PDF、JPG、JPEG、PNG；Doc2X 手动导入接受 Markdown ZIP。Word 文件请先在 Word、WPS 或其他工具中另存为 PDF。
-- **异常题手动修正**：在候选题修正工作台调整来源区域、正文和题图，不再创建旧切题 run。
-- **GLM-OCR 区域归属**：GLM-OCR 可识别整份 PDF；系统根据已复核的题干/解析区域回收文本，避免相邻题或解析内容串入当前题。
-- **题图管理**：可在题干切片、解析裁图或 OCR 分块中框图、上传、调整和删除。已匹配的 GLM 图仅作识别诊断，不会重复显示为第二张题图。
-- **图片位置绑定**：OCR 返回图片标签或独立图注（例如“图1”）时，系统按阅读顺序绑定本地复核图；图数不一致时会明确提示“缺少可绑定图片”。
-- **候选题确认**：集中检查 OCR 文本、公式、题图、答案与解析，再确认进入题库。
-- **题库与组卷**：支持标签、难度、题型、检索、题图维护、试题篮和练习单/试卷/讲义编排。
-- **多格式导出**：支持 Markdown、LaTeX 与 PDF，可使用内置模板或 Examch 模板。
+---
 
-## 推荐工作流
+## 特性一览
 
-### 1. 导入并整卷识别
+- **整卷识别与分卷匹配**
+  - 支持单份 PDF / 高清图片（JPG、PNG）整卷导入。
+  - 支持“试卷卷 + 答案/解析卷”两份配套 PDF 分卷导入，自动按题号匹配关联。
+- **数学公式与几何题图支持**
+  - 原生支持 LaTeX 数学公式实时渲染。
+  - 自动识别并绑定行内题图引用（如“如图1”），支持在原卷上可视化框选、裁切与关联题图。
+- **可视化复核与修正工作台**
+  - 候选题与原始 PDF 页面左右分屏对照，快速检查公式与题图位置。
+  - 针对异常切题提供 BBox 标注画布，可直接拖拽调整切题区域、补齐题图或局部重提取文本。
+- **标准化题库与 AI 智能打标**
+  - 录入题目统一结构化存储，支持按学段、题型、难度、知识点等多维度检索。
+  - 内置初中、高中数学知识体系与解题方法库。
+  - 支持大模型一键批量对题库进行学段、难度与题型自动分类。
+- **专业数学教学文档编辑器 (Focus Canvas)**
+  - 专为数学教研设计的沉浸式文档排版系统，支持四种排版形态：**试卷、讲义、练习单、错题集**。
+  - 提供知识卡片、例题卡片、变式训练卡、解析提示框等专业教学组件。
+  - 所见即所得的 A4 实时分页预览，支持自定义页眉、页脚、题型间距与水印。
+- **试题篮与双版本一键导出**
+  - 试题篮支持挑题、拖拽调序、动态分值核算与试卷快照保存。
+  - **学生版 / 教师版一键切换**：导出学生版时自动隐藏答案与解析并预留答题书写空间；教师版包含完整解析与教学批注。
+  - 支持导出高清 A4 PDF、LaTeX (内置模板 / Examch 模板) 以及 Markdown。
+- **100% 本地优先与数据私密**
+  - 所有题库数据、解析文本与图片均存储在本地 SQLite 与文件目录中，无云端数据泄露风险。
 
-在“资料导入”中上传一份完整资料，或分别上传题卷与答案/解析卷。选择 GLM-OCR 或 Doc2X 后启动整卷识别；系统保存原始识别结果并生成统一的 `OCRDocument`。
+---
 
-- GLM-OCR 支持 PDF、JPG 与 PNG。
-- Doc2X v2 当前支持 PDF。
-- 旧“PDF 切分中心”生产入口已经退役；尚未完成迁移的数据保留在只读归档和迁移报告中。
+## 快速开始
 
-### 2. 生成并复核候选题
+### 桌面客户端安装
 
-识别完成后，系统按题号和解析规则生成待确认候选题，并尝试关联题干、答案、解析、题图和来源范围。
+Question Manager 提供面向 macOS 与 Windows 的桌面安装包：
 
-- 正常候选题可直接检查内容并确认入库。
-- 出现串题、范围错误或题图归属问题时，进入手动修正工作台调整来源区域和内容。
-- 手动修正目前不会对框选区域自动重新 OCR；局部重新识别仍在设计中。
-- 重新解析或重新 OCR 前，应特别确认是否已有候选题入库，避免把已确认结果与新版本混淆。
+1. 下载对应系统的安装包并运行安装向导。
+2. 桌面客户端已内置独立的 Python 图像与 PDF 渲染运行时，**无需**在电脑上手动安装 Python 或配置环境变量。
+3. 首次启动根据引导完成基础设置（系统名称、学段偏好、默认水印等）。
 
-### 3. 候选题确认
+### OCR 引擎配置
 
-在“入库确认”中检查：
+系统采用“整卷 OCR -> 统一中间层（`OCRDocument`）-> 智能切题”的处理模式，支持接入以下两家业内主流的公式与版面识别引擎：
 
-- 题干、答案、解析是否归属正确；
-- 公式是否可正常渲染；
-- 题图是否出现在正确位置；
-- 是否出现“需要确认题图”或“缺少可绑定图片”提示。
+| 提供方 | 适用场景与优势 | 注册与额度获取 |
+| :--- | :--- | :--- |
+| **GLM-OCR** <br> *(智谱 AI)* | **推荐主力引擎**<br>适合混合题干/解析资料、跨页大题识别与区域文本回收；速度快，成本低。 | [点击获取 GLM 免费 2000 万 Token](https://www.bigmodel.cn/invite?icode=xv%2BcI4bIrZk%2BhZnL8f9veH3uFJ1nZ0jLLgipQkYjpcA%3D) |
+| **Doc2X** | 适合整份 PDF 高精度批量识别场景，数学公式与复杂表格解析准确度极高。 | [点击注册 Doc2X](https://doc2x.noedgeai.com?inviteCode=Y2J9Y0) |
 
-若提示图片引用与已框图片数量不一致，请进入候选题手动修正工作台定位、补齐、删除或调整题图，再保存并返回复核。
+**配置方法：**
+在软件左侧导航栏点击「系统设置 → OCR 引擎」，填入对应提供方的 API Key 并保存即可。密钥保存在本地配置中，不会上传至任何第三方服务器。
 
-### 4. 入库、组卷与导出
+---
 
-确认无误后入库；随后可在题库中补充标签、难度和知识点，并加入试题篮完成组卷和导出。
+## 使用工作流
 
-## OCR 提供方
+```text
+[ 上传试卷 PDF / 图片 ]
+          │
+          ▼
+[ 整卷 OCR 识别 (GLM-OCR / Doc2X) ]
+          │
+          ▼
+[ 题号解析与候选题生成 ]
+          │
+          ├─► 正常题目 ──► [ 入库复核 ] ──────────────────┐
+          │                                              ▼
+          └─► 范围偏差/漏图 ──► [ BBox 手动修正工作台 ] ──► [ 确认入库到题库 ]
+                                                         │
+                                                         ▼
+                                                [ 题库检索 / AI 分类 ]
+                                                         │
+                         ┌───────────────────────────────┴───────────────────────────────┐
+                         ▼                                                               ▼
+                 [ 试题篮组卷 ]                                                 [ 教学文档与讲义排版 ]
+                         │                                                               │
+                         ▼                                                               ▼
+               [ 导出 LaTeX / PDF ]                                            [ A4 实时分页 / 导出双版本 PDF ]
+```
 
-在“系统设置”中选择并配置 OCR 提供方。密钥写入本机数据目录的配置文件，前端只显示“是否已配置”，不会返回完整密钥。
+### 1. 资料导入与整卷识别
+- 进入「资料导入」，选择上传单份试卷文件，或分别上传原卷与答案卷配套 PDF。
+- 选择配置好的 OCR 引擎（GLM-OCR 或 Doc2X）启动整卷识别。
 
-| 提供方 | 适用情况 | 说明 |
-| --- | --- | --- |
-| `GLM-OCR` <br> [点击获取GLM免费2000万Token](https://www.bigmodel.cn/invite?icode=xv%2BcI4bIrZk%2BhZnL8f9veH3uFJ1nZ0jLLgipQkYjpcA%3D)| 推荐用于混合题干/解析资料、跨页题和需要区域归属的资料 | 成本较低，注册即有赠送额度。整卷识别后按已复核区域回收文本；支持单题重新 OCR。 |
-| `Doc2X` <br> [点击注册Doc2X](https://doc2x.noedgeai.com?inviteCode=Y2J9Y0)| 已有稳定整份 PDF 识别结果的批量场景 | 成本相对高，准确率高，会下载识别 JSON 与图片；适合整批跑。 |
+### 2. 候选题复核与手动修正
+- 识别完成后，系统会自动根据题号规则提取题干、选项、答案、解析与题图，生成候选题列表。
+- 进入复核页面，左侧显示原始 PDF 对应位置，右侧渲染公式与排版。
+- 若发现切题范围不准确或题图缺失，点击进入「手动修正工作台」，在原卷页面中拖拽框选调整区域、补截题图并绑定。
+- 检查无误后，点击「确认入库」录入题库。
 
+### 3. 标准化题库与知识标签
+- 在「题库」页面中，可通过学段、题型、难度、知识考点等条件进行组合检索。
+- 支持批量选择题目，使用「开始分类」调用 AI 模型自动进行知识点与题型归类。
+- 在「学习标签库」中可维护和扩展自定义的知识体系与解题方法体系。
 
+### 4. 教学文档排版与试题篮组卷
+- **组卷工作台**：在题库中挑选题目加入试题篮，自由拖拽调序，自动统计总分与题型数量。
+- **教学文档编辑器**：在「文档」中创建讲义、试卷或练习单，在编辑器中自由混排富文本、LaTeX 数学公式、例题卡片与知识点提示框。
 
-OCR 失败时，优先检查：API Key、模型名称、原始资料是否仍存在，以及 V2 导入任务中的失败详情。
+### 5. 双版本导出与打印
+- 支持导出三种格式：
+  - **A4 高清 PDF**：内置高保真排版渲染，支持一键切换「学生版」（隐藏答案解析并留白）与「教师版」（含完整解析）。
+  - **LaTeX**：支持导出标准 LaTeX 源码，兼容内置模板与 Examch 试卷模板。
+  - **Markdown**：导出通用 Markdown 文本。
 
-## 桌面版使用
+---
 
-桌面应用内置 Python 运行时，普通使用者无需另行安装 Python 或配置 `PATH`。
+## 可选外部工具
 
-首次启动需要完成基础设置：
+- **XeLaTeX**：若需使用本地编译模式导出原生 LaTeX PDF，系统会自动探测本地安装的 `xelatex`。普通用户可直接使用软件内置的高清 PDF 渲染引擎，无需安装 LaTeX 环境。
 
-1. 设置系统名称和网页标题。
-2. 选择教学学段。
-3. 选择试卷导出模板。
-4. 设置练习单、试卷和讲义水印。
-5. 在“系统设置”配置至少一个 OCR 提供方。
+---
 
-这些设置都可在之后修改。
+## 源码运行与构建
 
-### 可选外部工具
-
-- **XeLaTeX**：导出 LaTeX/PDF 时需要。
-
-应用会自动探测 XeLaTeX、dvisvgm 等外部工具，也可通过对应环境变量指定路径。正式资料导入支持 PDF、JPG、JPEG、PNG；Word 文件请先另存为 PDF。
-
-## 从源码运行
+如果你希望从源码启动或自行打包客户端：
 
 ### 环境要求
 
-- Node.js 24 或更高版本
-- Python 3.11 或更高版本（仅源码开发需要）
-- 可选：XeLaTeX、dvisvgm
+- Node.js `>= 24.0.0`
+- Python `>= 3.11` (仅从源码运行时需要，打包后客户端内置独立运行时)
 
-安装依赖：
+### 快速启动
 
-```sh
+```bash
+# 1. 克隆仓库并安装依赖
+git clone https://github.com/5huQu/Question-Manager.git
+cd Question-Manager
 npm install
 python3 -m pip install -r server/python/requirements.txt
-```
 
-推荐在应用启动后通过“系统设置”配置 OCR。源码开发也可以通过 shell 环境变量传入，例如：
-
-```sh
-export OCR_PROVIDER=glm
-export GLM_OCR_API_KEY='your-secret-key'
+# 2. 启动本地开发服务 (前端 + API)
 npm run dev
-```
 
-[`.env.example`](.env.example) 仅列出字段参考；开发服务器不会自动加载 `.env.local`。不要提交任何含真实密钥的环境文件。
-
-启动开发环境（首次运行需先初始化管理员，或在仅本机调试时设置 `QUESTION_AUTH_MODE=disabled` 跳过登录）：
-
-```sh
-npm run admin:init
-npm run dev
-```
-
-默认地址：
-
-- 前端：`http://127.0.0.1:5174`
-- API：`http://127.0.0.1:8797`
-
-Vite 会将 `/api` 请求代理到本地 API。
-
-接口访问、认证约定和常用示例见 [docs/api.md](docs/api.md)；可导入 Swagger UI、Postman 或 Insomnia 的完整接口目录见 [docs/openapi.yaml](docs/openapi.yaml)。
-
-## 桌面打包
-
-启动 Electron 桌面版：
-
-```sh
+# 3. 启动 Electron 桌面客户端
 npm run desktop
 ```
 
-生成并校验当前平台的未压缩桌面包：
+### 桌面客户端打包
 
-```sh
+```bash
+# 构建前端与服务端产物并验证桌面运行时
 npm run pack:desktop
-```
 
-打包流程会准备固定版本的 CPython，安装 `server/python/runtime-requirements.txt` 中的依赖，并验证包内 Python 可以独立处理 PDF。
-
-### Windows
-
-在 Windows 中解压源码包后运行：
-
-```text
+# Windows 环境一键打包安装向导
 build-and-install-windows.cmd
 ```
 
-脚本会检查 Node.js、安装依赖、准备 Python 运行时、验证 V2 PDF 页面渲染与裁剪能力，并生成和启动 NSIS 安装向导。详细排错说明见 [WINDOWS_BUILD.md](WINDOWS_BUILD.md)。
-
-## 数据、配置与安全
-
-桌面版将数据写入操作系统分配给 Question Manager 的用户数据目录；源码开发默认写入仓库目录，也可设置 `QUESTION_DATA_DIR` 覆盖根目录。
-
-常用环境变量如下：
-
-| 变量 | 作用 |
-| --- | --- |
-| `QUESTION_DATA_DIR` | SQLite、上传文件、题图、OCR 草稿、导出文件和可编辑标签库的根目录。 |
-| `PYTHON_PATH` | 源码开发使用的 Python 可执行文件。 |
-| `XELATEX_PATH` | XeLaTeX 外部编译器路径。 |
-| `DVISVGM_PATH` | dvisvgm 外部 SVG 渲染器路径。 |
-| `LAYOUT_PREVIEW_CONCURRENCY` | PDF 预览全局最大并发数，默认 `1`。共享同一 SQLite 的服务实例会通过租约共同遵守该上限。 |
-| `LAYOUT_PREVIEW_POLL_MS` | 持久化预览队列轮询间隔，默认 `750` 毫秒。 |
-| `LAYOUT_PREVIEW_LEASE_MS` | worker 编译租约时长，默认 `600000` 毫秒；实例异常退出后任务可被其他实例恢复。 |
-| `LAYOUT_PREVIEW_CACHE_MAX_ENTRIES` | 按内容哈希保留的 PDF 预览缓存数量，默认 `50`。 |
-| `SOURCE_DOCUMENT_UPLOAD_MAX_BYTES` | V2 PDF/图片资料单文件上限，默认 `104857600`（100 MiB）。 |
-| `CANDIDATE_FIGURE_UPLOAD_MAX_BYTES` | 候选题题图单文件上限，默认 `10485760`（10 MiB）。 |
-| `DOC2X_PACKAGE_UPLOAD_MAX_BYTES` | Doc2X 导出包单文件上限，默认 `209715200`（200 MiB）。 |
-| `UPLOAD_MAX_FIELDS` | multipart 表单字段数上限，默认 `32`。 |
-| `OCR_PROVIDER` | `glm` 或 `doc2x`。 |
-| `GLM_OCR_API_BASE_URL` / `GLM_OCR_API_KEY` / `GLM_OCR_MODEL` | GLM-OCR 配置。 |
-| `DOC2X_API_BASE_URL` / `DOC2X_API_KEY` / `DOC2X_MODEL` | Doc2X 配置。 |
-| `OCR_CLEANUP_*` | 可选的文本清理与分类模型配置。 |
-| `QUESTION_AUTH_MODE` | `single-admin`（默认，强制登录）、`trusted-desktop`（桌面版自动认证）或 `disabled`（仅本地开发）。 |
-| `PUBLIC_ORIGIN` | 云端部署的固定站点 Origin，用于 CSRF 校验；缺失时仅接受本机回环地址。 |
-| `AUTH_TRUSTED_PROXY` | 可选的可信反向代理策略：`off`（默认）、`loopback` 或逗号分隔的 IP/CIDR 白名单；未显式配置时忽略 `X-Forwarded-For`。 |
-| `AUTH_COOKIE_SECURE` | 强制 `Secure` 会话 Cookie；`PUBLIC_ORIGIN` 为 https 时自动开启。 |
-| `AUTH_SESSION_DAYS` | 会话有效期（天），默认 `7`。 |
-| `ADMIN_BOOTSTRAP_TOKEN` | 可选：要求管理员安装向导提供该令牌，防止公开部署时被抢先初始化。 |
-
-## 单管理员认证
-
-默认采用 `QUESTION_AUTH_MODE=single-admin`：所有业务 API、私有文件、打印页与普通页面都必须登录后才能访问，未登录的 API/文件请求返回 401 JSON，页面请求跳转 `/login`。桌面打包版使用 `trusted-desktop` 模式，在本机自动认证，不需要登录。
-
-首次部署（云端）需要先初始化管理员，两种方式任选：
-
-```sh
-# 方式一：命令行（服务器本机）
-npm run build:server
-npm run admin:init        # 交互式创建唯一管理员
-npm run admin:reset-password     # 重置密码并注销全部会话
-npm run admin:revoke-sessions    # 注销全部登录会话
-```
-
-方式二：直接访问站点，未初始化时会显示管理员安装向导，在网页上创建第一个管理员；创建后该入口永久失效。公开部署建议同时设置 `ADMIN_BOOTSTRAP_TOKEN`，安装向导会要求填写该令牌，防止他人抢先初始化。
-
-云端至少配置：
-
-```ini
-QUESTION_AUTH_MODE=single-admin
-PUBLIC_ORIGIN=https://question.example.com
-AUTH_COOKIE_SECURE=true
-AUTH_SESSION_DAYS=7
-QUESTION_DATA_DIR=/var/lib/question-manager
-HOST=127.0.0.1
-PORT=8797
-```
-
-`QUESTION_DATA_DIR` 应指向服务运行账号可读写、且不随发布版本替换的目录；标签库、SQLite 与上传资料都会保存在这里。
-
-认证使用 SQLite 持久化的 Cookie Session（`HttpOnly`、`SameSite=Lax`，https 下使用 `__Host-qm_session`），密码用异步 `crypto.scrypt`（N=2^16, r=8, p=2）哈希；写请求同时校验 `X-QM-CSRF` 头与 `Origin`。登录限流：同一 IP 连续失败 5 次锁定 1 分钟，15 分钟窗口内最多 10 次尝试。
-
-PDF 精确预览使用 SQLite 持久化队列。草稿内容、布局、模板文件或题图字节变化会生成新的 SHA-256；相同输入直接复用学生版/教师版 PDF 与页面图。草稿 revision 更新时，旧的排队或编译任务会被标记为取消。多进程部署必须让各实例共享同一 `QUESTION_DATA_DIR`，才能共享 SQLite 队列、缓存目录与预览制品。
-
-请勿提交 `config/`、`data/`、`python/ocr_drafts/`、`experiments/`、上传的 PDF、导出文件或任何密钥。
-
-服务器的 `/files` 只公开题图、文档图片、PDF 导出和排版预览缓存目录中的允许文件；配置文件、SQLite、日志、源码、临时文件、点文件以及软链接越界目标均不会通过该路径返回。旧版 `/assets/data/...` 地址会自动 301 跳转到 `/files/...`。前端构建产物（JS/CSS/字体）仍由 `/assets` 公开提供，匿名用户可加载登录页。
-
-## 开发验证
-
-提交前建议执行：
-
-```sh
-npm run build
-npm run test:math-render
-npm run test:smoke
-npm run verify:python-runtime
-```
-
-`test:smoke` 会使用临时数据目录启动 API、初始化空数据库并检查健康接口；不会读取你的本地题库数据。
+---
 
 ## 开源许可
 
-Question Manager 采用 [GNU Affero General Public License v3.0](LICENSE)（`AGPL-3.0-only`）发布。桌面包包含 PyMuPDF，并按其 AGPL 许可路径分发；第三方组件说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-
-如果你修改本项目并通过网络向用户提供服务，需要按 AGPL v3 向这些用户提供对应源代码。
+本项目采用 [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE) 许可协议开源发布。
