@@ -1,4 +1,4 @@
-export { defineBoxSkin, defineHeadingSkin, hasValidTeachingSkinRef, isJsonValue, isTeachingSkinDefinition, parseTeachingSkinRef } from './types'
+export { hasValidTeachingSkinRef, isJsonValue, isTeachingSkinDefinition, parseTeachingSkinRef } from './types'
 export type { BoxSkinDefinition, HeadingSkinDefinition, HeadingSkinLevel, TeachingSkinDefinition, TeachingSkinDefinitionBase, TeachingSkinTarget } from './types'
 export { TeachingSkinRegistry } from './registry'
 export { teachingSkinRegistry } from './registryInstance'

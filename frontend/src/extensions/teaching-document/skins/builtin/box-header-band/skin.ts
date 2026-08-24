@@ -1,5 +1,5 @@
 import './styles.css'
-import { defineBoxSkin } from '@/utils/teachingDocument/skins/types'
+import { defineBoxSkin } from '@/utils/teachingDocument/skins/authoring'
 
 export default defineBoxSkin({
   id: 'builtin.box.header-band',

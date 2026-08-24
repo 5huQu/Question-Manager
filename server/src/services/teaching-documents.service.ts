@@ -163,6 +163,7 @@ function validateBoxAppearance(value: unknown, blockId: string, issues: Teaching
 }
 
 const SKIN_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$/
+const TEACHING_SKIN_REF_KEYS = new Set(['id', 'version', 'settings'])
 const UNSAFE_SKIN_SETTING_KEY = /^(?:css|cssText|html|react|className|class|style|script|component)$/i
 
 function isJsonValue(value: unknown): boolean {
@@ -183,6 +184,10 @@ function validateTeachingSkin(value: unknown, blockId: string, issues: TeachingD
   if (value === undefined) return
   if (!isObject(value) || !SKIN_ID.test(String(value.id || ''))) {
     issues.push({ level: 'error', code: 'invalid-teaching-skin', blockId, message: '皮肤引用必须包含有效的命名空间 ID。' })
+    return
+  }
+  if (Object.keys(value).some((key) => !TEACHING_SKIN_REF_KEYS.has(key))) {
+    issues.push({ level: 'error', code: 'invalid-teaching-skin', blockId, message: '皮肤引用只能包含 id、version 和 settings。' })
     return
   }
   if (value.version !== undefined && (!Number.isInteger(value.version) || Number(value.version) < 1)) {

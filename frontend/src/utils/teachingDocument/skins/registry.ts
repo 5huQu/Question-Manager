@@ -1,10 +1,13 @@
-import type { TeachingSkinDefinition, TeachingSkinTarget } from './types'
+import { isTeachingSkinDefinition, type TeachingSkinDefinition, type TeachingSkinTarget } from './types'
 
 /** Small deterministic registry for source-level skin modules. */
 export class TeachingSkinRegistry {
   private readonly definitions = new Map<string, TeachingSkinDefinition>()
 
   register(definition: TeachingSkinDefinition): void {
+    if (!isTeachingSkinDefinition(definition)) {
+      throw new Error('Teaching skin definitions must satisfy the Phase 1 print contract.')
+    }
     if (this.definitions.has(definition.id)) {
       throw new Error(`Teaching skin ID "${definition.id}" is already registered.`)
     }

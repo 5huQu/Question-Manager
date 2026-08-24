@@ -13,8 +13,8 @@ export interface TeachingSkinDefinitionBase {
   version: number
   author?: string
   tags?: readonly string[]
-  /** The skin avoids screen-only behaviour and is intended to print. */
-  printSafe: boolean
+  /** Phase 1 skins must work in editor, A4 preview, and print. */
+  printSafe: true
   /** CSS class added by the core renderer when this skin resolves. */
   className: string
 }
@@ -31,8 +31,8 @@ export interface BoxSkinDefinition extends TeachingSkinDefinitionBase {
 
 export type TeachingSkinDefinition = HeadingSkinDefinition | BoxSkinDefinition
 
-type HeadingSkinInput = Omit<HeadingSkinDefinition, 'apiVersion' | 'target'>
-type BoxSkinInput = Omit<BoxSkinDefinition, 'apiVersion' | 'target'>
+export type HeadingSkinInput = Omit<HeadingSkinDefinition, 'apiVersion' | 'target'>
+export type BoxSkinInput = Omit<BoxSkinDefinition, 'apiVersion' | 'target'>
 
 /** Define a declarative Heading skin without exposing a renderer API. */
 export function defineHeadingSkin(definition: HeadingSkinInput): HeadingSkinDefinition {
@@ -53,6 +53,7 @@ export function isJsonValue(value: unknown): value is JsonValue {
 }
 
 const SKIN_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$/
+const TEACHING_SKIN_REF_KEYS = new Set(['id', 'version', 'settings'])
 const UNSAFE_SETTING_KEY = /^(?:css|cssText|html|react|className|class|style|script|component)$/i
 
 function hasSafeSettings(value: unknown): value is Record<string, JsonValue> {
@@ -73,6 +74,7 @@ function isSafeSettingsValue(value: unknown): value is JsonValue {
 export function parseTeachingSkinRef(value: unknown): TeachingSkinRef | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   const raw = value as Record<string, unknown>
+  if (Object.keys(raw).some((key) => !TEACHING_SKIN_REF_KEYS.has(key))) return undefined
   const id = typeof raw.id === 'string' ? raw.id : ''
   if (!SKIN_ID.test(id)) return undefined
   const version = raw.version
@@ -95,7 +97,7 @@ export function isTeachingSkinDefinition(value: unknown): value is TeachingSkinD
   if (definition.apiVersion !== 1 || !SKIN_ID.test(String(definition.id || ''))) return false
   if (definition.target !== 'heading' && definition.target !== 'box') return false
   if (!String(definition.label || '').trim() || !Number.isInteger(definition.version) || Number(definition.version) < 1) return false
-  if (typeof definition.printSafe !== 'boolean' || !String(definition.className || '').trim()) return false
+  if (definition.printSafe !== true || !String(definition.className || '').trim()) return false
   if (definition.target === 'heading' && definition.supportedLevels !== undefined
     && (!Array.isArray(definition.supportedLevels) || definition.supportedLevels.some((level) => ![1, 2, 3, 4].includes(level)))) return false
   if (definition.target === 'box' && definition.supportedTemplates !== undefined

@@ -27,7 +27,8 @@ For Box, the existing `templateId` remains the template semantic and `appearance
 
 ## Public core modules
 
-- `frontend/src/utils/teachingDocument/skins/types.ts`: definitions, helpers, JSON-safe ref parser.
+- `frontend/src/utils/teachingDocument/skins/authoring.ts`: side-effect-free public definition API for skin authors.
+- `frontend/src/utils/teachingDocument/skins/types.ts`: definition internals and JSON-safe ref parser.
 - `frontend/src/utils/teachingDocument/skins/registry.ts`: registry class.
 - `frontend/src/utils/teachingDocument/skins/registryInstance.ts`: discovery and application registry.
 - `frontend/src/utils/teachingDocument/skins/resolver.ts`: compatibility and fallback decisions.

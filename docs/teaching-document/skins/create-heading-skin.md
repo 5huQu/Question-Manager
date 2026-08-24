@@ -12,7 +12,7 @@ frontend/src/extensions/teaching-document/skins/custom/lesson-title/
 
 ```ts
 import './styles.css'
-import { defineHeadingSkin } from '@/utils/teachingDocument/skins'
+import { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'
 
 export default defineHeadingSkin({
   id: 'studio.heading.lesson-title',

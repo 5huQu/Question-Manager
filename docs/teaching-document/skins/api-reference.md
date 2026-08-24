@@ -1,9 +1,9 @@
 # Skin API Reference
 
-Import helpers from `@/utils/teachingDocument/skins` in ordinary extension code.
+Import the side-effect-free authoring API in ordinary extension code. It does not load discovery, the registry, or the resolver.
 
 ```ts
-import { defineHeadingSkin, defineBoxSkin } from '@/utils/teachingDocument/skins'
+import { defineHeadingSkin, defineBoxSkin } from '@/utils/teachingDocument/skins/authoring'
 ```
 
 ## `TeachingSkinRef`
@@ -18,7 +18,7 @@ interface TeachingSkinRef {
 }
 ```
 
-`id` must be a stable namespaced ID such as `studio.heading.lesson-title`. `version`, when present, is a positive integer. `settings` is persisted but Phase 1 has no dynamic settings UI. Settings must be JSON-safe and may not use reserved executable/presentation keys including `css`, `html`, `className`, `style`, `script`, or `component`.
+Only `id`, `version`, and `settings` are allowed at the top level. `id` must be a stable namespaced ID such as `studio.heading.lesson-title`. `version`, when present, is a positive integer. `settings` is persisted but Phase 1 has no dynamic settings UI. Settings must be JSON-safe and may not use reserved executable/presentation keys including `css`, `html`, `className`, `style`, `script`, or `component`.
 
 ## Shared definition fields
 
@@ -37,7 +37,7 @@ interface TeachingSkinRef {
 }
 ```
 
-`apiVersion`, `target`, and the definition type are set by `defineHeadingSkin` or `defineBoxSkin`; do not duplicate them manually. `className` must be a stable, extension-owned CSS class. The core applies it only after a successful resolve.
+`apiVersion`, `target`, and the definition type are set by `defineHeadingSkin` or `defineBoxSkin`; do not duplicate them manually. `printSafe` is required and must be `true` in Phase 1: every registered skin must work in editor, A4 preview, and print. `className` must be a stable, extension-owned CSS class. The core applies it only after a successful resolve.
 
 ## Heading definition
 

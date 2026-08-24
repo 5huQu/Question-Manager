@@ -1,5 +1,5 @@
 import './styles.css'
-import { defineHeadingSkin } from '@/utils/teachingDocument/skins/types'
+import { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'
 
 export default defineHeadingSkin({
   id: 'builtin.heading.pill',

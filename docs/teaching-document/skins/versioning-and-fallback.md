@@ -19,4 +19,4 @@ The properties panel reports missing or incompatible current refs but does not r
 
 ## Round trip preservation
 
-Serialization, editor JSON, client parsing, and server validation preserve a valid unknown `TeachingSkinRef`. This is intentional: a document authored with a temporarily unavailable extension must remain editable and saveable without silently losing the reference. Invalid ref shapes are rejected at the server save boundary; no registry lookup occurs there, so custom source skins do not require a backend deployment.
+Serialization, editor JSON, client parsing, and server validation preserve a valid unknown `TeachingSkinRef`. This is intentional: a document authored with a temporarily unavailable extension must remain editable and saveable without silently losing the reference. A valid V1 reference contains only `id`, optional `version`, and optional `settings`; invalid or extra top-level fields are rejected at the server save boundary. No registry lookup occurs there, so custom source skins do not require a backend deployment.

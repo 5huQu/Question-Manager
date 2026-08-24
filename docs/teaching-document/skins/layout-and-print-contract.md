@@ -1,6 +1,6 @@
 # Layout and Print Contract
 
-Skins must work in the editable canvas, A4 preview, and print without changing the document engine's assumptions.
+Skins must work in the editable canvas, A4 preview, and print without changing the document engine's assumptions. In Phase 1, every definition must declare `printSafe: true`; screen-only skins are not supported.
 
 Allowed CSS is limited to a visual treatment scoped to the skin class and stable Box descendants. Prefer borders, background colors, typography adjustments, padding, and ordinary flow layout.
 

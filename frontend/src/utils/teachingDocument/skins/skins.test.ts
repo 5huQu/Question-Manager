@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { TeachingSkinRef } from '@/types/teachingDocument'
+import { defineBoxSkin, defineHeadingSkin } from './authoring'
 import { TeachingSkinRegistry } from './registry'
 import { resolveBoxSkin, resolveHeadingSkin } from './resolver'
-import { defineBoxSkin, defineHeadingSkin, parseTeachingSkinRef } from './types'
+import { isTeachingSkinDefinition, parseTeachingSkinRef } from './types'
 
 const heading = defineHeadingSkin({
   id: 'test.heading.level-one', label: '一级标题', version: 1, printSafe: true, className: 'test-heading', supportedLevels: [1],
@@ -21,6 +22,13 @@ describe('TeachingSkinRegistry', () => {
     expect(registry.list('heading')).toEqual([heading])
     expect(registry.list('box')).toEqual([box])
     expect(() => registry.register(heading)).toThrow(/already registered/)
+  })
+
+  it('rejects explicitly non-print-safe definitions before they can reach selectors', () => {
+    const nonPrintSafe = { ...heading, printSafe: false } as unknown as typeof heading
+    const registry = new TeachingSkinRegistry()
+    expect(isTeachingSkinDefinition(nonPrintSafe)).toBe(false)
+    expect(() => registry.register(nonPrintSafe)).toThrow(/print contract/)
   })
 })
 
@@ -46,8 +54,12 @@ describe('teaching skin resolver', () => {
 
 describe('TeachingSkinRef persistence contract', () => {
   it('accepts JSON-safe settings and retains unknown IDs verbatim', () => {
-    const raw = { id: 'custom.heading.future', version: 7, settings: { density: 'compact', nested: { enabled: true } } }
+    const raw = { id: 'custom.heading.future', version: 2, settings: { density: 'compact', nested: { enabled: true } } }
     expect(parseTeachingSkinRef(raw)).toEqual(raw)
+  })
+
+  it.each(['css', 'html', 'className', 'style', 'randomUnknownField'])('rejects the disallowed top-level key %s', (key) => {
+    expect(parseTeachingSkinRef({ id: 'custom.heading.future', [key]: 'unsafe' })).toBeUndefined()
   })
 
   it('rejects executable presentation keys from persisted settings', () => {

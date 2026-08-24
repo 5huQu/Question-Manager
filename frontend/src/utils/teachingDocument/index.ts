@@ -3,8 +3,6 @@ export { getBoxTemplate, getBoxTemplateOrFallback, getAllBoxTemplates, registerB
 export type { BoxTemplateDefinition, BoxToneStyle } from './boxTemplates'
 export { boxBodyPaddingStyle, boxBodyStyle, boxFrameStyle, hasValidBoxAppearance, parseBoxAppearance, skinBoxBodyStyle, skinBoxFrameStyle } from './boxAppearance'
 export {
-  defineBoxSkin,
-  defineHeadingSkin,
   hasValidTeachingSkinRef,
   parseTeachingSkinRef,
   resolveBoxSkin,
@@ -12,6 +10,7 @@ export {
   skinClassName,
   teachingSkinRegistry,
 } from './skins'
+export { defineBoxSkin, defineHeadingSkin } from './skins/authoring'
 export type { BoxSkinDefinition, HeadingSkinDefinition, TeachingSkinDefinition, TeachingSkinResolution } from './skins'
 export { FIGURE_LAYOUT_PRESETS, FIGURE_LAYOUT_PRESET_IDS, isFigureLayoutPreset, resolveFigureLayout } from './figureLayoutPresets'
 export type { FigureLayoutPreset, FigureLayoutPresetDefinition } from './figureLayoutPresets'

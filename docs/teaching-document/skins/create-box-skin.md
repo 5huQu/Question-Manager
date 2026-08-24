@@ -12,7 +12,7 @@ frontend/src/extensions/teaching-document/skins/custom/notebook/
 
 ```ts
 import './styles.css'
-import { defineBoxSkin } from '@/utils/teachingDocument/skins'
+import { defineBoxSkin } from '@/utils/teachingDocument/skins/authoring'
 
 export default defineBoxSkin({
   id: 'studio.box.notebook',
