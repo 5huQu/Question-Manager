@@ -12,5 +12,6 @@ export type {
   HeadingSkinDefinition,
   HeadingSkinInput,
   HeadingSkinLevel,
+  TeachingSkinDefinition,
   TeachingSkinDefinitionBase,
 } from './types'

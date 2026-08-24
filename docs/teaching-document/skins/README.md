@@ -18,7 +18,14 @@ Skin code and CSS are bundled from source. TeachingDocument JSON never stores CS
 
 ## Quick start
 
-Create `frontend/src/extensions/teaching-document/skins/custom/my-heading/skin.ts` and optional sibling `styles.css`. The application discovers every `**/skin.ts` below this directory during the frontend build; do not edit a core registry import list.
+Start with the scaffold instead of hand-creating files:
+
+```sh
+npm run skin:new -- --target heading --id studio.heading.lesson-title --label "章节标题" --levels 1,2 --preset minimal
+npm run skin:check
+```
+
+The scaffold writes only `frontend/src/extensions/teaching-document/skins/custom/<skin>/`. The application discovers every `**/skin.ts` below this directory during the frontend build; do not edit a core registry import list.
 
 Use [create-heading-skin.md](create-heading-skin.md) or [create-box-skin.md](create-box-skin.md) for a complete example. The core API is documented in [api-reference.md](api-reference.md).
 
@@ -26,4 +33,4 @@ Use [create-heading-skin.md](create-heading-skin.md) or [create-box-skin.md](cre
 
 Implemented: source discovery, registry, resolver/fallback, Heading and Box selectors, persistent refs, and declarative CSS skins.
 
-Not implemented: document themes, theme packs, runtime uploads, custom React renderers, settings forms, arbitrary CSS persistence, a marketplace, CLI scaffolding, or plugin JavaScript.
+Not implemented: document themes, theme packs, runtime uploads, custom React renderers, settings forms, arbitrary CSS persistence, a marketplace, or plugin JavaScript. See [tooling.md](tooling.md) and [agent-playbook.md](agent-playbook.md) for the Phase 2A authoring workflow.

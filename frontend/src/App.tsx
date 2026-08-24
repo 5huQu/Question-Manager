@@ -42,6 +42,7 @@ const TeachingDocumentMockPage = import.meta.env.DEV || import.meta.env.VITE_TEA
   : null
 const EditorRedesignMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/editor-redesign/EditorRedesignMockPage')) : null
 const ReferenceDocumentEditorDemoPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/ReferenceDocumentEditorDemoPage')) : null
+const TeachingSkinLabPage = import.meta.env.DEV ? lazy(() => import('@/pages/demo/TeachingSkinLabPage')) : null
 
 function NavigateToWorkbench() {
   const navigate = useNavigate()
@@ -250,6 +251,7 @@ export default function App() {
                 <Route path="/exports" element={<ExportRecordsPage />} />
                 <Route path="/teaching-documents" element={<TeachingDocumentsPage />} />
                 {ReferenceDocumentEditorDemoPage ? <Route path="/teaching-documents/demo/reference" element={<ReferenceDocumentEditorDemoPage />} /> : null}
+                {TeachingSkinLabPage ? <Route path="/teaching-documents/demo/skins" element={<TeachingSkinLabPage />} /> : null}
                 <Route path="/teaching-documents/:documentId" element={<TeachingDocumentEditorPage />} />
                 <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<LegacyPdfSlicerRunRedirect />} />
                 <Route path="/tools/pdf-slicer/*" element={<LegacyPdfSlicerGone />} />

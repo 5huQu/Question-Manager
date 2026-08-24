@@ -1,41 +1,27 @@
-import type { TeachingSkinRef } from '@/types/teachingDocument'
 import { teachingSkinRegistry } from './registryInstance'
-import type { BoxSkinDefinition, HeadingSkinDefinition, HeadingSkinLevel, TeachingSkinDefinition } from './types'
-import type { TeachingSkinRegistry } from './registry'
+import type { TeachingSkinRef } from '@/types/teachingDocument'
+import type { BoxSkinDefinition, HeadingSkinDefinition, HeadingSkinLevel } from './types'
+import {
+  resolveBoxSkinFromRegistry,
+  resolveHeadingSkinFromRegistry,
+  skinClassName,
+  type TeachingSkinResolution,
+} from './resolverCore'
 
-export type TeachingSkinResolution<T extends TeachingSkinDefinition> =
-  | { status: 'default'; skin?: undefined; definition?: undefined }
-  | { status: 'resolved'; skin: TeachingSkinRef; definition: T }
-  | { status: 'missing' | 'incompatible'; skin: TeachingSkinRef; definition?: undefined }
+export { skinClassName, type TeachingSkinResolution } from './resolverCore'
 
 export function resolveHeadingSkin(
   skin: TeachingSkinRef | undefined,
   level: HeadingSkinLevel,
-  registry: TeachingSkinRegistry = teachingSkinRegistry,
+  registry = teachingSkinRegistry,
 ): TeachingSkinResolution<HeadingSkinDefinition> {
-  if (!skin) return { status: 'default' }
-  const definition = registry.get(skin.id)
-  if (!definition) return { status: 'missing', skin }
-  if (definition.target !== 'heading' || (definition.supportedLevels && !definition.supportedLevels.includes(level))) {
-    return { status: 'incompatible', skin }
-  }
-  return { status: 'resolved', skin, definition }
+  return resolveHeadingSkinFromRegistry(skin, level, registry)
 }
 
 export function resolveBoxSkin(
   skin: TeachingSkinRef | undefined,
   templateId: string,
-  registry: TeachingSkinRegistry = teachingSkinRegistry,
+  registry = teachingSkinRegistry,
 ): TeachingSkinResolution<BoxSkinDefinition> {
-  if (!skin) return { status: 'default' }
-  const definition = registry.get(skin.id)
-  if (!definition) return { status: 'missing', skin }
-  if (definition.target !== 'box' || (definition.supportedTemplates && !definition.supportedTemplates.includes(templateId))) {
-    return { status: 'incompatible', skin }
-  }
-  return { status: 'resolved', skin, definition }
-}
-
-export function skinClassName(resolution: TeachingSkinResolution<TeachingSkinDefinition>): string | undefined {
-  return resolution.status === 'resolved' ? resolution.definition.className : undefined
+  return resolveBoxSkinFromRegistry(skin, templateId, registry)
 }

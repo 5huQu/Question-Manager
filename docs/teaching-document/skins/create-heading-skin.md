@@ -1,6 +1,10 @@
 # Create a Heading Skin
 
-Create a folder in the discovery tree. No core registry edits are required.
+Prefer the scaffold; no core registry edits are required.
+
+```sh
+npm run skin:new -- --target heading --id studio.heading.lesson-title --label "章节标题" --levels 1,2 --preset left-accent
+```
 
 ```text
 frontend/src/extensions/teaching-document/skins/custom/lesson-title/
@@ -36,5 +40,7 @@ export default defineHeadingSkin({
 ```
 
 Restart the frontend development server if it was already running, then select the heading. The selector contains only Heading skins compatible with the selected level. The core adds both your class and `data-skin-id="studio.heading.lesson-title"` to the existing heading element.
+
+Before finishing, run `npm run skin:check -- --path frontend/src/extensions/teaching-document/skins/custom/studio-heading-lesson-title`.
 
 Keep the visual static and print-safe. Do not use React, portals, fixed positioning, required hover states, or animation. Do not target or replace the editor's `data-block-id`, `data-block-type`, editable content, or selection DOM.
