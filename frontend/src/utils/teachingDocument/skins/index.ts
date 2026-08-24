@@ -1,0 +1,6 @@
+export { hasValidTeachingSkinRef, isJsonValue, isTeachingSkinDefinition, parseTeachingSkinRef } from './types'
+export type { BoxSkinDefinition, HeadingSkinDefinition, HeadingSkinLevel, TeachingSkinDefinition, TeachingSkinDefinitionBase, TeachingSkinTarget } from './types'
+export { TeachingSkinRegistry } from './registry'
+export { teachingSkinRegistry } from './registryInstance'
+export { resolveBoxSkin, resolveHeadingSkin, skinClassName } from './resolver'
+export type { TeachingSkinResolution } from './resolver'

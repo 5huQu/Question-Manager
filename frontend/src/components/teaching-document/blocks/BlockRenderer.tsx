@@ -65,6 +65,8 @@ import {
 import { InlineContent } from './InlineContent'
 import { BlockInlineEditor } from '../BlockInlineEditor/BlockInlineEditor'
 import { ImageResizeOverlay } from '../editor/ResizeHandles'
+import { resolveBoxSkin, resolveHeadingSkin } from '@/utils/teachingDocument/skins'
+import { skinBoxBodyStyle, skinBoxFrameStyle } from '@/utils/teachingDocument/boxAppearance'
 
 // ─── Resolver 类型 ───────────────────────────────────────────────────────────
 
@@ -129,13 +131,16 @@ function HeadingBlockView({ block, numberLabel }: { block: HeadingBlock; numberL
     3: 'text-lg font-semibold mt-5 mb-2',
     4: 'text-base font-medium mt-4 mb-2',
   }[block.level]
+  const skin = resolveHeadingSkin(block.skin, block.level)
   return (
     <Tag
-      className={`td-heading ${sizeClass} text-zinc-900 dark:text-zinc-50`}
+      className={`td-heading ${sizeClass} text-zinc-900 dark:text-zinc-50 ${skin.status === 'resolved' ? skin.definition.className : ''}`}
       style={textBlockStyle(block)}
       data-block-id={block.id}
       data-block-type="heading"
       data-level={block.level}
+      data-skin-id={skin.status === 'resolved' ? skin.definition.id : undefined}
+      data-skin-state={block.skin ? skin.status : undefined}
     >
       {numberLabel ? <span className="td-heading-number" aria-hidden="true">{numberLabel} </span> : null}
       <InlineContent inlines={block.content} />
@@ -1005,6 +1010,8 @@ function BoxFrame({
   onHeaderPointerDown?: () => void
 }) {
   const template = getBoxTemplateOrFallback(block.templateId)
+  const skin = resolveBoxSkin(block.skin, block.templateId)
+  const skinActive = skin.status === 'resolved'
   const iconName = block.icon || template.defaultIcon
   const hasHeader = Boolean(template.showHeader || block.title)
   const isContinuationHeader = continuation === 'middle' || continuation === 'end'
@@ -1012,7 +1019,7 @@ function BoxFrame({
 
   return (
     <div
-      className="td-box overflow-hidden border"
+      className={`td-box overflow-hidden border ${skinActive ? skin.definition.className : ''}`}
       {...{
         [TEACHING_DOM.boxRoot]: '',
         [TEACHING_DOM.boxTemplate]: block.templateId,
@@ -1020,7 +1027,9 @@ function BoxFrame({
       data-tone={template.tone}
       data-break-behavior={block.breakBehavior}
       data-continuation={continuation}
-      style={boxFrameStyle(block.appearance, template)}
+      data-skin-id={skinActive ? skin.definition.id : undefined}
+      data-skin-state={block.skin ? skin.status : undefined}
+      style={skinActive ? skinBoxFrameStyle(block.appearance, template) : boxFrameStyle(block.appearance, template)}
     >
       {isContinuationHeader ? (
         /* 续页栏：弱化标题，无图标、无 accent 线、无底色 */
@@ -1040,7 +1049,7 @@ function BoxFrame({
           <div
             className="td-box-header flex min-w-0 items-center gap-2 px-4 py-2.5"
             {...{ [TEACHING_DOM.boxHeader]: '' }}
-            style={{ background: `var(--box-${template.tone}-header)` }}
+            style={skinActive ? undefined : { background: `var(--box-${template.tone}-header)` }}
             onPointerDown={(event) => {
               if (!onHeaderPointerDown) return
               event.stopPropagation()
@@ -1063,7 +1072,7 @@ function BoxFrame({
       <div
         className="td-box-body px-4 py-3"
         {...{ [TEACHING_DOM.boxBody]: '' }}
-        style={boxBodyStyle(block.appearance, template)}
+        style={skinActive ? skinBoxBodyStyle(block.appearance, template) : boxBodyStyle(block.appearance, template)}
       >
         {children}
         <div

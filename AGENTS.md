@@ -27,6 +27,7 @@ Recommended reading order:
 - `docs/ui_design_specification.md`: shadcn/ui style rules. Ordinary page work must follow it; do not casually change AppSidebar, AppPageHeader, or the app shell.
 - `backend-layered-refactor-plan.md`: backend route/service/repository layering principles and testing focus.
 - `WINDOWS_BUILD.md`: Windows build and installer troubleshooting.
+- `docs/teaching-document/skins/README.md`: source-level Heading and Box Skin Extension API and authoring guides.
 
 ## Repository Map
 

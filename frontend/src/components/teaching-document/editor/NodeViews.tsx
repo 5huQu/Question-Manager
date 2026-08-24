@@ -12,7 +12,8 @@ import { CornerDownRight, ImageOff, ArrowDown, ArrowUp, Trash2, Columns3, Plus, 
 import type { FigureAssetRef, FigureBlock, SpacerBlock, TeachingBlock, BoxBlock, BoxChildBlock, QuestionBlock, QuestionDisplayOptions, TeachingDocumentV1, TeachingInline, ParagraphBlock, TableCell } from '@/types/teachingDocument'
 import type { QuestionResolution, FigureResolution, QuestionLayoutEditor } from '../blocks/BlockRenderer'
 import { getBoxTemplateOrFallback } from '@/utils/teachingDocument/boxTemplates'
-import { boxBodyStyle, boxFrameStyle, parseBoxAppearance } from '@/utils/teachingDocument/boxAppearance'
+import { boxBodyStyle, boxFrameStyle, parseBoxAppearance, skinBoxBodyStyle, skinBoxFrameStyle } from '@/utils/teachingDocument/boxAppearance'
+import { parseTeachingSkinRef, resolveBoxSkin } from '@/utils/teachingDocument/skins'
 import { createQuestionRuntimeModel } from '@/utils/teachingDocument/layout/questionRegions'
 import { BoxFragmentRenderer, QuestionRuntimeContent, QuestionPlaceholder } from '../blocks/BlockRenderer'
 import { BlockInlineEditor } from '../BlockInlineEditor/BlockInlineEditor'
@@ -780,6 +781,9 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
       return undefined
     }
   }, [node.attrs.appearance])
+  const skin = useMemo(() => {
+    try { return parseTeachingSkinRef(node.attrs.skin ? JSON.parse(String(node.attrs.skin)) : undefined) } catch { return undefined }
+  }, [node.attrs.skin])
   const breakBehavior = String(node.attrs.breakBehavior || 'auto')
   const children = useMemo<BoxChildBlock[]>(() => {
     try {
@@ -799,10 +803,13 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
     ...(title ? { title } : {}),
     ...(icon ? { icon } : {}),
     ...(appearance ? { appearance } : {}),
+    ...(skin ? { skin } : {}),
     breakBehavior: breakBehavior as BoxBlock['breakBehavior'],
     children,
   }
   const paginationContext = usePaginationContext()
+  const resolvedSkin = resolveBoxSkin(skin, templateId)
+  const skinActive = resolvedSkin.status === 'resolved'
   const boxFragments = paginationContext?.pagination?.pages.flatMap((page) => page.items
     .filter((item): item is BoxFragmentPaginationItem => item.kind === 'fragment' && item.fragmentType === 'box' && item.blockId === boxBlock.id)
     .map((item) => ({ item, pageIndex: page.index }))) || []
@@ -888,9 +895,9 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
             </div>
           ))
       ) : (
-        <div className="overflow-hidden border" style={boxFrameStyle(appearance, template)}>
+        <div className={`td-box overflow-hidden border ${skinActive ? resolvedSkin.definition.className : ''}`} data-skin-id={skinActive ? resolvedSkin.definition.id : undefined} data-skin-state={skin ? resolvedSkin.status : undefined} style={skinActive ? skinBoxFrameStyle(appearance, template) : boxFrameStyle(appearance, template)}>
           {(template.showHeader || title) ? (
-            <div className="flex min-w-0 items-center gap-2 px-4 py-2.5" style={{ background: `var(--box-${template.tone}-header)` }} onPointerDown={selectBox}>
+            <div className="td-box-header flex min-w-0 items-center gap-2 px-4 py-2.5" style={skinActive ? undefined : { background: `var(--box-${template.tone}-header)` }} onPointerDown={selectBox}>
               {editingTitle && selected ? (
                 <input
                   autoFocus
@@ -909,7 +916,7 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
               )}
             </div>
           ) : null}
-          <div className="px-4 py-3" style={boxBodyStyle(appearance, template)}>
+          <div className="td-box-body px-4 py-3" style={skinActive ? skinBoxBodyStyle(appearance, template) : boxBodyStyle(appearance, template)}>
             {children.length ? (
               <BoxFlowEditor
                 children={children}

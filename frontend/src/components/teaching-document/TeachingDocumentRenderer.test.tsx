@@ -110,6 +110,27 @@ describe('ParagraphFragmentRenderer', () => {
 })
 
 describe('TeachingDocumentRenderer fallbacks', () => {
+  it('adds stable skin DOM hooks for resolved skins and falls back for missing refs', () => {
+    const resolved = renderToStaticMarkup(
+      <TeachingDocumentRenderer document={documentWith([
+        { type: 'heading', id: 'skin-heading', level: 2, content: [{ type: 'text', text: '标题' }], skin: { id: 'builtin.heading.pill', version: 1 } },
+        { type: 'box', id: 'skin-box', templateId: 'concept', breakBehavior: 'auto', children: [], skin: { id: 'builtin.box.left-accent', version: 1 } },
+      ])} />,
+    )
+    expect(resolved).toContain('data-skin-id="builtin.heading.pill"')
+    expect(resolved).toContain('td-skin-heading-pill')
+    expect(resolved).toContain('data-skin-id="builtin.box.left-accent"')
+    expect(resolved).toContain('td-skin-box-left-accent')
+
+    const fallback = renderToStaticMarkup(
+      <TeachingDocumentRenderer document={documentWith([
+        { type: 'heading', id: 'missing-heading', level: 2, content: [{ type: 'text', text: '标题' }], skin: { id: 'custom.heading.missing', version: 1 } },
+      ])} />,
+    )
+    expect(fallback).toContain('data-skin-state="missing"')
+    expect(fallback).not.toContain('data-skin-id="custom.heading.missing"')
+  })
+
   it('marks continuous and paper surfaces explicitly for stable layout scoping', () => {
     const continuous = renderToStaticMarkup(
       <TeachingDocumentRenderer document={documentWith([])} />,

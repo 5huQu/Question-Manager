@@ -1,0 +1,18 @@
+.td-skin-box-header-band {
+  border: 1px solid #334155;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.td-skin-box-header-band .td-box-header {
+  background: #334155;
+  color: #ffffff;
+}
+
+.td-skin-box-header-band .td-box-header span {
+  color: #ffffff;
+}
+
+.td-skin-box-header-band .td-box-body {
+  background: #ffffff;
+}

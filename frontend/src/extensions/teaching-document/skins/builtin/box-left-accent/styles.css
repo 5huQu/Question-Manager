@@ -1,0 +1,14 @@
+.td-skin-box-left-accent {
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid #2563eb;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.td-skin-box-left-accent .td-box-header {
+  background: #eff6ff;
+}
+
+.td-skin-box-left-accent .td-box-body {
+  background: #ffffff;
+}
