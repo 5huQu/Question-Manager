@@ -19,6 +19,21 @@ export type { FigureLayoutPreset } from '@/utils/teachingDocument/figureLayoutPr
 
 export type TeachingDocumentType = 'worksheet' | 'exam' | 'lecture' | 'wrong-question-collection'
 
+/** JSON-safe values accepted by extension settings in a TeachingDocument. */
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+
+/**
+ * A stable reference to a source-level teaching-document skin.
+ *
+ * The definition and its CSS stay in the application source tree; document JSON
+ * only persists this small, non-executable reference and optional JSON settings.
+ */
+export interface TeachingSkinRef {
+  id: string
+  version?: number
+  settings?: Record<string, JsonValue>
+}
+
 // ─── 行内节点 ────────────────────────────────────────────────────────────────
 
 export interface InlineText {
@@ -74,6 +89,8 @@ export interface HeadingBlock {
   alignment?: TeachingTextAlignment
   /** 受控首行/段落缩进层级。 */
   indentLevel?: TeachingIndentLevel
+  /** Optional source-level visual skin. Omitted means the existing default visual. */
+  skin?: TeachingSkinRef
 }
 
 export type HeadingNumberingMode = 'inherit' | 'none' | 'manual'
@@ -339,6 +356,8 @@ export interface BoxBlock {
   icon?: string
   /** 模板的单卡受约束覆盖；缺省时完整继承模板外观。 */
   appearance?: BoxAppearance
+  /** Optional source-level visual skin. Appearance remains a per-card override. */
+  skin?: TeachingSkinRef
   breakBehavior: BoxBreakBehavior
   /** 盒子子内容：允许段落、公式、表格、图片、题目，但不允许嵌套盒子 */
   children: BoxChildBlock[]

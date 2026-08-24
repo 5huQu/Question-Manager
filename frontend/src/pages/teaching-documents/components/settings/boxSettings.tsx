@@ -4,6 +4,7 @@ import { BlockInlineEditor } from '@/components/teaching-document/BlockInlineEdi
 import { BUILTIN_BOX_TEMPLATES, hasProtectedInlineContent, protectedInlineReason } from '@/utils/teachingDocument'
 import { CARD_CHILD_TYPES, USER_BLOCK_LABEL } from '../blockLabels'
 import { ActionButton, Field, fieldClass, inlineContentOf } from './common'
+import { BoxSkinSelector } from '../TeachingSkinSelector'
 
 export function BoxSettings(props: {
   block: BoxBlock
@@ -104,6 +105,7 @@ export function BoxSettings(props: {
           {BUILTIN_BOX_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.label}</option>)}
         </select>
       </Field>
+      <BoxSkinSelector skin={props.block.skin} templateId={props.block.templateId} onChange={(skin) => props.onUpdate({ skin })} />
       <Field label="卡片标题">
         <input className={fieldClass} value={props.block.title || ''} onChange={(event) => props.onUpdate({ title: event.target.value }, `box-title:${props.block.id}`)} />
       </Field>

@@ -81,6 +81,24 @@ export function boxFrameStyle(appearance: BoxAppearance | undefined, template: B
   }
 }
 
+/**
+ * When a skin is active its CSS owns the base visual. Only explicit per-card
+ * appearance values are emitted inline so the existing appearance override
+ * remains stronger without masking the skin's default CSS.
+ */
+export function skinBoxFrameStyle(appearance: BoxAppearance | undefined, template: BoxTemplateDefinition) {
+  if (!appearance) return undefined
+  const borders: Record<BoxBorderColor, string> = {
+    template: `var(--box-${template.tone}-border)`, zinc: '#d4d4d8', blue: '#c7dcff', amber: '#fde68a', green: '#bbf7d0',
+  }
+  return {
+    ...(appearance.borderColor !== undefined ? { borderColor: borders[appearance.borderColor] } : {}),
+    ...(appearance.borderWidth !== undefined ? { borderWidth: `${appearance.borderWidth}px` } : {}),
+    ...(appearance.cornerRadius !== undefined ? { borderRadius: `${appearance.cornerRadius}px` } : {}),
+    ...(appearance.background !== undefined ? { background: boxSurface(appearance, template) } : {}),
+  }
+}
+
 export function boxBodyPaddingStyle(appearance: BoxAppearance | undefined) {
   if (!appearance?.padding || !Object.keys(appearance.padding).length) return undefined
   return {
@@ -98,6 +116,14 @@ export function boxBodyPaddingStyle(appearance: BoxAppearance | undefined) {
 export function boxBodyStyle(appearance: BoxAppearance | undefined, template: BoxTemplateDefinition) {
   return {
     background: boxSurface(appearance, template),
+    ...boxBodyPaddingStyle(appearance),
+  }
+}
+
+export function skinBoxBodyStyle(appearance: BoxAppearance | undefined, template: BoxTemplateDefinition) {
+  if (!appearance) return undefined
+  return {
+    ...(appearance.background !== undefined ? { background: boxSurface(appearance, template) } : {}),
     ...boxBodyPaddingStyle(appearance),
   }
 }

@@ -24,6 +24,7 @@ import { QuestionSettings } from './settings/questionSettings'
 import { FigureSettings } from './settings/figureSettings'
 import { TikzSettings } from './settings/tikzSettings'
 import { TikzEditorDialog } from './TikzEditorDialog'
+import { HeadingSkinSelector } from './TeachingSkinSelector'
 
 export type SelectedLocation = {
   block: TeachingBlock
@@ -318,6 +319,7 @@ function SheetBody(props: {
                 {[1, 2, 3, 4].map((level) => <option key={level} value={level}>{['一级章节', '二级章节', '三级章节', '四级章节'][level - 1]}</option>)}
               </select>
             </Field>
+            <HeadingSkinSelector skin={block.skin} level={block.level} onChange={(skin) => props.onUpdate({ skin })} />
             <Field label="本章节编号">
               <select className={fieldClass} value={block.numbering?.mode || 'inherit'} onChange={(event) => props.onUpdate({ numbering: { ...block.numbering, mode: event.target.value as 'inherit' | 'none' | 'manual' } })}>
                 <option value="inherit">跟随文档设置</option><option value="none">不显示编号</option><option value="manual">手动标签</option>

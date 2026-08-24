@@ -27,6 +27,7 @@ Question Manager 是一个本地优先的数学题库桌面工具，覆盖资料
 - `docs/ui_design_specification.md`：shadcn/ui 风格设计规范。普通页面开发必须遵守；默认不要顺手修改 AppSidebar、AppPageHeader、整体外壳。
 - `backend-layered-refactor-plan.md`：后端 route/service/repository 分层迁移原则和测试重点。
 - `WINDOWS_BUILD.md`：Windows 构建与安装排错。
+- `docs/teaching-document/skins/README.md`：Heading / Box 源码级 Skin Extension API 与创建说明。
 
 ## 目录地图
 

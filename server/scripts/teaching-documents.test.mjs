@@ -187,6 +187,32 @@ try {
   assert.equal(invalidFormatting.body.issues.some((issue) => issue.code === 'invalid-text-layout'), true)
   assert.equal(invalidFormatting.body.issues.some((issue) => issue.code === 'invalid-box-appearance'), true)
 
+  const skins = await json('/api/teaching-documents', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      title: '皮肤持久化', documentType: 'lecture',
+      content: {
+        version: 1, documentType: 'lecture', title: '皮肤持久化', metadata: {}, content: [
+          { type: 'heading', id: 'skin-h1', level: 2, content: [{ type: 'text', text: '标题' }], skin: { id: 'custom.heading.missing', version: 2, settings: { density: 'compact' } } },
+          { type: 'box', id: 'skin-b1', templateId: 'concept', breakBehavior: 'auto', skin: { id: 'custom.box.missing', version: 1 }, children: [] },
+        ],
+      },
+    }),
+  })
+  assert.equal(skins.response.status, 201)
+  assert.equal(skins.body.content.content[0].skin.id, 'custom.heading.missing')
+  assert.equal(skins.body.content.content[1].skin.id, 'custom.box.missing')
+
+  const invalidSkin = await json('/api/teaching-documents', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: '非法皮肤', documentType: 'lecture', content: { version: 1, documentType: 'lecture', title: '非法皮肤', metadata: {}, content: [
+      { type: 'heading', id: 'skin-invalid', level: 1, content: [], skin: { id: 'custom.heading.bad', settings: { className: 'not-allowed' } } },
+    ] } }),
+  })
+  assert.equal(invalidSkin.response.status, 422)
+  assert.equal(invalidSkin.body.issues.some((issue) => issue.code === 'invalid-teaching-skin'), true)
+
   const duplicated = await json(`/api/teaching-documents/${documentId}/duplicate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

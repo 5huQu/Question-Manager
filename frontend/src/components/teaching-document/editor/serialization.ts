@@ -24,6 +24,7 @@ import {
 import { headingLabelByBlockId } from '@/utils/teachingDocument/outline'
 import { isFigureLayoutPreset } from '@/utils/teachingDocument/figureLayoutPresets'
 import { parseBoxAppearance } from '@/utils/teachingDocument/boxAppearance'
+import { parseTeachingSkinRef } from '@/utils/teachingDocument/skins'
 
 // ─── TeachingBlock → Tiptap JSONContent ─────────────────────────────────────
 
@@ -40,6 +41,7 @@ export function blockToEditorNode(block: TeachingBlock, labels: ReadonlyMap<stri
           numbering: JSON.stringify(block.numbering || {}),
           alignment: block.alignment || 'left',
           indentLevel: block.indentLevel || 0,
+          skin: block.skin ? JSON.stringify(block.skin) : '',
         },
         content: inlinesToEditorContent(block.content),
       }
@@ -103,6 +105,7 @@ export function blockToEditorNode(block: TeachingBlock, labels: ReadonlyMap<stri
           title: block.title || '',
           icon: block.icon || '',
           appearance: JSON.stringify(block.appearance || {}),
+          skin: block.skin ? JSON.stringify(block.skin) : '',
           breakBehavior: block.breakBehavior,
           children: JSON.stringify(block.children),
         },
@@ -174,6 +177,7 @@ export function editorNodeToBlock(node: JSONContent): TeachingBlock | null {
       const indentLevel = [0, 1, 2, 3, 4].includes(Number(attrs.indentLevel))
         ? Number(attrs.indentLevel) as 0 | 1 | 2 | 3 | 4
         : 0
+      const skin = parseTeachingSkinRef(safeJsonParse(attrs.skin))
       return {
         type: 'heading',
         id: blockId,
@@ -182,6 +186,7 @@ export function editorNodeToBlock(node: JSONContent): TeachingBlock | null {
         ...(numbering && typeof numbering === 'object' && Object.keys(numbering).length ? { numbering } : {}),
         ...(alignment !== 'left' ? { alignment } : {}),
         ...(indentLevel ? { indentLevel } : {}),
+        ...(skin ? { skin } : {}),
       }
     }
     case 'docParagraph': {
@@ -272,6 +277,7 @@ export function editorNodeToBlock(node: JSONContent): TeachingBlock | null {
     case 'docBox': {
       let children: BoxChildBlock[] = []
       let appearance: unknown
+      const skin = parseTeachingSkinRef(safeJsonParse(attrs.skin))
       try {
         children = JSON.parse(String(attrs.children || '[]'))
       } catch { /* keep empty */ }
@@ -286,6 +292,7 @@ export function editorNodeToBlock(node: JSONContent): TeachingBlock | null {
         ...(attrs.title ? { title: String(attrs.title) } : {}),
         ...(attrs.icon ? { icon: String(attrs.icon) } : {}),
         ...(parsedAppearance ? { appearance: parsedAppearance } : {}),
+        ...(skin ? { skin } : {}),
         breakBehavior: (attrs.breakBehavior as 'auto' | 'avoid' | 'allow' | 'force-before') || 'auto',
         children,
       }
@@ -332,6 +339,11 @@ function editorContentToInlines(content: JSONContent[] | undefined) {
     content: [{ type: 'paragraph', content: content || undefined }],
   }
   return tiptapDocToTeachingInlines(doc)
+}
+
+function safeJsonParse(value: unknown): unknown {
+  if (!value) return undefined
+  try { return JSON.parse(String(value)) } catch { return undefined }
 }
 
 // ─── 公开 API ────────────────────────────────────────────────────────────────

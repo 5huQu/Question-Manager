@@ -37,6 +37,7 @@ import { ResizeCommands } from './resizeCommands'
 import { PaginationDecorations } from './paginationDecorations'
 import { ActiveTextBlockDecoration, DocumentSelectionSafety } from './selection'
 import { DocumentStructuralChangeSet } from './structuralActions'
+import { parseTeachingSkinRef, resolveHeadingSkin } from '@/utils/teachingDocument/skins'
 
 function createPageBreakId() {
   const uuid = globalThis.crypto?.randomUUID?.()
@@ -97,6 +98,7 @@ export const DocHeading = Node.create({
       numbering: { default: '{}' },
       alignment: { default: 'left' },
       indentLevel: { default: 0 },
+      skin: { default: '' },
     }
   },
   parseHTML() {
@@ -111,10 +113,15 @@ export const DocHeading = Node.create({
     const level = Math.min(4, Math.max(1, Number(node.attrs.level) || 3))
     const alignment = ['left', 'center', 'right', 'justify'].includes(String(node.attrs.alignment)) ? String(node.attrs.alignment) : 'left'
     const indentLevel = [0, 1, 2, 3, 4].includes(Number(node.attrs.indentLevel)) ? Number(node.attrs.indentLevel) : 0
+    let skin
+    try { skin = parseTeachingSkinRef(node.attrs.skin ? JSON.parse(String(node.attrs.skin)) : undefined) } catch { skin = undefined }
+    const resolvedSkin = resolveHeadingSkin(skin, level as 1 | 2 | 3 | 4)
     return [`h${level}`, mergeAttributes(HTMLAttributes, {
-      class: 'td-heading',
+      class: ['td-heading', resolvedSkin.status === 'resolved' ? resolvedSkin.definition.className : ''].filter(Boolean).join(' '),
       'data-block-type': 'heading',
       'data-indent-level': indentLevel || undefined,
+      'data-skin-id': resolvedSkin.status === 'resolved' ? resolvedSkin.definition.id : undefined,
+      'data-skin-state': skin ? resolvedSkin.status : undefined,
       style: `text-align: ${alignment};${indentLevel ? ` margin-left: ${indentLevel * 1.5}em;` : ''}`,
     }), 0]
   },
@@ -249,6 +256,7 @@ export const DocBox = Node.create({
       title: { default: '' },
       icon: { default: '' },
       appearance: { default: '{}' },
+      skin: { default: '' },
       breakBehavior: { default: 'auto' },
       children: { default: '[]' },
     }

@@ -52,6 +52,32 @@ function renderSheet(
 }
 
 describe('PropertiesSheet 对齐与卡片内容列表', () => {
+  it('filters Heading and Box skin selectors and clears the explicit ref for the default option', async () => {
+    const onHeadingUpdate = vi.fn()
+    const heading = { type: 'heading' as const, id: 'heading-skin', level: 2 as const, content: [{ type: 'text' as const, text: '标题' }] }
+    await renderSheet({ block: heading, topLevel: heading }, onHeadingUpdate)
+    const headingSkin = container!.querySelector<HTMLSelectElement>('select[aria-label="皮肤"]')
+    expect(Array.from(headingSkin!.options).map((option) => option.value)).toContain('builtin.heading.pill')
+    expect(Array.from(headingSkin!.options).map((option) => option.value)).not.toContain('builtin.box.left-accent')
+    await act(async () => {
+      headingSkin!.value = 'builtin.heading.pill'
+      headingSkin!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onHeadingUpdate).toHaveBeenCalledWith({ skin: { id: 'builtin.heading.pill', version: 1 } })
+
+    const onBoxUpdate = vi.fn()
+    const box = { type: 'box' as const, id: 'box-skin', templateId: 'concept', breakBehavior: 'auto' as const, skin: { id: 'builtin.box.left-accent', version: 1 }, children: [] }
+    await renderSheet({ block: box, topLevel: box }, onBoxUpdate)
+    const boxSkin = container!.querySelector<HTMLSelectElement>('select[aria-label="皮肤"]')
+    expect(Array.from(boxSkin!.options).map((option) => option.value)).toContain('builtin.box.header-band')
+    expect(Array.from(boxSkin!.options).map((option) => option.value)).not.toContain('builtin.heading.pill')
+    await act(async () => {
+      boxSkin!.value = ''
+      boxSkin!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onBoxUpdate).toHaveBeenCalledWith({ skin: undefined })
+  })
+
   it('在布局页用显式标记控制对象后的强制换页', async () => {
     const onSetPageBreakAfter = vi.fn()
     const figure = {

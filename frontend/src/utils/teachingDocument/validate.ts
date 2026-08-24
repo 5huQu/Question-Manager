@@ -50,6 +50,7 @@ import { getBoxTemplate } from './boxTemplates'
 import { TEXT_FONT_OPTIONS } from './lectureFonts'
 import { isFigureLayoutPreset } from './figureLayoutPresets'
 import { parseBoxAppearance } from './boxAppearance'
+import { parseTeachingSkinRef, resolveBoxSkin, resolveHeadingSkin } from './skins'
 
 // ─── 常量 ────────────────────────────────────────────────────────────────────
 
@@ -360,6 +361,7 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
       const id = extractId(node, 'h', index)
       const level = Number(node.level)
       const rawNumbering = node.numbering && typeof node.numbering === 'object' && !Array.isArray(node.numbering) ? node.numbering as Record<string, unknown> : undefined
+      const skin = parseTeachingSkinRef(node.skin)
       const numbering = rawNumbering && ['inherit', 'none', 'manual'].includes(String(rawNumbering.mode || 'inherit')) ? {
         mode: String(rawNumbering.mode || 'inherit') as 'inherit' | 'none' | 'manual',
         ...(typeof rawNumbering.manualLabel === 'string' && rawNumbering.manualLabel.trim() ? { manualLabel: rawNumbering.manualLabel.trim().slice(0, 40) } : {}),
@@ -371,6 +373,7 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
         level: ([1, 2, 3, 4].includes(level) ? level : 3) as 1 | 2 | 3 | 4,
         content: parseInlineArray(node.content, issues, id),
         ...(numbering ? { numbering } : {}),
+        ...(skin ? { skin } : {}),
         ...(VALID_TEXT_ALIGNMENTS.has(String(node.alignment)) && node.alignment !== 'left' ? { alignment: node.alignment as 'left' | 'center' | 'right' | 'justify' } : {}),
         ...(VALID_INDENT_LEVELS.has(Number(node.indentLevel)) && Number(node.indentLevel) ? { indentLevel: Number(node.indentLevel) as 1 | 2 | 3 | 4 } : {}),
       }
@@ -504,6 +507,7 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
     case 'box': {
       const breakBehavior = String(node.breakBehavior || 'auto')
       const appearance = parseBoxAppearance(node.appearance)
+      const skin = parseTeachingSkinRef(node.skin)
       const rawChildren = Array.isArray(node.children) ? node.children : []
       const children: BoxChildBlock[] = []
       for (let ci = 0; ci < rawChildren.length; ci++) {
@@ -539,6 +543,7 @@ function parseBlock(raw: unknown, index: number, issues: DocumentValidationIssue
         title: typeof node.title === 'string' ? node.title : undefined,
         icon: typeof node.icon === 'string' ? node.icon : undefined,
         ...(appearance ? { appearance } : {}),
+        ...(skin ? { skin } : {}),
         breakBehavior: (['auto', 'avoid', 'allow', 'force-before'].includes(breakBehavior) ? breakBehavior : 'auto') as BoxBlock['breakBehavior'],
         children,
       }
@@ -835,10 +840,10 @@ function structuralBlockSignature(block: TeachingBlock): string {
   switch (block.type) {
     case 'paragraph':
     case 'heading':
-      value = `${block.type}:${block.id}:${block.type === 'heading' ? block.level : ''}:${inlineTextLength(block.content)}`
+      value = `${block.type}:${block.id}:${block.type === 'heading' ? `${block.level}:${JSON.stringify(block.skin || {})}` : ''}:${inlineTextLength(block.content)}`
       break
     case 'box':
-      value = `box:${block.id}:${block.templateId}:${block.breakBehavior}:${JSON.stringify(block.appearance || {})}:${block.children.map((child) => structuralBlockSignature(child as TeachingBlock)).join('|')}`
+      value = `box:${block.id}:${block.templateId}:${block.breakBehavior}:${JSON.stringify(block.appearance || {})}:${JSON.stringify(block.skin || {})}:${block.children.map((child) => structuralBlockSignature(child as TeachingBlock)).join('|')}`
       break
     default:
       value = `${block.type}:${block.id}:${JSON.stringify(block)}`
@@ -976,6 +981,11 @@ export function validateTeachingDocument(document: TeachingDocument): DocumentVa
         } else if (!getBoxTemplate(block.templateId)) {
           issues.push({ level: 'warning', blockId: block.id, code: 'unknown-template-id', message: `盒子模板 "${block.templateId}" 未注册，将使用稳定降级模板。` })
         }
+        if (block.skin) {
+          const resolution = resolveBoxSkin(block.skin, block.templateId)
+          if (resolution.status === 'missing') issues.push({ level: 'warning', blockId: block.id, code: 'missing-skin', message: `卡片皮肤 "${block.skin.id}" 未注册，将使用默认视觉并保留引用。` })
+          if (resolution.status === 'incompatible') issues.push({ level: 'warning', blockId: block.id, code: 'incompatible-skin', message: `卡片皮肤 "${block.skin.id}" 不适用于当前模板，将使用默认视觉并保留引用。` })
+        }
         for (const child of block.children) {
           // 运行时检查非法子节点（类型系统外的异常数据）
           const childRecord = child as unknown as Record<string, unknown>
@@ -1006,6 +1016,11 @@ export function validateTeachingDocument(document: TeachingDocument): DocumentVa
           issues.push({ level: 'warning', blockId: block.id, code: 'empty-heading', message: '标题块内容为空。' })
         }
         checkInlines(block.content, block.id)
+        if (block.skin) {
+          const resolution = resolveHeadingSkin(block.skin, block.level)
+          if (resolution.status === 'missing') issues.push({ level: 'warning', blockId: block.id, code: 'missing-skin', message: `标题皮肤 "${block.skin.id}" 未注册，将使用默认视觉并保留引用。` })
+          if (resolution.status === 'incompatible') issues.push({ level: 'warning', blockId: block.id, code: 'incompatible-skin', message: `标题皮肤 "${block.skin.id}" 不适用于当前级别，将使用默认视觉并保留引用。` })
+        }
         break
       case 'paragraph':
         checkInlines(block.content, block.id)

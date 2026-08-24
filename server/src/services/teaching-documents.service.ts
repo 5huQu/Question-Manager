@@ -22,7 +22,7 @@ const FATAL_ISSUE_CODES = new Set([
   'invalid-metadata', 'invalid-content', 'empty-id', 'duplicate-id', 'auto-id',
   'invalid-inline-content', 'invalid-box-children', 'absolute-legacy-path',
   'invalid-outline', 'invalid-heading-numbering', 'invalid-table',
-  'invalid-inline-format', 'invalid-text-layout', 'invalid-box-appearance',
+  'invalid-inline-format', 'invalid-text-layout', 'invalid-box-appearance', 'invalid-teaching-skin',
 ])
 const ALLOWED_IMAGE_TYPES = new Map([
   ['image/png', '.png'],
@@ -162,6 +162,39 @@ function validateBoxAppearance(value: unknown, blockId: string, issues: Teaching
   }
 }
 
+const SKIN_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$/
+const UNSAFE_SKIN_SETTING_KEY = /^(?:css|cssText|html|react|className|class|style|script|component)$/i
+
+function isJsonValue(value: unknown): boolean {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (Array.isArray(value)) return value.every(isJsonValue)
+  return isObject(value) && Object.entries(value).every(([, item]) => isJsonValue(item))
+}
+
+function isSafeSkinSettingValue(value: unknown): boolean {
+  if (!isJsonValue(value)) return false
+  if (Array.isArray(value)) return value.every(isSafeSkinSettingValue)
+  return !isObject(value) || Object.entries(value).every(([key, item]) => !UNSAFE_SKIN_SETTING_KEY.test(key) && isSafeSkinSettingValue(item))
+}
+
+/** Server validates only the safe persisted ref contract; it never needs the frontend registry. */
+function validateTeachingSkin(value: unknown, blockId: string, issues: TeachingDocumentIssue[]) {
+  if (value === undefined) return
+  if (!isObject(value) || !SKIN_ID.test(String(value.id || ''))) {
+    issues.push({ level: 'error', code: 'invalid-teaching-skin', blockId, message: '皮肤引用必须包含有效的命名空间 ID。' })
+    return
+  }
+  if (value.version !== undefined && (!Number.isInteger(value.version) || Number(value.version) < 1)) {
+    issues.push({ level: 'error', code: 'invalid-teaching-skin', blockId, message: '皮肤版本必须是正整数。' })
+  }
+  if (value.settings !== undefined) {
+    if (!isObject(value.settings) || Object.entries(value.settings).some(([key, item]) => UNSAFE_SKIN_SETTING_KEY.test(key) || !isSafeSkinSettingValue(item))) {
+      issues.push({ level: 'error', code: 'invalid-teaching-skin', blockId, message: '皮肤设置只能包含安全的 JSON 数据，不能包含 CSS、HTML 或可执行配置。' })
+    }
+  }
+}
+
 function validateOutline(value: unknown, issues: TeachingDocumentIssue[]) {
   if (value === undefined) return
   if (!isObject(value)) { issues.push({ level: 'error', code: 'invalid-outline', message: '章节设置必须是对象。' }); return }
@@ -238,7 +271,10 @@ export function inspectTeachingDocument(value: unknown) {
         }
       }
     }
-    if (type === 'heading') validateHeadingNumbering(raw.numbering, id, issues)
+    if (type === 'heading') {
+      validateHeadingNumbering(raw.numbering, id, issues)
+      validateTeachingSkin(raw.skin, id, issues)
+    }
     if (type === 'question' && (typeof raw.questionId !== 'string' || !raw.questionId.trim())) {
       issues.push({ level: 'error', code: 'invalid-question-ref', blockId: id, message: '题目引用必须是字符串。' })
     }
@@ -289,6 +325,7 @@ export function inspectTeachingDocument(value: unknown) {
     }
     if (type === 'box') {
       validateBoxAppearance(raw.appearance, id, issues)
+      validateTeachingSkin(raw.skin, id, issues)
       if (!Array.isArray(raw.children)) issues.push({ level: 'error', code: 'invalid-box-children', blockId: id, message: '盒子 children 必须是数组。' })
       else raw.children.forEach((child) => visitBlock(child, true))
     }
