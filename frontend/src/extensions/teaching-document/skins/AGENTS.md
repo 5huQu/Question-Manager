@@ -30,3 +30,18 @@ It may import its sibling CSS. Do not modify the core registry, pagination, Pros
 - Run at least `npm run typecheck:frontend`, `npm run test:frontend`, and `npm run build:frontend`.
 
 If the API cannot express the requested visual safely, report the contract limitation rather than extending core infrastructure.
+
+## Tooling workflow
+
+Before editing, generate the skin with `npm run skin:new -- ...`. During editing, modify only `custom/<generated-skin>/**`; do not hand-edit a registry, renderer, pagination module, or document schema.
+
+Before finishing, run:
+
+```sh
+npm run skin:check -- --path frontend/src/extensions/teaching-document/skins/custom/<generated-skin>
+npm run typecheck:frontend
+npm run test:frontend
+npm run build:frontend
+```
+
+Open `/teaching-documents/demo/skins` in development and check the selected skin's screen preview, A4 preview, and page-boundary sample. If `skin:check` reports an ERROR, do not claim the skin task is complete.

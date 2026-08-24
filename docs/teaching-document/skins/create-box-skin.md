@@ -1,6 +1,10 @@
 # Create a Box Skin
 
-Create a source module under the discovery tree:
+Prefer the scaffold, then edit the generated source module:
+
+```sh
+npm run skin:new -- --target box --id studio.box.notebook --label "笔记卡片" --templates concept,summary --preset header-band
+```
 
 ```text
 frontend/src/extensions/teaching-document/skins/custom/notebook/
@@ -39,5 +43,7 @@ export default defineBoxSkin({
 ```
 
 The selector only lists Box skins compatible with the selected box template. A skin class is applied to the existing `.td-box`; `.td-box-header` and `.td-box-body` are the stable visual descendants available to CSS.
+
+Before finishing, run `npm run skin:check -- --path frontend/src/extensions/teaching-document/skins/custom/studio-box-notebook`.
 
 Do not redefine the Box block, its child flow, template ID, continuation markup, or pagination data attributes. Existing `appearance` values are still applied as per-card overrides. Avoid layout features that depend on the viewport or interaction to convey required information.
