@@ -23,7 +23,7 @@ npm run skin:check -- --path frontend/src/extensions/teaching-document/skins/cus
 npm run skin:check -- --json
 ```
 
-The checker is read-only. It statically validates the default definition, stable ID, class name, uniqueness, target compatibility metadata, `printSafe: true`, and the public authoring import. It parses CSS with PostCSS to require skin-class scoping and to reject unsafe layout rules such as fixed/sticky positioning, scrolling overflow, viewport units, external URLs, animation, and pagination properties. Warnings do not fail the command but require manual screen/A4 review.
+The checker is read-only. It statically validates the default definition, stable ID, class name, uniqueness, target compatibility metadata, `printSafe: true`, and the public authoring import. A declarative custom `skin.ts` may value-import only the authoring API and a sibling `.css` file; extra local TS/JS modules are not allowed. Type-only `@/` imports remain allowed. It parses CSS with PostCSS to require every selector to start with the exact skin root class and to reject unsafe layout rules such as fixed/sticky positioning, scrolling overflow (including axis-specific values), viewport units, external or protocol-relative URLs, CSS `@import`, animation, and pagination properties. Warnings do not fail the command but require manual screen/A4 review.
 
 ## Skin Lab
 

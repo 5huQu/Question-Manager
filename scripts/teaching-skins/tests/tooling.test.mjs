@@ -64,19 +64,39 @@ test('skin:check accepts valid heading and box skins', async () => {
   assert.equal(result.skins.length, 2)
 })
 
+test('skin:check allows the declarative authoring import, sibling CSS, and safe type-only imports', async () => {
+  const root = await tempSkinRoot()
+  const directory = await writeSkin(root, 'safe-imports', { className: 'td-skin-studio-heading-safe-imports' })
+  await fs.writeFile(path.join(directory, 'skin.ts'), "import './styles.css'\nimport type { HeadingSkinDefinition } from '@/utils/teachingDocument/skins/authoring'\nimport { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'\nexport default defineHeadingSkin({ id: 'studio.heading.safe-imports', label: 'Safe', version: 1, printSafe: true, className: 'td-skin-studio-heading-safe-imports' })\n")
+  const result = await checkTeachingSkins({ root })
+  assert.equal(result.ok, true)
+})
+
 for (const [name, setup, expectedCode] of [
   ['duplicate ID', async (root) => { await writeSkin(root, 'one'); await writeSkin(root, 'two', { id: 'studio.heading.sample', className: 'td-skin-two' }) }, 'duplicate-id'],
   ['duplicate className', async (root) => { await writeSkin(root, 'one'); await writeSkin(root, 'two', { id: 'studio.heading.two', className: 'td-skin-studio-heading-sample' }) }, 'duplicate-class-name'],
   ['printSafe false', async (root) => { await writeSkin(root, 'bad', { printSafe: 'false' }) }, 'definition'],
   ['wrong authoring import', async (root) => { const directory = await writeSkin(root, 'bad'); await fs.writeFile(path.join(directory, 'skin.ts'), "import { defineHeadingSkin } from '@/utils/teachingDocument/skins/types'\nexport default defineHeadingSkin({ id: 'studio.heading.bad', label: 'Bad', version: 1, printSafe: true, className: 'td-skin-bad' })\n") }, 'authoring-import'],
+  ['local side-effect helper', async (root) => { const directory = await writeSkin(root, 'bad'); await fs.writeFile(path.join(directory, 'skin.ts'), "import './styles.css'\nimport './helper'\nimport { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'\nexport default defineHeadingSkin({ id: 'studio.heading.bad', label: 'Bad', version: 1, printSafe: true, className: 'td-skin-bad' })\n") }, 'local-code-import'],
+  ['local TypeScript helper', async (root) => { const directory = await writeSkin(root, 'bad'); await fs.writeFile(path.join(directory, 'skin.ts'), "import './helper.ts'\nimport { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'\nexport default defineHeadingSkin({ id: 'studio.heading.bad', label: 'Bad', version: 1, printSafe: true, className: 'td-skin-bad' })\n") }, 'local-code-import'],
+  ['local JavaScript helper', async (root) => { const directory = await writeSkin(root, 'bad'); await fs.writeFile(path.join(directory, 'skin.ts'), "import './helper.js'\nimport { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'\nexport default defineHeadingSkin({ id: 'studio.heading.bad', label: 'Bad', version: 1, printSafe: true, className: 'td-skin-bad' })\n") }, 'local-code-import'],
+  ['local named helper import', async (root) => { const directory = await writeSkin(root, 'bad'); await fs.writeFile(path.join(directory, 'skin.ts'), "import { helper } from './helper'\nimport { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'\nexport default defineHeadingSkin({ id: 'studio.heading.bad', label: 'Bad', version: 1, printSafe: true, className: 'td-skin-bad' })\n") }, 'local-code-import'],
   ['global selector', async (root) => { await writeSkin(root, 'bad', {}, 'body { color: red; }') }, 'unscoped-selector'],
   ['fixed positioning', async (root) => { await writeSkin(root, 'bad', {}, '.td-skin-studio-heading-sample { position: fixed; }') }, 'position'],
   ['sticky positioning', async (root) => { await writeSkin(root, 'bad', {}, '.td-skin-studio-heading-sample { position: sticky; }') }, 'position'],
   ['scroll overflow', async (root) => { await writeSkin(root, 'bad', {}, '.td-skin-studio-heading-sample { overflow: scroll; }') }, 'overflow-scroll'],
+  ['vertical scroll overflow', async (root) => { await writeSkin(root, 'bad', {}, '.td-skin-studio-heading-sample { overflow-y: scroll; }') }, 'overflow-scroll'],
+  ['horizontal auto overflow', async (root) => { await writeSkin(root, 'bad', {}, '.td-skin-studio-heading-sample { overflow-x: auto; }') }, 'overflow-scroll'],
   ['viewport unit', async (root) => { await writeSkin(root, 'bad', {}, '.td-skin-studio-heading-sample { min-height: 30vh; }') }, 'viewport-unit'],
   ['external URL', async (root) => { await writeSkin(root, 'bad', {}, ".td-skin-studio-heading-sample { background-image: url('https://example.com/x.png'); }") }, 'external-url'],
+  ['protocol-relative URL', async (root) => { await writeSkin(root, 'bad', {}, ".td-skin-studio-heading-sample { background-image: url('//example.com/x.png'); }") }, 'external-url'],
+  ['CSS import', async (root) => { await writeSkin(root, 'bad', {}, "@import '//example.com/style.css';\n.td-skin-studio-heading-sample { color: inherit; }") }, 'css-import'],
   ['page break', async (root) => { await writeSkin(root, 'bad', {}, '.td-skin-studio-heading-sample { break-before: page; }') }, 'pagination-property'],
   ['unscoped selector', async (root) => { await writeSkin(root, 'bad', {}, '.other { color: red; }') }, 'unscoped-selector'],
+  ['selector rooted by another class', async (root) => { await writeSkin(root, 'bad', {}, '.other .td-skin-studio-heading-sample { color: red; }') }, 'unscoped-selector'],
+  ['negated selector with skin token', async (root) => { await writeSkin(root, 'bad', {}, ':not(.td-skin-studio-heading-sample) .other { color: red; }') }, 'unscoped-selector'],
+  ['has selector with skin token', async (root) => { await writeSkin(root, 'bad', {}, '.other:has(.td-skin-studio-heading-sample) { color: red; }') }, 'unscoped-selector'],
+  ['skin class prefix match', async (root) => { await writeSkin(root, 'bad', {}, '.td-skin-studio-heading-sample-extra { color: red; }') }, 'unscoped-selector'],
 ]) {
   test(`skin:check rejects ${name}`, async () => {
     const root = await tempSkinRoot()
@@ -86,6 +106,13 @@ for (const [name, setup, expectedCode] of [
     assert.equal(result.errors.some((error) => error.code === expectedCode), true)
   })
 }
+
+test('skin:check accepts selectors starting at the exact Skin root', async () => {
+  const root = await tempSkinRoot()
+  await writeSkin(root, 'rooted', {}, '.td-skin-studio-heading-sample {}\n.td-skin-studio-heading-sample:hover {}\n.td-skin-studio-heading-sample::before {}\n.td-skin-studio-heading-sample .td-box-header {}\n')
+  const result = await checkTeachingSkins({ root })
+  assert.equal(result.ok, true)
+})
 
 test('skin:check reports warnings without failing', async () => {
   const root = await tempSkinRoot()

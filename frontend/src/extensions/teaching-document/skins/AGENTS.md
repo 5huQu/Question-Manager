@@ -19,7 +19,7 @@ A `skin.ts` file must default-export `defineHeadingSkin(...)` or `defineBoxSkin(
 import { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'
 ```
 
-It may import its sibling CSS. Do not modify the core registry, pagination, ProseMirror core, server routes, database code, or the print pipeline for a normal skin request. Do not add executable runtime renderers, user-supplied JavaScript, or CSS/HTML to TeachingDocument JSON.
+Its value imports may only be the public authoring API and a sibling CSS file such as `./styles.css`. Declarative Skins must not add extra local executable TS/JS/TSX/JSX modules or side-effect helpers. Type-only `@/` imports remain within the existing safe type boundary. Do not modify the core registry, pagination, ProseMirror core, server routes, database code, or the print pipeline for a normal skin request. Do not add executable runtime renderers, user-supplied JavaScript, or CSS/HTML to TeachingDocument JSON.
 
 ## Completion checklist
 

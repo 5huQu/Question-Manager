@@ -15,8 +15,13 @@ function importIssues(analysis, custom) {
     issues.push(checkIssue('authoring-import', analysis.file, `Custom skins must import their helper from ${AUTHORING_IMPORT}.`))
   }
   for (const entry of analysis.imports) {
-    if (entry.module === AUTHORING_IMPORT || /^\.\/(?!\.\.\/)/.test(entry.module)) continue
+    if (entry.module === AUTHORING_IMPORT) continue
     if (entry.typeOnly && entry.module.startsWith('@/')) continue
+    if (/^\.\/[^/]+\.css$/i.test(entry.module)) continue
+    if (/^\.\//.test(entry.module)) {
+      issues.push(checkIssue('local-code-import', analysis.file, `Custom skins may import only a sibling CSS file, not local executable code: ${entry.module}`))
+      continue
+    }
     issues.push(checkIssue('runtime-core-import', analysis.file, `Custom skin import is outside the authoring boundary: ${entry.module}`))
   }
   return issues

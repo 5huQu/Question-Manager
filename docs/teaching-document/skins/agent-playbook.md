@@ -12,6 +12,10 @@ Use this workflow for Codex, Claude Code, Gemini CLI, or another Coding Agent cr
 8. Run the generated contract test and the relevant frontend checks.
 9. Report the result and any contract limitation.
 
+## Declarative import boundary
+
+Keep `skin.ts` declarative. Its value imports may only be the public authoring API and a sibling CSS file such as `./styles.css`. Do not add local TS/JS/TSX/JSX helper or side-effect modules, including indirectly importing registry, resolver, renderer, NodeViews, pagination, server, or database code. Type-only `@/` imports are permitted within the existing type boundary.
+
 ## Reference-image workflow
 
 When a user provides a title or card reference image, first decide whether it can be represented as a declarative CSS Skin. Identify the target, normal-flow layout, border, background, spacing, decoration, and typography. Scaffold the Skin and implement only CSS scoped to its generated class.
