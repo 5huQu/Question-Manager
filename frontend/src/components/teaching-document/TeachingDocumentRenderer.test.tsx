@@ -128,9 +128,9 @@ describe('TeachingDocumentRenderer fallbacks', () => {
         { type: 'box', id: 'design-box', templateId: 'concept', breakBehavior: 'auto', children: [], skin: { id: 'builtin.box.left-accent', version: 1 } },
       ])} />,
     )
-    expect(html).toContain('--td-skin-builtin-heading-left-accent-accent-border:4px solid #2563EB')
-    expect(html).toContain('--td-skin-builtin-box-left-accent-frame-border:1px solid #BFDBFE')
-    expect(html).toContain('--td-skin-builtin-box-left-accent-header-fill:#EFF6FF')
+    expect(html).toContain('--td-skin-builtin--heading--left-accent-accent-border:4px solid #2563EB')
+    expect(html).toContain('--td-skin-builtin--box--left-accent-frame-border:1px solid #BFDBFE')
+    expect(html).toContain('--td-skin-builtin--box--left-accent-header-fill:#EFF6FF')
     expect(html).not.toMatch(/td-document[^>]+--td-skin-/)
   })
 
@@ -145,7 +145,7 @@ describe('TeachingDocumentRenderer fallbacks', () => {
         ])} />,
       )
       expect(html).toContain('td-skin-heading-left-accent')
-      expect(html).not.toContain('--td-skin-builtin-heading-left-accent-')
+      expect(html).not.toContain('--td-skin-builtin--heading--left-accent-')
     } finally {
       ;(definition as unknown as { design: unknown }).design = originalDesign
     }
@@ -162,9 +162,9 @@ describe('TeachingDocumentRenderer fallbacks', () => {
         skinDesignVariantIds={{ 'builtin.heading.left-accent': 'amber' }}
       />,
     )
-    expect(html.match(/--td-skin-builtin-heading-left-accent-accent-border:4px solid #B45309/g)).toHaveLength(2)
-    expect(html).toContain('--td-skin-builtin-box-left-accent-accent-border:4px solid #2563EB')
-    expect(html).not.toContain('--td-skin-builtin-box-left-accent-accent-border:4px solid #B45309')
+    expect(html.match(/--td-skin-builtin--heading--left-accent-accent-border:4px solid #B45309/g)).toHaveLength(2)
+    expect(html).toContain('--td-skin-builtin--box--left-accent-accent-border:4px solid #2563EB')
+    expect(html).not.toContain('--td-skin-builtin--box--left-accent-accent-border:4px solid #B45309')
   })
 
   it('adds stable skin DOM hooks for resolved skins and falls back for missing refs', () => {

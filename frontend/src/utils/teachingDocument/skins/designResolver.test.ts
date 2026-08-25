@@ -94,8 +94,8 @@ describe('Teaching Skin design resolver', () => {
       { slotId: 'accentSpacing', tokenId: 'studio.spacing.2' },
     ])
     expect(resolution.design.cssVariables).toEqual({
-      '--td-skin-studio-heading-accent-accent-color': '#2563EB',
-      '--td-skin-studio-heading-accent-accent-spacing': '8px',
+      '--td-skin-studio--heading--accent-accent-color': '#2563EB',
+      '--td-skin-studio--heading--accent-accent-spacing': '8px',
     })
     expect(Object.isFrozen(resolution.design.cssVariables)).toBe(true)
   })
@@ -108,8 +108,8 @@ describe('Teaching Skin design resolver', () => {
       design: {
         variantId: 'greenCompact',
         cssVariables: {
-          '--td-skin-studio-heading-accent-accent-color': '#16A34A',
-          '--td-skin-studio-heading-accent-accent-spacing': '4px',
+          '--td-skin-studio--heading--accent-accent-color': '#16A34A',
+          '--td-skin-studio--heading--accent-accent-spacing': '4px',
         },
       },
     })
@@ -118,8 +118,8 @@ describe('Teaching Skin design resolver', () => {
       design: {
         variantId: 'green',
         cssVariables: {
-          '--td-skin-studio-heading-accent-accent-color': '#16A34A',
-          '--td-skin-studio-heading-accent-accent-spacing': '8px',
+          '--td-skin-studio--heading--accent-accent-color': '#16A34A',
+          '--td-skin-studio--heading--accent-accent-spacing': '8px',
         },
       },
     })
@@ -130,7 +130,7 @@ describe('Teaching Skin design resolver', () => {
     const radius = box.design?.tokens?.find((token) => token.kind === 'radius')
     expect(border && serializeTeachingSkinTokenToCssValue(border, index)).toBe('1px solid #CBD5E1')
     expect(radius && serializeTeachingSkinTokenToCssValue(radius, index)).toBe('8px')
-    expect(teachingSkinSlotCssVariableName(box.id, 'cardBorder')).toBe('--td-skin-studio-box-notebook-card-border')
+    expect(teachingSkinSlotCssVariableName(box.id, 'cardBorder')).toBe('--td-skin-studio--box--notebook-card-border')
   })
 
   it('fails closed with no CSS-variable map for missing, ambiguous, incompatible, or unavailable input', () => {
@@ -152,7 +152,7 @@ describe('Teaching Skin design resolver', () => {
     })
     expect(resolveTeachingSkinDesign(index, heading.id, 'removed')).toMatchObject({
       status: 'resolved',
-      design: { cssVariables: { '--td-skin-studio-heading-accent-accent-color': '#2563EB' } },
+      design: { cssVariables: { '--td-skin-studio--heading--accent-accent-color': '#2563EB' } },
       issues: [{ code: 'variant-missing', skinId: heading.id, variantId: 'removed' }],
     })
     expect(resolveTeachingSkinDesign(index, 'studio.heading.removed')).toEqual({
@@ -183,7 +183,7 @@ describe('Teaching Skin design resolver', () => {
     registry.register(box)
     expect(resolveTeachingSkinDesign(liveIndex, box.id)).toMatchObject({
       status: 'resolved',
-      design: { cssVariables: { '--td-skin-studio-box-notebook-card-border': '1px solid #CBD5E1' } },
+      design: { cssVariables: { '--td-skin-studio--box--notebook-card-border': '1px solid #CBD5E1' } },
     })
   })
 
@@ -193,10 +193,12 @@ describe('Teaching Skin design resolver', () => {
     const resolution = resolveTeachingSkinDesign(createTeachingSkinDesignIndex([plainClassName]), plainClassName.id)
     expect(resolution).toMatchObject({
       status: 'resolved',
-      design: { cssVariables: { '--td-skin-studio-heading-accent-accent-color': '#2563EB' } },
+      design: { cssVariables: { '--td-skin-studio--heading--accent-accent-color': '#2563EB' } },
     })
-    expect(teachingSkinIdToCssNamespace('studio.heading.accent')).toBe('studio-heading-accent')
-    expect(teachingSkinIdToCssNamespace('studio_heading.accent')).toBe('studio-heading-accent')
+    expect(teachingSkinIdToCssNamespace('studio.heading.accent')).toBe('studio--heading--accent')
+    expect(teachingSkinIdToCssNamespace('studio_heading.accent')).toBe('studio_heading--accent')
+    const ids = ['studio.heading.accent', 'studio_heading_accent', 'studio-heading-accent']
+    expect(new Set(ids.map(teachingSkinIdToCssNamespace)).size).toBe(3)
   })
 
   it('treats a legacy Skin without design metadata as a normal no-design result', () => {
