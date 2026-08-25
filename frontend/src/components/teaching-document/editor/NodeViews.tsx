@@ -39,6 +39,7 @@ import {
 export interface DocumentEditorResolvers {
   resolveQuestion?: (questionId: string) => QuestionResolution
   resolveFigure?: (asset: FigureAssetRef) => FigureResolution
+  skinPresetBindings?: Readonly<Record<string, string>>
 }
 
 const ResolverContext = createContext<DocumentEditorResolvers>({})
@@ -770,7 +771,7 @@ function replaceInlineRange(inlines: TeachingInline[], range: InlineRange, repla
 }
 
 export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }: NodeViewProps) {
-  const { resolveQuestion, resolveFigure } = useResolvers()
+  const { resolveQuestion, resolveFigure, skinPresetBindings } = useResolvers()
   const templateId = String(node.attrs.templateId || 'concept')
   const title = String(node.attrs.title || '')
   const icon = String(node.attrs.icon || '')
@@ -811,7 +812,7 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
   const resolvedSkin = resolveBoxSkin(skin, templateId)
   const skinActive = resolvedSkin.status === 'resolved'
   const designVariables = skinActive
-    ? resolveTeachingSkinDesignRenderState(resolvedSkin.definition, resolveTeachingSkinVariantRequest(resolvedSkin.skin, resolvedSkin.definition.id)).cssVariables
+    ? resolveTeachingSkinDesignRenderState(resolvedSkin.definition, resolveTeachingSkinVariantRequest(resolvedSkin.skin, resolvedSkin.definition.id, undefined, skinPresetBindings)).cssVariables
     : undefined
   const boxFragments = paginationContext?.pagination?.pages.flatMap((page) => page.items
     .filter((item): item is BoxFragmentPaginationItem => item.kind === 'fragment' && item.fragmentType === 'box' && item.blockId === boxBlock.id)

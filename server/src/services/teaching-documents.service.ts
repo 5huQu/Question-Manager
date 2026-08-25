@@ -23,6 +23,7 @@ const FATAL_ISSUE_CODES = new Set([
   'invalid-inline-content', 'invalid-box-children', 'absolute-legacy-path',
   'invalid-outline', 'invalid-heading-numbering', 'invalid-table',
   'invalid-inline-format', 'invalid-text-layout', 'invalid-box-appearance', 'invalid-teaching-skin',
+  'invalid-teaching-skin-preset',
 ])
 const ALLOWED_IMAGE_TYPES = new Map([
   ['image/png', '.png'],
@@ -166,6 +167,7 @@ const SKIN_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$/
 /** Keep this persisted grammar aligned with frontend's isTeachingSkinLocalDesignId. */
 const SKIN_LOCAL_VARIANT_ID = /^[a-z][A-Za-z0-9]*$/
 const TEACHING_SKIN_REF_KEYS = new Set(['id', 'version', 'variant', 'settings'])
+const TEACHING_SKIN_PRESET_REF_KEYS = new Set(['id', 'version'])
 const UNSAFE_SKIN_SETTING_KEY = /^(?:css|cssText|html|react|className|class|style|script|component)$/i
 
 function isJsonValue(value: unknown): boolean {
@@ -205,6 +207,21 @@ function validateTeachingSkin(value: unknown, blockId: string, issues: TeachingD
   }
 }
 
+/** Structural only: the backend intentionally does not import the frontend Preset registry. */
+function validateTeachingSkinPresetDesign(value: unknown, issues: TeachingDocumentIssue[]) {
+  if (value === undefined) return
+  if (!isObject(value) || Object.keys(value).some((key) => key !== 'preset') || !isObject(value.preset)) {
+    issues.push({ level: 'error', code: 'invalid-teaching-skin-preset', message: '文档设计只能包含 preset 引用。' })
+    return
+  }
+  const preset = value.preset
+  if (Object.keys(preset).some((key) => !TEACHING_SKIN_PRESET_REF_KEYS.has(key))
+    || !SKIN_ID.test(String(preset.id || ''))
+    || !Number.isInteger(preset.version) || Number(preset.version) < 1) {
+    issues.push({ level: 'error', code: 'invalid-teaching-skin-preset', message: 'Preset 引用只能包含有效的 id 和正整数 version。' })
+  }
+}
+
 function validateOutline(value: unknown, issues: TeachingDocumentIssue[]) {
   if (value === undefined) return
   if (!isObject(value)) { issues.push({ level: 'error', code: 'invalid-outline', message: '章节设置必须是对象。' }); return }
@@ -237,6 +254,7 @@ export function inspectTeachingDocument(value: unknown) {
     return { fatal: true, issues }
   }
   validateOutline(value.outline, issues)
+  validateTeachingSkinPresetDesign(value.design, issues)
 
   const ids = new Set<string>()
   const visitBlock = (raw: unknown, insideBox: boolean) => {

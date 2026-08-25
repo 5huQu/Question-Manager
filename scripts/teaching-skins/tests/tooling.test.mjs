@@ -24,6 +24,17 @@ async function writeSkin(root, name, options = {}, css = null) {
   return directory
 }
 
+async function writePreset(root, name, source) {
+  const directory = path.join(root, 'presets', name)
+  await fs.mkdir(directory, { recursive: true })
+  await fs.writeFile(path.join(directory, 'preset.ts'), source)
+  return directory
+}
+
+function presetSource({ id = 'studio.preset.sample', version = 1, bindings = "{ 'studio.heading.sample': 'green' }" } = {}) {
+  return `import { defineTeachingSkinPreset } from '@/utils/teachingDocument/skins/authoring'\nexport default defineTeachingSkinPreset({ id: '${id}', version: ${version}, label: 'Sample', bindings: ${bindings} })\n`
+}
+
 test('skin:new creates heading and box scaffolds without overwriting', async () => {
   const root = await tempSkinRoot()
   const heading = await createTeachingSkin(['--target', 'heading', '--id', 'studio.heading.lesson-title', '--label', '章节标题', '--levels', '1,2', '--preset', 'left-accent'], root)
@@ -62,6 +73,44 @@ test('skin:check accepts valid heading and box skins', async () => {
   const result = await checkTeachingSkins({ root })
   assert.equal(result.ok, true)
   assert.equal(result.skins.length, 2)
+})
+
+test('skin:check validates Preset dependencies and exact version identity', async () => {
+  const root = await tempSkinRoot()
+  await writeSkin(root, 'heading', { id: 'studio.heading.sample', className: 'td-skin-studio-heading-sample', support: ", design: { tokens: [{ id: 'studio.color.green', kind: 'color', label: 'Green', printSafe: true, value: { hex: '#16A34A' } }], slots: [{ id: 'accentColor', kind: 'color', defaultTokenId: 'studio.color.green' }], variants: [{ id: 'green', label: 'Green', tokenBindings: { accentColor: 'studio.color.green' } }] }" })
+  await writePreset(root, 'one', presetSource())
+  await writePreset(root, 'two', presetSource({ bindings: "{ 'studio.heading.sample': 'missing' }" }))
+  const result = await checkTeachingSkins({ root })
+  assert.equal(result.ok, false)
+  assert.equal(result.errors.some((error) => error.code === 'preset-reference'), true)
+  await writePreset(root, 'duplicate', presetSource())
+  const duplicate = await checkTeachingSkins({ root })
+  assert.equal(duplicate.errors.some((error) => error.code === 'duplicate-preset'), true)
+})
+
+test('skin:check keeps Preset source declarative and side-effect-free', async () => {
+  for (const source of [
+    `import './side-effect'\n${presetSource()}`,
+    `import './styles.css'\n${presetSource()}`,
+    `import { runtime } from '@/runtime/example'\n${presetSource()}`,
+    `console.log('side effect')\n${presetSource()}`,
+    `const runtimeValue = 1\n${presetSource()}`,
+    `function helper() {}\n${presetSource()}`,
+  ]) {
+    const root = await tempSkinRoot()
+    await writePreset(root, 'bad', source)
+    const result = await checkTeachingSkins({ root })
+    assert.equal(result.ok, false)
+    assert.equal(result.errors.some((error) => error.code === 'preset-boundary'), true)
+  }
+})
+
+test('skin:check requires exactly one default Preset export', async () => {
+  const root = await tempSkinRoot()
+  await writePreset(root, 'duplicate-export', `${presetSource()}\nexport default defineTeachingSkinPreset({ id: 'builtin.preset.duplicate', version: 1, label: '重复导出', headingSkins: {} })`)
+  const result = await checkTeachingSkins({ root })
+  assert.equal(result.ok, false)
+  assert.equal(result.errors.some((error) => error.code === 'preset-definition'), true)
 })
 
 test('skin:check allows the declarative authoring import, sibling CSS, and safe type-only imports', async () => {

@@ -148,6 +148,25 @@ describe('TeachingDocumentRenderer fallbacks', () => {
     expect(html).toContain('--td-skin-builtin--box--left-accent-header-fill:#ECFDF5')
   })
 
+  it('uses a pinned Preset without materializing Variants, while explicit and missing Variants still win', () => {
+    const document: TeachingDocumentV1 = {
+      ...documentWith([
+        { type: 'heading', id: 'preset-heading', level: 2, content: [{ type: 'text', text: 'Preset 标题' }], skin: { id: 'builtin.heading.left-accent', version: 1 } },
+        { type: 'heading', id: 'explicit-heading', level: 2, content: [{ type: 'text', text: '显式标题' }], skin: { id: 'builtin.heading.left-accent', version: 1, variant: 'futureVariant' } },
+        { type: 'box', id: 'preset-box', templateId: 'concept', breakBehavior: 'auto', children: [], skin: { id: 'builtin.box.left-accent', version: 1 } },
+        { type: 'heading', id: 'unskinned', level: 2, content: [{ type: 'text', text: '普通标题' }] },
+      ]),
+      design: { preset: { id: 'builtin.preset.warm', version: 1 } },
+    }
+    const html = renderToStaticMarkup(<TeachingDocumentRenderer document={document} />)
+    expect(html).toContain('--td-skin-builtin--heading--left-accent-accent-border:4px solid #B45309')
+    expect(html).toContain('--td-skin-builtin--box--left-accent-frame-border:1px solid #A7F3D0')
+    expect(html).toContain('--td-skin-builtin--heading--left-accent-accent-border:4px solid #2563EB')
+    expect(html).not.toMatch(/data-block-id="unskinned"[^>]+data-skin-id/)
+    expect(document.content[0]).toMatchObject({ skin: { id: 'builtin.heading.left-accent' } })
+    expect((document.content[0] as { skin: { variant?: string } }).skin.variant).toBeUndefined()
+  })
+
   it('falls back to Base for a missing persisted Variant without changing the stored ref', () => {
     const document = documentWith([
       { type: 'heading', id: 'heading-future', level: 2, content: [{ type: 'text', text: '未来标题' }], skin: { id: 'builtin.heading.left-accent', version: 1, variant: 'futureVariant' } },

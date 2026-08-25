@@ -8,4 +8,6 @@ Continuous editor preview, A4 measurement, paginated pages, and print reuse the 
 
 No Variant selector is introduced here. Theme/profile systems, token marketplace, and broader rendering architecture remain out of scope.
 
+Phase 2B-3 adds an optional pinned document Preset. It is resolved once per document and provides only exact Skin → Variant requests; the shared adapter keeps preview override, explicit Variant, Preset, and Base precedence identical in continuous rendering, editor, A4, and print. An unavailable Preset emits no partial binding and remains preserved in document JSON.
+
 Follow-up: static checking that every `var(--td-skin-...)` CSS reference maps to a declared Slot is intentionally deferred. Runtime remains fail-closed for emitted maps, and author guidance restricts CSS consumption to declared Slots.

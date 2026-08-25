@@ -12,6 +12,7 @@ import type {
   TeachingDocumentV1,
   TeachingDocumentStyle,
   TeachingDocumentOutlineOptions,
+  TeachingDocumentDesign,
   TeachingDocumentType,
   TeachingInline,
   FigureAssetRef,
@@ -381,6 +382,7 @@ export interface EditorDocMeta {
   metadata: Record<string, unknown>
   style?: TeachingDocumentStyle
   outline?: TeachingDocumentOutlineOptions
+  design?: TeachingDocumentDesign
 }
 
 /** 从编辑器 JSON 还原 TeachingDocumentV1；保留未知节点和旧字段 */
@@ -402,5 +404,6 @@ export function editorDocToTeachingDocument(json: JSONContent, meta: EditorDocMe
     content: blocks,
     ...(meta.style ? { style: meta.style } : {}),
     ...(meta.outline ? { outline: meta.outline } : {}),
+    ...(meta.design ? { design: meta.design } : {}),
   }
 }

@@ -30,6 +30,7 @@ import type {
   TeachingBlock,
   TeachingDocument,
   TeachingDocumentStyle,
+  TeachingDocumentDesign,
   TeachingDocumentOutlineOptions,
   TeachingDocumentPrintOptions,
   PrintChromeAlignment,
@@ -50,7 +51,7 @@ import { getBoxTemplate } from './boxTemplates'
 import { TEXT_FONT_OPTIONS } from './lectureFonts'
 import { isFigureLayoutPreset } from './figureLayoutPresets'
 import { parseBoxAppearance } from './boxAppearance'
-import { parseTeachingSkinRef, resolveBoxSkin, resolveHeadingSkin } from './skins'
+import { parseTeachingSkinRef, parseTeachingSkinPresetRef, resolveBoxSkin, resolveHeadingSkin } from './skins'
 
 // ─── 常量 ────────────────────────────────────────────────────────────────────
 
@@ -633,11 +634,20 @@ export function parseTeachingDocument(json: unknown): { document: TeachingDocume
     title: typeof root.title === 'string' ? root.title : '未命名文档',
     metadata: root.metadata && typeof root.metadata === 'object' && !Array.isArray(root.metadata) ? root.metadata as Record<string, unknown> : {},
     content: blocks,
+    ...(parseDocumentDesign(root.design) ? { design: parseDocumentDesign(root.design) } : {}),
     style: parseDocumentStyle(root.style),
     outline: parseDocumentOutline(root.outline),
   }
 
   return { document, issues }
+}
+
+function parseDocumentDesign(raw: unknown): TeachingDocumentDesign | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const design = raw as Record<string, unknown>
+  if (Object.keys(design).some((key) => key !== 'preset')) return undefined
+  const preset = parseTeachingSkinPresetRef(design.preset)
+  return preset ? { preset } : undefined
 }
 
 function parseDocumentOutline(raw: unknown) {

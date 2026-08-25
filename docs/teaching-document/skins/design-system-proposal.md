@@ -12,7 +12,7 @@
 
 ## Non Goals
 
-- This proposal does not implement a Document Theme, Preset runtime, end-user Variant UI, settings panel, or a Variant migration framework.
+- This proposal does not implement a Document Theme, end-user Variant/Preset UI, settings panel, or a Variant/Preset migration framework. The minimal exact-Skin pinned Preset runtime is implemented in Phase 2B-3; scoped matching and Token bindings remain future work.
 - It does not permit CSS, HTML, class names, React, executable code, arbitrary style strings, or arbitrary CSS-property maps in `TeachingDocument` JSON.
 - It does not change the Heading/Box DOM, pagination algorithms, print pipeline structure, ProseMirror model, or database schema.
 - A Preset is not a mechanism for adding a Skin to an unskinned legacy block. Applying a Skin remains an explicit block-level action.
@@ -297,7 +297,7 @@ interface FutureTeachingSkinRef {
 }
 
 interface FutureTeachingDocumentSkinDesign {
-  preset?: { id: string; version?: number }
+  preset?: { id: string; version: number }
 }
 ```
 

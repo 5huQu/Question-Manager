@@ -17,6 +17,34 @@ export function isLocalDesignId(value) {
   return typeof value === 'string' && LOCAL_DESIGN_ID_PATTERN.test(value)
 }
 
+export function presetDefinitionShapeIssues(preset) {
+  const issues = []
+  if (!hasExactKeys(preset, ['apiVersion', 'id', 'version', 'label', 'description', 'bindings'])) return ['Preset may use only apiVersion, id, version, label, description, and bindings.']
+  if (preset.apiVersion !== 1) issues.push('Preset apiVersion must be 1.')
+  if (!isStableSkinId(preset.id)) issues.push('Preset ID must be a stable namespaced lowercase identifier.')
+  if (!Number.isInteger(preset.version) || preset.version < 1) issues.push('Preset version must be a positive integer.')
+  if (!nonEmptyString(preset.label)) issues.push('Preset label is required.')
+  if (preset.description !== undefined && !nonEmptyString(preset.description)) issues.push('Preset description must be a non-empty string when provided.')
+  if (!preset.bindings || typeof preset.bindings !== 'object' || Array.isArray(preset.bindings) || !Object.keys(preset.bindings).length) issues.push('Preset bindings must be a non-empty static object.')
+  else for (const [skinId, variantId] of Object.entries(preset.bindings)) {
+    if (!isStableSkinId(skinId)) issues.push('Preset binding keys must be stable Skin IDs.')
+    if (!isLocalDesignId(variantId)) issues.push('Preset binding values must be stable Skin-local Variant IDs.')
+  }
+  return issues
+}
+
+export function presetReferenceIssues(preset, skinDefinitions) {
+  if (!preset?.bindings || typeof preset.bindings !== 'object' || Array.isArray(preset.bindings)) return []
+  const issues = []
+  for (const [skinId, variantId] of Object.entries(preset.bindings)) {
+    const skin = skinDefinitions.get(skinId)
+    if (!skin) { issues.push(`Preset binding references missing Skin ${skinId}.`); continue }
+    if (!skin.design) { issues.push(`Preset binding Skin ${skinId} has no design metadata.`); continue }
+    if (!Array.isArray(skin.design.variants) || !skin.design.variants.some((variant) => variant?.id === variantId)) issues.push(`Preset binding ${skinId} references missing Variant ${variantId}.`)
+  }
+  return issues
+}
+
 function hasExactKeys(value, keys) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const allowed = new Set(keys)

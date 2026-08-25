@@ -88,6 +88,8 @@ export interface TeachingDocumentResolvers {
   probeChoiceLayouts?: boolean
   /** Ephemeral Skin Lab variant choice; never serialized into a document. */
   skinDesignVariantIds?: TeachingSkinDesignVariantIds
+  /** Trusted bindings from the document-level pinned Preset. */
+  skinPresetBindings?: Readonly<Record<string, string>>
 }
 
 export type FigureResolution =
@@ -131,7 +133,7 @@ function BoxIcon({ name, className }: { name?: string; className?: string }) {
 
 // ─── 各块渲染器 ──────────────────────────────────────────────────────────────
 
-function HeadingBlockView({ block, numberLabel, skinDesignVariantIds }: { block: HeadingBlock; numberLabel?: string; skinDesignVariantIds?: TeachingSkinDesignVariantIds }) {
+function HeadingBlockView({ block, numberLabel, skinDesignVariantIds, skinPresetBindings }: { block: HeadingBlock; numberLabel?: string; skinDesignVariantIds?: TeachingSkinDesignVariantIds; skinPresetBindings?: Readonly<Record<string, string>> }) {
   const Tag = `h${block.level}` as 'h1' | 'h2' | 'h3' | 'h4'
   const sizeClass = {
     1: 'text-2xl font-bold mt-8 mb-4',
@@ -141,7 +143,7 @@ function HeadingBlockView({ block, numberLabel, skinDesignVariantIds }: { block:
   }[block.level]
   const skin = resolveHeadingSkin(block.skin, block.level)
   const design = skin.status === 'resolved'
-    ? resolveTeachingSkinDesignRenderState(skin.definition, resolveTeachingSkinVariantRequest(skin.skin, skin.definition.id, skinDesignVariantIds))
+    ? resolveTeachingSkinDesignRenderState(skin.definition, resolveTeachingSkinVariantRequest(skin.skin, skin.definition.id, skinDesignVariantIds, skinPresetBindings))
     : undefined
   return (
     <Tag
@@ -1013,6 +1015,7 @@ function BoxFrame({
   onEditTitle,
   onHeaderPointerDown,
   skinDesignVariantIds,
+  skinPresetBindings,
 }: {
   block: BoxBlock
   continuation?: 'single' | 'start' | 'middle' | 'end'
@@ -1021,12 +1024,13 @@ function BoxFrame({
   onEditTitle?: (boxId: string, title: string) => void
   onHeaderPointerDown?: () => void
   skinDesignVariantIds?: TeachingSkinDesignVariantIds
+  skinPresetBindings?: Readonly<Record<string, string>>
 }) {
   const template = getBoxTemplateOrFallback(block.templateId)
   const skin = resolveBoxSkin(block.skin, block.templateId)
   const skinActive = skin.status === 'resolved'
   const design = skinActive
-    ? resolveTeachingSkinDesignRenderState(skin.definition, resolveTeachingSkinVariantRequest(skin.skin, skin.definition.id, skinDesignVariantIds))
+    ? resolveTeachingSkinDesignRenderState(skin.definition, resolveTeachingSkinVariantRequest(skin.skin, skin.definition.id, skinDesignVariantIds, skinPresetBindings))
     : undefined
   const iconName = block.icon || template.defaultIcon
   const hasHeader = Boolean(template.showHeader || block.title)
@@ -1124,7 +1128,7 @@ function BoxBlockView({
   onEditBoxTitle?: (boxId: string, title: string) => void
 }) {
   return (
-    <BoxFrame block={block} titleEditable={boxTitleEditable} onEditTitle={onEditBoxTitle} skinDesignVariantIds={resolvers.skinDesignVariantIds}>
+    <BoxFrame block={block} titleEditable={boxTitleEditable} onEditTitle={onEditBoxTitle} skinDesignVariantIds={resolvers.skinDesignVariantIds} skinPresetBindings={resolvers.skinPresetBindings}>
       {block.children.map((child, index) => (
         <BlockRenderer
           key={`${child.id}:${index}`}
@@ -1201,6 +1205,7 @@ export function BoxFragmentRenderer({
         onEditTitle={onEditBoxTitle}
         onHeaderPointerDown={onSelectBox}
         skinDesignVariantIds={resolvers.skinDesignVariantIds}
+        skinPresetBindings={resolvers.skinPresetBindings}
       >
         {item.childItems.map((childItem) => {
           const child = block.children[childItem.childIndex]
@@ -1515,7 +1520,7 @@ export function BlockRenderer({
   let content: ReactNode
   switch (block.type) {
     case 'heading':
-      content = <HeadingBlockView block={block} numberLabel={headingLabel} skinDesignVariantIds={resolvers.skinDesignVariantIds} />
+      content = <HeadingBlockView block={block} numberLabel={headingLabel} skinDesignVariantIds={resolvers.skinDesignVariantIds} skinPresetBindings={resolvers.skinPresetBindings} />
       break
     case 'paragraph':
       content = <ParagraphBlockView block={block} />

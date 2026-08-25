@@ -22,3 +22,7 @@ The properties panel reports missing or incompatible current refs but does not r
 ## Round trip preservation
 
 Serialization, editor JSON, client parsing, and server validation preserve a valid unknown `TeachingSkinRef`. This is intentional: a document authored with a temporarily unavailable extension must remain editable and saveable without silently losing the reference. A valid reference contains only `id`, optional `version`, optional Skin-local `variant`, and optional `settings`; invalid or extra top-level fields are rejected at the server save boundary. No registry lookup occurs there, so custom source skins do not require a backend deployment. Published Variant IDs are compatibility API: do not rename them or materially redefine their meaning. Mint a new ID or provide a reviewed migration for a material change; removed IDs remain saved data that falls back safely to Base.
+
+## Preset pins
+
+A persisted Preset is `{ id, version }`, with version required. Runtime resolves the exact pair only; a missing v1 never falls forward to v2. Missing or unknown Presets are preserved and supply zero bindings. A published `(id, version)` must not materially change its bindings—publish a new version and keep prior source versions when existing documents need them.

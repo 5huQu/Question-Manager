@@ -29,6 +29,8 @@ The scaffold writes only `frontend/src/extensions/teaching-document/skins/custom
 
 Use [create-heading-skin.md](create-heading-skin.md) or [create-box-skin.md](create-box-skin.md) for a complete example. The core API is documented in [api-reference.md](api-reference.md).
 
+Pinned document-level Skin → Variant composition is documented in [presets.md](presets.md). Presets are source-defined rules, not Themes or a user-facing selector.
+
 ## Phase 1 boundaries
 
 Implemented: source discovery, registry, resolver/fallback, Heading and Box selectors, persistent refs, and declarative CSS skins.

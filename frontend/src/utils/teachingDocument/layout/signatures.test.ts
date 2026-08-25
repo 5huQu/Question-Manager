@@ -106,6 +106,16 @@ describe('teaching document layout signatures', () => {
     expect(variant.paginationSignature).not.toBe(base.paginationSignature)
   })
 
+  it('distinguishes pinned, missing, and versioned Preset identities', () => {
+    const base: TeachingDocumentV1 = { ...fixture(), content: [{ type: 'heading', id: 'skin-heading', level: 2, content: [{ type: 'text', text: '标题' }], skin: { id: 'builtin.heading.left-accent' } }] }
+    const warmV1: TeachingDocumentV1 = { ...base, design: { preset: { id: 'builtin.preset.warm', version: 1 } } }
+    const warmV2: TeachingDocumentV1 = { ...base, design: { preset: { id: 'builtin.preset.warm', version: 2 } } }
+    const missing: TeachingDocumentV1 = { ...base, design: { preset: { id: 'plugin.preset.future', version: 3 } } }
+    expect(teachingDocumentSkinDesignSignature(warmV1)).not.toBe(teachingDocumentSkinDesignSignature(base))
+    expect(teachingDocumentSkinDesignSignature(warmV1)).not.toBe(teachingDocumentSkinDesignSignature(warmV2))
+    expect(teachingDocumentSkinDesignSignature(missing)).not.toBe(teachingDocumentSkinDesignSignature(base))
+  })
+
   it('keeps persisted requested Variant identity in the layout signature, including unavailable Variants', () => {
     const base: TeachingDocumentV1 = {
       ...fixture(),

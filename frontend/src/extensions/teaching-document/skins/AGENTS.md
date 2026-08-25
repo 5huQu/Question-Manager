@@ -25,6 +25,8 @@ Optional `design` metadata belongs directly in the static `skin.ts` definition o
 
 Variant IDs are published Skin-local semantic data: saved documents may persist `{ skin: { id, variant } }`. Do not rename a published Variant ID or materially change its visual meaning casually; use a new Variant ID or a reviewed migration. Removing a Variant must remain safe because saved documents preserve it and render Base with a runtime unavailable state. Never persist Token values, CSS values, selectors, classes, or design metadata in `TeachingSkinRef`; only the stable Variant ID belongs there.
 
+Preset source lives in `presets/**/preset.ts` and is checked by `npm run skin:check`. A published Preset `(id, version)` is compatibility API: do not materially change its Skin → Variant bindings in place. Publish a new version and retain old versions for pinned documents. Presets never assign a Skin, persist Tokens/CSS, or materialize a Variant into a block.
+
 Any Token-driven change to geometry (border width, spacing, radius, typography, display or sizing) must be checked at an A4 boundary and in print/pagination. The runtime invalidates geometry conservatively, but authors remain responsible for confirming a Skin is print-safe.
 
 ## Completion checklist

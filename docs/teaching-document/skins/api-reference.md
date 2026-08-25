@@ -23,6 +23,10 @@ Only `id`, `version`, `variant`, and `settings` are allowed at the top level. `i
 
 Persistence validation is structural only and never checks whether the current registry contains the Skin or Variant. An unknown well-formed Variant is preserved on load/save; the renderer safely uses Base and reports `variant-missing` at runtime. A missing Skin preserves its full ref, including `variant`, and uses the existing visual fallback. There is no end-user Variant selector yet.
 
+## `TeachingDocument.design.preset`
+
+An optional document design object may contain only `preset: { id, version }`. Both fields are required and `version` is a positive integer. It is a pinned source Preset reference, not CSS, Token, or a Variant snapshot. Registry availability is not checked at persistence boundaries: an unknown well-formed reference round-trips unchanged and contributes no runtime binding until its exact version is available. See [presets.md](presets.md).
+
 ## Shared definition fields
 
 ```ts
