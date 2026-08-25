@@ -31,6 +31,8 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
 export interface TeachingSkinRef {
   id: string
   version?: number
+  /** Stable Skin-local design Variant ID. Omitted means the Skin's Base appearance. */
+  variant?: string
   settings?: Record<string, JsonValue>
 }
 

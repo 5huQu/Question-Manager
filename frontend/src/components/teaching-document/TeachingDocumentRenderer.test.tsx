@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import type { ParagraphBlock, TeachingDocumentV1, TeachingInline } from '@/types/teachingDocument'
 import type { QuestionItem } from '@/types'
 import type { ParagraphFragmentPaginationItem } from '@/utils/teachingDocument'
-import { teachingSkinRegistry } from '@/utils/teachingDocument/skins'
+import { resolveTeachingSkinDesignRenderState, teachingSkinRegistry } from '@/utils/teachingDocument/skins'
 import { InlineContent } from './blocks/InlineContent'
 import { ParagraphFragmentRenderer } from './blocks/BlockRenderer'
 import { TeachingDocumentRenderer } from './TeachingDocumentRenderer'
@@ -134,6 +134,33 @@ describe('TeachingDocumentRenderer fallbacks', () => {
     expect(html).not.toMatch(/td-document[^>]+--td-skin-/)
   })
 
+  it('uses persisted Heading and Box Variants in the production renderer while leaving absent Variants at Base', () => {
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer document={documentWith([
+        { type: 'heading', id: 'heading-amber', level: 2, content: [{ type: 'text', text: '琥珀标题' }], skin: { id: 'builtin.heading.left-accent', version: 1, variant: 'amber' } },
+        { type: 'heading', id: 'heading-base', level: 2, content: [{ type: 'text', text: '基础标题' }], skin: { id: 'builtin.heading.left-accent', version: 1 } },
+        { type: 'box', id: 'box-green', templateId: 'concept', breakBehavior: 'auto', children: [], skin: { id: 'builtin.box.left-accent', version: 1, variant: 'green' } },
+      ])} />,
+    )
+    expect(html).toContain('--td-skin-builtin--heading--left-accent-accent-border:4px solid #B45309')
+    expect(html).toContain('--td-skin-builtin--heading--left-accent-accent-border:4px solid #2563EB')
+    expect(html).toContain('--td-skin-builtin--box--left-accent-frame-border:1px solid #A7F3D0')
+    expect(html).toContain('--td-skin-builtin--box--left-accent-header-fill:#ECFDF5')
+  })
+
+  it('falls back to Base for a missing persisted Variant without changing the stored ref', () => {
+    const document = documentWith([
+      { type: 'heading', id: 'heading-future', level: 2, content: [{ type: 'text', text: '未来标题' }], skin: { id: 'builtin.heading.left-accent', version: 1, variant: 'futureVariant' } },
+    ])
+    const html = renderToStaticMarkup(<TeachingDocumentRenderer document={document} />)
+    expect(html).toContain('--td-skin-builtin--heading--left-accent-accent-border:4px solid #2563EB')
+    expect(document.content[0]).toMatchObject({ skin: { variant: 'futureVariant' } })
+    expect(resolveTeachingSkinDesignRenderState(teachingSkinRegistry.get('builtin.heading.left-accent')!, 'futureVariant')).toMatchObject({
+      status: 'resolved',
+      issues: [{ code: 'variant-missing', variantId: 'futureVariant' }],
+    })
+  })
+
   it('fails closed to the Phase 1 class when trusted design metadata becomes unavailable', () => {
     const definition = teachingSkinRegistry.get('builtin.heading.left-accent')!
     const originalDesign = definition.design
@@ -165,6 +192,17 @@ describe('TeachingDocumentRenderer fallbacks', () => {
     expect(html.match(/--td-skin-builtin--heading--left-accent-accent-border:4px solid #B45309/g)).toHaveLength(2)
     expect(html).toContain('--td-skin-builtin--box--left-accent-accent-border:4px solid #2563EB')
     expect(html).not.toContain('--td-skin-builtin--box--left-accent-accent-border:4px solid #B45309')
+  })
+
+  it('gives a Skin Lab override precedence over a persisted Variant, including an explicit Base preview', () => {
+    const document = documentWith([
+      { type: 'heading', id: 'heading-persisted', level: 2, content: [{ type: 'text', text: '标题' }], skin: { id: 'builtin.heading.left-accent', version: 1, variant: 'amber' } },
+    ])
+    const persisted = renderToStaticMarkup(<TeachingDocumentRenderer document={document} />)
+    const forcedBase = renderToStaticMarkup(<TeachingDocumentRenderer document={document} skinDesignVariantIds={{ 'builtin.heading.left-accent': null }} />)
+
+    expect(persisted).toContain('--td-skin-builtin--heading--left-accent-accent-border:4px solid #B45309')
+    expect(forcedBase).toContain('--td-skin-builtin--heading--left-accent-accent-border:4px solid #2563EB')
   })
 
   it('adds stable skin DOM hooks for resolved skins and falls back for missing refs', () => {

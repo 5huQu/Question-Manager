@@ -3,7 +3,7 @@ import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import { createDefaultPrintLayout } from './printLayout'
 import { DEFAULT_A4_PAPER } from './paper'
 import { createTeachingDocumentLayoutSignatures } from './signatures'
-import { teachingDocumentSkinDesignSignature } from '../skins'
+import { resolveTeachingSkinVariantRequest, teachingDocumentSkinDesignSignature } from '../skins'
 
 function fixture(): TeachingDocumentV1 {
   return {
@@ -104,5 +104,49 @@ describe('teaching document layout signatures', () => {
     expect(variant.layoutStyleSignature).not.toBe(base.layoutStyleSignature)
     expect(variant.geometrySignature).not.toBe(base.geometrySignature)
     expect(variant.paginationSignature).not.toBe(base.paginationSignature)
+  })
+
+  it('keeps persisted requested Variant identity in the layout signature, including unavailable Variants', () => {
+    const base: TeachingDocumentV1 = {
+      ...fixture(),
+      content: [{ type: 'heading' as const, id: 'skin-heading', level: 2 as const, content: [{ type: 'text' as const, text: '标题' }], skin: { id: 'builtin.heading.left-accent', version: 1 } }],
+    }
+    const green = structuredClone(base)
+    const unknown = structuredClone(base)
+    const heading = green.content[0]
+    const missingHeading = unknown.content[0]
+    if (heading.type === 'heading') heading.skin = { ...heading.skin!, variant: 'green' }
+    if (missingHeading.type === 'heading') missingHeading.skin = { ...missingHeading.skin!, variant: 'futureVariant' }
+
+    const baseSignature = teachingDocumentSkinDesignSignature(base)
+    const greenSignature = teachingDocumentSkinDesignSignature(green)
+    const unknownSignature = teachingDocumentSkinDesignSignature(unknown)
+    const forcedBaseSignature = teachingDocumentSkinDesignSignature(green, { 'builtin.heading.left-accent': null })
+
+    expect(greenSignature).not.toBe(baseSignature)
+    expect(unknownSignature).not.toBe(baseSignature)
+    expect(forcedBaseSignature).not.toBe(greenSignature)
+  })
+
+  it('treats an own undefined preview override as absent while null still explicitly requests Base', () => {
+    const skin = { id: 'builtin.heading.left-accent', version: 1, variant: 'amber' }
+    const document: TeachingDocumentV1 = {
+      ...fixture(),
+      content: [{ type: 'heading', id: 'skin-heading', level: 2, content: [{ type: 'text', text: '标题' }], skin }],
+    }
+    const skinId = skin.id
+    const undefinedOverride = { [skinId]: undefined }
+
+    expect(resolveTeachingSkinVariantRequest(skin, skinId)).toBe('amber')
+    expect(resolveTeachingSkinVariantRequest(skin, skinId, {})).toBe('amber')
+    expect(resolveTeachingSkinVariantRequest(skin, skinId, undefinedOverride)).toBe('amber')
+    expect(resolveTeachingSkinVariantRequest(skin, skinId, { [skinId]: null })).toBeUndefined()
+    expect(resolveTeachingSkinVariantRequest(skin, skinId, { [skinId]: 'green' })).toBe('green')
+
+    const persistedSignature = teachingDocumentSkinDesignSignature(document)
+    expect(teachingDocumentSkinDesignSignature(document, {})).toBe(persistedSignature)
+    expect(teachingDocumentSkinDesignSignature(document, undefinedOverride)).toBe(persistedSignature)
+    expect(teachingDocumentSkinDesignSignature(document, { [skinId]: null })).not.toBe(persistedSignature)
+    expect(teachingDocumentSkinDesignSignature(document, { [skinId]: 'green' })).not.toBe(persistedSignature)
   })
 })

@@ -127,7 +127,7 @@ export function isJsonValue(value: unknown): value is JsonValue {
 }
 
 const SKIN_ID = STABLE_ID
-const TEACHING_SKIN_REF_KEYS = new Set(['id', 'version', 'settings'])
+const TEACHING_SKIN_REF_KEYS = new Set(['id', 'version', 'variant', 'settings'])
 const UNSAFE_SETTING_KEY = /^(?:css|cssText|html|react|className|class|style|script|component)$/i
 
 function hasSafeSettings(value: unknown): value is Record<string, JsonValue> {
@@ -153,10 +153,13 @@ export function parseTeachingSkinRef(value: unknown): TeachingSkinRef | undefine
   if (!SKIN_ID.test(id)) return undefined
   const version = raw.version
   if (version !== undefined && (!Number.isInteger(version) || Number(version) < 1)) return undefined
+  const variant = raw.variant
+  if (variant !== undefined && !isTeachingSkinLocalDesignId(variant)) return undefined
   if (raw.settings !== undefined && !hasSafeSettings(raw.settings)) return undefined
   return {
     id,
     ...(version !== undefined ? { version: Number(version) } : {}),
+    ...(variant !== undefined ? { variant } : {}),
     ...(raw.settings !== undefined ? { settings: raw.settings } : {}),
   }
 }
@@ -194,6 +197,11 @@ function isStableDesignId(value: unknown): value is string {
 }
 
 function isLocalDesignId(value: unknown): value is string {
+  return isTeachingSkinLocalDesignId(value)
+}
+
+/** Shared grammar for source and persisted Skin-local Variant IDs. */
+export function isTeachingSkinLocalDesignId(value: unknown): value is TeachingSkinVariantId {
   return typeof value === 'string' && LOCAL_DESIGN_ID.test(value)
 }
 

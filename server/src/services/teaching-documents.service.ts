@@ -163,7 +163,9 @@ function validateBoxAppearance(value: unknown, blockId: string, issues: Teaching
 }
 
 const SKIN_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$/
-const TEACHING_SKIN_REF_KEYS = new Set(['id', 'version', 'settings'])
+/** Keep this persisted grammar aligned with frontend's isTeachingSkinLocalDesignId. */
+const SKIN_LOCAL_VARIANT_ID = /^[a-z][A-Za-z0-9]*$/
+const TEACHING_SKIN_REF_KEYS = new Set(['id', 'version', 'variant', 'settings'])
 const UNSAFE_SKIN_SETTING_KEY = /^(?:css|cssText|html|react|className|class|style|script|component)$/i
 
 function isJsonValue(value: unknown): boolean {
@@ -187,11 +189,14 @@ function validateTeachingSkin(value: unknown, blockId: string, issues: TeachingD
     return
   }
   if (Object.keys(value).some((key) => !TEACHING_SKIN_REF_KEYS.has(key))) {
-    issues.push({ level: 'error', code: 'invalid-teaching-skin', blockId, message: '皮肤引用只能包含 id、version 和 settings。' })
+    issues.push({ level: 'error', code: 'invalid-teaching-skin', blockId, message: '皮肤引用只能包含 id、version、variant 和 settings。' })
     return
   }
   if (value.version !== undefined && (!Number.isInteger(value.version) || Number(value.version) < 1)) {
     issues.push({ level: 'error', code: 'invalid-teaching-skin', blockId, message: '皮肤版本必须是正整数。' })
+  }
+  if (value.variant !== undefined && (typeof value.variant !== 'string' || !SKIN_LOCAL_VARIANT_ID.test(value.variant))) {
+    issues.push({ level: 'error', code: 'invalid-teaching-skin', blockId, message: '皮肤变体必须是有效的局部标识符。' })
   }
   if (value.settings !== undefined) {
     if (!isObject(value.settings) || Object.entries(value.settings).some(([key, item]) => UNSAFE_SKIN_SETTING_KEY.test(key) || !isSafeSkinSettingValue(item))) {

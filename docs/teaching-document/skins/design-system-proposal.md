@@ -1,6 +1,6 @@
 # Teaching Skin Design System Proposal
 
-> Status: architecture proposal only. This document does not change Phase 1 or Phase 2A runtime contracts, source APIs, JSON schemas, storage, or rendering.
+> Status: architecture proposal with Phase 2B-2 implemented. The Variant/Preset model remains the architectural direction; `TeachingSkinRef.variant` persistence and production rendering are now part of the current contract.
 
 ## Goals
 
@@ -12,9 +12,9 @@
 
 ## Non Goals
 
-- This proposal does not implement a Document Theme, token resolver, preset runtime, UI, settings panel, persistence migration, or renderer change.
+- This proposal does not implement a Document Theme, Preset runtime, end-user Variant UI, settings panel, or a Variant migration framework.
 - It does not permit CSS, HTML, class names, React, executable code, arbitrary style strings, or arbitrary CSS-property maps in `TeachingDocument` JSON.
-- It does not change the Heading/Box DOM, pagination, print pipeline, ProseMirror model, database, server, or API.
+- It does not change the Heading/Box DOM, pagination algorithms, print pipeline structure, ProseMirror model, or database schema.
 - A Preset is not a mechanism for adding a Skin to an unskinned legacy block. Applying a Skin remains an explicit block-level action.
 
 ## Current Architecture
@@ -23,16 +23,16 @@ Phase 1 established a deliberately small flow:
 
 ```text
 TeachingDocument block
-  → TeachingSkinRef { id, version?, settings? }
+  → TeachingSkinRef { id, version?, variant?, settings? }
   → auto-discovered TeachingSkinRegistry
   → target + level/template resolver
   → stable existing Heading / Box DOM + skin class
   → editor / A4 preview / print
 ```
 
-Only `id`, `version`, and `settings` are currently valid top-level `TeachingSkinRef` keys. The server and client preserve valid unknown IDs; rendering falls back without deleting them. CSS and the definition remain trusted source files, not document data. `BoxAppearance` is still the stronger per-card visual override.
+Only `id`, `version`, `variant`, and `settings` are valid top-level `TeachingSkinRef` keys. `variant` is an optional stable Skin-local ID; absence means Base. The server and client preserve valid unknown Skin and Variant IDs; rendering falls back without deleting them. CSS and the definition remain trusted source files, not document data. `BoxAppearance` is still the stronger per-card visual override.
 
-Phase 2A adds authoring scaffolding, static checking, a development-only Skin Lab, and contract tests. It intentionally does not add an application-level design system.
+Phase 2B now adds source design metadata, a pure resolver, trusted Skin-root CSS variables, and persisted Variant IDs with safe fallback. It intentionally does not add an application-level theme or Variant-selector UX.
 
 ## Terminology
 
@@ -460,9 +460,9 @@ Any apply action should preview editor, A4, and print behavior and must remain s
 
 1. Review and accept the semantic boundaries in this proposal.
 2. **2B-1A:** add source-only Token/Slot/Variant metadata types plus validation/checker rules. Start with color, spacing, radius, and border only.
-3. **2B-1B:** add a design registry, pure resolver, and scoped CSS-variable map, with no persisted JSON change.
-4. **2B-1C:** extend the development Skin Lab with Variant/Token preview and verify A4/layout invalidation behavior.
-5. **2B-2:** add optional Variant persistence plus server/client validation, preserving legacy and unavailable refs.
+3. **2B-1B:** add a design registry, pure resolver, and scoped CSS-variable map, with no persisted JSON change. *(Complete.)*
+4. **2B-1C:** extend the development Skin Lab with Variant/Token preview and verify A4/layout invalidation behavior. *(Complete.)*
+5. **2B-2:** add optional Variant persistence plus server/client validation, preserving legacy and unavailable refs. *(Complete.)*
 6. **2B-3:** add a Preset source registry and document-level pinned Preset persistence.
 7. **2B-4:** add user-facing Preset/Variant UI; separately scope any explicit Apply Preset / Authoring Profile transaction.
 8. Consider a broader Theme layer only after Preset behavior proves insufficient; it should compose this model rather than replace it.

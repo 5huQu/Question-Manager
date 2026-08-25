@@ -23,6 +23,8 @@ Its value imports may only be the public authoring API and a sibling CSS file su
 
 Optional `design` metadata belongs directly in the static `skin.ts` definition object. It may contribute typed Tokens, Skin-local Slots, and Skin-local Variants, but it must not be extracted to local TS/JS helpers. Run `npm run skin:check` to validate it. Core runtime resolves trusted metadata into Skin-root-scoped CSS variables. Normal authors may consume only variables corresponding to Slots declared by that same Skin, for example `var(--td-skin-your-skin-slot-name)`. Do not invent undeclared `--td-skin-*` variables or use values from document JSON. See `docs/teaching-document/skins/design-metadata.md` and `docs/teaching-document/skins/design-runtime.md`.
 
+Variant IDs are published Skin-local semantic data: saved documents may persist `{ skin: { id, variant } }`. Do not rename a published Variant ID or materially change its visual meaning casually; use a new Variant ID or a reviewed migration. Removing a Variant must remain safe because saved documents preserve it and render Base with a runtime unavailable state. Never persist Token values, CSS values, selectors, classes, or design metadata in `TeachingSkinRef`; only the stable Variant ID belongs there.
+
 Any Token-driven change to geometry (border width, spacing, radius, typography, display or sizing) must be checked at an A4 boundary and in print/pagination. The runtime invalidates geometry conservatively, but authors remain responsible for confirming a Skin is print-safe.
 
 ## Completion checklist

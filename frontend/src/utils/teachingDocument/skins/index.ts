@@ -42,10 +42,11 @@ export {
 } from './designResolver'
 export {
   resolveTeachingSkinDesignRenderState,
+  resolveTeachingSkinVariantRequest,
   teachingDocumentSkinDesignSignature,
   teachingSkinDesignStyleAttribute,
 } from './designRendering'
-export type { TeachingSkinDesignRenderState, TeachingSkinDesignVariantIds } from './designRendering'
+export type { TeachingSkinDesignRenderState, TeachingSkinDesignVariantIds, TeachingSkinDesignVariantOverrides } from './designRendering'
 export type {
   ResolvedTeachingSkinDesign,
   ResolvedTeachingSkinTokenBinding,

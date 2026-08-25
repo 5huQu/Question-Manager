@@ -3,7 +3,7 @@ import type { TeachingSkinRef } from '@/types/teachingDocument'
 import { defineBoxSkin, defineHeadingSkin } from './authoring'
 import { TeachingSkinRegistry } from './registry'
 import { resolveBoxSkin, resolveHeadingSkin } from './resolver'
-import { isTeachingSkinDefinition, parseTeachingSkinRef } from './types'
+import { hasValidTeachingSkinRef, isTeachingSkinDefinition, parseTeachingSkinRef } from './types'
 
 const heading = defineHeadingSkin({
   id: 'test.heading.level-one', label: '一级标题', version: 1, printSafe: true, className: 'test-heading', supportedLevels: [1],
@@ -53,9 +53,17 @@ describe('teaching skin resolver', () => {
 })
 
 describe('TeachingSkinRef persistence contract', () => {
-  it('accepts JSON-safe settings and retains unknown IDs verbatim', () => {
-    const raw = { id: 'custom.heading.future', version: 2, settings: { density: 'compact', nested: { enabled: true } } }
+  it('accepts JSON-safe settings and structurally valid known or unknown Variants verbatim', () => {
+    const raw = { id: 'custom.heading.future', version: 2, variant: 'futureVariant', settings: { density: 'compact', nested: { enabled: true } } }
     expect(parseTeachingSkinRef(raw)).toEqual(raw)
+    expect(parseTeachingSkinRef({ id: 'custom.heading.future', variant: 'green' })).toEqual({ id: 'custom.heading.future', variant: 'green' })
+    expect(parseTeachingSkinRef({ id: 'custom.heading.future' })).toEqual({ id: 'custom.heading.future' })
+    expect(hasValidTeachingSkinRef({ id: 'custom.heading.future', variant: 'compact2' })).toBe(true)
+  })
+
+  it.each(['', 'Green', 'green-compact', 'green.compact', ' var(...) ', {}, []])('rejects invalid persisted Variant %j', (variant) => {
+    expect(parseTeachingSkinRef({ id: 'custom.heading.future', variant })).toBeUndefined()
+    expect(hasValidTeachingSkinRef({ id: 'custom.heading.future', variant })).toBe(false)
   })
 
   it.each(['css', 'html', 'className', 'style', 'randomUnknownField'])('rejects the disallowed top-level key %s', (key) => {

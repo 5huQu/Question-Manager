@@ -194,24 +194,41 @@ try {
       title: '皮肤持久化', documentType: 'lecture',
       content: {
         version: 1, documentType: 'lecture', title: '皮肤持久化', metadata: {}, content: [
-          { type: 'heading', id: 'skin-h1', level: 2, content: [{ type: 'text', text: '标题' }], skin: { id: 'custom.heading.missing', version: 2, settings: { density: 'compact' } } },
-          { type: 'box', id: 'skin-b1', templateId: 'concept', breakBehavior: 'auto', skin: { id: 'custom.box.missing', version: 1 }, children: [] },
+          { type: 'heading', id: 'skin-h1', level: 2, content: [{ type: 'text', text: '标题' }], skin: { id: 'custom.heading.missing', version: 2, variant: 'futureVariant', settings: { density: 'compact' } } },
+          { type: 'box', id: 'skin-b1', templateId: 'concept', breakBehavior: 'auto', skin: { id: 'custom.box.missing', version: 1, variant: 'green' }, children: [] },
         ],
       },
     }),
   })
   assert.equal(skins.response.status, 201)
   assert.equal(skins.body.content.content[0].skin.id, 'custom.heading.missing')
+  assert.equal(skins.body.content.content[0].skin.variant, 'futureVariant')
   assert.equal(skins.body.content.content[1].skin.id, 'custom.box.missing')
+  assert.equal(skins.body.content.content[1].skin.variant, 'green')
+  const fetchedSkins = await json(`/api/teaching-documents/${skins.body.id}`)
+  assert.equal(fetchedSkins.response.status, 200)
+  assert.equal(fetchedSkins.body.content.content[0].skin.variant, 'futureVariant')
+  assert.equal(fetchedSkins.body.content.content[1].skin.variant, 'green')
 
   const futureSkin = await json('/api/teaching-documents', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ title: '未来皮肤', documentType: 'lecture', content: { version: 1, documentType: 'lecture', title: '未来皮肤', metadata: {}, content: [
-      { type: 'heading', id: 'skin-future', level: 1, content: [], skin: { id: 'custom.heading.future', version: 2, settings: { density: 'compact' } } },
+      { type: 'heading', id: 'skin-future', level: 1, content: [], skin: { id: 'custom.heading.future', version: 2, variant: 'futureVariant', settings: { density: 'compact' } } },
     ] } }),
   })
   assert.equal(futureSkin.response.status, 201)
-  assert.deepEqual(futureSkin.body.content.content[0].skin, { id: 'custom.heading.future', version: 2, settings: { density: 'compact' } })
+  assert.deepEqual(futureSkin.body.content.content[0].skin, { id: 'custom.heading.future', version: 2, variant: 'futureVariant', settings: { density: 'compact' } })
+
+  for (const variant of ['', 'Green', 'green-compact', 'green.compact', { id: 'green' }, ['green']]) {
+    const invalidVariant = await json('/api/teaching-documents', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: '非法变体', documentType: 'lecture', content: { version: 1, documentType: 'lecture', title: '非法变体', metadata: {}, content: [
+        { type: 'heading', id: 'skin-invalid-variant', level: 1, content: [], skin: { id: 'custom.heading.bad', variant } },
+      ] } }),
+    })
+    assert.equal(invalidVariant.response.status, 422)
+    assert.equal(invalidVariant.body.issues.some((issue) => issue.code === 'invalid-teaching-skin'), true)
+  }
 
   const invalidSkin = await json('/api/teaching-documents', {
     method: 'POST', headers: { 'content-type': 'application/json' },

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Copy, FileStack, PanelsTopLeft } from 'lucide-react'
 import { A4PaginationPreview } from '@/components/teaching-document/A4PaginationPreview'
 import { TeachingDocumentRenderer } from '@/components/teaching-document/TeachingDocumentRenderer'
-import type { TeachingSkinTarget } from '@/utils/teachingDocument/skins'
+import type { TeachingSkinTarget, TeachingSkinVariantId } from '@/utils/teachingDocument/skins'
 import { skinLabCompatibility, skinLabDefinitions, skinLabDesignState, skinLabDocument, skinLabVariants } from './teachingSkinLabModel'
 import '@/components/teaching-document/teaching-document.css'
 
@@ -12,7 +12,7 @@ export default function TeachingSkinLabPage() {
   const [target, setTarget] = useState<TargetFilter>('heading')
   const definitions = useMemo(() => skinLabDefinitions(target === 'all' ? undefined : target), [target])
   const [selectedId, setSelectedId] = useState(() => definitions[0]?.id || '')
-  const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>()
+  const [selectedVariantId, setSelectedVariantId] = useState<TeachingSkinVariantId | null>(null)
   const selected = definitions.find((definition) => definition.id === selectedId) || definitions[0]
 
   useEffect(() => {
@@ -20,7 +20,7 @@ export default function TeachingSkinLabPage() {
   }, [selected, selectedId])
 
   useEffect(() => {
-    setSelectedVariantId(undefined)
+    setSelectedVariantId(null)
   }, [selected?.id])
 
   if (!selected) {
@@ -30,8 +30,8 @@ export default function TeachingSkinLabPage() {
   const document = skinLabDocument(selected)
   const compatibility = skinLabCompatibility(selected)
   const variants = skinLabVariants(selected)
-  const designState = skinLabDesignState(selected, selectedVariantId)
-  const skinDesignVariantIds = selectedVariantId ? { [selected.id]: selectedVariantId } : undefined
+  const designState = skinLabDesignState(selected, selectedVariantId ?? undefined)
+  const skinDesignVariantIds = { [selected.id]: selectedVariantId }
   const copySkinId = () => void navigator.clipboard?.writeText(selected.id)
 
   return (
@@ -81,7 +81,7 @@ export default function TeachingSkinLabPage() {
             <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-900">
               <p className="text-xs font-medium text-zinc-500">Preview variant（仅此实验室会话，不写入文档）</p>
               <div className="mt-2 flex flex-wrap gap-2" aria-label="Skin design variant">
-                <button type="button" onClick={() => setSelectedVariantId(undefined)} className={`rounded-md border px-2.5 py-1 text-xs font-medium ${selectedVariantId === undefined ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900'}`}>Base</button>
+                <button type="button" onClick={() => setSelectedVariantId(null)} className={`rounded-md border px-2.5 py-1 text-xs font-medium ${selectedVariantId === null ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900'}`}>Base</button>
                 {variants.map((variant) => <button key={variant.id} type="button" onClick={() => setSelectedVariantId(variant.id)} className={`rounded-md border px-2.5 py-1 text-xs font-medium ${selectedVariantId === variant.id ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900'}`}>{variant.label}</button>)}
                 {!variants.length ? <span className="py-1 text-xs text-zinc-400">此 Skin 尚未声明 Design Variant。</span> : null}
               </div>

@@ -13,7 +13,7 @@ import type { FigureAssetRef, FigureBlock, SpacerBlock, TeachingBlock, BoxBlock,
 import type { QuestionResolution, FigureResolution, QuestionLayoutEditor } from '../blocks/BlockRenderer'
 import { getBoxTemplateOrFallback } from '@/utils/teachingDocument/boxTemplates'
 import { boxBodyStyle, boxFrameStyle, parseBoxAppearance, skinBoxBodyStyle, skinBoxFrameStyle } from '@/utils/teachingDocument/boxAppearance'
-import { parseTeachingSkinRef, resolveBoxSkin, resolveTeachingSkinDesignRenderState } from '@/utils/teachingDocument/skins'
+import { parseTeachingSkinRef, resolveBoxSkin, resolveTeachingSkinDesignRenderState, resolveTeachingSkinVariantRequest } from '@/utils/teachingDocument/skins'
 import { createQuestionRuntimeModel } from '@/utils/teachingDocument/layout/questionRegions'
 import { BoxFragmentRenderer, QuestionRuntimeContent, QuestionPlaceholder } from '../blocks/BlockRenderer'
 import { BlockInlineEditor } from '../BlockInlineEditor/BlockInlineEditor'
@@ -811,7 +811,7 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
   const resolvedSkin = resolveBoxSkin(skin, templateId)
   const skinActive = resolvedSkin.status === 'resolved'
   const designVariables = skinActive
-    ? resolveTeachingSkinDesignRenderState(resolvedSkin.definition).cssVariables
+    ? resolveTeachingSkinDesignRenderState(resolvedSkin.definition, resolveTeachingSkinVariantRequest(resolvedSkin.skin, resolvedSkin.definition.id)).cssVariables
     : undefined
   const boxFragments = paginationContext?.pagination?.pages.flatMap((page) => page.items
     .filter((item): item is BoxFragmentPaginationItem => item.kind === 'fragment' && item.fragmentType === 'box' && item.blockId === boxBlock.id)
