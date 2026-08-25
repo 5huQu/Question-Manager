@@ -2,6 +2,8 @@ import type { BoxBlock, HeadingBlock, TeachingBlock, TeachingDocumentV1, Teachin
 import { createTeachingSkinDesignIndexFromRegistry } from './designIndex'
 import { resolveTeachingSkinDesign, type TeachingSkinDesignIssue } from './designResolver'
 import { teachingSkinRegistry } from './registryInstance'
+import { teachingSkinPresetRegistry } from './presetRegistryInstance'
+import { resolveTeachingSkinPreset, type TeachingSkinPresetResolution } from './presets'
 import { parseTeachingSkinRef, type TeachingSkinDefinition, type TeachingSkinVariantId } from './types'
 
 /** Ephemeral renderer input. It is deliberately not part of TeachingDocument JSON. */
@@ -17,6 +19,13 @@ export interface TeachingSkinDesignRenderState {
   signature: string
 }
 
+export interface TeachingSkinVariantSelection {
+  requestedVariantId?: TeachingSkinVariantId
+  source: 'preview' | 'preview-base' | 'explicit' | 'preset' | 'base'
+}
+
+export interface TeachingDocumentSkinDesignContext { preset: TeachingSkinPresetResolution }
+
 const designIndex = createTeachingSkinDesignIndexFromRegistry(teachingSkinRegistry)
 
 /**
@@ -27,12 +36,32 @@ export function resolveTeachingSkinVariantRequest(
   skin: TeachingSkinRef,
   skinId: string,
   overrides?: TeachingSkinDesignVariantOverrides,
+  presetBindings?: Readonly<Record<string, TeachingSkinVariantId>>,
 ): TeachingSkinVariantId | undefined {
+  return resolveTeachingSkinVariantSelection(skin, skinId, overrides, presetBindings).requestedVariantId
+}
+
+/** Shared precedence: preview > explicit persisted Variant > document Preset > Base. */
+export function resolveTeachingSkinVariantSelection(
+  skin: TeachingSkinRef,
+  skinId: string,
+  overrides?: TeachingSkinDesignVariantOverrides,
+  presetBindings?: Readonly<Record<string, TeachingSkinVariantId>>,
+): TeachingSkinVariantSelection {
   if (overrides && Object.prototype.hasOwnProperty.call(overrides, skinId)) {
     const override = overrides[skinId]
-    if (override !== undefined) return override ?? undefined
+    if (override !== undefined) return override === null
+      ? { source: 'preview-base' }
+      : { requestedVariantId: override, source: 'preview' }
   }
-  return skin.variant
+  if (skin.variant !== undefined) return { requestedVariantId: skin.variant, source: 'explicit' }
+  const presetVariant = presetBindings?.[skin.id]
+  return presetVariant === undefined ? { source: 'base' } : { requestedVariantId: presetVariant, source: 'preset' }
+}
+
+/** Resolve once per document. Unavailable Presets contribute zero bindings. */
+export function resolveTeachingDocumentSkinDesignContext(document: TeachingDocumentV1): TeachingDocumentSkinDesignContext {
+  return { preset: resolveTeachingSkinPreset(teachingSkinPresetRegistry, document.design?.preset, teachingSkinRegistry) }
 }
 
 /**
@@ -88,17 +117,23 @@ export function teachingDocumentSkinDesignSignature(
   document: TeachingDocumentV1,
   variantOverrides?: TeachingSkinDesignVariantOverrides,
 ): string {
+  const context = resolveTeachingDocumentSkinDesignContext(document)
+  const presetRef = document.design?.preset
+  const presetIdentity = presetRef
+    ? `preset:${presetRef.id}:v${presetRef.version}:status:${context.preset.status}:${Object.entries(context.preset.bindings).sort(([left], [right]) => left.localeCompare(right)).map(([skinId, variantId]) => `${skinId}:${variantId}`).join(';')}`
+    : 'preset:none'
   const entries: string[] = []
   visitSkinRoots(document.content, (block) => {
     const skin = parseTeachingSkinRef(block.skin)
     if (!skin) return
-    const requestedVariantId = resolveTeachingSkinVariantRequest(skin, skin.id, variantOverrides)
+    const selection = resolveTeachingSkinVariantSelection(skin, skin.id, variantOverrides, context.preset.bindings)
+    const requestedVariantId = selection.requestedVariantId
     const definition = teachingSkinRegistry.get(skin.id)
     if (!definition || definition.target !== block.type) {
       entries.push(`${block.id}:skin-missing:${skin.id}:v${skin.version || 'unversioned'}:requested:${requestedVariantId || 'base'}`)
       return
     }
-    entries.push(`${block.id}:${resolveTeachingSkinDesignRenderState(definition, requestedVariantId).signature}`)
+    entries.push(`${block.id}:source:${selection.source}:${resolveTeachingSkinDesignRenderState(definition, requestedVariantId).signature}`)
   })
-  return entries.sort().join('|')
+  return [presetIdentity, ...entries.sort()].join('|')
 }

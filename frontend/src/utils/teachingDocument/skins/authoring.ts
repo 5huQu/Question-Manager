@@ -6,6 +6,7 @@
  * reverse dependency on the application runtime.
  */
 export { defineBoxSkin, defineHeadingSkin } from './types'
+export { defineTeachingSkinPreset } from './presets'
 export type {
   BoxSkinDefinition,
   BoxSkinInput,
@@ -27,3 +28,4 @@ export type {
   TeachingSkinVariantDefinition,
   TeachingSkinVariantId,
 } from './types'
+export type { TeachingSkinPresetDefinition, TeachingSkinPresetInput } from './presets'

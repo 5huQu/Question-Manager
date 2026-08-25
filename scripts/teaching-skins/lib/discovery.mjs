@@ -15,6 +15,20 @@ export async function skinFilesIn(root) {
   return files.sort()
 }
 
+export async function presetFilesIn(root) {
+  const files = []
+  async function visit(directory) {
+    const entries = await fs.readdir(directory, { withFileTypes: true })
+    for (const entry of entries) {
+      const fullPath = path.join(directory, entry.name)
+      if (entry.isDirectory()) await visit(fullPath)
+      else if (entry.isFile() && entry.name === 'preset.ts') files.push(fullPath)
+    }
+  }
+  await visit(path.join(root, 'presets')).catch((error) => { if (error?.code !== 'ENOENT') throw error })
+  return files.sort()
+}
+
 export async function cssFilesForSkin(skinFile) {
   const directory = path.dirname(skinFile)
   const entries = await fs.readdir(directory, { withFileTypes: true })

@@ -36,6 +36,17 @@ export interface TeachingSkinRef {
   settings?: Record<string, JsonValue>
 }
 
+/** Exact, pinned reference to a source-defined document Skin Preset. */
+export interface TeachingSkinPresetRef {
+  id: string
+  version: number
+}
+
+/** Deliberately narrow document-level design extension. */
+export interface TeachingDocumentDesign {
+  preset?: TeachingSkinPresetRef
+}
+
 // ─── 行内节点 ────────────────────────────────────────────────────────────────
 
 export interface InlineText {
@@ -555,6 +566,8 @@ export interface TeachingDocumentV1 {
   title: string
   metadata: Record<string, unknown>
   content: TeachingBlock[]
+  /** Optional pinned Skin → Variant composition. Absence means no Preset. */
+  design?: TeachingDocumentDesign
   /** 章节结构与自动编号偏好；章节树本身始终由 content 派生。 */
   outline?: TeachingDocumentOutlineOptions
   /** 文档级打印样式（字体、边距）；缺省 = 全部使用默认值 */

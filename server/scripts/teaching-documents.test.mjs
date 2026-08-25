@@ -210,6 +210,37 @@ try {
   assert.equal(fetchedSkins.body.content.content[0].skin.variant, 'futureVariant')
   assert.equal(fetchedSkins.body.content.content[1].skin.variant, 'green')
 
+  const pinnedPreset = await json('/api/teaching-documents', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Pinned Preset', documentType: 'lecture', content: {
+      version: 1, documentType: 'lecture', title: 'Pinned Preset', metadata: {},
+      design: { preset: { id: 'plugin.preset.future', version: 3 } },
+      content: [{ type: 'heading', id: 'preset-h1', level: 1, content: [{ type: 'text', text: '保留未知 Preset' }] }],
+    } }),
+  })
+  assert.equal(pinnedPreset.response.status, 201)
+  assert.deepEqual(pinnedPreset.body.content.design, { preset: { id: 'plugin.preset.future', version: 3 } })
+  const pinnedPresetRead = await json(`/api/teaching-documents/${pinnedPreset.body.id}`)
+  assert.equal(pinnedPresetRead.response.status, 200)
+  assert.deepEqual(pinnedPresetRead.body.content.design, { preset: { id: 'plugin.preset.future', version: 3 } })
+
+  for (const design of [
+    { preset: { id: 'plugin.preset.future' } },
+    { preset: { id: 'bad', version: 1 } },
+    { preset: { id: 'plugin.preset.future', version: 1, extra: true } },
+    { preset: { id: 'plugin.preset.future', version: 1 }, extra: true },
+  ]) {
+    const invalidPreset = await json('/api/teaching-documents', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: '非法 Preset', documentType: 'lecture', content: {
+        version: 1, documentType: 'lecture', title: '非法 Preset', metadata: {}, design,
+        content: [{ type: 'paragraph', id: 'preset-invalid', content: [] }],
+      } }),
+    })
+    assert.equal(invalidPreset.response.status, 422)
+    assert.equal(invalidPreset.body.issues.some((issue) => issue.code === 'invalid-teaching-skin-preset'), true)
+  }
+
   const futureSkin = await json('/api/teaching-documents', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ title: '未来皮肤', documentType: 'lecture', content: { version: 1, documentType: 'lecture', title: '未来皮肤', metadata: {}, content: [

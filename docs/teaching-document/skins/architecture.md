@@ -36,3 +36,7 @@ For Box, the existing `templateId` remains the template semantic and `appearance
 - `frontend/src/utils/teachingDocument/skins/designResolver.ts`: guarded pure Base/explicit-Variant resolver and trusted scoped CSS-variable map. Its variable namespace uses stable Skin ID + Slot ID, and it is not connected to renderer DOM until Phase 2B-1C.
 
 Normal skin work should not modify these modules or any pagination, ProseMirror, server, database, or print module.
+
+## Pinned Presets
+
+Phase 2B-3 adds a parallel source entity, `TeachingSkinPresetRegistry`, discovered from `skins/presets/**/preset.ts`. Its exact `(id, version)` lookup produces trusted Skin ID → Variant ID bindings for a document-level `{ design: { preset } }` reference. It never assigns Skin identity or writes Variants back to blocks; the shared rendering adapter applies its bindings only after preview and explicit block Variant precedence.

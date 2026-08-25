@@ -19,7 +19,7 @@ import { headingLabelByBlockId } from '@/utils/teachingDocument'
 import { BlockRenderer, type FigureResolution, type QuestionResolution, type TeachingDocumentResolvers } from './blocks/BlockRenderer'
 import { teachingDocumentLayoutCssVars } from '@/utils/teachingDocument/lectureFonts'
 import { showsDocumentTitle } from '@/utils/teachingDocument/wrongQuestionCollection'
-import type { TeachingSkinDesignVariantIds } from '@/utils/teachingDocument/skins'
+import { resolveTeachingDocumentSkinDesignContext, type TeachingSkinDesignVariantIds } from '@/utils/teachingDocument/skins'
 import 'katex/dist/katex.min.css'
 
 export interface TeachingDocumentRendererProps {
@@ -95,6 +95,7 @@ export function TeachingDocumentRenderer({
   selectedBlockId,
   skinDesignVariantIds,
 }: TeachingDocumentRendererProps) {
+  const skinDesignContext = resolveTeachingDocumentSkinDesignContext(document)
   const resolvers: TeachingDocumentResolvers = {
     resolveQuestion,
     resolveFigure,
@@ -102,6 +103,7 @@ export function TeachingDocumentRenderer({
     choiceLayoutOverrides,
     probeChoiceLayouts,
     skinDesignVariantIds,
+    skinPresetBindings: skinDesignContext.preset.bindings,
   }
   const headingLabels = headingLabelByBlockId(document)
   let flowWrapActive = false

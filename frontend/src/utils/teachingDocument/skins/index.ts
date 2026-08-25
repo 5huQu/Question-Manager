@@ -41,12 +41,23 @@ export {
   teachingSkinSlotCssVariableName,
 } from './designResolver'
 export {
+  defineTeachingSkinPreset,
+  isTeachingSkinPresetDefinition,
+  parseTeachingSkinPresetRef,
+  resolveTeachingSkinPreset,
+  TeachingSkinPresetRegistry,
+} from './presets'
+export type { TeachingSkinPresetDefinition, TeachingSkinPresetInput, TeachingSkinPresetIssue, TeachingSkinPresetIssueCode, TeachingSkinPresetResolution } from './presets'
+export { teachingSkinPresetRegistry } from './presetRegistryInstance'
+export {
   resolveTeachingSkinDesignRenderState,
+  resolveTeachingDocumentSkinDesignContext,
   resolveTeachingSkinVariantRequest,
+  resolveTeachingSkinVariantSelection,
   teachingDocumentSkinDesignSignature,
   teachingSkinDesignStyleAttribute,
 } from './designRendering'
-export type { TeachingSkinDesignRenderState, TeachingSkinDesignVariantIds, TeachingSkinDesignVariantOverrides } from './designRendering'
+export type { TeachingDocumentSkinDesignContext, TeachingSkinDesignRenderState, TeachingSkinDesignVariantIds, TeachingSkinDesignVariantOverrides, TeachingSkinVariantSelection } from './designRendering'
 export type {
   ResolvedTeachingSkinDesign,
   ResolvedTeachingSkinTokenBinding,
