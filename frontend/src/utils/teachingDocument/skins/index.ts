@@ -1,4 +1,13 @@
-export { hasValidTeachingSkinRef, isJsonValue, isTeachingSkinDefinition, isTeachingSkinDesignMetadata, parseTeachingSkinRef } from './types'
+export {
+  hasValidTeachingSkinRef,
+  isJsonValue,
+  isTeachingSkinDefinition,
+  isTeachingSkinDesignMetadata,
+  isTeachingSkinSlotDefinition,
+  isTeachingSkinTokenDefinition,
+  isTeachingSkinVariantDefinition,
+  parseTeachingSkinRef,
+} from './types'
 export type {
   BoxSkinDefinition,
   HeadingSkinDefinition,
@@ -25,7 +34,12 @@ export { resolveBoxSkin, resolveHeadingSkin, skinClassName } from './resolver'
 export type { TeachingSkinResolution } from './resolver'
 export { createTeachingSkinDesignIndex, createTeachingSkinDesignIndexFromRegistry } from './designIndex'
 export type { TeachingSkinDesignIndex, TeachingSkinDesignIndexSnapshot, TeachingSkinTokenContribution } from './designIndex'
-export { resolveTeachingSkinDesign, serializeTeachingSkinTokenToCssValue, teachingSkinSlotCssVariableName } from './designResolver'
+export {
+  resolveTeachingSkinDesign,
+  serializeTeachingSkinTokenToCssValue,
+  teachingSkinIdToCssNamespace,
+  teachingSkinSlotCssVariableName,
+} from './designResolver'
 export type {
   ResolvedTeachingSkinDesign,
   ResolvedTeachingSkinTokenBinding,

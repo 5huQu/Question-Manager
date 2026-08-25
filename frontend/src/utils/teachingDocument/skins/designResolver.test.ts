@@ -5,6 +5,7 @@ import { TeachingSkinRegistry } from './registry'
 import {
   resolveTeachingSkinDesign,
   serializeTeachingSkinTokenToCssValue,
+  teachingSkinIdToCssNamespace,
   teachingSkinSlotCssVariableName,
 } from './designResolver'
 
@@ -129,7 +130,7 @@ describe('Teaching Skin design resolver', () => {
     const radius = box.design?.tokens?.find((token) => token.kind === 'radius')
     expect(border && serializeTeachingSkinTokenToCssValue(border, index)).toBe('1px solid #CBD5E1')
     expect(radius && serializeTeachingSkinTokenToCssValue(radius, index)).toBe('8px')
-    expect(teachingSkinSlotCssVariableName(box.className, 'cardBorder')).toBe('--td-skin-studio-box-notebook-card-border')
+    expect(teachingSkinSlotCssVariableName(box.id, 'cardBorder')).toBe('--td-skin-studio-box-notebook-card-border')
   })
 
   it('fails closed with no CSS-variable map for missing, ambiguous, incompatible, or unavailable input', () => {
@@ -184,5 +185,82 @@ describe('Teaching Skin design resolver', () => {
       status: 'resolved',
       design: { cssVariables: { '--td-skin-studio-box-notebook-card-border': '1px solid #CBD5E1' } },
     })
+  })
+
+  it('uses Skin compatibility IDs, rather than className prefixes, for variable namespaces', () => {
+    const plainClassName = structuredClone(heading)
+    plainClassName.className = 'studio-heading-accent'
+    const resolution = resolveTeachingSkinDesign(createTeachingSkinDesignIndex([plainClassName]), plainClassName.id)
+    expect(resolution).toMatchObject({
+      status: 'resolved',
+      design: { cssVariables: { '--td-skin-studio-heading-accent-accent-color': '#2563EB' } },
+    })
+    expect(teachingSkinIdToCssNamespace('studio.heading.accent')).toBe('studio-heading-accent')
+    expect(teachingSkinIdToCssNamespace('studio_heading.accent')).toBe('studio-heading-accent')
+  })
+
+  it('treats a legacy Skin without design metadata as a normal no-design result', () => {
+    const legacy = defineHeadingSkin({
+      id: 'studio.heading.legacy', label: 'Legacy', version: 1, printSafe: true, className: 'legacy-heading',
+    })
+    expect(resolveTeachingSkinDesign(createTeachingSkinDesignIndex([legacy]), legacy.id)).toEqual({
+      status: 'no-design', skinId: legacy.id, issues: [],
+    })
+  })
+
+  it.each([
+    ['a mutated local Token value', (definition: typeof heading) => {
+      ;(definition.design?.tokens?.[0] as unknown as { value: unknown }).value = null
+    }],
+    ['null Slots', (definition: typeof heading) => {
+      ;(definition.design as unknown as { slots: unknown }).slots = null
+    }],
+    ['a malformed allowedTokenIds', (definition: typeof heading) => {
+      ;(definition.design?.slots?.[0] as unknown as { allowedTokenIds: unknown }).allowedTokenIds = {}
+    }],
+  ])('fails closed without throwing for %s', (_label, mutate) => {
+    const mutable = structuredClone(heading)
+    mutable.id = 'studio.heading.mutated'
+    const registry = new TeachingSkinRegistry()
+    registry.register(mutable)
+    mutate(mutable)
+    const index = createTeachingSkinDesignIndexFromRegistry(registry)
+
+    expect(() => resolveTeachingSkinDesign(index, mutable.id)).not.toThrow()
+    expect(resolveTeachingSkinDesign(index, mutable.id)).toEqual({
+      status: 'unavailable', issues: [{ code: 'design-invalid', skinId: mutable.id }],
+    })
+  })
+
+  it('fails closed when an external Color Token mutates after registration', () => {
+    const provider = defineHeadingSkin({
+      id: 'studio.heading.color-provider', label: 'Color provider', version: 1, printSafe: true, className: 'color-provider',
+      design: {
+        tokens: [{ id: 'studio.color.external', kind: 'color', label: 'External', printSafe: true, value: { hex: '#2563EB' } }],
+        slots: [],
+      },
+    })
+    const consumer = defineBoxSkin({
+      id: 'studio.box.external-border', label: 'External border', version: 1, printSafe: true, className: 'external-border',
+      design: {
+        tokens: [{ id: 'studio.border.external', kind: 'border', label: 'External border', printSafe: true, value: { widthPx: 1, style: 'solid', colorTokenId: 'studio.color.external' } }],
+        slots: [{ id: 'cardBorder', kind: 'border', defaultTokenId: 'studio.border.external' }],
+      },
+    })
+    const registry = new TeachingSkinRegistry()
+    registry.register(provider)
+    registry.register(consumer)
+    ;(provider.design?.tokens?.[0] as unknown as { value: unknown }).value = null
+
+    const resolution = resolveTeachingSkinDesign(createTeachingSkinDesignIndexFromRegistry(registry), consumer.id)
+    expect(resolution).toMatchObject({
+      status: 'unavailable', issues: [{ code: 'token-invalid', skinId: consumer.id }],
+    })
+  })
+
+  it('never throws when serializing a malformed runtime Token', () => {
+    const malformed = { id: 'studio.color.malformed', kind: 'color', label: 'Malformed', printSafe: true, value: null }
+    expect(() => serializeTeachingSkinTokenToCssValue(malformed, createTeachingSkinDesignIndex([heading]))).not.toThrow()
+    expect(serializeTeachingSkinTokenToCssValue(malformed, createTeachingSkinDesignIndex([heading]))).toBeUndefined()
   })
 })

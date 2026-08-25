@@ -1,6 +1,9 @@
 import {
   MAX_TEACHING_SKIN_BORDER_WIDTH_PX,
   MAX_TEACHING_SKIN_TOKEN_PX,
+  isTeachingSkinDefinition,
+  isTeachingSkinTokenDefinition,
+  type TeachingSkinDefinition,
   type TeachingSkinSlotDefinition,
   type TeachingSkinTokenDefinition,
   type TeachingSkinTokenId,
@@ -14,18 +17,16 @@ import type {
 
 const CANONICAL_HEX = /^#[0-9A-F]{6}$/
 const BORDER_STYLES = new Set(['solid', 'dashed', 'dotted'])
-const SAFE_SKIN_CLASS_NAME = /^td-skin-[a-z0-9_-]+$/
 
 export type TeachingSkinDesignIssueCode =
   | 'skin-missing'
-  | 'design-missing'
+  | 'design-invalid'
   | 'variant-missing'
   | 'token-missing'
   | 'token-ambiguous'
   | 'token-kind-mismatch'
   | 'token-disallowed'
   | 'token-invalid'
-  | 'css-variable-invalid'
 
 /** Structured runtime diagnostic; it never contains document-provided CSS. */
 export interface TeachingSkinDesignIssue {
@@ -55,12 +56,13 @@ export interface ResolvedTeachingSkinDesign {
 }
 
 export type TeachingSkinDesignResolution =
+  | { status: 'no-design'; skinId: string; issues: readonly [] }
   | { status: 'resolved'; design: ResolvedTeachingSkinDesign; issues: readonly TeachingSkinDesignIssue[] }
   | { status: 'unavailable'; issues: readonly [TeachingSkinDesignIssue] }
 
 type TokenResolution =
-  | { ok: true; contribution: TeachingSkinTokenContribution }
-  | { ok: false; code: Exclude<TeachingSkinDesignIssueCode, 'skin-missing' | 'design-missing' | 'variant-missing' | 'css-variable-invalid'> }
+  | { ok: true; contribution: TeachingSkinTokenContribution & { token: TeachingSkinTokenDefinition } }
+  | { ok: false; code: Exclude<TeachingSkinDesignIssueCode, 'skin-missing' | 'variant-missing'> }
 
 function issue(
   code: TeachingSkinDesignIssueCode,
@@ -78,17 +80,17 @@ function resolveUniqueToken(snapshot: TeachingSkinDesignIndexSnapshot, tokenId: 
   const contributions = snapshot.tokensById.get(tokenId) ?? []
   if (contributions.length === 0) return { ok: false, code: 'token-missing' }
   if (contributions.length !== 1) return { ok: false, code: 'token-ambiguous' }
-  return { ok: true, contribution: contributions[0] }
+  const contribution = contributions[0]
+  if (!isTeachingSkinTokenDefinition(contribution.token)) return { ok: false, code: 'design-invalid' }
+  return { ok: true, contribution: contribution as TeachingSkinTokenContribution & { token: TeachingSkinTokenDefinition } }
 }
 
 function isBoundedPx(value: unknown, maximum: number): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= maximum
 }
 
-function serializeFromSnapshot(
-  token: TeachingSkinTokenDefinition,
-  snapshot: TeachingSkinDesignIndexSnapshot,
-): string | undefined {
+function serializeFromSnapshot(token: unknown, snapshot: TeachingSkinDesignIndexSnapshot): string | undefined {
+  if (!isTeachingSkinTokenDefinition(token)) return undefined
   if (token.kind === 'color') {
     return CANONICAL_HEX.test(token.value.hex) ? token.value.hex : undefined
   }
@@ -105,26 +107,25 @@ function serializeFromSnapshot(
 }
 
 /**
- * Serializes a source-validated Token into its only allowed CSS value. Border
- * Tokens resolve their color Token through the same fail-closed global index.
+ * Serializes a source-validated Token into its only allowed CSS value. Malformed
+ * runtime source is rejected as undefined rather than escaping as an exception.
  */
-export function serializeTeachingSkinTokenToCssValue(
-  token: TeachingSkinTokenDefinition,
-  index: TeachingSkinDesignIndex,
-): string | undefined {
-  return serializeFromSnapshot(token, index.snapshot())
+export function serializeTeachingSkinTokenToCssValue(token: unknown, index: TeachingSkinDesignIndex): string | undefined {
+  try {
+    return serializeFromSnapshot(token, index.snapshot())
+  } catch {
+    return undefined
+  }
 }
 
-/**
- * Generates a scoped variable from the trusted Skin class and local Slot ID.
- * Authors cannot supply a variable name independently from those two contracts.
- */
-export function teachingSkinSlotCssVariableName(
-  className: string,
-  slotId: string,
-): TeachingSkinCssVariableName | undefined {
-  if (!SAFE_SKIN_CLASS_NAME.test(className)) return undefined
-  return `--${className}-${slotId.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}` as TeachingSkinCssVariableName
+/** Converts stable Skin and Slot compatibility IDs into one CSS-safe namespace. */
+export function teachingSkinIdToCssNamespace(skinId: string): string {
+  return skinId.replace(/[._]+/g, '-').replace(/[^a-z0-9-]/g, '-')
+}
+
+/** Generates a deterministic scoped variable from the stable Skin and local Slot IDs. */
+export function teachingSkinSlotCssVariableName(skinId: string, slotId: string): TeachingSkinCssVariableName {
+  return `--td-skin-${teachingSkinIdToCssNamespace(skinId)}-${slotId.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`
 }
 
 function resolveSlotToken(
@@ -139,50 +140,40 @@ function resolveSlotToken(
   return resolution
 }
 
-/**
- * Resolves Base Slot defaults, then overlays one explicit source Variant. This
- * accepts no document data and does not select a Variant implicitly. A missing
- * Variant is observable as an issue but intentionally resolves to stable Base.
- */
-export function resolveTeachingSkinDesign(
-  index: TeachingSkinDesignIndex,
-  skinId: string,
+function resolveValidatedDesign(
+  definition: TeachingSkinDefinition,
+  snapshot: TeachingSkinDesignIndexSnapshot,
   variantId?: TeachingSkinVariantId,
 ): TeachingSkinDesignResolution {
-  const snapshot = index.snapshot()
-  const definition = snapshot.skinsById.get(skinId)
-  if (!definition) return unavailable(issue('skin-missing', skinId, { variantId }))
-  if (!definition.design) return unavailable(issue('design-missing', skinId, { variantId }))
+  const design = definition.design
+  if (!design) return { status: 'no-design', skinId: definition.id, issues: Object.freeze([]) }
 
   const requestedVariant = variantId === undefined
     ? undefined
-    : (definition.design.variants ?? []).find((candidate) => candidate.id === variantId)
+    : (design.variants ?? []).find((candidate) => candidate.id === variantId)
   const issues: TeachingSkinDesignIssue[] = requestedVariant || variantId === undefined
     ? []
-    : [issue('variant-missing', skinId, { variantId })]
+    : [issue('variant-missing', definition.id, { variantId })]
 
   const requestedTokenIds = new Map<string, TeachingSkinTokenId>()
-  for (const slot of definition.design.slots) requestedTokenIds.set(slot.id, slot.defaultTokenId)
+  for (const slot of design.slots) requestedTokenIds.set(slot.id, slot.defaultTokenId)
   for (const [slotId, tokenId] of Object.entries(requestedVariant?.tokenBindings ?? {})) requestedTokenIds.set(slotId, tokenId)
 
-  const slotsById = new Map(definition.design.slots.map((slot) => [slot.id, slot]))
+  const slotsById = new Map(design.slots.map((slot) => [slot.id, slot]))
   const tokenBindings: ResolvedTeachingSkinTokenBinding[] = []
   const cssVariables: Record<TeachingSkinCssVariableName, string> = {}
 
   for (const slotId of [...requestedTokenIds.keys()].sort((left, right) => left.localeCompare(right))) {
     const slot = slotsById.get(slotId)
     const tokenId = requestedTokenIds.get(slotId) as TeachingSkinTokenId
-    // Defend the runtime even if an unchecked or mutated source definition gets here.
-    if (!slot) return unavailable(issue('token-invalid', skinId, { variantId, slotId, tokenId }))
+    if (!slot) return unavailable(issue('design-invalid', definition.id, { variantId, slotId, tokenId }))
     const tokenResolution = resolveSlotToken(slot, tokenId, snapshot)
-    if (!tokenResolution.ok) return unavailable(issue(tokenResolution.code, skinId, { variantId, slotId, tokenId }))
+    if (!tokenResolution.ok) return unavailable(issue(tokenResolution.code, definition.id, { variantId, slotId, tokenId }))
     const token = tokenResolution.contribution.token
     const cssValue = serializeFromSnapshot(token, snapshot)
-    if (!cssValue) return unavailable(issue('token-invalid', skinId, { variantId, slotId, tokenId }))
-    const cssVariableName = teachingSkinSlotCssVariableName(definition.className, slotId)
-    if (!cssVariableName) return unavailable(issue('css-variable-invalid', skinId, { variantId, slotId, tokenId }))
+    if (!cssValue) return unavailable(issue('token-invalid', definition.id, { variantId, slotId, tokenId }))
     tokenBindings.push({ slotId, tokenId, token })
-    cssVariables[cssVariableName] = cssValue
+    cssVariables[teachingSkinSlotCssVariableName(definition.id, slotId)] = cssValue
   }
 
   return {
@@ -195,5 +186,26 @@ export function resolveTeachingSkinDesign(
       cssVariables: Object.freeze(cssVariables),
     },
     issues: Object.freeze(issues),
+  }
+}
+
+/**
+ * Resolves Base Slot defaults, then overlays one explicit source Variant. This
+ * accepts no document data and returns structured unavailable results for every
+ * malformed runtime source boundary instead of throwing.
+ */
+export function resolveTeachingSkinDesign(
+  index: TeachingSkinDesignIndex,
+  skinId: string,
+  variantId?: TeachingSkinVariantId,
+): TeachingSkinDesignResolution {
+  try {
+    const snapshot = index.snapshot()
+    const definition = snapshot.skinsById.get(skinId)
+    if (!definition) return unavailable(issue('skin-missing', skinId, { variantId }))
+    if (!isTeachingSkinDefinition(definition)) return unavailable(issue('design-invalid', skinId, { variantId }))
+    return resolveValidatedDesign(definition, snapshot, variantId)
+  } catch {
+    return unavailable(issue('design-invalid', skinId, { variantId }))
   }
 }

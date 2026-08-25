@@ -1,14 +1,14 @@
 import type { TeachingSkinRegistry } from './registry'
-import type { TeachingSkinDefinition, TeachingSkinTokenDefinition, TeachingSkinTokenId } from './types'
+import type { TeachingSkinTokenId } from './types'
 
-/** A trusted Token contribution made by one currently registered Skin. */
+/** A Token contribution retained for fail-closed runtime validation. */
 export interface TeachingSkinTokenContribution {
   skinId: string
-  token: TeachingSkinTokenDefinition
+  token: unknown
 }
 
 export interface TeachingSkinDesignIndexSnapshot {
-  readonly skinsById: ReadonlyMap<string, TeachingSkinDefinition>
+  readonly skinsById: ReadonlyMap<string, unknown>
   readonly tokensById: ReadonlyMap<TeachingSkinTokenId, readonly TeachingSkinTokenContribution[]>
 }
 
@@ -23,21 +23,38 @@ export interface TeachingSkinDesignIndex extends TeachingSkinDesignIndexSnapshot
   snapshot(): TeachingSkinDesignIndexSnapshot
 }
 
-type TeachingSkinDefinitionSource = TeachingSkinRegistry | Iterable<TeachingSkinDefinition>
+type TeachingSkinDefinitionSource = TeachingSkinRegistry | Iterable<unknown>
 
-function snapshotFrom(definitions: Iterable<TeachingSkinDefinition>): TeachingSkinDesignIndexSnapshot {
-  const sortedDefinitions = [...definitions].sort((left, right) => left.id.localeCompare(right.id))
-  const skinsById = new Map<string, TeachingSkinDefinition>()
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function snapshotFrom(definitions: Iterable<unknown>): TeachingSkinDesignIndexSnapshot {
+  const entries: Array<{ skinId: string; definition: unknown }> = []
+  for (const definition of definitions) {
+    try {
+      if (!isRecord(definition) || typeof definition.id !== 'string') continue
+      entries.push({ skinId: definition.id, definition })
+    } catch {
+      // A malformed source contribution is ignored here and cannot break the index.
+    }
+  }
+  entries.sort((left, right) => left.skinId.localeCompare(right.skinId))
+
+  const skinsById = new Map<string, unknown>()
   const tokenContributions = new Map<TeachingSkinTokenId, TeachingSkinTokenContribution[]>()
-
-  for (const definition of sortedDefinitions) {
-    // TeachingSkinRegistry already prevents this in application use. Keep every
-    // source of a duplicate Token, but do not let an iterable overwrite a Skin.
-    if (!skinsById.has(definition.id)) skinsById.set(definition.id, definition)
-    for (const token of definition.design?.tokens ?? []) {
-      const contributions = tokenContributions.get(token.id) ?? []
-      contributions.push({ skinId: definition.id, token })
-      tokenContributions.set(token.id, contributions)
+  for (const { skinId, definition } of entries) {
+    if (!skinsById.has(skinId)) skinsById.set(skinId, definition)
+    try {
+      if (!isRecord(definition) || !isRecord(definition.design) || !Array.isArray(definition.design.tokens)) continue
+      for (const token of definition.design.tokens) {
+        if (!isRecord(token) || typeof token.id !== 'string') continue
+        const contributions = tokenContributions.get(token.id) ?? []
+        contributions.push({ skinId, token })
+        tokenContributions.set(token.id, contributions)
+      }
+    } catch {
+      // Keep the Skin entry. Resolver validation reports it as design-invalid.
     }
   }
 
@@ -46,7 +63,6 @@ function snapshotFrom(definitions: Iterable<TeachingSkinDefinition>): TeachingSk
     const contributions = tokenContributions.get(tokenId) ?? []
     tokensById.set(tokenId, Object.freeze([...contributions].sort((left, right) => left.skinId.localeCompare(right.skinId))))
   }
-
   return { skinsById, tokensById }
 }
 

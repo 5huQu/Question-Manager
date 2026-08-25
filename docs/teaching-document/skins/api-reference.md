@@ -41,7 +41,7 @@ Only `id`, `version`, and `settings` are allowed at the top level. `id` must be 
 
 ## Optional `design` metadata (Phase 2B-1A / 2B-1B)
 
-A Skin may add optional source metadata: `design: { tokens?, slots, variants? }`. It is a recursively static object literal checked by `npm run skin:check`. The pure runtime can resolve Base Slot defaults and an explicit Variant overlay into a trusted CSS-variable map, but it has no renderer, persistence, or UI integration in this phase. See [design-metadata.md](design-metadata.md) for the four supported typed Token kinds, Slot/Variant rules, and examples.
+A Skin may add optional source metadata: `design: { tokens?, slots, variants? }`. It is a recursively static object literal checked by `npm run skin:check`. The pure runtime resolves Base Slot defaults and an explicit Variant overlay into a trusted CSS-variable map named from stable Skin ID + Slot ID; a legacy Skin without `design` resolves normally as `no-design`. It has no renderer, persistence, or UI integration in this phase. See [design-metadata.md](design-metadata.md) for the four supported typed Token kinds, Slot/Variant rules, and examples.
 
 ## Heading definition
 

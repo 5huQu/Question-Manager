@@ -87,9 +87,9 @@ if (result.status === 'resolved') {
 }
 ```
 
-The resolver starts with every Slot's `defaultTokenId`, then overlays only the named Variant's partial bindings. No Variant is selected when its ID is omitted. A missing explicit Variant is recorded as the structured `variant-missing` issue and resolves to Base, preserving the Phase 1 fallback contract. A Token with zero contributions is missing; one contribution is usable; two or more contributions are ambiguous. Any missing, ambiguous, wrong-kind, disallowed, or invalid Token dependency returns `status: 'unavailable'` and no CSS-variable map. It never picks the first contribution.
+The resolver starts with every Slot's `defaultTokenId`, then overlays only the named Variant's partial bindings. No Variant is selected when its ID is omitted. A missing explicit Variant is recorded as the structured `variant-missing` issue and resolves to Base, preserving the Phase 1 fallback contract. A registered legacy Skin with no `design` metadata returns the normal `{ status: 'no-design', skinId, issues: [] }` result. A Token with zero contributions is missing; one contribution is usable; two or more contributions are ambiguous. Any malformed runtime definition/design/Token, or missing, ambiguous, wrong-kind, disallowed, or invalid Token dependency returns `status: 'unavailable'` and no CSS-variable map. It never picks the first contribution or throws a source-shape exception.
 
-Variables use the deterministic core mapping `--${skin-className}-${lower-kebab-slot-id}` (for example, class `td-skin-studio-heading-accent` plus `accentColor` becomes `--td-skin-studio-heading-accent-accent-color`). Skin authors cannot provide an arbitrary CSS-variable name. The map is designed to be attached only to the resolved Skin root in a later phase, so Slots with the same local name on different Skins cannot leak across instances.
+Variables use the deterministic core mapping `--td-skin-${skin-id-namespace}-${lower-kebab-slot-id}` (for example, Skin ID `studio.heading.accent` plus `accentColor` becomes `--td-skin-studio-heading-accent-accent-color`). Skin authors cannot provide an arbitrary CSS-variable name, and the namespace deliberately does not depend on the CSS implementation detail `className`. The map is designed to be attached only to the resolved Skin root in a later phase, so Slots with the same local name on different Skins cannot leak across instances.
 
 Trusted Tokens serialize only to these CSS values: Color → `#RRGGBB`; Spacing/Radius → `<px>px`; Border → `<width>px <style> <resolved-color>`. The runtime accepts no raw CSS strings, property names, or document-supplied values.
 
@@ -172,4 +172,4 @@ export default defineBoxSkin({
 - change the editor, renderer, A4 preview, print, pagination, ProseMirror, BoxAppearance, API, database, or settings UI;
 - change `skin:new` arguments or generated minimal Skin files.
 
-Phase 2B-1B may introduce a design registry, pure resolver, and scoped CSS-variable map after this source contract is proven.
+Phase 2B-1B provides the pure Design Index, resolver, and scoped map. Phase 2B-1C may attach that map to renderer DOM after separate review.
