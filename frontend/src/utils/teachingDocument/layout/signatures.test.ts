@@ -3,7 +3,7 @@ import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import { createDefaultPrintLayout } from './printLayout'
 import { DEFAULT_A4_PAPER } from './paper'
 import { createTeachingDocumentLayoutSignatures } from './signatures'
-import { teachingDocumentSkinDesignSignature } from '../skins'
+import { resolveTeachingSkinVariantRequest, teachingDocumentSkinDesignSignature } from '../skins'
 
 function fixture(): TeachingDocumentV1 {
   return {
@@ -126,5 +126,27 @@ describe('teaching document layout signatures', () => {
     expect(greenSignature).not.toBe(baseSignature)
     expect(unknownSignature).not.toBe(baseSignature)
     expect(forcedBaseSignature).not.toBe(greenSignature)
+  })
+
+  it('treats an own undefined preview override as absent while null still explicitly requests Base', () => {
+    const skin = { id: 'builtin.heading.left-accent', version: 1, variant: 'amber' }
+    const document: TeachingDocumentV1 = {
+      ...fixture(),
+      content: [{ type: 'heading', id: 'skin-heading', level: 2, content: [{ type: 'text', text: '标题' }], skin }],
+    }
+    const skinId = skin.id
+    const undefinedOverride = { [skinId]: undefined }
+
+    expect(resolveTeachingSkinVariantRequest(skin, skinId)).toBe('amber')
+    expect(resolveTeachingSkinVariantRequest(skin, skinId, {})).toBe('amber')
+    expect(resolveTeachingSkinVariantRequest(skin, skinId, undefinedOverride)).toBe('amber')
+    expect(resolveTeachingSkinVariantRequest(skin, skinId, { [skinId]: null })).toBeUndefined()
+    expect(resolveTeachingSkinVariantRequest(skin, skinId, { [skinId]: 'green' })).toBe('green')
+
+    const persistedSignature = teachingDocumentSkinDesignSignature(document)
+    expect(teachingDocumentSkinDesignSignature(document, {})).toBe(persistedSignature)
+    expect(teachingDocumentSkinDesignSignature(document, undefinedOverride)).toBe(persistedSignature)
+    expect(teachingDocumentSkinDesignSignature(document, { [skinId]: null })).not.toBe(persistedSignature)
+    expect(teachingDocumentSkinDesignSignature(document, { [skinId]: 'green' })).not.toBe(persistedSignature)
   })
 })

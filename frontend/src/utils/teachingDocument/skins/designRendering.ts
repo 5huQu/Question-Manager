@@ -29,7 +29,8 @@ export function resolveTeachingSkinVariantRequest(
   overrides?: TeachingSkinDesignVariantOverrides,
 ): TeachingSkinVariantId | undefined {
   if (overrides && Object.prototype.hasOwnProperty.call(overrides, skinId)) {
-    return overrides[skinId] ?? undefined
+    const override = overrides[skinId]
+    if (override !== undefined) return override ?? undefined
   }
   return skin.variant
 }
