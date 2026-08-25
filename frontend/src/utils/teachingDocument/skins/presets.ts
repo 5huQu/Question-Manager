@@ -92,6 +92,11 @@ export function resolveTeachingSkinPreset(
   if (!isTeachingSkinPresetDefinition(definition)) {
     return { status: 'unavailable', bindings: EMPTY_BINDINGS, issues: Object.freeze([{ code: 'preset-invalid', presetId: ref.id, version: ref.version }]) }
   }
+  // The registry intentionally keeps a live source object for HMR/test mutation,
+  // so a keyed entry must still prove that its current identity matches the pin.
+  if (definition.id !== ref.id || definition.version !== ref.version) {
+    return { status: 'unavailable', bindings: EMPTY_BINDINGS, issues: Object.freeze([{ code: 'preset-invalid', presetId: ref.id, version: ref.version }]) }
+  }
   for (const [skinId, variantId] of Object.entries(definition.bindings)) {
     const skin = skinRegistry.get(skinId)
     if (!skin || !isTeachingSkinDefinition(skin) || !skin.design?.variants?.some((candidate) => candidate.id === variantId)) {

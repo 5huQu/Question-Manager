@@ -88,6 +88,23 @@ test('skin:check validates Preset dependencies and exact version identity', asyn
   assert.equal(duplicate.errors.some((error) => error.code === 'duplicate-preset'), true)
 })
 
+test('skin:check keeps Preset source declarative and side-effect-free', async () => {
+  for (const source of [
+    `import './side-effect'\n${presetSource()}`,
+    `import './styles.css'\n${presetSource()}`,
+    `import { runtime } from '@/runtime/example'\n${presetSource()}`,
+    `console.log('side effect')\n${presetSource()}`,
+    `const runtimeValue = 1\n${presetSource()}`,
+    `function helper() {}\n${presetSource()}`,
+  ]) {
+    const root = await tempSkinRoot()
+    await writePreset(root, 'bad', source)
+    const result = await checkTeachingSkins({ root })
+    assert.equal(result.ok, false)
+    assert.equal(result.errors.some((error) => error.code === 'preset-boundary'), true)
+  }
+})
+
 test('skin:check allows the declarative authoring import, sibling CSS, and safe type-only imports', async () => {
   const root = await tempSkinRoot()
   const directory = await writeSkin(root, 'safe-imports', { className: 'td-skin-studio-heading-safe-imports' })

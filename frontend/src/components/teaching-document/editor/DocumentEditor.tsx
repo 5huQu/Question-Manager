@@ -25,7 +25,7 @@ import { createDocumentPrintLayout, resolveDocumentPaper, type PaginationResult,
 import type { EditorPaginationLayout } from './paginationDecorations'
 import { DOCUMENT_EXTERNAL_SYNC_META, isExternalDocumentSync, TopLevelMultiSelectDecoration } from './selection'
 import { DOCUMENT_LAYOUT_CHANGE_SET_META, mergeStructuralChangeSets } from './structuralActions'
-import { resolveHeadingSkin, resolveTeachingDocumentSkinDesignContext, resolveTeachingSkinDesignRenderState, resolveTeachingSkinVariantRequest } from '@/utils/teachingDocument/skins'
+import { resolveHeadingSkin, resolveTeachingDocumentSkinPresetContext, resolveTeachingSkinDesignRenderState, resolveTeachingSkinVariantRequest, teachingDocumentHeadingSkinDesignSignature } from '@/utils/teachingDocument/skins'
 
 /** 普通键入在编辑器内即时生效；整篇领域模型同步采用短暂合并，避免逐字序列化。 */
 export const DEFAULT_DOCUMENT_MODEL_SYNC_DELAY_MS = 350
@@ -241,18 +241,26 @@ export function DocumentEditor({
     if (editor) editor.commands.setPaginationLayout(paginationLayout ?? null)
   }, [editor, paginationLayout])
 
+  const presetId = document.design?.preset?.id
+  const presetVersion = document.design?.preset?.version
+  const presetContext = useMemo(
+    () => resolveTeachingDocumentSkinPresetContext(document.design?.preset),
+    [presetId, presetVersion],
+  )
   const resolverContextValue = useMemo(() => ({
     resolveQuestion: resolvers.resolveQuestion,
     resolveFigure: resolvers.resolveFigure,
-    skinPresetBindings: resolveTeachingDocumentSkinDesignContext(document).preset.bindings,
-  }), [document, resolvers.resolveFigure, resolvers.resolveQuestion])
+    skinPresetBindings: presetContext.bindings,
+  }), [presetContext.bindings, resolvers.resolveFigure, resolvers.resolveQuestion])
+
+  const headingSkinDesignSignature = teachingDocumentHeadingSkinDesignSignature(document)
 
   // Heading is intentionally a native ProseMirror node rather than a React NodeView.
   // Apply the same document-level selection contract to its existing root without
   // storing Preset data in a node attribute or changing the document schema.
   useEffect(() => {
     if (!editor) return
-    const bindings = resolveTeachingDocumentSkinDesignContext(document).preset.bindings
+    const bindings = presetContext.bindings
     const headings = new Map(document.content.filter((block): block is Extract<TeachingDocumentV1['content'][number], { type: 'heading' }> => block.type === 'heading').map((block) => [block.id, block]))
     for (const element of editor.view.dom.querySelectorAll<HTMLElement>('[data-block-type="heading"]')) {
       for (const name of (element.dataset.skinDesignVars || '').split(',').filter(Boolean)) element.style.removeProperty(name)
@@ -265,7 +273,7 @@ export function DocumentEditor({
       for (const [name, value] of Object.entries(design.cssVariables || {})) element.style.setProperty(name, value)
       element.dataset.skinDesignVars = names.join(',')
     }
-  }, [document, editor])
+  }, [editor, headingSkinDesignSignature, presetContext.bindings])
   // `document` 在文字合并回传时会换引用，但分页 NodeView 只依赖分页结果和
   // chrome 元数据。稳定 context 能避免数十张知识卡片跟随一次普通键入重渲染。
   const paginationContextValue = useMemo(() => ({

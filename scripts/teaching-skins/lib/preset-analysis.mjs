@@ -31,15 +31,33 @@ export async function analyzePresetDefinition(file) {
     typeOnly: Boolean(statement.importClause?.isTypeOnly),
     named: statement.importClause?.namedBindings && ts.isNamedImports(statement.importClause.namedBindings) ? statement.importClause.namedBindings.elements.map((element) => element.name.text) : [],
   }))
+  const boundaryErrors = []
+  for (const statement of sourceFile.statements) {
+    if (ts.isImportDeclaration(statement)) {
+      const module = ts.isStringLiteral(statement.moduleSpecifier) ? statement.moduleSpecifier.text : ''
+      if (statement.importClause?.isTypeOnly) {
+        if (!module.startsWith('@/')) boundaryErrors.push(`Preset type-only import must use the @/ boundary: ${module}`)
+        continue
+      }
+      const named = statement.importClause?.namedBindings && ts.isNamedImports(statement.importClause.namedBindings)
+        ? statement.importClause.namedBindings.elements.map((element) => element.name.text)
+        : []
+      if (module !== AUTHORING_IMPORT || named.length !== 1 || named[0] !== 'defineTeachingSkinPreset' || statement.importClause?.name) {
+        boundaryErrors.push(`Preset value import must be only defineTeachingSkinPreset from ${AUTHORING_IMPORT}.`)
+      }
+      continue
+    }
+    if (!ts.isExportAssignment(statement)) boundaryErrors.push('preset.ts may contain only import declarations and one default Preset export.')
+  }
   const assignment = sourceFile.statements.find(ts.isExportAssignment)
   if (!assignment || assignment.isExportEquals || !ts.isCallExpression(assignment.expression) || !ts.isIdentifier(assignment.expression.expression) || assignment.expression.expression.text !== 'defineTeachingSkinPreset' || assignment.expression.arguments.length !== 1) {
     errors.push('preset.ts must default-export defineTeachingSkinPreset({...}).')
-    return { file, imports, errors, definition: null }
+    return { file, imports, errors, boundaryErrors, definition: null }
   }
   const definition = literalValue(assignment.expression.arguments[0])
   if (!definition || typeof definition !== 'object' || Array.isArray(definition)) {
     errors.push('Preset definition options must be a static object literal with static values.')
-    return { file, imports, errors, definition: null }
+    return { file, imports, errors, boundaryErrors, definition: null }
   }
-  return { file, imports, errors, definition: { apiVersion: 1, ...definition }, usesPublicAuthoringApi: imports.some((entry) => entry.module === AUTHORING_IMPORT && entry.named.includes('defineTeachingSkinPreset')) }
+  return { file, imports, errors, boundaryErrors, definition: { apiVersion: 1, ...definition }, usesPublicAuthoringApi: imports.some((entry) => entry.module === AUTHORING_IMPORT && entry.named.includes('defineTeachingSkinPreset')) }
 }

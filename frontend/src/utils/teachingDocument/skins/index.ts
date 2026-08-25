@@ -52,9 +52,11 @@ export { teachingSkinPresetRegistry } from './presetRegistryInstance'
 export {
   resolveTeachingSkinDesignRenderState,
   resolveTeachingDocumentSkinDesignContext,
+  resolveTeachingDocumentSkinPresetContext,
   resolveTeachingSkinVariantRequest,
   resolveTeachingSkinVariantSelection,
   teachingDocumentSkinDesignSignature,
+  teachingDocumentHeadingSkinDesignSignature,
   teachingSkinDesignStyleAttribute,
 } from './designRendering'
 export type { TeachingDocumentSkinDesignContext, TeachingSkinDesignRenderState, TeachingSkinDesignVariantIds, TeachingSkinDesignVariantOverrides, TeachingSkinVariantSelection } from './designRendering'

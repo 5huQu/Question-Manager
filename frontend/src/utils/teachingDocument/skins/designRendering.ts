@@ -1,4 +1,4 @@
-import type { BoxBlock, HeadingBlock, TeachingBlock, TeachingDocumentV1, TeachingSkinRef } from '@/types/teachingDocument'
+import type { BoxBlock, HeadingBlock, TeachingBlock, TeachingDocumentV1, TeachingSkinPresetRef, TeachingSkinRef } from '@/types/teachingDocument'
 import { createTeachingSkinDesignIndexFromRegistry } from './designIndex'
 import { resolveTeachingSkinDesign, type TeachingSkinDesignIssue } from './designResolver'
 import { teachingSkinRegistry } from './registryInstance'
@@ -61,7 +61,22 @@ export function resolveTeachingSkinVariantSelection(
 
 /** Resolve once per document. Unavailable Presets contribute zero bindings. */
 export function resolveTeachingDocumentSkinDesignContext(document: TeachingDocumentV1): TeachingDocumentSkinDesignContext {
-  return { preset: resolveTeachingSkinPreset(teachingSkinPresetRegistry, document.design?.preset, teachingSkinRegistry) }
+  return { preset: resolveTeachingDocumentSkinPresetContext(document.design?.preset) }
+}
+
+/** Narrow pure entrypoint for callers which only depend on a pinned Preset reference. */
+export function resolveTeachingDocumentSkinPresetContext(preset?: TeachingSkinPresetRef): TeachingSkinPresetResolution {
+  return resolveTeachingSkinPreset(teachingSkinPresetRegistry, preset, teachingSkinRegistry)
+}
+
+/** Excludes content text so native Heading DOM work does not rerun for ordinary typing. */
+export function teachingDocumentHeadingSkinDesignSignature(document: TeachingDocumentV1): string {
+  const preset = document.design?.preset
+  const headings = document.content
+    .filter((block): block is HeadingBlock => block.type === 'heading')
+    .map((block) => `${block.id}:${block.level}:${block.skin?.id || ''}:v${block.skin?.version || ''}:${block.skin?.variant || ''}`)
+    .sort()
+  return `preset:${preset?.id || ''}:v${preset?.version || ''}|${headings.join('|')}`
 }
 
 /**

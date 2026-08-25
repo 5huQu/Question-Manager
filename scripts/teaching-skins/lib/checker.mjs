@@ -90,6 +90,7 @@ export async function checkTeachingSkins({ root, pathOption } = {}) {
 
   const presetIds = new Map()
   for (const analysis of presetAnalyses) {
+    errors.push(...analysis.boundaryErrors.map((message) => checkIssue('preset-boundary', analysis.file, message)))
     if (!analysis.definition) { errors.push(...analysis.errors.map((message) => checkIssue('preset-definition', analysis.file, message))); continue }
     for (const message of presetDefinitionShapeIssues(analysis.definition)) errors.push(checkIssue('preset-definition', analysis.file, message))
     const key = `${analysis.definition.id}@${analysis.definition.version}`
