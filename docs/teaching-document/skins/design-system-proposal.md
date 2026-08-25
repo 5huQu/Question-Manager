@@ -5,7 +5,7 @@
 ## Goals
 
 - Let one structural Skin express intentional visual alternatives such as blue, green, compact, or minimal without creating an ID for every color-and-size combination.
-- Let a teacher select a coherent teaching-material look across several already-selected Skins.
+- Let a teacher select a coherent teaching-material look across several already-selected Skins, while reserving structural Skin assignment for an explicit editing action.
 - Keep document data semantic, portable, print-safe, and compatible with the Phase 1 resolver/fallback model.
 - Make the eventual CSS-variable bridge constrained and scoped, rather than exposing arbitrary CSS properties or values.
 - Preserve legacy documents: an absent Skin reference must continue to mean the existing appearance, with no eager write-back.
@@ -46,11 +46,11 @@ A Skin is a stable, structural visual treatment for one existing compatible bloc
 
 A Variant is a named, source-defined alternative for one Skin. Examples for `studio.heading.accent` could be `blue`, `green`, `minimal`, or `compact`. A Variant selects a constrained set of token bindings for the same structure; it must not replace the renderer, target, or semantic block content.
 
-Variant IDs are local to a Skin. `green` for a heading and `green` for a box need not mean the same token set unless a Preset deliberately binds both.
+Variant IDs are stable **Skin-local** IDs. `green` for a heading and `green` for a box need not mean the same token set unless a Preset deliberately binds both. They are compatibility API once published and must not be renamed casually.
 
 ### Token
 
-A Token is a typed, named design value owned by trusted source configuration, such as `color.brand.green-600` or `radius.card.md`. A Skin exposes named **slots**—for example `accent`, `surface`, `radius`, or `density`—and Variants bind compatible token IDs to those slots. Tokens are values; slots are the Skin’s permitted semantic inputs.
+A Token is a typed, named design value owned by trusted source configuration, such as `studio.color.brand.green-600` or `studio.radius.card.md`. A Skin exposes named **slots**—for example `accent`, `surface`, `radius`, or `density`—and Variants bind compatible token IDs to those slots. Tokens are values; slots are the Skin’s permitted semantic inputs. Slot IDs are stable **Skin-local** IDs and are also compatibility API after publication.
 
 Tokens are not a generic “CSS property bag.” Their type and allowed range are known before they reach CSS.
 
@@ -69,7 +69,7 @@ A Preset is a named composition for a teaching-material style, such as `teacher.
 
 ### Supported token families
 
-The initial vocabulary should be intentionally small and print-oriented:
+The complete future vocabulary is intentionally small and print-oriented:
 
 - **Color**: text, accent, border, surface, muted-surface, and contrast roles.
 - **Spacing**: a finite named scale for padding, gap, and accent offset; values resolve from trusted source definitions.
@@ -78,6 +78,12 @@ The initial vocabulary should be intentionally small and print-oriented:
 - **Border**: width/style/color token references, limited to normal-flow visual borders.
 - **Shadow**: a small, optional print-reviewed elevation scale. `none` should be the safe default; shadows must never be required for meaning.
 - **Density**: a semantic composite token or Variant choice that binds spacing and typography slots together. It is not a free numeric CSS multiplier.
+
+### First implementation subset
+
+The Phase 2B-1 minimal subset should be **color, spacing, radius, and border**. It is enough to prove typed bindings, scoped variable emission, and page-layout invalidation without introducing unresolved ownership rules.
+
+Defer **typography** until its precedence against the existing Document Typography System is defined. Defer **density** until its relationship to Variant semantics is narrowed. Defer **shadow** until print and grayscale policy establishes whether it is useful and how it degrades. The complete vocabulary remains the long-term design target; this is only a staged rollout boundary.
 
 ### Explicit exclusions
 
@@ -102,7 +108,7 @@ type TeachingSkinTokenId = string
 type TeachingSkinSlotId = string
 
 interface TeachingSkinTokenDefinition {
-  id: TeachingSkinTokenId               // e.g. "color.brand.green-600"
+  id: TeachingSkinTokenId               // global stable ID, e.g. "studio.color.brand.green-600"
   kind: TeachingSkinTokenKind
   label: string
   value: unknown                        // source-validated, kind-specific; never document JSON
@@ -110,7 +116,7 @@ interface TeachingSkinTokenDefinition {
 }
 
 interface TeachingSkinTokenSlot {
-  id: TeachingSkinSlotId                // e.g. "accentColor"
+  id: TeachingSkinSlotId                // Skin-local stable ID, e.g. "accentColor"
   kind: TeachingSkinTokenKind
   required?: boolean
   defaultTokenId: TeachingSkinTokenId
@@ -127,7 +133,7 @@ The Skin definition would eventually declare its available slots and stable Vari
 ```ts
 // Pseudo-code only.
 interface TeachingSkinVariant {
-  id: string                            // local to one Skin, e.g. "green"
+  id: string                            // Skin-local stable ID, e.g. "green"
   label: string
   description?: string
   tokenBindings: Record<TeachingSkinSlotId, TeachingSkinTokenId>
@@ -136,34 +142,51 @@ interface TeachingSkinVariant {
 interface TeachingSkinDesignExtension {
   slots: readonly TeachingSkinTokenSlot[]
   variants: readonly TeachingSkinVariant[]
-  defaultVariantId?: string
 }
 
 // Conceptual addition to a future Skin definition, not a Phase 1 change:
 const accentHeadingDesign: TeachingSkinDesignExtension = {
   slots: [
-    { id: 'accentColor', kind: 'color', defaultTokenId: 'color.accent.blue-600' },
-    { id: 'accentSpacing', kind: 'spacing', defaultTokenId: 'spacing.2' },
+    { id: 'accentColor', kind: 'color', defaultTokenId: 'studio.color.accent.blue-600' },
+    { id: 'accentSpacing', kind: 'spacing', defaultTokenId: 'studio.spacing.2' },
   ],
   variants: [
-    { id: 'blue', label: 'Blue', tokenBindings: { accentColor: 'color.accent.blue-600', accentSpacing: 'spacing.2' } },
-    { id: 'green', label: 'Green', tokenBindings: { accentColor: 'color.brand.green-600', accentSpacing: 'spacing.2' } },
-    { id: 'minimal', label: 'Minimal', tokenBindings: { accentColor: 'color.neutral.500', accentSpacing: 'spacing.1' } },
+    { id: 'blue', label: 'Blue', tokenBindings: { accentColor: 'studio.color.accent.blue-600', accentSpacing: 'studio.spacing.2' } },
+    { id: 'green', label: 'Green', tokenBindings: { accentColor: 'studio.color.brand.green-600', accentSpacing: 'studio.spacing.2' } },
+    { id: 'minimal', label: 'Minimal', tokenBindings: { accentColor: 'studio.color.neutral.500', accentSpacing: 'studio.spacing.1' } },
   ],
-  defaultVariantId: 'blue',
 }
 ```
 
-A variant cannot change `target`, supported levels/templates, `className`, CSS selector boundary, `printSafe`, or the stable document DOM. If a difference needs those changes, it is a new Skin or a later renderer proposal—not a Variant.
+### Base appearance, not a default Variant
+
+`variant === undefined` must resolve to the stable Phase 1 **Base appearance**: the Skin’s source CSS and declared slot defaults, without selecting a Variant. There is deliberately no `defaultVariantId` runtime concept. Base CSS and Base slot defaults remain part of the Skin’s compatibility contract; materially changing them requires the same version/new-ID judgment as changing the existing Phase 1 Skin appearance.
+
+This is safer than allowing a Skin author to change `defaultVariantId`: a legacy ref such as `{ id: "studio.heading.accent" }` would otherwise silently change when source defaults change. A Variant is an explicit overlay on Base, selected by a block ref or a compatible Preset. Changing an existing Variant’s meaning is a compatibility change; create a new Variant ID or Skin version/ID when the visual contract is materially different.
+
+A Variant cannot change `target`, supported levels/templates, `className`, CSS selector boundary, `printSafe`, or the stable document DOM. If a difference needs those changes, it is a new Skin or a later renderer proposal—not a Variant.
 
 ## Preset Model
 
 A Preset composes several Skin choices into a recognizable teacher-facing style. It may choose a Variant for a known Skin and, in a later iteration, provide a constrained token binding for a declared slot. It must never carry CSS or apply a Skin to a block that has no Skin ref.
 
+Preset entries may use only controlled block semantics as their matching scope. They may not use CSS selectors, arbitrary predicates, or runtime functions.
+
 ```ts
 // Pseudo-code only.
+type TeachingSkinPresetScope =
+  | {
+      target: 'heading'
+      levels?: readonly (1 | 2 | 3 | 4)[]
+    }
+  | {
+      target: 'box'
+      templates?: readonly string[]
+    }
+
 interface TeachingSkinPresetEntry {
   skinId: string
+  scope?: TeachingSkinPresetScope
   variantId?: string
   tokenBindings?: Record<TeachingSkinSlotId, TeachingSkinTokenId>
 }
@@ -183,13 +206,36 @@ const mathHandoutPreset: TeachingSkinPreset = {
   label: '策老师数学讲义风格',
   printSafe: true,
   entries: [
-    { skinId: 'studio.heading.accent', variantId: 'green' },
-    { skinId: 'studio.box.notebook', variantId: 'minimal' },
+    { skinId: 'studio.heading.accent', scope: { target: 'heading', levels: [1] }, variantId: 'strong' },
+    { skinId: 'studio.heading.accent', scope: { target: 'heading', levels: [2] }, variantId: 'minimal' },
+    { skinId: 'studio.box.notebook', scope: { target: 'box', templates: ['concept'] }, variantId: 'blue' },
+    { skinId: 'studio.box.notebook', scope: { target: 'box', templates: ['warning'] }, variantId: 'amber' },
   ],
 }
 ```
 
+### Scoped matching and validation
+
+For a block with a compatible selected Skin, resolution first considers matching scoped entries, then an unscoped entry for that Skin, then the Base appearance. Among matching scoped entries, the most specific scope wins: an explicit finite `levels`/`templates` set is more specific than target-only scope, and a smaller matching finite set is more specific than a larger one.
+
+The source validator/checker must reject a Preset when two entries for the same Skin have equal specificity and can match the same block. For example, two heading entries scoped to `[1]` conflict at H1, while `[1, 2]` and `[2, 3]` with equal cardinality conflict at H2. This is invalid source metadata, not a runtime tie-breaker. The same rule applies to Box template scopes. Scope lists, when present, must be non-empty and duplicate-free; an entry’s scope target must also agree with the referenced Skin target.
+
+The compact precedence contract is therefore:
+
+1. most-specific compatible scoped Preset entry;
+2. compatible unscoped Preset entry for the selected Skin;
+3. Base appearance.
+
 An entry that names an unavailable Skin, Variant, or Token is ignored for rendering and reported as unavailable; the stored semantic reference remains intact. This mirrors the Phase 1 missing/incompatible Skin behavior.
+
+### Preset composition versus explicit structural application
+
+There are two deliberately separate future operations:
+
+- **Document-level pinned Preset** is runtime design composition. It supplies a Variant/token choice only after a block already has a compatible Skin ref. It never changes block Skin identity, so legacy documents do not change merely because a Preset becomes available.
+- **Explicit Apply Preset / Authoring Profile** is an author-invoked editing transaction. It may inspect controlled Heading level and Box template semantics, write compatible Skin refs and optional Variant refs to matching blocks, and be undone as one transaction. It is not an implicit resolver behavior.
+
+If one-click teacher branding needs structural assignment for new documents or existing unskinned content, that responsibility belongs to a future, separately registered **Authoring Profile** (or Style Profile), not to the pinned Preset. Its source-defined rules would map controlled block semantics to Skin IDs and optional Variant IDs; it would be applied explicitly and remain undoable. This preserves both real “数学讲义风格” authoring UX and the legacy fallback guarantee.
 
 ## Data Contract Proposal
 
@@ -244,7 +290,7 @@ The recommended future direction is explicit, small semantic references—not ra
 interface FutureTeachingSkinRef {
   id: string
   version?: number
-  variant?: string                       // stable ID local to this Skin
+  variant?: string                       // stable Skin-local Variant ID
   settings?: Record<string, JsonValue>   // legacy Phase 1 field; not generic token input
 }
 
@@ -271,11 +317,11 @@ Example intent:
 The `variant` is an explicit block override. A document Preset supplies a preferred Variant only for blocks that already have a compatible Skin ref. Resolution priority should be:
 
 1. explicit Skin-ref Variant;
-2. compatible document Preset entry;
-3. Skin definition default Variant;
-4. existing Phase 1 Skin CSS/default appearance.
+2. most-specific compatible document Preset entry;
+3. compatible unscoped document Preset entry;
+4. Base appearance.
 
-No stored Preset should implicitly assign an ID to an unskinned block. This prevents a legacy document from acquiring visual changes merely because a Preset becomes available.
+`variant` absence is not an instruction to resolve a source-defined default Variant. It means Base appearance. No stored Preset should implicitly assign an ID to an unskinned block. This prevents a legacy document from acquiring visual changes merely because a Preset becomes available.
 
 ## CSS Variable Strategy
 
@@ -301,6 +347,30 @@ Variables must be scoped to the resolved Skin root (the existing Heading or Box 
 
 The runtime must construct this map from registered definitions only. It must not copy a document JSON object into `style`, `className`, a CSS string, or an arbitrary custom-property map.
 
+## Layout Dependency Contract
+
+Variants, Presets, and resolved Token bindings are rendering dependencies, not paint-only hints. Spacing, radius, border, typography, and density can change a block’s geometry; therefore future pagination/layout code must include the resolved design identity in its layout signature and invalidation decisions.
+
+```ts
+// Derived runtime state only; never persisted as a CSS value or document payload.
+interface ResolvedDesignSignature {
+  skinId: string
+  skinVersion?: number
+  explicitVariantId?: string
+  presetId?: string
+  presetVersion?: number
+  resolvedVariantId?: string
+  resolvedTokenBindings: readonly {
+    slotId: TeachingSkinSlotId
+    tokenId: TeachingSkinTokenId
+  }[]
+}
+```
+
+The initial rule should be conservative: any change in Variant, Preset, or resolved Token binding identity marks affected blocks layout-dirty and remeasures them before pagination/print output is considered current. Correct page boundaries take priority over avoiding a remeasurement.
+
+A future optimization may let **core-owned** token metadata classify a token kind as `paint-only` or `geometry-affecting`. Skin authors must not self-report layout impact: allowing that would let an author misclassify a spacing or typography change and create stale pagination. This proposal does not modify pagination; it records the dependency that a future implementation must honor.
+
 ## Persistence Strategy
 
 - Persist only stable semantic IDs: Skin ID, optional Skin version, optional Variant ID, and optional Preset ID/version.
@@ -311,7 +381,12 @@ The runtime must construct this map from registered definitions only. It must no
 
 ## Versioning Strategy
 
-Skin IDs, Variant IDs, Token IDs, and Preset IDs should be stable, namespaced identifiers. The Skin’s `version` remains the compatibility marker for the structural definition; Presets carry their own version because they compose multiple Skins.
+The ID rule is intentionally mixed:
+
+- **Global stable namespaced IDs:** Skin (`studio.heading.accent`), Token (`studio.color.brand.green-600`), and Preset (`teacher.math-handout`).
+- **Skin-local stable IDs:** Variant (`green`) and Slot (`accentColor`). Their full compatibility identity is the owning Skin ID plus local ID, such as `studio.heading.accent#green`.
+
+Local IDs avoid repeating the Skin namespace in every Variant/Slot declaration, while still being published compatibility API that cannot be casually renamed. The Skin’s `version` remains the compatibility marker for the structural definition; Presets carry their own version because they compose multiple Skins.
 
 For a rename such as `accentColor` → `primaryAccent`:
 
@@ -329,7 +404,7 @@ The proposed rollout deliberately avoids a one-time rewrite:
 1. **Document the model** (this proposal) and freeze the distinction between definition metadata and document refs.
 2. **Add source-level design metadata** in a later isolated change, without changing persisted document data.
 3. **Introduce explicit optional references** only after client/server validation, resolver fallback behavior, and tests are designed together.
-4. **Keep Phase 1 refs valid.** An existing `{ id, version?, settings? }` gets the registered Skin’s default Variant; it is not rewritten on open or save.
+4. **Keep Phase 1 refs valid.** An existing `{ id, version?, settings? }` uses the registered Skin’s stable Base appearance; it is not rewritten on open or save.
 5. **Offer opt-in migration later.** If a user chooses a Preset or Variant, write only the minimal new semantic reference. Never infer a teacher brand from old content.
 6. **Retain fallback preservation.** Missing/incompatible future IDs round-trip without data loss, just as Phase 1 missing Skin IDs do today.
 
@@ -337,10 +412,11 @@ The proposed rollout deliberately avoids a one-time rewrite:
 
 Teacher branding should exist, but in layers with different persistence responsibilities:
 
-- **Source/package Preset library:** trusted built-in or workspace-installed presets define what `teacher.math-handout`, `teacher.olympiad`, and `teacher.review-round-one` mean.
+- **Source/package Preset library:** trusted built-in or workspace-installed presets define what `teacher.math-handout`, `teacher.olympiad`, and `teacher.review-round-one` mean as design composition for already-selected Skins.
 - **User/workspace default:** an eventual authoring preference can suggest a Preset for new work. It must not alter saved documents implicitly, and it does not require an account-system design.
 - **Document-level pinned Preset:** an explicit document reference makes a shared document’s intended style reproducible, while preserving a fallback when the Preset is unavailable.
 - **Block-level Variant:** an author may explicitly override a document Preset for one selected Skin. This is the exception, not the mechanism for branding every block individually.
+- **Explicit Authoring Profile / Apply Preset:** a separately proposed, undoable authoring action may assign compatible structural Skin refs to new or existing blocks from controlled Heading/Box semantics. It is the route for one-click branding when blocks start unskinned.
 
 This layering lets Teacher A use a math-handout palette, Teacher B use an olympiad style, and Teacher C use a review-round-one style without inventing separate structural Skins for each color or density combination.
 
@@ -351,6 +427,7 @@ No UI is proposed for this change. A later UI should keep choices legible:
 - Skin selector: structural treatment only.
 - Variant selector: alternatives valid for the selected Skin only.
 - Document style/Preset selector: applies a composition to compatible, already-selected Skins and clearly shows affected blocks.
+- Apply Preset / Authoring Profile action: previews controlled structural assignments, writes refs only after explicit confirmation, and is undoable as one transaction.
 - Token controls: expose only declared semantic slots and named options; never an arbitrary CSS editor.
 - Inspector state: distinguish missing Skin, missing Variant, missing Preset, and incompatible target without erasing stored refs.
 
@@ -358,20 +435,21 @@ Any apply action should preview editor, A4, and print behavior and must remain s
 
 ## Open Questions
 
-1. Should source-level Token and Preset libraries share the existing Skin discovery tree or receive a separate, read-only discovery contract?
-2. Which constrained color format and typography/font IDs can be reliably validated and printed across supported platforms?
-3. Should per-document token selection be omitted permanently, or later permit only token-ID overrides declared by a Preset entry?
+1. Should source-level Token and Preset libraries share the existing Skin discovery tree or receive separate, read-only discovery contracts?
+2. What trusted-definition packaging and review model should govern workspace-installed Token, Preset, and Authoring Profile definitions?
+3. Which constrained print-safe color format can be reliably validated across supported platforms?
 4. How should a Preset report partial availability when only some referenced extensions are installed?
-5. Should document-level Preset selection be serialized immediately on an explicit user action, or represented first as an authoring draft until save?
+5. Should per-document token selection remain absent, or later permit only token-ID overrides declared by a Preset entry?
 6. What accessibility and grayscale-print contrast checks should be required before a Token or Preset is registered?
 7. How should the existing `BoxAppearance` priority be represented in a future inspector so users understand why it wins over a Skin base visual?
 
 ## Recommended Implementation Order
 
 1. Review and accept the semantic boundaries in this proposal.
-2. Define source-only, side-effect-free Token/Variant/Preset metadata types and validator/checker rules in a separate scoped change.
-3. Add registry and resolver support using data-only resolution and local CSS-variable maps, with no JSON shape change yet.
-4. Add parser/server validation and compatibility tests for optional Variant/Preset references, preserving legacy and unavailable refs.
-5. Add a development preview before any user-facing selector or settings UI.
-6. Introduce explicit document-level Preset UI and opt-in migration only after print, A4, persistence, and fallback behavior are verified.
-7. Consider a broader Theme layer only after Preset behavior proves insufficient; it should compose this model rather than replace it.
+2. **2B-1A:** add source-only Token/Slot/Variant metadata types plus validation/checker rules. Start with color, spacing, radius, and border only.
+3. **2B-1B:** add a design registry, pure resolver, and scoped CSS-variable map, with no persisted JSON change.
+4. **2B-1C:** extend the development Skin Lab with Variant/Token preview and verify A4/layout invalidation behavior.
+5. **2B-2:** add optional Variant persistence plus server/client validation, preserving legacy and unavailable refs.
+6. **2B-3:** add a Preset source registry and document-level pinned Preset persistence.
+7. **2B-4:** add user-facing Preset/Variant UI; separately scope any explicit Apply Preset / Authoring Profile transaction.
+8. Consider a broader Theme layer only after Preset behavior proves insufficient; it should compose this model rather than replace it.
