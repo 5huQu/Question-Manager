@@ -201,7 +201,8 @@ function isBoundedPx(value: unknown, maximum: number): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= maximum
 }
 
-function isTeachingSkinTokenDefinition(value: unknown): value is TeachingSkinTokenDefinition {
+/** Runtime-safe Token guard for trusted source definitions after registration. */
+export function isTeachingSkinTokenDefinition(value: unknown): value is TeachingSkinTokenDefinition {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const token = value as Record<string, unknown>
   if (!hasExactKeys(token, ['id', 'kind', 'label', 'printSafe', 'value'])
@@ -223,7 +224,8 @@ function isTeachingSkinTokenDefinition(value: unknown): value is TeachingSkinTok
   return false
 }
 
-function isTeachingSkinSlotDefinition(value: unknown): value is TeachingSkinSlotDefinition {
+/** Runtime-safe Slot guard for trusted source definitions after registration. */
+export function isTeachingSkinSlotDefinition(value: unknown): value is TeachingSkinSlotDefinition {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const slot = value as Record<string, unknown>
   if (!hasExactKeys(slot, ['id', 'kind', 'defaultTokenId', 'allowedTokenIds'])
@@ -237,7 +239,8 @@ function isTeachingSkinSlotDefinition(value: unknown): value is TeachingSkinSlot
     && new Set(slot.allowedTokenIds).size === slot.allowedTokenIds.length
 }
 
-function isTeachingSkinVariantDefinition(value: unknown, slotIds: ReadonlySet<string>): value is TeachingSkinVariantDefinition {
+/** Runtime-safe Variant guard for trusted source definitions after registration. */
+export function isTeachingSkinVariantDefinition(value: unknown, slotIds: ReadonlySet<string>): value is TeachingSkinVariantDefinition {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const variant = value as Record<string, unknown>
   if (!hasExactKeys(variant, ['id', 'label', 'description', 'tokenBindings'])

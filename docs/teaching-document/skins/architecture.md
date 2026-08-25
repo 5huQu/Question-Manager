@@ -32,5 +32,7 @@ For Box, the existing `templateId` remains the template semantic and `appearance
 - `frontend/src/utils/teachingDocument/skins/registry.ts`: registry class.
 - `frontend/src/utils/teachingDocument/skins/registryInstance.ts`: discovery and application registry.
 - `frontend/src/utils/teachingDocument/skins/resolver.ts`: compatibility and fallback decisions.
+- `frontend/src/utils/teachingDocument/skins/designIndex.ts`: global Token contribution index derived from that same registry. Registry-backed snapshots are rebuilt for each resolve, avoiding stale contribution data without a second discovery path.
+- `frontend/src/utils/teachingDocument/skins/designResolver.ts`: guarded pure Base/explicit-Variant resolver and trusted scoped CSS-variable map. Its variable namespace uses stable Skin ID + Slot ID, and it is not connected to renderer DOM until Phase 2B-1C.
 
 Normal skin work should not modify these modules or any pagination, ProseMirror, server, database, or print module.
