@@ -79,6 +79,32 @@ describe('Teaching Skin Presets', () => {
     paragraphEdited.content[0].content[0].text = '编辑后的正文'
     expect(teachingDocumentHeadingSkinDesignSignature(paragraphEdited)).toBe(teachingDocumentHeadingSkinDesignSignature(source))
     expect(resolveTeachingDocumentSkinPresetContext(paragraphEdited.design.preset).bindings).toEqual(resolveTeachingDocumentSkinPresetContext(source.design.preset).bindings)
+
+    const headingTextEdited = structuredClone(source)
+    const headingTextEditedHeading = headingTextEdited.content[1]
+    if (headingTextEditedHeading?.type === 'heading') headingTextEditedHeading.content[0].text = '编辑后的标题'
+    expect(teachingDocumentHeadingSkinDesignSignature(headingTextEdited)).toBe(teachingDocumentHeadingSkinDesignSignature(source))
+
+    const secondHeading = {
+      type: 'heading' as const,
+      id: 'h-2',
+      level: 2 as const,
+      content: [{ type: 'text' as const, text: '第二个标题' }],
+      skin: { id: 'builtin.heading.left-accent', variant: undefined as string | undefined },
+    }
+    const orderedHeadings = { ...source, content: [source.content[0], source.content[1], secondHeading] }
+    const reorderedHeadings = { ...orderedHeadings, content: [orderedHeadings.content[0], orderedHeadings.content[2], orderedHeadings.content[1]] }
+    expect(teachingDocumentHeadingSkinDesignSignature(reorderedHeadings)).not.toBe(teachingDocumentHeadingSkinDesignSignature(orderedHeadings))
+
+    const paragraphInsertedBeforeHeading = {
+      ...source,
+      content: [
+        { type: 'paragraph' as const, id: 'p-before', content: [{ type: 'text' as const, text: '插入的正文' }] },
+        ...source.content,
+      ],
+    }
+    expect(teachingDocumentHeadingSkinDesignSignature(paragraphInsertedBeforeHeading)).not.toBe(teachingDocumentHeadingSkinDesignSignature(source))
+
     const changedPreset = structuredClone(source)
     changedPreset.design.preset.version = 2
     const changedHeading = structuredClone(source)

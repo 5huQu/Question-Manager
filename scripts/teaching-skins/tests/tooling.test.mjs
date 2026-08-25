@@ -105,6 +105,14 @@ test('skin:check keeps Preset source declarative and side-effect-free', async ()
   }
 })
 
+test('skin:check requires exactly one default Preset export', async () => {
+  const root = await tempSkinRoot()
+  await writePreset(root, 'duplicate-export', `${presetSource()}\nexport default defineTeachingSkinPreset({ id: 'builtin.preset.duplicate', version: 1, label: '重复导出', headingSkins: {} })`)
+  const result = await checkTeachingSkins({ root })
+  assert.equal(result.ok, false)
+  assert.equal(result.errors.some((error) => error.code === 'preset-definition'), true)
+})
+
 test('skin:check allows the declarative authoring import, sibling CSS, and safe type-only imports', async () => {
   const root = await tempSkinRoot()
   const directory = await writeSkin(root, 'safe-imports', { className: 'td-skin-studio-heading-safe-imports' })

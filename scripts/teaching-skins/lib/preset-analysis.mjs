@@ -49,8 +49,9 @@ export async function analyzePresetDefinition(file) {
     }
     if (!ts.isExportAssignment(statement)) boundaryErrors.push('preset.ts may contain only import declarations and one default Preset export.')
   }
-  const assignment = sourceFile.statements.find(ts.isExportAssignment)
-  if (!assignment || assignment.isExportEquals || !ts.isCallExpression(assignment.expression) || !ts.isIdentifier(assignment.expression.expression) || assignment.expression.expression.text !== 'defineTeachingSkinPreset' || assignment.expression.arguments.length !== 1) {
+  const assignments = sourceFile.statements.filter(ts.isExportAssignment)
+  const assignment = assignments[0]
+  if (assignments.length !== 1 || !assignment || assignment.isExportEquals || !ts.isCallExpression(assignment.expression) || !ts.isIdentifier(assignment.expression.expression) || assignment.expression.expression.text !== 'defineTeachingSkinPreset' || assignment.expression.arguments.length !== 1) {
     errors.push('preset.ts must default-export defineTeachingSkinPreset({...}).')
     return { file, imports, errors, boundaryErrors, definition: null }
   }

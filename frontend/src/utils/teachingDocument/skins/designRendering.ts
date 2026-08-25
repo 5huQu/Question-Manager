@@ -69,13 +69,16 @@ export function resolveTeachingDocumentSkinPresetContext(preset?: TeachingSkinPr
   return resolveTeachingSkinPreset(teachingSkinPresetRegistry, preset, teachingSkinRegistry)
 }
 
-/** Excludes content text so native Heading DOM work does not rerun for ordinary typing. */
+/**
+ * Excludes content text so native Heading DOM work does not rerun for ordinary typing,
+ * while retaining top-level placement because ProseMirror may recreate native Heading DOM
+ * after a structural move.
+ */
 export function teachingDocumentHeadingSkinDesignSignature(document: TeachingDocumentV1): string {
   const preset = document.design?.preset
-  const headings = document.content
-    .filter((block): block is HeadingBlock => block.type === 'heading')
-    .map((block) => `${block.id}:${block.level}:${block.skin?.id || ''}:v${block.skin?.version || ''}:${block.skin?.variant || ''}`)
-    .sort()
+  const headings = document.content.flatMap((block, index) => block.type === 'heading'
+    ? [`${index}:${block.id}:${block.level}:${block.skin?.id || ''}:v${block.skin?.version || ''}:${block.skin?.variant || ''}`]
+    : [])
   return `preset:${preset?.id || ''}:v${preset?.version || ''}|${headings.join('|')}`
 }
 
