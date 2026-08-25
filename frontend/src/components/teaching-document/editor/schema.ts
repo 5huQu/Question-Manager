@@ -37,7 +37,7 @@ import { ResizeCommands } from './resizeCommands'
 import { PaginationDecorations } from './paginationDecorations'
 import { ActiveTextBlockDecoration, DocumentSelectionSafety } from './selection'
 import { DocumentStructuralChangeSet } from './structuralActions'
-import { parseTeachingSkinRef, resolveHeadingSkin } from '@/utils/teachingDocument/skins'
+import { parseTeachingSkinRef, resolveHeadingSkin, resolveTeachingSkinDesignRenderState, teachingSkinDesignStyleAttribute } from '@/utils/teachingDocument/skins'
 
 function createPageBreakId() {
   const uuid = globalThis.crypto?.randomUUID?.()
@@ -116,13 +116,16 @@ export const DocHeading = Node.create({
     let skin
     try { skin = parseTeachingSkinRef(node.attrs.skin ? JSON.parse(String(node.attrs.skin)) : undefined) } catch { skin = undefined }
     const resolvedSkin = resolveHeadingSkin(skin, level as 1 | 2 | 3 | 4)
+    const designStyle = resolvedSkin.status === 'resolved'
+      ? teachingSkinDesignStyleAttribute(resolveTeachingSkinDesignRenderState(resolvedSkin.definition).cssVariables)
+      : undefined
     return [`h${level}`, mergeAttributes(HTMLAttributes, {
       class: ['td-heading', resolvedSkin.status === 'resolved' ? resolvedSkin.definition.className : ''].filter(Boolean).join(' '),
       'data-block-type': 'heading',
       'data-indent-level': indentLevel || undefined,
       'data-skin-id': resolvedSkin.status === 'resolved' ? resolvedSkin.definition.id : undefined,
       'data-skin-state': skin ? resolvedSkin.status : undefined,
-      style: `text-align: ${alignment};${indentLevel ? ` margin-left: ${indentLevel * 1.5}em;` : ''}`,
+      style: `text-align: ${alignment};${indentLevel ? ` margin-left: ${indentLevel * 1.5}em;` : ''}${designStyle ? ` ${designStyle};` : ''}`,
     }), 0]
   },
 })

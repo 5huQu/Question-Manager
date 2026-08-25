@@ -120,7 +120,10 @@ export function serializeTeachingSkinTokenToCssValue(token: unknown, index: Teac
 
 /** Converts stable Skin and Slot compatibility IDs into one CSS-safe namespace. */
 export function teachingSkinIdToCssNamespace(skinId: string): string {
-  return skinId.replace(/[._]+/g, '-').replace(/[^a-z0-9-]/g, '-')
+  // Legal Skin IDs use lower-case alphanumerics plus `.`, `_`, and `-`.
+  // Only `.` is escaped: `--` cannot occur in the grammar, so this keeps the
+  // Skin ID portion injective without depending on implementation class names.
+  return skinId.replaceAll('.', '--')
 }
 
 /** Generates a deterministic scoped variable from the stable Skin and local Slot IDs. */

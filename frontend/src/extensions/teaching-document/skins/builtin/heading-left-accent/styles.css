@@ -1,4 +1,4 @@
 .td-skin-heading-left-accent {
-  border-left: 4px solid #2563eb;
+  border-left: var(--td-skin-builtin--heading--left-accent-accent-border, 4px solid #2563eb);
   padding-left: 0.65em;
 }

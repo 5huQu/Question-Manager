@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'
 import { teachingSkinRegistry } from '@/utils/teachingDocument/skins'
 import TeachingSkinLabPage from './TeachingSkinLabPage'
-import { skinLabCompatibility, skinLabDefinitions, skinLabDocument } from './teachingSkinLabModel'
+import { skinLabCompatibility, skinLabDefinitions, skinLabDesignState, skinLabDocument, skinLabVariants } from './teachingSkinLabModel'
 
 const limitedHeading = defineHeadingSkin({
   id: 'test.lab.heading-limited', label: '受限测试标题', version: 1, printSafe: true, className: 'td-skin-test-lab-heading-limited', supportedLevels: [1, 2],
@@ -23,9 +23,16 @@ describe('Teaching Skin Lab', () => {
   it('marks incompatible preview samples without applying a second skin list', () => {
     const definition = skinLabDefinitions('heading').find((item) => item.id === limitedHeading.id)!
     const document = skinLabDocument(definition)
-    expect(document.content.filter((block) => block.type === 'heading')).toHaveLength(4)
-    expect(document.content.filter((block) => block.type === 'heading').every((block) => block.skin?.id === definition.id)).toBe(true)
+    const headings = document.content.filter((block) => block.type === 'heading')
+    expect(headings.filter((block) => block.skin?.id === definition.id)).toHaveLength(4)
+    expect(headings.some((block) => !block.skin)).toBe(true)
     expect(skinLabCompatibility(definition)).toContainEqual({ label: 'H3', status: 'incompatible' })
+  })
+
+  it('offers declared variants as ephemeral Design states with a different CSS map', () => {
+    const definition = skinLabDefinitions('heading').find((item) => item.id === 'builtin.heading.left-accent')!
+    const variant = skinLabVariants(definition).find((item) => item.id === 'amber')!
+    expect(skinLabDesignState(definition).cssVariables).not.toEqual(skinLabDesignState(definition, variant.id).cssVariables)
   })
 
   it('renders the DEV tool with registry metadata and real preview components', () => {

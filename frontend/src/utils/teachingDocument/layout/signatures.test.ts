@@ -3,6 +3,7 @@ import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import { createDefaultPrintLayout } from './printLayout'
 import { DEFAULT_A4_PAPER } from './paper'
 import { createTeachingDocumentLayoutSignatures } from './signatures'
+import { teachingDocumentSkinDesignSignature } from '../skins'
 
 function fixture(): TeachingDocumentV1 {
   return {
@@ -82,5 +83,26 @@ describe('teaching document layout signatures', () => {
     expect(next.resourceRevision).toBe(baseline.resourceRevision)
     expect(next.layoutStyleSignature).not.toBe(baseline.layoutStyleSignature)
     expect(next.paginationSignature).not.toBe(baseline.paginationSignature)
+  })
+
+  it('treats resolved Skin design state as geometry-affecting', () => {
+    const source = {
+      ...fixture(),
+      content: [{ type: 'heading' as const, id: 'skin-heading', level: 2 as const, content: [{ type: 'text' as const, text: '标题' }], skin: { id: 'builtin.heading.left-accent', version: 1 } }],
+    }
+    const baseSkinDesign = teachingDocumentSkinDesignSignature(source)
+    const amberSkinDesign = teachingDocumentSkinDesignSignature(source, { 'builtin.heading.left-accent': 'amber' })
+    expect(amberSkinDesign).not.toBe(baseSkinDesign)
+    const base = createTeachingDocumentLayoutSignatures({
+      document: source, paper: DEFAULT_A4_PAPER, printLayout: createDefaultPrintLayout(DEFAULT_A4_PAPER), spread: false,
+      skinDesignSignature: baseSkinDesign,
+    })
+    const variant = createTeachingDocumentLayoutSignatures({
+      document: source, paper: DEFAULT_A4_PAPER, printLayout: createDefaultPrintLayout(DEFAULT_A4_PAPER), spread: false,
+      skinDesignSignature: amberSkinDesign,
+    })
+    expect(variant.layoutStyleSignature).not.toBe(base.layoutStyleSignature)
+    expect(variant.geometrySignature).not.toBe(base.geometrySignature)
+    expect(variant.paginationSignature).not.toBe(base.paginationSignature)
   })
 })

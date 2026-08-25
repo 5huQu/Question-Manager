@@ -65,7 +65,12 @@ import {
 import { InlineContent } from './InlineContent'
 import { BlockInlineEditor } from '../BlockInlineEditor/BlockInlineEditor'
 import { ImageResizeOverlay } from '../editor/ResizeHandles'
-import { resolveBoxSkin, resolveHeadingSkin } from '@/utils/teachingDocument/skins'
+import {
+  resolveBoxSkin,
+  resolveHeadingSkin,
+  resolveTeachingSkinDesignRenderState,
+  type TeachingSkinDesignVariantIds,
+} from '@/utils/teachingDocument/skins'
 import { skinBoxBodyStyle, skinBoxFrameStyle } from '@/utils/teachingDocument/boxAppearance'
 
 // ─── Resolver 类型 ───────────────────────────────────────────────────────────
@@ -80,6 +85,8 @@ export interface TeachingDocumentResolvers {
   choiceLayoutOverrides?: ChoiceLayoutOverrides
   /** 尚未固定列数时，以真实 DOM 宽度进行首轮探测。 */
   probeChoiceLayouts?: boolean
+  /** Ephemeral Skin Lab variant choice; never serialized into a document. */
+  skinDesignVariantIds?: TeachingSkinDesignVariantIds
 }
 
 export type FigureResolution =
@@ -123,7 +130,7 @@ function BoxIcon({ name, className }: { name?: string; className?: string }) {
 
 // ─── 各块渲染器 ──────────────────────────────────────────────────────────────
 
-function HeadingBlockView({ block, numberLabel }: { block: HeadingBlock; numberLabel?: string }) {
+function HeadingBlockView({ block, numberLabel, skinDesignVariantIds }: { block: HeadingBlock; numberLabel?: string; skinDesignVariantIds?: TeachingSkinDesignVariantIds }) {
   const Tag = `h${block.level}` as 'h1' | 'h2' | 'h3' | 'h4'
   const sizeClass = {
     1: 'text-2xl font-bold mt-8 mb-4',
@@ -132,10 +139,13 @@ function HeadingBlockView({ block, numberLabel }: { block: HeadingBlock; numberL
     4: 'text-base font-medium mt-4 mb-2',
   }[block.level]
   const skin = resolveHeadingSkin(block.skin, block.level)
+  const design = skin.status === 'resolved'
+    ? resolveTeachingSkinDesignRenderState(skin.definition, skinDesignVariantIds?.[skin.definition.id])
+    : undefined
   return (
     <Tag
       className={`td-heading ${sizeClass} text-zinc-900 dark:text-zinc-50 ${skin.status === 'resolved' ? skin.definition.className : ''}`}
-      style={textBlockStyle(block)}
+      style={{ ...textBlockStyle(block), ...(design?.cssVariables || {}) } as CSSProperties}
       data-block-id={block.id}
       data-block-type="heading"
       data-level={block.level}
@@ -1001,6 +1011,7 @@ function BoxFrame({
   titleEditable,
   onEditTitle,
   onHeaderPointerDown,
+  skinDesignVariantIds,
 }: {
   block: BoxBlock
   continuation?: 'single' | 'start' | 'middle' | 'end'
@@ -1008,10 +1019,14 @@ function BoxFrame({
   titleEditable?: boolean
   onEditTitle?: (boxId: string, title: string) => void
   onHeaderPointerDown?: () => void
+  skinDesignVariantIds?: TeachingSkinDesignVariantIds
 }) {
   const template = getBoxTemplateOrFallback(block.templateId)
   const skin = resolveBoxSkin(block.skin, block.templateId)
   const skinActive = skin.status === 'resolved'
+  const design = skinActive
+    ? resolveTeachingSkinDesignRenderState(skin.definition, skinDesignVariantIds?.[skin.definition.id])
+    : undefined
   const iconName = block.icon || template.defaultIcon
   const hasHeader = Boolean(template.showHeader || block.title)
   const isContinuationHeader = continuation === 'middle' || continuation === 'end'
@@ -1029,7 +1044,7 @@ function BoxFrame({
       data-continuation={continuation}
       data-skin-id={skinActive ? skin.definition.id : undefined}
       data-skin-state={block.skin ? skin.status : undefined}
-      style={skinActive ? skinBoxFrameStyle(block.appearance, template) : boxFrameStyle(block.appearance, template)}
+      style={{ ...(skinActive ? skinBoxFrameStyle(block.appearance, template) : boxFrameStyle(block.appearance, template)), ...(design?.cssVariables || {}) } as CSSProperties}
     >
       {isContinuationHeader ? (
         /* 续页栏：弱化标题，无图标、无 accent 线、无底色 */
@@ -1108,7 +1123,7 @@ function BoxBlockView({
   onEditBoxTitle?: (boxId: string, title: string) => void
 }) {
   return (
-    <BoxFrame block={block} titleEditable={boxTitleEditable} onEditTitle={onEditBoxTitle}>
+    <BoxFrame block={block} titleEditable={boxTitleEditable} onEditTitle={onEditBoxTitle} skinDesignVariantIds={resolvers.skinDesignVariantIds}>
       {block.children.map((child, index) => (
         <BlockRenderer
           key={`${child.id}:${index}`}
@@ -1184,6 +1199,7 @@ export function BoxFragmentRenderer({
         titleEditable={titleEditable}
         onEditTitle={onEditBoxTitle}
         onHeaderPointerDown={onSelectBox}
+        skinDesignVariantIds={resolvers.skinDesignVariantIds}
       >
         {item.childItems.map((childItem) => {
           const child = block.children[childItem.childIndex]
@@ -1498,7 +1514,7 @@ export function BlockRenderer({
   let content: ReactNode
   switch (block.type) {
     case 'heading':
-      content = <HeadingBlockView block={block} numberLabel={headingLabel} />
+      content = <HeadingBlockView block={block} numberLabel={headingLabel} skinDesignVariantIds={resolvers.skinDesignVariantIds} />
       break
     case 'paragraph':
       content = <ParagraphBlockView block={block} />

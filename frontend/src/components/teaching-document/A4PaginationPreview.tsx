@@ -48,6 +48,7 @@ import {
   type LayoutCoordinatorSnapshot,
 } from './editor/layoutCoordinator'
 import { usePreviewPageWindow } from './usePreviewPageWindow'
+import { teachingDocumentSkinDesignSignature, type TeachingSkinDesignVariantIds } from '@/utils/teachingDocument/skins'
 
 const PREPARING_READINESS: RenderReadinessResult = {
   ready: false,
@@ -105,6 +106,8 @@ export interface A4PaginationPreviewProps {
   variant?: TeachingDocumentPrintVariant
   /** 文档级布局协调器；省略时使用当前预览实例的本地协调器。 */
   coordinator?: TeachingDocumentLayoutCoordinator
+  /** Runtime-only Skin Lab selection; production previews always render Base. */
+  skinDesignVariantIds?: TeachingSkinDesignVariantIds
 }
 
 export function A4PaginationPreview({
@@ -133,6 +136,7 @@ export function A4PaginationPreview({
   layoutRequest = INITIAL_LAYOUT_REQUEST,
   variant,
   coordinator: coordinatorOption,
+  skinDesignVariantIds,
 }: A4PaginationPreviewProps) {
   const paper = useMemo(
     () => paperProp ?? resolveDocumentPaper(document.style),
@@ -172,7 +176,8 @@ export function A4PaginationPreview({
     renderVersion,
     spread,
     variant,
-  }), [document, fontVars, paper, printLayout, renderVersion, spread, variant])
+    skinDesignSignature: teachingDocumentSkinDesignSignature(layoutDocument, skinDesignVariantIds),
+  }), [document, fontVars, layoutDocument, paper, printLayout, renderVersion, skinDesignVariantIds, spread, variant])
   const geometryDependencies = [
     geometryAdapter,
     paragraphGeometryAdapter,
@@ -423,9 +428,10 @@ export function A4PaginationPreview({
     }
   }, [active, boxGeometryAdapter, choiceLayoutOverrides, coordinator, coordinatorKey, geometryAdapter, layoutDocument, layoutRequest.changeSet, layoutRequest.priority, layoutRequest.reason, layoutSignatures.documentRevision, layoutSignatures.layoutStyleSignature, layoutSignatures.paginationSignature, layoutSignatures.resourceRevision, layoutSignatures.variant, measurementStyleSignature, metrics, onPaginationState, paper, paragraphGeometryAdapter, questionGeometryAdapter, readinessWait, resolveQuestion, spread])
 
-  const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure'> = {
+  const rendererProps: Pick<TeachingDocumentRendererProps, 'resolveQuestion' | 'resolveFigure' | 'skinDesignVariantIds'> = {
     resolveQuestion,
     resolveFigure,
+    skinDesignVariantIds,
   }
   const overflowIdsByPage = useMemo(() => {
     const map = new Map<number, Set<string>>()

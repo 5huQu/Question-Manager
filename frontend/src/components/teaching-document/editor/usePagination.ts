@@ -36,6 +36,7 @@ import {
   type QuestionChromeGeometryAdapter,
   type RenderReadinessResult,
 } from '@/utils/teachingDocument'
+import { teachingDocumentSkinDesignSignature } from '@/utils/teachingDocument/skins'
 import type { QuestionResolution } from '../blocks/BlockRenderer'
 import { createLayoutPerformanceProfiler } from '@/utils/teachingDocument/layout/performance'
 import { INITIAL_LAYOUT_REQUEST, type LayoutRequest } from './useDeferredPaginationDocument'
@@ -133,6 +134,7 @@ export function usePagination(options: UsePaginationOptions): UsePaginationResul
     fontVars,
     renderVersion,
     spread: false,
+    skinDesignSignature: teachingDocumentSkinDesignSignature(document),
   }), [document, fontVars, paper, printLayout, renderVersion])
   const geometryDependencies = [
     geometryAdapter,
