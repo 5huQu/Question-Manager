@@ -168,7 +168,7 @@ export default defineBoxSkin({
 
 - attach resolved CSS variables to production renderer DOM;
 - create a Preset runtime;
-- persist Variants, Presets, Tokens, or design data in `TeachingDocument` or `TeachingSkinRef`;
+- persist Presets, Tokens, or design data in `TeachingDocument` or `TeachingSkinRef`; optional Skin-local Variant IDs are persisted separately by Phase 2B-2, while source metadata remains trusted source-only data;
 - change the editor, renderer, A4 preview, print, pagination, ProseMirror, BoxAppearance, API, database, or settings UI;
 - change `skin:new` arguments or generated minimal Skin files.
 

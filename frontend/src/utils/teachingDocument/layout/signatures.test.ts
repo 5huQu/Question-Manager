@@ -105,4 +105,26 @@ describe('teaching document layout signatures', () => {
     expect(variant.geometrySignature).not.toBe(base.geometrySignature)
     expect(variant.paginationSignature).not.toBe(base.paginationSignature)
   })
+
+  it('keeps persisted requested Variant identity in the layout signature, including unavailable Variants', () => {
+    const base: TeachingDocumentV1 = {
+      ...fixture(),
+      content: [{ type: 'heading' as const, id: 'skin-heading', level: 2 as const, content: [{ type: 'text' as const, text: '标题' }], skin: { id: 'builtin.heading.left-accent', version: 1 } }],
+    }
+    const green = structuredClone(base)
+    const unknown = structuredClone(base)
+    const heading = green.content[0]
+    const missingHeading = unknown.content[0]
+    if (heading.type === 'heading') heading.skin = { ...heading.skin!, variant: 'green' }
+    if (missingHeading.type === 'heading') missingHeading.skin = { ...missingHeading.skin!, variant: 'futureVariant' }
+
+    const baseSignature = teachingDocumentSkinDesignSignature(base)
+    const greenSignature = teachingDocumentSkinDesignSignature(green)
+    const unknownSignature = teachingDocumentSkinDesignSignature(unknown)
+    const forcedBaseSignature = teachingDocumentSkinDesignSignature(green, { 'builtin.heading.left-accent': null })
+
+    expect(greenSignature).not.toBe(baseSignature)
+    expect(unknownSignature).not.toBe(baseSignature)
+    expect(forcedBaseSignature).not.toBe(greenSignature)
+  })
 })

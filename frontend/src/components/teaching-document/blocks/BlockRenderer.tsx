@@ -69,6 +69,7 @@ import {
   resolveBoxSkin,
   resolveHeadingSkin,
   resolveTeachingSkinDesignRenderState,
+  resolveTeachingSkinVariantRequest,
   type TeachingSkinDesignVariantIds,
 } from '@/utils/teachingDocument/skins'
 import { skinBoxBodyStyle, skinBoxFrameStyle } from '@/utils/teachingDocument/boxAppearance'
@@ -140,7 +141,7 @@ function HeadingBlockView({ block, numberLabel, skinDesignVariantIds }: { block:
   }[block.level]
   const skin = resolveHeadingSkin(block.skin, block.level)
   const design = skin.status === 'resolved'
-    ? resolveTeachingSkinDesignRenderState(skin.definition, skinDesignVariantIds?.[skin.definition.id])
+    ? resolveTeachingSkinDesignRenderState(skin.definition, resolveTeachingSkinVariantRequest(skin.skin, skin.definition.id, skinDesignVariantIds))
     : undefined
   return (
     <Tag
@@ -1025,7 +1026,7 @@ function BoxFrame({
   const skin = resolveBoxSkin(block.skin, block.templateId)
   const skinActive = skin.status === 'resolved'
   const design = skinActive
-    ? resolveTeachingSkinDesignRenderState(skin.definition, skinDesignVariantIds?.[skin.definition.id])
+    ? resolveTeachingSkinDesignRenderState(skin.definition, resolveTeachingSkinVariantRequest(skin.skin, skin.definition.id, skinDesignVariantIds))
     : undefined
   const iconName = block.icon || template.defaultIcon
   const hasHeader = Boolean(template.showHeader || block.title)

@@ -14,11 +14,14 @@ type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string
 interface TeachingSkinRef {
   id: string
   version?: number
+  variant?: string
   settings?: Record<string, JsonValue>
 }
 ```
 
-Only `id`, `version`, and `settings` are allowed at the top level. `id` must be a stable namespaced ID such as `studio.heading.lesson-title`. `version`, when present, is a positive integer. `settings` is persisted but Phase 1 has no dynamic settings UI. Settings must be JSON-safe and may not use reserved executable/presentation keys including `css`, `html`, `className`, `style`, `script`, or `component`.
+Only `id`, `version`, `variant`, and `settings` are allowed at the top level. `id` must be a stable namespaced ID such as `studio.heading.lesson-title`. `version`, when present, is a positive integer. `variant`, when present, is a stable Skin-local ID using lower camel case such as `green`, `greenCompact`, or `compact2`; it is never a CSS value, class, selector, or Token binding. Its absence means the Skin's Base appearance—do not eagerly write `base`, `null`, or an empty string. `settings` is persisted but Phase 1 has no dynamic settings UI. Settings must be JSON-safe and may not use reserved executable/presentation keys including `css`, `html`, `className`, `style`, `script`, or `component`.
+
+Persistence validation is structural only and never checks whether the current registry contains the Skin or Variant. An unknown well-formed Variant is preserved on load/save; the renderer safely uses Base and reports `variant-missing` at runtime. A missing Skin preserves its full ref, including `variant`, and uses the existing visual fallback. There is no end-user Variant selector yet.
 
 ## Shared definition fields
 
@@ -39,9 +42,9 @@ Only `id`, `version`, and `settings` are allowed at the top level. `id` must be 
 
 `apiVersion`, `target`, and the definition type are set by `defineHeadingSkin` or `defineBoxSkin`; do not duplicate them manually. `printSafe` is required and must be `true` in Phase 1: every registered skin must work in editor, A4 preview, and print. `className` must be a stable, extension-owned CSS class. The core applies it only after a successful resolve.
 
-## Optional `design` metadata (Phase 2B-1A / 2B-1B)
+## Optional `design` metadata (Phase 2B-1A / 2B-2)
 
-A Skin may add optional source metadata: `design: { tokens?, slots, variants? }`. It is a recursively static object literal checked by `npm run skin:check`. The pure runtime resolves Base Slot defaults and an explicit Variant overlay into a trusted CSS-variable map named from stable Skin ID + Slot ID; a legacy Skin without `design` resolves normally as `no-design`. It has no renderer, persistence, or UI integration in this phase. See [design-metadata.md](design-metadata.md) for the four supported typed Token kinds, Slot/Variant rules, and examples.
+A Skin may add optional source metadata: `design: { tokens?, slots, variants? }`. It is a recursively static object literal checked by `npm run skin:check`. The pure runtime resolves Base Slot defaults and an explicit Variant overlay into a trusted CSS-variable map named from stable Skin ID + Slot ID; a legacy Skin without `design` resolves normally as `no-design`. A persisted `TeachingSkinRef.variant` now selects that Variant in production rendering, while Skin Lab overrides remain ephemeral. See [design-metadata.md](design-metadata.md) for the four supported typed Token kinds, Slot/Variant rules, and examples.
 
 ## Heading definition
 
