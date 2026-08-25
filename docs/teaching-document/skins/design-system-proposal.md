@@ -177,11 +177,11 @@ Preset entries may use only controlled block semantics as their matching scope. 
 type TeachingSkinPresetScope =
   | {
       target: 'heading'
-      levels?: readonly (1 | 2 | 3 | 4)[]
+      levels: readonly (1 | 2 | 3 | 4)[]
     }
   | {
       target: 'box'
-      templates?: readonly string[]
+      templates: readonly string[]
     }
 
 interface TeachingSkinPresetEntry {
@@ -216,13 +216,15 @@ const mathHandoutPreset: TeachingSkinPreset = {
 
 ### Scoped matching and validation
 
-For a block with a compatible selected Skin, resolution first considers matching scoped entries, then an unscoped entry for that Skin, then the Base appearance. Among matching scoped entries, the most specific scope wins: an explicit finite `levels`/`templates` set is more specific than target-only scope, and a smaller matching finite set is more specific than a larger one.
+`scope === undefined` is the whole-Skin default match. If `scope` is present, it must select a non-empty semantic subset: Heading requires non-empty, duplicate-free `levels`; Box requires non-empty, duplicate-free `templates`. Target-only scope is not valid because it has the same match set as an unscoped entry for a known Skin.
 
-The source validator/checker must reject a Preset when two entries for the same Skin have equal specificity and can match the same block. For example, two heading entries scoped to `[1]` conflict at H1, while `[1, 2]` and `[2, 3]` with equal cardinality conflict at H2. This is invalid source metadata, not a runtime tie-breaker. The same rule applies to Box template scopes. Scope lists, when present, must be non-empty and duplicate-free; an entry’s scope target must also agree with the referenced Skin target.
+For a block with a compatible selected Skin, resolution first considers matching semantic-subset entries, then an unscoped entry for that Skin, then the Base appearance. Among matching subset entries, a smaller matching finite `levels`/`templates` set is more specific than a larger one.
+
+The source validator/checker must reject a Preset when two subset entries for the same Skin have equal specificity and can match the same block. For example, two heading entries scoped to `[1]` conflict at H1, while `[1, 2]` and `[2, 3]` with equal cardinality conflict at H2. This is invalid source metadata, not a runtime tie-breaker. The same rule applies to Box template scopes. An entry’s scope target must also agree with the referenced Skin target.
 
 The compact precedence contract is therefore:
 
-1. most-specific compatible scoped Preset entry;
+1. most-specific compatible semantic-subset Preset entry;
 2. compatible unscoped Preset entry for the selected Skin;
 3. Base appearance.
 
@@ -396,6 +398,17 @@ For a rename such as `accentColor` → `primaryAccent`:
 4. If the owning source extension is unavailable, preserve the old ref and use the existing fallback appearance.
 
 No arbitrary migration code should be embedded in document JSON or custom Skin modules. A later implementation should prefer data-only alias maps and explicit user-confirmed migration commands over mutation on document open.
+
+### Published design identity immutability and reproducibility
+
+A stable ID is a published semantic identity, not a mutable label. Source evolution must not make a pinned document materially change appearance with no JSON change or availability signal.
+
+- **Published Token ID:** a Token ID represents one stable semantic value. Its value must not be redefined to a materially different color, spacing, radius, border, or other visual result under the same ID. Mint a new Token ID for a clearly visible change; retain the old ID for the supported compatibility window or make its absence an explicit unavailable state.
+- **Published Variant ID:** a Variant’s `tokenBindings` are part of its compatibility semantics. Do not silently redefine `studio.heading.accent#green` into a visibly different composition. Mint a new local Variant ID for a material change, or provide an explicit, reviewed migration strategy that preserves old intent.
+- **Published Preset version:** when document persistence stores `preset.id + preset.version`, version is a resolver address, not decoration. The recommended future rule is a versioned Preset registry: it retains/discovers resolvable definitions for every supported `(id, version)` pair. If that exact version is unavailable, resolution must report it as unavailable and fall back safely; it must never silently resolve the latest version instead.
+- **Base appearance:** Base CSS and Base slot defaults are part of the Skin compatibility contract. Until a future runtime genuinely resolves versioned Skin definitions, a version bump alone cannot make a material Base change reproducible. The safer direction is a new Skin ID or an explicit user-confirmed migration, while retaining the old source definition for supported documents.
+
+This contract keeps a pinned document’s semantic intent reproducible across source evolution. Compatible refinements may remain under an existing ID only when they do not materially alter the established visual/print meaning; ambiguity is resolved in favor of a new identity or visible fallback, not a silent reinterpretation.
 
 ## Migration Strategy
 
