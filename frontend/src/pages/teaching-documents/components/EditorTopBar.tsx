@@ -40,7 +40,7 @@ export function EditorTopBar(props: {
   onCanvasModeChange: (mode: TeachingCanvasMode) => void
   onZoomChange: (zoom: number) => void
   onInsert: (type: TeachingBlock['type'], headingLevel?: HeadingLevel) => void
-  onOpenStyle?: () => void
+  styleHref?: string
   paperActions?: ReactNode
   printActions?: ReactNode
 }) {
@@ -102,10 +102,10 @@ export function EditorTopBar(props: {
         placeholder="未命名文档"
       />
 
-      {props.onOpenStyle ? (
-        <button type="button" onClick={props.onOpenStyle} className="hidden h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100 sm:inline-flex" title="文档样式">
+      {props.styleHref ? (
+        <a href={props.styleHref} className="hidden h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100 sm:inline-flex" title="文档样式">
           <Palette className="size-3.5" />文档样式
-        </button>
+        </a>
       ) : null}
 
       <div

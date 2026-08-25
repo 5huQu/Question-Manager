@@ -1051,7 +1051,7 @@ export default function TeachingDocumentEditorPage() {
         }}
         onZoomChange={setViewZoom}
         onInsert={(type, headingLevel) => insertBlock(type, undefined, headingLevel)}
-        onOpenStyle={() => navigate(`/teaching-documents/${encodeURIComponent(decodeURIComponent(documentId))}/style`)}
+        styleHref={`/teaching-documents/${encodeURIComponent(decodeURIComponent(documentId))}/style`}
         paperActions={undefined}
       />
 

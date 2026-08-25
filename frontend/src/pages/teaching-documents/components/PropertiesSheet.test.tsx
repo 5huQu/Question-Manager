@@ -118,6 +118,22 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
       expect(JSON.stringify(call)).not.toContain('"inherit"')
       expect(JSON.stringify(call)).not.toContain('null')
     }
+
+    const zeroVariantUnknownUpdate = vi.fn()
+    const zeroVariantUnknownBox = { ...box, skin: { id: 'builtin.box.header-band', version: 1, variant: 'futureVariant' } }
+    await renderSheet({ block: zeroVariantUnknownBox, topLevel: zeroVariantUnknownBox }, zeroVariantUnknownUpdate)
+    expect(container!.textContent).toContain('当前：futureVariant')
+    expect(container!.textContent).toContain('局部样式不可用：futureVariant')
+    expect(container!.querySelector('select[aria-label="局部样式"]')).toBeNull()
+    expect(zeroVariantUnknownUpdate).not.toHaveBeenCalled()
+    const zeroVariantRestore = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent === '恢复跟随整体')
+    await act(async () => zeroVariantRestore?.click())
+    expect(zeroVariantUnknownUpdate).toHaveBeenCalledWith({ skin: { id: 'builtin.box.header-band', version: 1 } })
+
+    const zeroVariantBox = { ...box, skin: { id: 'builtin.box.header-band', version: 1 } }
+    await renderSheet({ block: zeroVariantBox, topLevel: zeroVariantBox })
+    expect(container!.textContent).not.toContain('局部样式')
+    expect(container!.querySelector('select[aria-label="局部样式"]')).toBeNull()
   })
 
   it('在布局页用显式标记控制对象后的强制换页', async () => {

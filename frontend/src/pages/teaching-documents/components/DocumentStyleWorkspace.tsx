@@ -164,7 +164,7 @@ export function DocumentStyleWorkspace({
                 onClick={() => undefined}
               />
             ) : null}
-            <PresetCard label="默认" description="不使用文档样式组合，按各元素自身的基础样式显示。" selected={!currentRef} onClick={() => onDocumentChange(withTeachingDocumentPreset(document))} />
+            <PresetCard label="默认" description="不使用文档样式组合，按各元素自身的基础样式显示。" selected={!currentRef} onClick={() => { if (currentRef) onDocumentChange(withTeachingDocumentPreset(document)) }} />
             {presets.map((preset) => (
               <PresetCard
                 key={`${preset.id}:${preset.version}`}
@@ -172,7 +172,7 @@ export function DocumentStyleWorkspace({
                 description={preset.description || '已注册的标题与信息框样式组合。'}
                 version={preset.version}
                 selected={currentRef?.id === preset.id && currentRef.version === preset.version}
-                onClick={() => onDocumentChange(withTeachingDocumentPreset(document, { id: preset.id, version: preset.version }))}
+                onClick={() => { if (currentRef?.id !== preset.id || currentRef.version !== preset.version) onDocumentChange(withTeachingDocumentPreset(document, { id: preset.id, version: preset.version })) }}
               />
             ))}
             {!presets.length ? <p className="rounded-lg border border-dashed border-zinc-200 p-3 text-xs text-zinc-500 dark:border-zinc-800">当前没有可选的文档样式。</p> : null}

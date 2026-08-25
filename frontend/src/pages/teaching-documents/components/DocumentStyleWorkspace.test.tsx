@@ -49,6 +49,20 @@ describe('DocumentStyleWorkspace', () => {
     expect(onDocumentChange).toHaveBeenCalledWith(expect.objectContaining({ design: { preset: { id: 'builtin.preset.warm', version: 1 } } }))
   })
 
+  it('does not replace the document when the already selected Preset card is clicked', async () => {
+    const defaultChange = await renderWorkspace(baseDocument)
+    const defaultCard = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent?.includes('默认'))
+    await act(async () => defaultCard?.click())
+    expect(defaultChange).not.toHaveBeenCalled()
+  })
+
+  it('does not replace the document when the exact current Preset version is clicked', async () => {
+    const onDocumentChange = await renderWorkspace({ ...baseDocument, design: { preset: { id: 'builtin.preset.warm', version: 1 } } })
+    const currentPreset = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent?.includes('Warm') && button.getAttribute('aria-pressed') === 'true')
+    await act(async () => currentPreset?.click())
+    expect(onDocumentChange).not.toHaveBeenCalled()
+  })
+
   it('clears the Preset without leaving an empty design object and preserves explicit block variants', async () => {
     const document = structuredClone(baseDocument)
     document.design = { preset: { id: 'builtin.preset.warm', version: 1 } }

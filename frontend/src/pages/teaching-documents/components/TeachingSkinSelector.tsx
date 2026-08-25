@@ -56,7 +56,7 @@ export function TeachingSkinVariantSelector({
     : selection.source === 'preset'
       ? presetLabel || '当前文档样式'
       : '基础样式'
-  if (!variants.length) return null
+  if (!variants.length && skin.variant === undefined) return null
   const clearVariant = () => {
     const { variant: _variant, ...withoutVariant } = skin
     onChange(withoutVariant)
@@ -68,7 +68,7 @@ export function TeachingSkinVariantSelector({
         <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200">当前：{activeVariant?.label || (selection.requestedVariantId ? selection.requestedVariantId : '基础样式')}</p>
         <p className="mt-0.5 text-[11px] text-zinc-500">来源：{sourceLabel}</p>
         {selection.source === 'explicit' && !activeVariant ? <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[11px] leading-4 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">局部样式不可用：{skin.variant}。当前会安全回退到基础样式。</p> : null}
-        <select
+        {variants.length ? <select
           className={`${fieldClass} mt-2`}
           aria-label="局部样式"
           value={skin.variant || ''}
@@ -77,7 +77,7 @@ export function TeachingSkinVariantSelector({
           <option value="">跟随整体</option>
           {skin.variant !== undefined && !variants.some((item) => item.id === skin.variant) ? <option value={skin.variant} disabled>{`${skin.variant}（不可用）`}</option> : null}
           {variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.label}</option>)}
-        </select>
+        </select> : null}
         {selection.source === 'explicit' ? <button type="button" onClick={clearVariant} className="mt-2 text-[11px] font-medium text-zinc-600 underline-offset-2 hover:underline dark:text-zinc-300">恢复跟随整体</button> : null}
       </div>
     </div>
