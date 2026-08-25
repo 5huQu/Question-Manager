@@ -39,9 +39,9 @@ Only `id`, `version`, and `settings` are allowed at the top level. `id` must be 
 
 `apiVersion`, `target`, and the definition type are set by `defineHeadingSkin` or `defineBoxSkin`; do not duplicate them manually. `printSafe` is required and must be `true` in Phase 1: every registered skin must work in editor, A4 preview, and print. `className` must be a stable, extension-owned CSS class. The core applies it only after a successful resolve.
 
-## Optional `design` metadata (Phase 2B-1A)
+## Optional `design` metadata (Phase 2B-1A / 2B-1B)
 
-A Skin may add optional, inert source metadata: `design: { tokens?, slots, variants? }`. It is a recursively static object literal checked by `npm run skin:check`; it contributes no CSS variables, renderer behavior, resolver behavior, persistence, or UI in this phase. See [design-metadata.md](design-metadata.md) for the four supported typed Token kinds, Slot/Variant rules, and examples.
+A Skin may add optional source metadata: `design: { tokens?, slots, variants? }`. It is a recursively static object literal checked by `npm run skin:check`. The pure runtime can resolve Base Slot defaults and an explicit Variant overlay into a trusted CSS-variable map, but it has no renderer, persistence, or UI integration in this phase. See [design-metadata.md](design-metadata.md) for the four supported typed Token kinds, Slot/Variant rules, and examples.
 
 ## Heading definition
 

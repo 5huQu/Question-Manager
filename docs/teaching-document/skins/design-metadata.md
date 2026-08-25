@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Phase 2B-1A lets a source-level Heading or Box Skin describe a constrained design space using optional `design` metadata. A definition may contribute global Tokens, declare Skin-local Slots, and offer Skin-local Variants.
+Phase 2B-1A lets a source-level Heading or Box Skin describe a constrained design space using optional `design` metadata. A definition may contribute global Tokens, declare Skin-local Slots, and offer Skin-local Variants. Phase 2B-1B derives a pure runtime Design Index from the existing `TeachingSkinRegistry`, resolves Base Slot defaults plus an explicitly requested Variant overlay, and returns a trusted scoped CSS-variable map.
 
-This metadata is inert in this phase. It is readable by TypeScript, carried by the existing auto-discovered Skin definition, and checked by `npm run skin:check`. It does not create a Token registry, resolve a Variant, emit CSS variables, change a renderer, alter pagination, write `TeachingDocument` JSON, or add UI.
+The runtime is readable by TypeScript, carried by the existing auto-discovered Skin definition, and checked by `npm run skin:check`. It does not attach CSS variables to a renderer, change a renderer, alter pagination, write `TeachingDocument` JSON, or add UI.
 
 Use the existing side-effect-free authoring API and keep all metadata inside the one static `skin.ts` object literal:
 
@@ -66,7 +66,32 @@ A Variant is a stable lower-camel-case identifier local to one Skin. It describe
 
 ## Base Appearance
 
-Base means the existing Phase 1 Skin CSS plus its Slot `defaultTokenId` metadata. In 2B-1A the defaults are descriptive only—nothing injects them into CSS. `variant === undefined` remains Base, and no current document data gains a Variant field.
+Base means the existing Phase 1 Skin CSS plus its Slot `defaultTokenId` metadata. In 2B-1B the pure resolver returns Base defaults when no explicit Variant ID is supplied. It does not inject those values into CSS or document data; `variant === undefined` remains Base, and no current document data gains a Variant field.
+
+## Pure Runtime Resolution (Phase 2B-1B)
+
+The runtime is derived from the existing registry; it creates no second `import.meta.glob` discovery path and Tokens do not form an independent plugin system.
+
+```ts
+import {
+  createTeachingSkinDesignIndexFromRegistry,
+  resolveTeachingSkinDesign,
+} from '@/utils/teachingDocument/skins'
+
+const designIndex = createTeachingSkinDesignIndexFromRegistry(teachingSkinRegistry)
+const result = resolveTeachingSkinDesign(designIndex, 'studio.heading.accent', 'green')
+
+if (result.status === 'resolved') {
+  // result.design.cssVariables is trusted, deterministic, and scoped for this Skin root.
+  // 2B-1B intentionally does not attach it to a DOM element.
+}
+```
+
+The resolver starts with every Slot's `defaultTokenId`, then overlays only the named Variant's partial bindings. No Variant is selected when its ID is omitted. A missing explicit Variant is recorded as the structured `variant-missing` issue and resolves to Base, preserving the Phase 1 fallback contract. A Token with zero contributions is missing; one contribution is usable; two or more contributions are ambiguous. Any missing, ambiguous, wrong-kind, disallowed, or invalid Token dependency returns `status: 'unavailable'` and no CSS-variable map. It never picks the first contribution.
+
+Variables use the deterministic core mapping `--${skin-className}-${lower-kebab-slot-id}` (for example, class `td-skin-studio-heading-accent` plus `accentColor` becomes `--td-skin-studio-heading-accent-accent-color`). Skin authors cannot provide an arbitrary CSS-variable name. The map is designed to be attached only to the resolved Skin root in a later phase, so Slots with the same local name on different Skins cannot leak across instances.
+
+Trusted Tokens serialize only to these CSS values: Color → `#RRGGBB`; Spacing/Radius → `<px>px`; Border → `<width>px <style> <resolved-color>`. The runtime accepts no raw CSS strings, property names, or document-supplied values.
 
 ## Static Source Contract
 
@@ -111,7 +136,7 @@ export default defineHeadingSkin({
 })
 ```
 
-The sibling CSS remains ordinary Phase 1 CSS in this phase. Do **not** write `var(--td-skin-...)`: there is no CSS-variable emitter until Phase 2B-1B.
+The sibling CSS remains ordinary Phase 1 CSS in this phase. Phase 2B-1B can return a `--td-skin-*` map for trusted source metadata, but no renderer consumes it yet; production CSS integration begins in Phase 2B-1C.
 
 ## Example Box Skin
 
@@ -141,8 +166,8 @@ export default defineBoxSkin({
 
 ## What This Does Not Do Yet
 
-- emit or resolve CSS variables;
-- create a Token/design registry, Variant resolver, or Preset runtime;
+- attach resolved CSS variables to production renderer DOM;
+- create a Preset runtime;
 - persist Variants, Presets, Tokens, or design data in `TeachingDocument` or `TeachingSkinRef`;
 - change the editor, renderer, A4 preview, print, pagination, ProseMirror, BoxAppearance, API, database, or settings UI;
 - change `skin:new` arguments or generated minimal Skin files.

@@ -18,7 +18,7 @@ Keep `skin.ts` declarative. Its value imports may only be the public authoring A
 
 ## Optional design metadata
 
-When a Skin needs to describe Tokens, Slots, or Variants, add a static `design` object literal directly to `defineHeadingSkin(...)` or `defineBoxSkin(...)`. Do not extract it to `tokens.ts` or call a helper. Run `npm run skin:check`: it validates the typed metadata and global Token namespace. This metadata is inert in Phase 2B-1A—do not add CSS variables or expect a visual effect; Phase 2B-1B is the first planned consumer. See [design-metadata.md](design-metadata.md).
+When a Skin needs to describe Tokens, Slots, or Variants, add a static `design` object literal directly to `defineHeadingSkin(...)` or `defineBoxSkin(...)`. Do not extract it to `tokens.ts` or call a helper. Run `npm run skin:check`: it validates the typed metadata and global Token namespace. Phase 2B-1B can resolve this trusted metadata to an in-memory scoped CSS-variable map, but it does not attach the map to renderer DOM or create a visible effect; that integration is Phase 2B-1C. See [design-metadata.md](design-metadata.md).
 
 ## Reference-image workflow
 
