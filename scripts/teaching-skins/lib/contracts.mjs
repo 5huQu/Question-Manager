@@ -47,7 +47,7 @@ function designVariants(design) {
   return array(design?.variants) || []
 }
 
-function tokenShapeIssues(token) {
+export function tokenDefinitionShapeIssues(token) {
   const issues = []
   if (!hasExactKeys(token, ['id', 'kind', 'label', 'printSafe', 'value'])) return ['Token may use only id, kind, label, printSafe, and value.']
   if (!isStableSkinId(token.id)) issues.push('Token ID must be a stable namespaced lowercase identifier.')
@@ -112,7 +112,7 @@ export function designMetadataShapeIssues(design) {
   if (!Array.isArray(design.slots)) issues.push('design.slots is required and must be an array.')
   if (design.tokens !== undefined && !Array.isArray(design.tokens)) issues.push('design.tokens must be an array when provided.')
   if (design.variants !== undefined && !Array.isArray(design.variants)) issues.push('design.variants must be an array when provided.')
-  for (const token of designTokens(design)) issues.push(...tokenShapeIssues(token))
+  for (const token of designTokens(design)) issues.push(...tokenDefinitionShapeIssues(token))
   for (const slot of designSlots(design)) issues.push(...slotShapeIssues(slot))
   for (const variant of designVariants(design)) issues.push(...variantShapeIssues(variant))
   const tokenIds = designTokens(design).map((token) => token?.id).filter((id) => typeof id === 'string')
@@ -125,41 +125,62 @@ export function designMetadataShapeIssues(design) {
 }
 
 /** Cross-definition validation performed only after all auto-discovered Token contributions are known. */
-export function designMetadataReferenceIssues(design, tokensById) {
+export function designMetadataReferenceIssues(design, tokenIndex) {
   if (!design || typeof design !== 'object' || Array.isArray(design)) return []
   const issues = []
-  const tokenFor = (id) => tokensById.get(id)
-  for (const token of designTokens(design)) {
-    if (token?.kind !== 'border' || !token.value || typeof token.value !== 'object') continue
-    const color = tokenFor(token.value.colorTokenId)
-    if (!color) issues.push(`Border Token ${token.id} colorTokenId must reference a known Token.`)
-    else if (color.kind !== 'color') issues.push(`Border Token ${token.id} colorTokenId must reference a color Token.`)
-  }
-  const slotsById = new Map(designSlots(design).filter((slot) => slot && typeof slot === 'object').map((slot) => [slot.id, slot]))
-  for (const slot of slotsById.values()) {
-    const defaultToken = tokenFor(slot.defaultTokenId)
-    if (!defaultToken) issues.push(`Slot ${slot.id} defaultTokenId must reference a known Token.`)
-    else if (defaultToken.kind !== slot.kind) issues.push(`Slot ${slot.id} defaultTokenId must use a ${slot.kind} Token.`)
-    if (slot.allowedTokenIds === undefined) continue
-    for (const tokenId of slot.allowedTokenIds) {
-      const token = tokenFor(tokenId)
-      if (!token) issues.push(`Slot ${slot.id} allowedTokenIds must reference known Tokens.`)
-      else if (token.kind !== slot.kind) issues.push(`Slot ${slot.id} allowedTokenIds must use only ${slot.kind} Tokens.`)
+  const resolveToken = (id, expectedKind, trail = new Set()) => {
+    const contributions = tokenIndex.get(id) || []
+    if (!contributions.length) return { ok: false, message: `Token ${String(id)} is unknown.` }
+    if (contributions.length !== 1) return { ok: false, message: `Token ${String(id)} is ambiguous because it has ${contributions.length} definitions.` }
+    const contribution = contributions[0]
+    if (contribution.shapeIssues.length) {
+      return { ok: false, message: `Token ${String(id)} is invalid: ${contribution.shapeIssues.join(' ')}` }
     }
-    if (!slot.allowedTokenIds.includes(slot.defaultTokenId)) issues.push(`Slot ${slot.id} allowedTokenIds must include defaultTokenId.`)
+    const { token } = contribution
+    if (expectedKind && token.kind !== expectedKind) {
+      return { ok: false, message: `Token ${String(id)} must be a ${expectedKind} Token.` }
+    }
+    if (token.kind === 'border') {
+      if (trail.has(id)) return { ok: false, message: `Border Token ${String(id)} has a cyclic color dependency.` }
+      const color = resolveToken(token.value.colorTokenId, 'color', new Set([...trail, id]))
+      if (!color.ok) return { ok: false, message: `Border Token ${String(id)} colorTokenId is invalid: ${color.message}` }
+    }
+    return { ok: true, token }
+  }
+  for (const token of designTokens(design)) {
+    if (!token || typeof token !== 'object' || token.kind !== 'border') continue
+    const resolved = resolveToken(token.id, 'border')
+    if (!resolved.ok) issues.push(`Border Token ${String(token.id)} dependency error: ${resolved.message}`)
+  }
+  const slotsById = new Map(designSlots(design)
+    .filter((slot) => slot && typeof slot === 'object' && !Array.isArray(slot))
+    .map((slot) => [slot.id, slot]))
+  for (const slot of slotsById.values()) {
+    const defaultToken = resolveToken(slot.defaultTokenId, slot.kind)
+    if (!defaultToken.ok) issues.push(`Slot ${String(slot.id)} defaultTokenId dependency error: ${defaultToken.message}`)
+    const allowedTokenIds = Array.isArray(slot.allowedTokenIds) ? slot.allowedTokenIds : null
+    if (!allowedTokenIds) continue
+    for (const tokenId of allowedTokenIds) {
+      const token = resolveToken(tokenId, slot.kind)
+      if (!token.ok) issues.push(`Slot ${String(slot.id)} allowedTokenIds dependency error: ${token.message}`)
+    }
+    if (!allowedTokenIds.includes(slot.defaultTokenId)) issues.push(`Slot ${String(slot.id)} allowedTokenIds must include defaultTokenId.`)
   }
   for (const variant of designVariants(design)) {
-    if (!variant?.tokenBindings || typeof variant.tokenBindings !== 'object' || Array.isArray(variant.tokenBindings)) continue
+    if (!variant || typeof variant !== 'object' || Array.isArray(variant)
+      || !variant.tokenBindings || typeof variant.tokenBindings !== 'object' || Array.isArray(variant.tokenBindings)) continue
     for (const [slotId, tokenId] of Object.entries(variant.tokenBindings)) {
       const slot = slotsById.get(slotId)
       if (!slot) {
-        issues.push(`Variant ${variant.id} binds undeclared Slot ${slotId}.`)
+        issues.push(`Variant ${String(variant.id)} binds undeclared Slot ${slotId}.`)
         continue
       }
-      const token = tokenFor(tokenId)
-      if (!token) issues.push(`Variant ${variant.id} Token ${tokenId} must be known.`)
-      else if (token.kind !== slot.kind) issues.push(`Variant ${variant.id} Token ${tokenId} must match Slot ${slotId} kind ${slot.kind}.`)
-      else if (slot.allowedTokenIds !== undefined && !slot.allowedTokenIds.includes(tokenId)) issues.push(`Variant ${variant.id} Token ${tokenId} is not allowed for Slot ${slotId}.`)
+      const token = resolveToken(tokenId, slot.kind)
+      if (!token.ok) issues.push(`Variant ${String(variant.id)} Token ${tokenId} dependency error: ${token.message}`)
+      const allowedTokenIds = Array.isArray(slot.allowedTokenIds) ? slot.allowedTokenIds : null
+      if (token.ok && allowedTokenIds && !allowedTokenIds.includes(tokenId)) {
+        issues.push(`Variant ${String(variant.id)} Token ${tokenId} is not allowed for Slot ${slotId}.`)
+      }
     }
   }
   return issues

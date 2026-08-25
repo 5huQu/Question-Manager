@@ -113,3 +113,108 @@ for (const [name, design, expectedCode] of [
     assert.equal(result.errors.some((error) => error.code === expectedCode), true)
   })
 }
+
+for (const [name, allowedTokenIds] of [
+  ['null', 'null'],
+  ['number', '123'],
+  ['object', '{}'],
+]) {
+  test(`skin:check rejects malformed allowedTokenIds (${name}) without crashing`, async () => {
+    const root = await tempSkinRoot()
+    await writeSkin(root, 'malformed-allowed', {
+      design: `{ tokens: [{ id: 'studio.color.blue', kind: 'color', label: 'Blue', printSafe: true, value: { hex: '#2563EB' } }], slots: [{ id: 'accentColor', kind: 'color', defaultTokenId: 'studio.color.blue', allowedTokenIds: ${allowedTokenIds} }] }`,
+    })
+    const result = await checkTeachingSkins({ root })
+    assert.equal(result.ok, false)
+    assert.equal(result.errors.some((error) => error.code === 'definition'), true)
+  })
+}
+
+test('skin:check defensively handles malformed design collection members without crashing', async () => {
+  const root = await tempSkinRoot()
+  await writeSkin(root, 'malformed-members', {
+    design: "{ tokens: [null, 123, {}], slots: [null, 123, {}, { id: 'accentColor', kind: 'color', defaultTokenId: {} }], variants: [null, 123, { id: 'bad', label: 'Bad', tokenBindings: null }] }",
+  })
+  const result = await checkTeachingSkins({ root })
+  assert.equal(result.ok, false)
+  assert.equal(result.errors.some((error) => error.code === 'definition'), true)
+})
+
+test('scoped skin:check rejects an ambiguous external Token dependency', async () => {
+  const root = await tempSkinRoot()
+  const token = "{ tokens: [{ id: 'studio.color.shared', kind: 'color', label: 'Shared', printSafe: true, value: { hex: '#2563EB' } }], slots: [] }"
+  await writeSkin(root, 'owner-a', { id: 'studio.heading.owner-a', className: 'td-skin-studio-heading-owner-a', design: token })
+  await writeSkin(root, 'owner-b', { id: 'studio.heading.owner-b', className: 'td-skin-studio-heading-owner-b', design: token })
+  const consumer = await writeSkin(root, 'consumer', {
+    id: 'studio.heading.consumer', className: 'td-skin-studio-heading-consumer',
+    design: "{ slots: [{ id: 'accentColor', kind: 'color', defaultTokenId: 'studio.color.shared' }] }",
+  })
+  const result = await checkTeachingSkins({ root, pathOption: path.dirname(consumer) })
+  assert.equal(result.ok, false)
+  assert.equal(result.errors.some((error) => error.code === 'design-reference' && /ambiguous/.test(error.message)), true)
+})
+
+test('scoped skin:check rejects an invalid external Token dependency', async () => {
+  const root = await tempSkinRoot()
+  await writeSkin(root, 'owner', {
+    id: 'studio.heading.owner', className: 'td-skin-studio-heading-owner',
+    design: "{ tokens: [{ id: 'studio.color.shared', kind: 'color', label: 'Shared', printSafe: true, value: { hex: '#2563eb' } }], slots: [] }",
+  })
+  const consumer = await writeSkin(root, 'consumer', {
+    id: 'studio.heading.consumer', className: 'td-skin-studio-heading-consumer',
+    design: "{ slots: [{ id: 'accentColor', kind: 'color', defaultTokenId: 'studio.color.shared' }] }",
+  })
+  const result = await checkTeachingSkins({ root, pathOption: path.dirname(consumer) })
+  assert.equal(result.ok, false)
+  assert.equal(result.errors.some((error) => error.code === 'design-reference' && /invalid/.test(error.message)), true)
+})
+
+for (const [name, setup] of [
+  ['missing', async (root) => {
+    await writeSkin(root, 'owner', {
+      id: 'studio.heading.owner', className: 'td-skin-studio-heading-owner',
+      design: "{ tokens: [{ id: 'studio.border.shared', kind: 'border', label: 'Border', printSafe: true, value: { widthPx: 1, style: 'solid', colorTokenId: 'studio.color.missing' } }], slots: [] }",
+    })
+  }],
+  ['invalid', async (root) => {
+    await writeSkin(root, 'owner', {
+      id: 'studio.heading.owner', className: 'td-skin-studio-heading-owner',
+      design: "{ tokens: [{ id: 'studio.color.shared', kind: 'color', label: 'Color', printSafe: true, value: { hex: '#2563eb' } }, { id: 'studio.border.shared', kind: 'border', label: 'Border', printSafe: true, value: { widthPx: 1, style: 'solid', colorTokenId: 'studio.color.shared' } }], slots: [] }",
+    })
+  }],
+  ['ambiguous', async (root) => {
+    const color = "{ tokens: [{ id: 'studio.color.shared', kind: 'color', label: 'Color', printSafe: true, value: { hex: '#2563EB' } }], slots: [] }"
+    await writeSkin(root, 'color-a', { id: 'studio.heading.color-a', className: 'td-skin-studio-heading-color-a', design: color })
+    await writeSkin(root, 'color-b', { id: 'studio.heading.color-b', className: 'td-skin-studio-heading-color-b', design: color })
+    await writeSkin(root, 'border', {
+      id: 'studio.heading.border', className: 'td-skin-studio-heading-border',
+      design: "{ tokens: [{ id: 'studio.border.shared', kind: 'border', label: 'Border', printSafe: true, value: { widthPx: 1, style: 'solid', colorTokenId: 'studio.color.shared' } }], slots: [] }",
+    })
+  }],
+]) {
+  test(`scoped skin:check rejects a Border with ${name} transitive color dependency`, async () => {
+    const root = await tempSkinRoot()
+    await setup(root)
+    const consumer = await writeSkin(root, 'consumer', {
+      id: 'studio.heading.consumer', className: 'td-skin-studio-heading-consumer',
+      design: "{ slots: [{ id: 'cardBorder', kind: 'border', defaultTokenId: 'studio.border.shared' }] }",
+    })
+    const result = await checkTeachingSkins({ root, pathOption: path.dirname(consumer) })
+    assert.equal(result.ok, false)
+    assert.equal(result.errors.some((error) => error.code === 'design-reference' && /Border Token/.test(error.message)), true)
+  })
+}
+
+test('scoped skin:check ignores unrelated invalid external design metadata', async () => {
+  const root = await tempSkinRoot()
+  await writeSkin(root, 'unrelated', {
+    id: 'studio.heading.unrelated', className: 'td-skin-studio-heading-unrelated',
+    design: "{ tokens: [{ id: 'studio.color.invalid', kind: 'color', label: 'Invalid', printSafe: true, value: { hex: '#2563eb' } }], slots: [] }",
+  })
+  const consumer = await writeSkin(root, 'consumer', {
+    id: 'studio.heading.consumer', className: 'td-skin-studio-heading-consumer',
+    design: "{ tokens: [{ id: 'studio.color.local', kind: 'color', label: 'Local', printSafe: true, value: { hex: '#2563EB' } }], slots: [{ id: 'accentColor', kind: 'color', defaultTokenId: 'studio.color.local' }] }",
+  })
+  const result = await checkTeachingSkins({ root, pathOption: path.dirname(consumer) })
+  assert.equal(result.ok, true)
+})
