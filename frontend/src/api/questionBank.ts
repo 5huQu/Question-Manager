@@ -106,6 +106,13 @@ export const questionBankApi = {
   deleteItem(id: string) {
     return api(`/api/question-bank/items/${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
+  deleteItems(ids: string[]) {
+    return api<{ deleted: true; count: number; deletedIds: string[] }>('/api/question-bank/items', {
+      method: 'DELETE',
+      headers: jsonHeaders,
+      body: JSON.stringify({ ids }),
+    })
+  },
   rerunItemOcr(id: string, payload: Record<string, unknown> = {}) {
     return api<{ runId: string; message?: string }>(`/api/question-bank/items/${encodeURIComponent(id)}/rerun-ocr`, {
       method: 'POST',

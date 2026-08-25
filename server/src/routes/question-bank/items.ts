@@ -9,6 +9,7 @@ import {
   removeUnboundFigurePlaceholders,
   deleteFigure,
   deleteItem,
+  deleteItems,
   getItem,
   importJsonItems,
   listItems,
@@ -68,6 +69,14 @@ export function mountQuestionBankItemsRoutes(app: Express) {
   app.post('/api/question-bank/import-json', (req, res) => {
     try {
       res.status(201).json(importJsonItems(req.body || {}))
+    } catch (error) {
+      sendRouteError(res, error)
+    }
+  })
+
+  app.delete('/api/question-bank/items', (req, res) => {
+    try {
+      res.json(deleteItems(req.body || {}))
     } catch (error) {
       sendRouteError(res, error)
     }

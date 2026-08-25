@@ -4,6 +4,7 @@ import {
   authEnforced,
   authMode,
   originAllowed,
+  readOnlyMode,
   sessionCookieName,
   sessionDurationMs,
   scryptMaxConcurrent,
@@ -99,6 +100,10 @@ export function requireApiAuth(req: Request, res: Response, next: NextFunction) 
   }
   if (!isAuthenticated(req)) {
     writeAttemptDenied(res)
+    return
+  }
+  if (readOnlyMode && !req.originalUrl.startsWith('/api/auth/') && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    res.status(403).json({ error: '演示站处于只读模式，不能修改题库数据。', code: 'READ_ONLY_MODE' })
     return
   }
   const method = req.method

@@ -184,6 +184,18 @@ export function deleteItem(id: string) {
   return { deleted: true }
 }
 
+export function deleteItems(rawBody: Record<string, unknown>) {
+  if (!Array.isArray(rawBody?.ids)) throw new RouteError(400, '请提供题目 ID 数组。')
+  const ids = [...new Set(rawBody.ids.map((id) => String(id || '').trim()).filter(Boolean))]
+  if (!ids.length) throw new RouteError(400, '请至少选择一道题目。')
+  if (ids.length > 100) throw new RouteError(400, '单次最多删除 100 道题目。')
+
+  const result = repo.deleteQuestionBankItems(ids)
+  if (result.missingIds.length) throw new RouteError(404, '部分题目不存在或已被删除，请刷新后重试。', { missingIds: result.missingIds })
+  for (const id of result.deletedIds) fs.rmSync(path.join(dataDir, 'question_figures', id), { recursive: true, force: true })
+  return { deleted: true, count: result.deletedIds.length, deletedIds: result.deletedIds }
+}
+
 function cropFigure(sourcePath: string, outputRel: string, bbox: unknown) {
   if (!sourcePath) return
   const inputPath = resolveStoragePath(sourcePath)

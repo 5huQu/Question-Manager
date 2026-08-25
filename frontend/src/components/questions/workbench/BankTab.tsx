@@ -57,6 +57,7 @@ export function BankTab({
   const libraries = useAsync(() => learningTagsApi.listLibraries(), [])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [deleting, setDeleting] = useState(false)
   const [classifying, setClassifying] = useState(false)
   const [classificationStatus, setClassificationStatus] = useState('')
   const [classificationTask, setClassificationTask] = useState<QuestionBankClassificationTask | null>(null)
@@ -138,6 +139,22 @@ export function BankTab({
       await addToBasket(id)
     }
     setSelectedIds([])
+  }
+
+  async function deleteSelectedItems() {
+    if (!selectedIds.length || deleting) return
+    const confirmed = window.confirm(`确定删除已选中的 ${selectedIds.length} 道题目吗？题目会同时从所有试题篮中移除，且无法恢复。`)
+    if (!confirmed) return
+    setDeleting(true)
+    try {
+      await questionBankApi.deleteItems(selectedIds)
+      setSelectedIds([])
+      reload()
+    } catch (error) {
+      alert(error instanceof Error ? `批量删除失败：${error.message}` : '批量删除失败，请稍后重试。')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   async function classifyAllQuestions() {
@@ -438,12 +455,13 @@ export function BankTab({
               </button>
               <button
                 type="button"
-                disabled
-                title="后端暂未提供批量删除接口"
-                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium text-red-400 opacity-60 cursor-not-allowed"
+                disabled={deleting}
+                onClick={() => void deleteSelectedItems()}
+                title="删除已选题目"
+                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-red-400 dark:hover:bg-red-950/20"
               >
                 <Trash2 className="size-3.5 shrink-0" />
-                批量删除
+                {deleting ? '正在删除' : '批量删除'}
               </button>
               <div className="h-4 w-px bg-black/10 dark:bg-white/10 mx-1" />
               <button

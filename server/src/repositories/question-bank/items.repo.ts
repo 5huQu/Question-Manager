@@ -1,5 +1,5 @@
 import { db } from '../../db/connection.js'
-import { getBasket } from '../../db/collections.js'
+import { getBasket, refreshCollectionScore } from '../../db/collections.js'
 import { getQuestion, mapQuestion } from '../../db/questions.js'
 import type { QuestionRow } from '../../types/index.js'
 import { nowIso } from '../../utils/ids.js'
@@ -142,13 +142,34 @@ export function updateQuestionBankItem(id: string, values: SqlValue[], options: 
 }
 
 export function deleteQuestionBankItem(id: string) {
+  deleteQuestionBankItems([id])
+}
+
+export function deleteQuestionBankItems(ids: string[]) {
+  const questionIds = [...new Set(ids.map(String).map((id) => id.trim()).filter(Boolean))]
+  if (!questionIds.length) return { deletedIds: [], missingIds: [] }
+
+  const placeholders = questionIds.map(() => '?').join(', ')
+  const ownsTransaction = !db.isTransaction
   try {
-    db.exec('BEGIN')
-    db.prepare('DELETE FROM question_bank_collection_items WHERE question_id = ?').run(id)
-    db.prepare('DELETE FROM question_bank_items WHERE id = ?').run(id)
-    db.exec('COMMIT')
+    if (ownsTransaction) db.exec('BEGIN IMMEDIATE')
+    const existingIds = new Set((db.prepare(`SELECT id FROM question_bank_items WHERE id IN (${placeholders})`).all(...questionIds) as Array<{ id: string }>)
+      .map((row) => row.id))
+    const missingIds = questionIds.filter((id) => !existingIds.has(id))
+    if (missingIds.length) {
+      if (ownsTransaction) db.exec('ROLLBACK')
+      return { deletedIds: [], missingIds }
+    }
+
+    const collectionIds = (db.prepare(`SELECT DISTINCT collection_id FROM question_bank_collection_items WHERE question_id IN (${placeholders})`).all(...questionIds) as Array<{ collection_id: string }>)
+      .map((row) => row.collection_id)
+    db.prepare(`DELETE FROM question_bank_collection_items WHERE question_id IN (${placeholders})`).run(...questionIds)
+    db.prepare(`DELETE FROM question_bank_items WHERE id IN (${placeholders})`).run(...questionIds)
+    for (const collectionId of collectionIds) refreshCollectionScore(collectionId)
+    if (ownsTransaction) db.exec('COMMIT')
+    return { deletedIds: questionIds, missingIds: [] }
   } catch (error) {
-    db.exec('ROLLBACK')
+    if (ownsTransaction && db.isTransaction) db.exec('ROLLBACK')
     throw error
   }
 }

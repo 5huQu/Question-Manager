@@ -29,6 +29,12 @@ function truthy(value: string | undefined) {
 
 export const authMode: AuthMode = parseAuthMode(process.env.QUESTION_AUTH_MODE)
 
+/**
+ * Demo/read-only deployments may still allow authentication and read requests,
+ * but must reject business API mutations before they reach route handlers.
+ */
+export const readOnlyMode = truthy(process.env.QUESTION_READ_ONLY)
+
 /** Fixed external origin for CSRF checks; never derived from the Host header. */
 export const publicOrigin = (process.env.PUBLIC_ORIGIN || '').replace(/\/+$/, '')
 

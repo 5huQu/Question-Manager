@@ -147,6 +147,7 @@ const expectedRoutes = new Set([
   'POST /api/question-bank/items',
   'POST /api/question-bank/import-json',
   'POST /api/question-bank/import-json-from-slices',
+  'DELETE /api/question-bank/items',
   'GET /api/question-bank/items/:id',
   'PATCH /api/question-bank/items/:id',
   'DELETE /api/question-bank/items/:id',
@@ -261,6 +262,58 @@ try {
     })
     assert.equal(invalidJob.status, 400)
     assert.equal((await invalidJob.json()).code, 'VALIDATION_ERROR')
+
+    const createdQuestion = await fetch(`${baseUrl}/api/question-bank/items`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ stemMarkdown: '批量删除测试题' }),
+    })
+    assert.equal(createdQuestion.status, 201)
+    const createdItem = await createdQuestion.json()
+    const secondCreatedQuestion = await fetch(`${baseUrl}/api/question-bank/items`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ stemMarkdown: '第二道批量删除测试题' }),
+    })
+    assert.equal(secondCreatedQuestion.status, 201)
+    const secondCreatedItem = await secondCreatedQuestion.json()
+    for (const questionId of [createdItem.id, secondCreatedItem.id]) {
+      const addToBasket = await fetch(`${baseUrl}/api/question-bank/collections/basket/items`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ questionId }),
+      })
+      assert.equal(addToBasket.status, 201)
+    }
+    const bulkDelete = await fetch(`${baseUrl}/api/question-bank/items`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ids: [createdItem.id, secondCreatedItem.id] }),
+    })
+    assert.equal(bulkDelete.status, 200)
+    assert.deepEqual(await bulkDelete.json(), { deleted: true, count: 2, deletedIds: [createdItem.id, secondCreatedItem.id] })
+    assert.equal((await fetch(`${baseUrl}/api/question-bank/items/${encodeURIComponent(createdItem.id)}`)).status, 404)
+    assert.equal((await fetch(`${baseUrl}/api/question-bank/items/${encodeURIComponent(secondCreatedItem.id)}`)).status, 404)
+    const basketAfterDelete = await fetch(`${baseUrl}/api/question-bank/collections/basket`)
+    assert.equal(basketAfterDelete.status, 200)
+    const basketAfterDeletePayload = await basketAfterDelete.json()
+    assert.equal(basketAfterDeletePayload.questionCount, 0)
+    assert.equal(basketAfterDeletePayload.totalScore, 0)
+
+    const retainedQuestion = await fetch(`${baseUrl}/api/question-bank/items`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ stemMarkdown: '原子删除保护测试题' }),
+    })
+    assert.equal(retainedQuestion.status, 201)
+    const retainedItem = await retainedQuestion.json()
+    const partialDelete = await fetch(`${baseUrl}/api/question-bank/items`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ids: [retainedItem.id, 'missing-question'] }),
+    })
+    assert.equal(partialDelete.status, 404)
+    assert.equal((await fetch(`${baseUrl}/api/question-bank/items/${encodeURIComponent(retainedItem.id)}`)).status, 200)
 
     const invalidUpload = new FormData()
     invalidUpload.append('metadata', '[]')

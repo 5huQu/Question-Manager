@@ -14,7 +14,7 @@ import { sendFrontendIndex, mountFrontendStatic } from './middleware/frontend-in
 import { mountPrivateFilesRoutes, mountLegacyAssetsBridge } from './routes/files.js'
 import { mountPublicAuthRoutes, mountProtectedAuthRoutes } from './auth/routes.js'
 import { attachSession, requireApiAuth, requireFileAuth, requirePageAuth } from './auth/middleware.js'
-import { authMode } from './auth/config.js'
+import { authMode, readOnlyMode } from './auth/config.js'
 import { adminExists } from './auth/admin.repo.js'
 
 // Route mounters
@@ -39,10 +39,12 @@ import {
 } from './services/import-flow-v2/ocr-task.service.js'
 
 // Initialize schema before any route handles requests
-cleanupStaleUploads(uploadTempDir)
+if (!readOnlyMode) cleanupStaleUploads(uploadTempDir)
 ensureSchema()
-recoverInterruptedLayoutPreviews()
-recoverInterruptedSourceDocumentOcrTasks()
+if (!readOnlyMode) {
+  recoverInterruptedLayoutPreviews()
+  recoverInterruptedSourceDocumentOcrTasks()
+}
 
 if (authMode === 'single-admin') {
   if (!adminExists()) {
