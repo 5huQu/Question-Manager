@@ -21,6 +21,8 @@ import { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'
 
 Its value imports may only be the public authoring API and a sibling CSS file such as `./styles.css`. Declarative Skins must not add extra local executable TS/JS/TSX/JSX modules or side-effect helpers. Type-only `@/` imports remain within the existing safe type boundary. Do not modify the core registry, pagination, ProseMirror core, server routes, database code, or the print pipeline for a normal skin request. Do not add executable runtime renderers, user-supplied JavaScript, or CSS/HTML to TeachingDocument JSON.
 
+Optional `design` metadata belongs directly in the static `skin.ts` definition object. It may contribute typed Tokens, Skin-local Slots, and Skin-local Variants, but it must not be extracted to local TS/JS helpers. Run `npm run skin:check` to validate it. In Phase 2B-1A it is inert: do not add CSS variables, inline styles, renderer changes, persistence, or UI expecting a visible result. See `docs/teaching-document/skins/design-metadata.md`.
+
 ## Completion checklist
 
 - Use a namespaced, stable ID.

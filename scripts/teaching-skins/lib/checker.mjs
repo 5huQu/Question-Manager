@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { analyzeSkinCss } from './css-analysis.mjs'
-import { AUTHORING_IMPORT, skinDefinitionShapeIssues } from './contracts.mjs'
+import { AUTHORING_IMPORT, designMetadataReferenceIssues, skinDefinitionShapeIssues, tokensFromSkinDefinition } from './contracts.mjs'
 import { cssFilesForSkin, isCustomSkin, relativeTo, resolveSkinPath, skinFilesIn } from './discovery.mjs'
 import { analyzeSkinDefinition } from './definition-analysis.mjs'
 
@@ -35,6 +35,24 @@ export async function checkTeachingSkins({ root, pathOption } = {}) {
   const warnings = []
   const ids = new Map()
   const classNames = new Map()
+  const tokens = new Map()
+
+  for (const analysis of analyses) {
+    if (!analysis.definition) continue
+    for (const token of tokensFromSkinDefinition(analysis.definition)) {
+      if (!token || typeof token !== 'object' || typeof token.id !== 'string') continue
+      const existing = tokens.get(token.id)
+      if (existing) {
+        const selected = !selectedFiles || selectedFiles.has(analysis.file)
+        if (selected || selectedFiles?.has(existing.file)) {
+          errors.push(checkIssue('duplicate-token-id', analysis.file, `Duplicate Token ID ${token.id}; also used by ${relativeTo(root, existing.file)}.`))
+        }
+      } else {
+        tokens.set(token.id, { file: analysis.file, token })
+      }
+    }
+  }
+  const tokensById = new Map([...tokens].map(([id, entry]) => [id, entry.token]))
 
   for (const analysis of analyses) {
     const selected = !selectedFiles || selectedFiles.has(analysis.file)
@@ -57,6 +75,7 @@ export async function checkTeachingSkins({ root, pathOption } = {}) {
     if (!selected) continue
     errors.push(...analysis.errors.map((message) => checkIssue('definition', analysis.file, message)))
     errors.push(...importIssues(analysis, isCustomSkin(root, analysis.file)))
+    errors.push(...designMetadataReferenceIssues(definition.design, tokensById).map((message) => checkIssue('design-reference', analysis.file, message)))
     const cssFiles = await cssFilesForSkin(analysis.file)
     if (!cssFiles.length) warnings.push(checkIssue('missing-css', analysis.file, 'No sibling CSS file found; verify this intentionally has no visual rules.'))
     for (const cssFile of cssFiles) {

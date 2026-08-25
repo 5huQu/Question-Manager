@@ -16,6 +16,10 @@ Use this workflow for Codex, Claude Code, Gemini CLI, or another Coding Agent cr
 
 Keep `skin.ts` declarative. Its value imports may only be the public authoring API and a sibling CSS file such as `./styles.css`. Do not add local TS/JS/TSX/JSX helper or side-effect modules, including indirectly importing registry, resolver, renderer, NodeViews, pagination, server, or database code. Type-only `@/` imports are permitted within the existing type boundary.
 
+## Optional design metadata
+
+When a Skin needs to describe Tokens, Slots, or Variants, add a static `design` object literal directly to `defineHeadingSkin(...)` or `defineBoxSkin(...)`. Do not extract it to `tokens.ts` or call a helper. Run `npm run skin:check`: it validates the typed metadata and global Token namespace. This metadata is inert in Phase 2B-1A—do not add CSS variables or expect a visual effect; Phase 2B-1B is the first planned consumer. See [design-metadata.md](design-metadata.md).
+
 ## Reference-image workflow
 
 When a user provides a title or card reference image, first decide whether it can be represented as a declarative CSS Skin. Identify the target, normal-flow layout, border, background, spacing, decoration, and typography. Scaffold the Skin and implement only CSS scoped to its generated class.
