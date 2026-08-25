@@ -3,7 +3,7 @@ import { Copy, FileStack, PanelsTopLeft } from 'lucide-react'
 import { A4PaginationPreview } from '@/components/teaching-document/A4PaginationPreview'
 import { TeachingDocumentRenderer } from '@/components/teaching-document/TeachingDocumentRenderer'
 import type { TeachingSkinTarget } from '@/utils/teachingDocument/skins'
-import { skinLabCompatibility, skinLabDefinitions, skinLabDocument } from './teachingSkinLabModel'
+import { skinLabCompatibility, skinLabDefinitions, skinLabDesignState, skinLabDocument, skinLabVariants } from './teachingSkinLabModel'
 import '@/components/teaching-document/teaching-document.css'
 
 type TargetFilter = 'all' | TeachingSkinTarget
@@ -12,11 +12,16 @@ export default function TeachingSkinLabPage() {
   const [target, setTarget] = useState<TargetFilter>('heading')
   const definitions = useMemo(() => skinLabDefinitions(target === 'all' ? undefined : target), [target])
   const [selectedId, setSelectedId] = useState(() => definitions[0]?.id || '')
+  const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>()
   const selected = definitions.find((definition) => definition.id === selectedId) || definitions[0]
 
   useEffect(() => {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id)
   }, [selected, selectedId])
+
+  useEffect(() => {
+    setSelectedVariantId(undefined)
+  }, [selected?.id])
 
   if (!selected) {
     return <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/20 p-8 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950">未发现可供预览的 Teaching Skin。</div>
@@ -24,6 +29,9 @@ export default function TeachingSkinLabPage() {
 
   const document = skinLabDocument(selected)
   const compatibility = skinLabCompatibility(selected)
+  const variants = skinLabVariants(selected)
+  const designState = skinLabDesignState(selected, selectedVariantId)
+  const skinDesignVariantIds = selectedVariantId ? { [selected.id]: selectedVariantId } : undefined
   const copySkinId = () => void navigator.clipboard?.writeText(selected.id)
 
   return (
@@ -68,7 +76,15 @@ export default function TeachingSkinLabPage() {
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <Meta label="Target" value={selected.target} />
               <Meta label="Version" value={`v${selected.version}`} />
-              <Meta label="printSafe" value="true" />
+              <Meta label="Design status" value={designState.status} />
+            </div>
+            <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-900">
+              <p className="text-xs font-medium text-zinc-500">Preview variant（仅此实验室会话，不写入文档）</p>
+              <div className="mt-2 flex flex-wrap gap-2" aria-label="Skin design variant">
+                <button type="button" onClick={() => setSelectedVariantId(undefined)} className={`rounded-md border px-2.5 py-1 text-xs font-medium ${selectedVariantId === undefined ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900'}`}>Base</button>
+                {variants.map((variant) => <button key={variant.id} type="button" onClick={() => setSelectedVariantId(variant.id)} className={`rounded-md border px-2.5 py-1 text-xs font-medium ${selectedVariantId === variant.id ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900'}`}>{variant.label}</button>)}
+                {!variants.length ? <span className="py-1 text-xs text-zinc-400">此 Skin 尚未声明 Design Variant。</span> : null}
+              </div>
             </div>
             <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-900">
               <p className="text-xs font-medium text-zinc-500">Compatibility</p>
@@ -76,13 +92,18 @@ export default function TeachingSkinLabPage() {
                 {compatibility.map((entry) => <span key={entry.label} data-compatibility={entry.status} className={`rounded-md border px-2 py-1 text-[11px] font-medium ${entry.status === 'resolved' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-400' : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-400'}`}>{entry.label} · {entry.status === 'resolved' ? 'supported' : 'incompatible'}</span>)}
               </div>
             </div>
+            {designState.issues.length ? (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300" data-skin-design-issues="true">
+                {designState.issues.map((issue) => `${issue.code}${issue.slotId ? ` · ${issue.slotId}` : ''}`).join('；')}
+              </div>
+            ) : null}
           </div>
 
           <PreviewCard title="Screen / continuous preview" icon={<FileStack className="size-4" />}>
-            <TeachingDocumentRenderer document={document} />
+            <TeachingDocumentRenderer document={document} skinDesignVariantIds={skinDesignVariantIds} />
           </PreviewCard>
           <PreviewCard title="A4 / page-boundary preview" icon={<PanelsTopLeft className="size-4" />}>
-            <A4PaginationPreview document={document} zoom={0.58} />
+            <A4PaginationPreview document={document} zoom={0.58} skinDesignVariantIds={skinDesignVariantIds} />
           </PreviewCard>
         </section>
       </div>

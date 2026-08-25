@@ -40,6 +40,12 @@ export {
   teachingSkinIdToCssNamespace,
   teachingSkinSlotCssVariableName,
 } from './designResolver'
+export {
+  resolveTeachingSkinDesignRenderState,
+  teachingDocumentSkinDesignSignature,
+  teachingSkinDesignStyleAttribute,
+} from './designRendering'
+export type { TeachingSkinDesignRenderState, TeachingSkinDesignVariantIds } from './designRendering'
 export type {
   ResolvedTeachingSkinDesign,
   ResolvedTeachingSkinTokenBinding,

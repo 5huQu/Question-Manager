@@ -113,6 +113,8 @@ export function teachingDocumentLayoutStyleSignature(input: {
   printLayout: PrintLayoutSpec
   fontVars?: Record<string, string>
   spread: boolean
+  /** Resolved trusted Skin design state; any change conservatively invalidates geometry. */
+  skinDesignSignature?: string
 }) {
   return combineSignatures('style', [
     stableValueSignature(input.document.style),
@@ -120,6 +122,7 @@ export function teachingDocumentLayoutStyleSignature(input: {
     stableValueSignature(input.printLayout),
     stableValueSignature(input.fontVars),
     input.spread,
+    input.skinDesignSignature,
   ])
 }
 
@@ -141,6 +144,7 @@ export function createTeachingDocumentLayoutSignatures(input: {
   renderVersion?: string
   spread: boolean
   variant?: TeachingDocumentPrintVariant
+  skinDesignSignature?: string
 }): TeachingDocumentLayoutSignatures {
   const blockSignature = teachingDocumentBlockContentSignature(input.document)
   const resourceRevision = teachingDocumentResourceRevision(input)

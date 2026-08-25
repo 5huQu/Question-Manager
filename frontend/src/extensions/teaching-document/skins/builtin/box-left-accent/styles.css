@@ -1,14 +1,14 @@
 .td-skin-box-left-accent {
-  border: 1px solid #bfdbfe;
-  border-left: 4px solid #2563eb;
-  border-radius: 4px;
-  background: #ffffff;
+  border: var(--td-skin-builtin-box-left-accent-frame-border, 1px solid #bfdbfe);
+  border-left: var(--td-skin-builtin-box-left-accent-accent-border, 4px solid #2563eb);
+  border-radius: var(--td-skin-builtin-box-left-accent-radius, 4px);
+  background: var(--td-skin-builtin-box-left-accent-body-fill, #ffffff);
 }
 
 .td-skin-box-left-accent .td-box-header {
-  background: #eff6ff;
+  background: var(--td-skin-builtin-box-left-accent-header-fill, #eff6ff);
 }
 
 .td-skin-box-left-accent .td-box-body {
-  background: #ffffff;
+  background: var(--td-skin-builtin-box-left-accent-body-fill, #ffffff);
 }

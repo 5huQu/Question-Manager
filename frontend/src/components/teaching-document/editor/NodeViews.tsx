@@ -13,7 +13,7 @@ import type { FigureAssetRef, FigureBlock, SpacerBlock, TeachingBlock, BoxBlock,
 import type { QuestionResolution, FigureResolution, QuestionLayoutEditor } from '../blocks/BlockRenderer'
 import { getBoxTemplateOrFallback } from '@/utils/teachingDocument/boxTemplates'
 import { boxBodyStyle, boxFrameStyle, parseBoxAppearance, skinBoxBodyStyle, skinBoxFrameStyle } from '@/utils/teachingDocument/boxAppearance'
-import { parseTeachingSkinRef, resolveBoxSkin } from '@/utils/teachingDocument/skins'
+import { parseTeachingSkinRef, resolveBoxSkin, resolveTeachingSkinDesignRenderState } from '@/utils/teachingDocument/skins'
 import { createQuestionRuntimeModel } from '@/utils/teachingDocument/layout/questionRegions'
 import { BoxFragmentRenderer, QuestionRuntimeContent, QuestionPlaceholder } from '../blocks/BlockRenderer'
 import { BlockInlineEditor } from '../BlockInlineEditor/BlockInlineEditor'
@@ -810,6 +810,9 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
   const paginationContext = usePaginationContext()
   const resolvedSkin = resolveBoxSkin(skin, templateId)
   const skinActive = resolvedSkin.status === 'resolved'
+  const designVariables = skinActive
+    ? resolveTeachingSkinDesignRenderState(resolvedSkin.definition).cssVariables
+    : undefined
   const boxFragments = paginationContext?.pagination?.pages.flatMap((page) => page.items
     .filter((item): item is BoxFragmentPaginationItem => item.kind === 'fragment' && item.fragmentType === 'box' && item.blockId === boxBlock.id)
     .map((item) => ({ item, pageIndex: page.index }))) || []
@@ -895,7 +898,7 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
             </div>
           ))
       ) : (
-        <div className={`td-box overflow-hidden border ${skinActive ? resolvedSkin.definition.className : ''}`} data-skin-id={skinActive ? resolvedSkin.definition.id : undefined} data-skin-state={skin ? resolvedSkin.status : undefined} style={skinActive ? skinBoxFrameStyle(appearance, template) : boxFrameStyle(appearance, template)}>
+        <div className={`td-box overflow-hidden border ${skinActive ? resolvedSkin.definition.className : ''}`} data-skin-id={skinActive ? resolvedSkin.definition.id : undefined} data-skin-state={skin ? resolvedSkin.status : undefined} style={{ ...(skinActive ? skinBoxFrameStyle(appearance, template) : boxFrameStyle(appearance, template)), ...(designVariables || {}) } as CSSProperties}>
           {(template.showHeader || title) ? (
             <div className="td-box-header flex min-w-0 items-center gap-2 px-4 py-2.5" style={skinActive ? undefined : { background: `var(--box-${template.tone}-header)` }} onPointerDown={selectBox}>
               {editingTitle && selected ? (

@@ -21,7 +21,9 @@ import { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'
 
 Its value imports may only be the public authoring API and a sibling CSS file such as `./styles.css`. Declarative Skins must not add extra local executable TS/JS/TSX/JSX modules or side-effect helpers. Type-only `@/` imports remain within the existing safe type boundary. Do not modify the core registry, pagination, ProseMirror core, server routes, database code, or the print pipeline for a normal skin request. Do not add executable runtime renderers, user-supplied JavaScript, or CSS/HTML to TeachingDocument JSON.
 
-Optional `design` metadata belongs directly in the static `skin.ts` definition object. It may contribute typed Tokens, Skin-local Slots, and Skin-local Variants, but it must not be extracted to local TS/JS helpers. Run `npm run skin:check` to validate it. In Phase 2B-1B a pure runtime may resolve this trusted metadata into a scoped CSS-variable map; do not add inline styles, renderer changes, persistence, or UI expecting a visible result until Phase 2B-1C. See `docs/teaching-document/skins/design-metadata.md`.
+Optional `design` metadata belongs directly in the static `skin.ts` definition object. It may contribute typed Tokens, Skin-local Slots, and Skin-local Variants, but it must not be extracted to local TS/JS helpers. Run `npm run skin:check` to validate it. Core runtime resolves trusted metadata into Skin-root-scoped CSS variables. Normal authors may consume only variables corresponding to Slots declared by that same Skin, for example `var(--td-skin-your-skin-slot-name)`. Do not invent undeclared `--td-skin-*` variables or use values from document JSON. See `docs/teaching-document/skins/design-metadata.md` and `docs/teaching-document/skins/design-runtime.md`.
+
+Any Token-driven change to geometry (border width, spacing, radius, typography, display or sizing) must be checked at an A4 boundary and in print/pagination. The runtime invalidates geometry conservatively, but authors remain responsible for confirming a Skin is print-safe.
 
 ## Completion checklist
 

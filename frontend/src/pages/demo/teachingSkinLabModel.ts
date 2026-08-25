@@ -1,7 +1,7 @@
 import type { BoxBlock, HeadingBlock, ParagraphBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
 import { teachingSkinRegistry } from '@/utils/teachingDocument/skins'
-import type { TeachingSkinDefinition, TeachingSkinTarget } from '@/utils/teachingDocument/skins'
-import { resolveBoxSkin, resolveHeadingSkin } from '@/utils/teachingDocument/skins'
+import type { TeachingSkinDefinition, TeachingSkinTarget, TeachingSkinVariantId } from '@/utils/teachingDocument/skins'
+import { resolveBoxSkin, resolveHeadingSkin, resolveTeachingSkinDesignRenderState } from '@/utils/teachingDocument/skins'
 
 export const SKIN_LAB_BOX_TEMPLATES = ['concept', 'method', 'example', 'warning', 'summary'] as const
 
@@ -22,7 +22,7 @@ export function skinLabDocument(definition: TeachingSkinDefinition): TeachingDoc
     ['skin-lab-heading-3', 3, '一、定义域'],
     ['skin-lab-heading-4', 4, '基础性质'],
   ].map(([id, level, text]) => ({
-    type: 'heading', id: String(id), level: Number(level) as HeadingBlock['level'], content: [{ type: 'text', text: String(text) }], skin,
+    type: 'heading', id: String(id), level: Number(level) as HeadingBlock['level'], content: [{ type: 'text', text: String(text) }], ...(definition.target === 'heading' ? { skin } : {}),
   }))
   const boxBlocks: BoxBlock[] = SKIN_LAB_BOX_TEMPLATES.map((templateId, index) => ({
     type: 'box',
@@ -30,7 +30,7 @@ export function skinLabDocument(definition: TeachingSkinDefinition): TeachingDoc
     templateId,
     title: `示例 ${index + 1}`,
     breakBehavior: 'auto',
-    skin,
+    ...(definition.target === 'box' ? { skin } : {}),
     children: [{ type: 'paragraph', id: `skin-lab-box-body-${templateId}`, content: [{ type: 'text', text: '这张卡片用于显示当前皮肤在不同模板语义下的兼容状态与真实渲染结果。' }] }],
   }))
   return {
@@ -38,9 +38,13 @@ export function skinLabDocument(definition: TeachingSkinDefinition): TeachingDoc
     documentType: 'lecture',
     title: `Skin Lab · ${definition.label}`,
     metadata: { source: 'skin-lab' },
-    content: definition.target === 'heading'
-      ? [...headingBlocks, ...boundaryParagraphs]
-      : [{ type: 'heading', id: 'skin-lab-box-title', level: 1, content: [{ type: 'text', text: '信息框预览' }] }, ...boundaryParagraphs, ...boxBlocks],
+    content: [
+      { type: 'heading', id: 'skin-lab-heading-title', level: 1, content: [{ type: 'text', text: '标题示例' }] },
+      ...headingBlocks,
+      ...boundaryParagraphs,
+      { type: 'heading', id: 'skin-lab-box-title', level: 1, content: [{ type: 'text', text: '信息框示例' }] },
+      ...boxBlocks,
+    ],
   }
 }
 
@@ -49,4 +53,12 @@ export function skinLabCompatibility(definition: TeachingSkinDefinition) {
   return definition.target === 'heading'
     ? [1, 2, 3, 4].map((level) => ({ label: `H${level}`, status: resolveHeadingSkin(skin, level as HeadingBlock['level']).status }))
     : SKIN_LAB_BOX_TEMPLATES.map((templateId) => ({ label: templateId, status: resolveBoxSkin(skin, templateId).status }))
+}
+
+export function skinLabVariants(definition: TeachingSkinDefinition) {
+  return definition.design?.variants || []
+}
+
+export function skinLabDesignState(definition: TeachingSkinDefinition, variantId?: TeachingSkinVariantId) {
+  return resolveTeachingSkinDesignRenderState(definition, variantId)
 }

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import type { ParagraphBlock, TeachingDocumentV1, TeachingInline } from '@/types/teachingDocument'
 import type { QuestionItem } from '@/types'
 import type { ParagraphFragmentPaginationItem } from '@/utils/teachingDocument'
+import { teachingSkinRegistry } from '@/utils/teachingDocument/skins'
 import { InlineContent } from './blocks/InlineContent'
 import { ParagraphFragmentRenderer } from './blocks/BlockRenderer'
 import { TeachingDocumentRenderer } from './TeachingDocumentRenderer'
@@ -110,6 +111,62 @@ describe('ParagraphFragmentRenderer', () => {
 })
 
 describe('TeachingDocumentRenderer fallbacks', () => {
+  it('keeps legacy and no-design Skin roots free of design custom properties', () => {
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer document={documentWith([
+        { type: 'heading', id: 'legacy-heading', level: 2, content: [{ type: 'text', text: '旧标题' }] },
+        { type: 'heading', id: 'plain-skin-heading', level: 2, content: [{ type: 'text', text: '普通 Skin' }], skin: { id: 'builtin.heading.pill', version: 1 } },
+      ])} />,
+    )
+    expect(html).not.toContain('--td-skin-')
+  })
+
+  it('attaches resolved design variables only to each matching Skin root', () => {
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer document={documentWith([
+        { type: 'heading', id: 'design-heading', level: 2, content: [{ type: 'text', text: '标题' }], skin: { id: 'builtin.heading.left-accent', version: 1 } },
+        { type: 'box', id: 'design-box', templateId: 'concept', breakBehavior: 'auto', children: [], skin: { id: 'builtin.box.left-accent', version: 1 } },
+      ])} />,
+    )
+    expect(html).toContain('--td-skin-builtin-heading-left-accent-accent-border:4px solid #2563EB')
+    expect(html).toContain('--td-skin-builtin-box-left-accent-frame-border:1px solid #BFDBFE')
+    expect(html).toContain('--td-skin-builtin-box-left-accent-header-fill:#EFF6FF')
+    expect(html).not.toMatch(/td-document[^>]+--td-skin-/)
+  })
+
+  it('fails closed to the Phase 1 class when trusted design metadata becomes unavailable', () => {
+    const definition = teachingSkinRegistry.get('builtin.heading.left-accent')!
+    const originalDesign = definition.design
+    try {
+      ;(definition as unknown as { design: unknown }).design = { slots: null }
+      const html = renderToStaticMarkup(
+        <TeachingDocumentRenderer document={documentWith([
+          { type: 'heading', id: 'unavailable-design', level: 2, content: [{ type: 'text', text: '标题' }], skin: { id: definition.id, version: 1 } },
+        ])} />,
+      )
+      expect(html).toContain('td-skin-heading-left-accent')
+      expect(html).not.toContain('--td-skin-builtin-heading-left-accent-')
+    } finally {
+      ;(definition as unknown as { design: unknown }).design = originalDesign
+    }
+  })
+
+  it('uses an ephemeral Skin Lab variant without leaking its map across roots', () => {
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer
+        document={documentWith([
+          { type: 'heading', id: 'heading-one', level: 2, content: [{ type: 'text', text: '标题一' }], skin: { id: 'builtin.heading.left-accent', version: 1 } },
+          { type: 'heading', id: 'heading-two', level: 2, content: [{ type: 'text', text: '标题二' }], skin: { id: 'builtin.heading.left-accent', version: 1 } },
+          { type: 'box', id: 'box-one', templateId: 'concept', breakBehavior: 'auto', children: [], skin: { id: 'builtin.box.left-accent', version: 1 } },
+        ])}
+        skinDesignVariantIds={{ 'builtin.heading.left-accent': 'amber' }}
+      />,
+    )
+    expect(html.match(/--td-skin-builtin-heading-left-accent-accent-border:4px solid #B45309/g)).toHaveLength(2)
+    expect(html).toContain('--td-skin-builtin-box-left-accent-accent-border:4px solid #2563EB')
+    expect(html).not.toContain('--td-skin-builtin-box-left-accent-accent-border:4px solid #B45309')
+  })
+
   it('adds stable skin DOM hooks for resolved skins and falls back for missing refs', () => {
     const resolved = renderToStaticMarkup(
       <TeachingDocumentRenderer document={documentWith([

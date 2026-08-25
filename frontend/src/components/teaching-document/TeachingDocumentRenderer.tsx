@@ -19,6 +19,7 @@ import { headingLabelByBlockId } from '@/utils/teachingDocument'
 import { BlockRenderer, type FigureResolution, type QuestionResolution, type TeachingDocumentResolvers } from './blocks/BlockRenderer'
 import { teachingDocumentLayoutCssVars } from '@/utils/teachingDocument/lectureFonts'
 import { showsDocumentTitle } from '@/utils/teachingDocument/wrongQuestionCollection'
+import type { TeachingSkinDesignVariantIds } from '@/utils/teachingDocument/skins'
 import 'katex/dist/katex.min.css'
 
 export interface TeachingDocumentRendererProps {
@@ -38,6 +39,8 @@ export interface TeachingDocumentRendererProps {
   choiceLayoutOverrides?: ChoiceLayoutOverrides
   probeChoiceLayouts?: boolean
   selectedBlockId?: string
+  /** Runtime-only preview choice. Production callers leave this undefined (Base). */
+  skinDesignVariantIds?: TeachingSkinDesignVariantIds
 }
 
 export interface TeachingDocumentFrameProps {
@@ -90,6 +93,7 @@ export function TeachingDocumentRenderer({
   choiceLayoutOverrides,
   probeChoiceLayouts = false,
   selectedBlockId,
+  skinDesignVariantIds,
 }: TeachingDocumentRendererProps) {
   const resolvers: TeachingDocumentResolvers = {
     resolveQuestion,
@@ -97,6 +101,7 @@ export function TeachingDocumentRenderer({
     eagerImages,
     choiceLayoutOverrides,
     probeChoiceLayouts,
+    skinDesignVariantIds,
   }
   const headingLabels = headingLabelByBlockId(document)
   let flowWrapActive = false
