@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { analyzeSkinCss } from './css-analysis.mjs'
-import { AUTHORING_IMPORT, skinDefinitionShapeIssues } from './contracts.mjs'
+import { AUTHORING_IMPORT, designMetadataReferenceIssues, skinDefinitionShapeIssues, tokenDefinitionShapeIssues, tokensFromSkinDefinition } from './contracts.mjs'
 import { cssFilesForSkin, isCustomSkin, relativeTo, resolveSkinPath, skinFilesIn } from './discovery.mjs'
 import { analyzeSkinDefinition } from './definition-analysis.mjs'
 
@@ -35,6 +35,23 @@ export async function checkTeachingSkins({ root, pathOption } = {}) {
   const warnings = []
   const ids = new Map()
   const classNames = new Map()
+  const tokenIndex = new Map()
+
+  for (const analysis of analyses) {
+    if (!analysis.definition) continue
+    for (const token of tokensFromSkinDefinition(analysis.definition)) {
+      if (!token || typeof token !== 'object' || typeof token.id !== 'string') continue
+      const contributions = tokenIndex.get(token.id) || []
+      if (contributions.length) {
+        const selected = !selectedFiles || selectedFiles.has(analysis.file)
+        if (selected || contributions.some((entry) => selectedFiles?.has(entry.file))) {
+          errors.push(checkIssue('duplicate-token-id', analysis.file, `Duplicate Token ID ${token.id}; also used by ${relativeTo(root, contributions[0].file)}.`))
+        }
+      }
+      contributions.push({ file: analysis.file, token, shapeIssues: tokenDefinitionShapeIssues(token) })
+      tokenIndex.set(token.id, contributions)
+    }
+  }
 
   for (const analysis of analyses) {
     const selected = !selectedFiles || selectedFiles.has(analysis.file)
@@ -57,6 +74,7 @@ export async function checkTeachingSkins({ root, pathOption } = {}) {
     if (!selected) continue
     errors.push(...analysis.errors.map((message) => checkIssue('definition', analysis.file, message)))
     errors.push(...importIssues(analysis, isCustomSkin(root, analysis.file)))
+    errors.push(...designMetadataReferenceIssues(definition.design, tokenIndex).map((message) => checkIssue('design-reference', analysis.file, message)))
     const cssFiles = await cssFilesForSkin(analysis.file)
     if (!cssFiles.length) warnings.push(checkIssue('missing-css', analysis.file, 'No sibling CSS file found; verify this intentionally has no visual rules.'))
     for (const cssFile of cssFiles) {

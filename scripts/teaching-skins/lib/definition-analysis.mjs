@@ -14,10 +14,12 @@ function literalValue(node) {
   if (ts.isNumericLiteral(node)) return Number(node.text)
   if (node.kind === ts.SyntaxKind.TrueKeyword) return true
   if (node.kind === ts.SyntaxKind.FalseKeyword) return false
+  if (node.kind === ts.SyntaxKind.NullKeyword) return null
   if (ts.isArrayLiteralExpression(node)) {
     const values = node.elements.map((element) => literalValue(element))
     return values.some((value) => value === undefined) ? undefined : values
   }
+  if (ts.isObjectLiteralExpression(node)) return objectLiteralValue(node)
   return undefined
 }
 
