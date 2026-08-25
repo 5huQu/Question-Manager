@@ -21,6 +21,7 @@ import { teachingDocumentLayoutCssVars } from '@/utils/teachingDocument/lectureF
 import { showsDocumentTitle } from '@/utils/teachingDocument/wrongQuestionCollection'
 import { resolveTeachingDocumentSkinDesignContext, type TeachingSkinDesignVariantIds } from '@/utils/teachingDocument/skins'
 import 'katex/dist/katex.min.css'
+import './teaching-document.css'
 
 export interface TeachingDocumentRendererProps {
   document: TeachingDocument
