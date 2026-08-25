@@ -5,9 +5,11 @@ import { BUILTIN_BOX_TEMPLATES, hasProtectedInlineContent, protectedInlineReason
 import { CARD_CHILD_TYPES, USER_BLOCK_LABEL } from '../blockLabels'
 import { ActionButton, Field, fieldClass, inlineContentOf } from './common'
 import { BoxSkinSelector } from '../TeachingSkinSelector'
+import type { TeachingSkinPresetResolution } from '@/utils/teachingDocument/skins'
 
 export function BoxSettings(props: {
   block: BoxBlock
+  presetContext?: TeachingSkinPresetResolution
   onUpdate: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
   onInsertChild: (box: BoxBlock, type: BoxChildBlock['type']) => void
   onDeleteBoxChildren: (boxId: string, childIds: string[]) => boolean
@@ -105,7 +107,7 @@ export function BoxSettings(props: {
           {BUILTIN_BOX_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.label}</option>)}
         </select>
       </Field>
-      <BoxSkinSelector skin={props.block.skin} templateId={props.block.templateId} onChange={(skin) => props.onUpdate({ skin })} />
+      <BoxSkinSelector skin={props.block.skin} templateId={props.block.templateId} presetContext={props.presetContext} onChange={(skin) => props.onUpdate({ skin })} />
       <Field label="卡片标题">
         <input className={fieldClass} value={props.block.title || ''} onChange={(event) => props.onUpdate({ title: event.target.value }, `box-title:${props.block.id}`)} />
       </Field>

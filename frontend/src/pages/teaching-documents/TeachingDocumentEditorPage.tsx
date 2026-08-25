@@ -83,6 +83,7 @@ import { USER_BLOCK_LABEL, CARD_CHILD_TYPES } from './components/blockLabels'
 import { useCanvasViewportAnchor } from './components/useCanvasViewportAnchor'
 import { InspectorSlider } from '@/components/ui/InspectorSlider'
 import { activePageFromPageRects, activePageFromPageTransitions } from './pageNavigation'
+import { resolveTeachingDocumentSkinPresetContext } from '@/utils/teachingDocument/skins'
 import '@/components/teaching-document/teaching-document.css'
 
 const PROSEMIRROR_FAST_INSERT_TYPES = new Set<TeachingBlock['type']>([
@@ -145,6 +146,7 @@ export default function TeachingDocumentEditorPage() {
   const [selectedId, setSelectedId] = useState('')
   const [viewportBlockId, setViewportBlockId] = useState('')
   const [canvasScrollRoot, setCanvasScrollRoot] = useState<HTMLElement | null>(null)
+  const presetContext = useMemo(() => resolveTeachingDocumentSkinPresetContext(editor.document?.design?.preset), [editor.document?.design?.preset?.id, editor.document?.design?.preset?.version])
   const { captureViewportAnchor } = useCanvasViewportAnchor(canvasScrollRoot)
   const {
     questionIds,
@@ -1049,6 +1051,7 @@ export default function TeachingDocumentEditorPage() {
         }}
         onZoomChange={setViewZoom}
         onInsert={(type, headingLevel) => insertBlock(type, undefined, headingLevel)}
+        onOpenStyle={() => navigate(`/teaching-documents/${encodeURIComponent(decodeURIComponent(documentId))}/style`)}
         paperActions={undefined}
       />
 
@@ -1257,6 +1260,7 @@ export default function TeachingDocumentEditorPage() {
             variant="docked"
             open={propertiesOpen}
             selected={selected}
+            presetContext={presetContext}
             onClose={closeProperties}
             onUpdate={updateSelected}
             onUpdateTopLevel={updateSelectedTopLevel}

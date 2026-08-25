@@ -25,6 +25,7 @@ import { FigureSettings } from './settings/figureSettings'
 import { TikzSettings } from './settings/tikzSettings'
 import { TikzEditorDialog } from './TikzEditorDialog'
 import { HeadingSkinSelector } from './TeachingSkinSelector'
+import type { TeachingSkinPresetResolution } from '@/utils/teachingDocument/skins'
 
 export type SelectedLocation = {
   block: TeachingBlock
@@ -43,6 +44,7 @@ export function PropertiesSheet(props: {
   open: boolean
   variant?: 'overlay' | 'docked'
   selected: SelectedLocation | null
+  presetContext?: TeachingSkinPresetResolution
   onClose: () => void
   onUpdate: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
   /** 卡片内段落展示卡片设置时，配置必须写回父卡片而不是当前文本子块。 */
@@ -80,6 +82,7 @@ export function PropertiesSheet(props: {
 function PropertiesSheetPanel(props: {
   variant?: 'overlay' | 'docked'
   selected: SelectedLocation
+  presetContext?: TeachingSkinPresetResolution
   onClose: () => void
   onUpdate: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
   onUpdateTopLevel: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
@@ -273,6 +276,7 @@ function ActionButton({ children, label, danger, onClick }: {
 /** 按块类型渲染的内容编辑区 */
 function SheetBody(props: {
   selected: SelectedLocation | null
+  presetContext?: TeachingSkinPresetResolution
   onUpdate: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
   onUpdateDisplayBlock: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
   onInsertChild: (box: BoxBlock, type: BoxChildBlock['type']) => void
@@ -319,7 +323,7 @@ function SheetBody(props: {
                 {[1, 2, 3, 4].map((level) => <option key={level} value={level}>{['一级章节', '二级章节', '三级章节', '四级章节'][level - 1]}</option>)}
               </select>
             </Field>
-            <HeadingSkinSelector skin={block.skin} level={block.level} onChange={(skin) => props.onUpdate({ skin })} />
+            <HeadingSkinSelector skin={block.skin} level={block.level} presetContext={props.presetContext} onChange={(skin) => props.onUpdate({ skin })} />
             <Field label="本章节编号">
               <select className={fieldClass} value={block.numbering?.mode || 'inherit'} onChange={(event) => props.onUpdate({ numbering: { ...block.numbering, mode: event.target.value as 'inherit' | 'none' | 'manual' } })}>
                 <option value="inherit">跟随文档设置</option><option value="none">不显示编号</option><option value="manual">手动标签</option>

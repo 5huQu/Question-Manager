@@ -1,6 +1,6 @@
 # Teaching Skin Design System Proposal
 
-> Status: architecture proposal with Phase 2B-2 implemented. The Variant/Preset model remains the architectural direction; `TeachingSkinRef.variant` persistence and production rendering are now part of the current contract.
+> Status: architecture proposal with Phase 2B-4 implemented. The Variant/Preset model remains the architectural direction; `TeachingSkinRef.variant` persistence, pinned Presets, and the first end-user Document Style / local Variant UX are now part of the current contract.
 
 ## Goals
 
@@ -12,7 +12,7 @@
 
 ## Non Goals
 
-- This proposal does not implement a Document Theme, end-user Variant/Preset UI, settings panel, or a Variant/Preset migration framework. The minimal exact-Skin pinned Preset runtime is implemented in Phase 2B-3; scoped matching and Token bindings remain future work.
+- This proposal does not implement a Document Theme, Token editor, explicit Base persistence, Apply/Freeze Preset operation, or a Variant/Preset migration framework. The exact-Skin pinned Preset runtime and its document style/local Variant UI are implemented through Phase 2B-4; scoped matching and Token bindings remain future work.
 - It does not permit CSS, HTML, class names, React, executable code, arbitrary style strings, or arbitrary CSS-property maps in `TeachingDocument` JSON.
 - It does not change the Heading/Box DOM, pagination algorithms, print pipeline structure, ProseMirror model, or database schema.
 - A Preset is not a mechanism for adding a Skin to an unskinned legacy block. Applying a Skin remains an explicit block-level action.
@@ -433,6 +433,12 @@ Teacher branding should exist, but in layers with different persistence responsi
 
 This layering lets Teacher A use a math-handout palette, Teacher B use an olympiad style, and Teacher C use a review-round-one style without inventing separate structural Skins for each color or density combination.
 
+## User UI (Phase 2B-4)
+
+The Teaching Document 「文档样式」page is a full workspace, not a modal. It reads the real current `TeachingDocument`, displays exact-version registry cards, writes only `design.preset: { id, version }`, and uses the production continuous/A4 render paths for preview. The Default card removes `design.preset` and does not persist an empty `design` object. Unknown Preset references and unknown explicit Variants remain visible and unchanged until an explicit user action replaces or clears them.
+
+The existing Heading and Box inspector includes one shared local Variant selector. It consumes the shared Variant resolver to show whether the current effective style comes from the document Preset, a block-local override, or Base. 「跟随整体」removes `skin.variant`; there is no persisted Base/default/inherit sentinel. Preset selection never assigns Skins or rewrites explicit block Variants.
+
 ## Future UI Direction
 
 No UI is proposed for this change. A later UI should keep choices legible:
@@ -463,6 +469,6 @@ Any apply action should preview editor, A4, and print behavior and must remain s
 3. **2B-1B:** add a design registry, pure resolver, and scoped CSS-variable map, with no persisted JSON change. *(Complete.)*
 4. **2B-1C:** extend the development Skin Lab with Variant/Token preview and verify A4/layout invalidation behavior. *(Complete.)*
 5. **2B-2:** add optional Variant persistence plus server/client validation, preserving legacy and unavailable refs. *(Complete.)*
-6. **2B-3:** add a Preset source registry and document-level pinned Preset persistence.
-7. **2B-4:** add user-facing Preset/Variant UI; separately scope any explicit Apply Preset / Authoring Profile transaction.
+6. **2B-3:** add a Preset source registry and document-level pinned Preset persistence. *(Complete.)*
+7. **2B-4:** add user-facing Preset/Variant UI. *(Complete; explicit Apply Preset / Authoring Profile remains separate.)*
 8. Consider a broader Theme layer only after Preset behavior proves insufficient; it should compose this model rather than replace it.
