@@ -2,6 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TeachingBlock } from '@/types/teachingDocument'
+import { resolveTeachingDocumentSkinPresetContext } from '@/utils/teachingDocument/skins'
 import { PropertiesSheet, type SelectedLocation } from './PropertiesSheet'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -20,7 +21,7 @@ function renderSheet(
   location: SelectedLocation,
   onUpdate = vi.fn(),
   onUpdateTopLevel = vi.fn(),
-  options?: { pageBreakAfter?: boolean; onSetPageBreakAfter?: (blockId: string, enabled: boolean) => void },
+  options?: { pageBreakAfter?: boolean; onSetPageBreakAfter?: (blockId: string, enabled: boolean) => void; presetContext?: ReturnType<typeof resolveTeachingDocumentSkinPresetContext> },
 ) {
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -30,6 +31,7 @@ function renderSheet(
       <PropertiesSheet
         open
         selected={location}
+        presetContext={options?.presetContext}
         onClose={vi.fn()}
         onUpdate={onUpdate}
         onUpdateTopLevel={onUpdateTopLevel}
@@ -76,6 +78,62 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
       boxSkin!.dispatchEvent(new Event('change', { bubbles: true }))
     })
     expect(onBoxUpdate).toHaveBeenCalledWith({ skin: undefined })
+
+    const variantBox = { ...box, skin: { ...box.skin!, variant: 'green' } }
+    const onVariantSkinUpdate = vi.fn()
+    await renderSheet({ block: variantBox, topLevel: variantBox }, onVariantSkinUpdate)
+    const variantBoxSkin = container!.querySelector<HTMLSelectElement>('select[aria-label="皮肤"]')
+    await act(async () => {
+      variantBoxSkin!.value = 'builtin.box.header-band'
+      variantBoxSkin!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onVariantSkinUpdate).toHaveBeenCalledWith({ skin: { id: 'builtin.box.header-band', version: 1 } })
+  })
+
+  it('offers Follow document and local Variants without persisting a Base sentinel', async () => {
+    const onUpdate = vi.fn()
+    const box = { type: 'box' as const, id: 'box-variant', templateId: 'concept', breakBehavior: 'auto' as const, skin: { id: 'builtin.box.left-accent', version: 1 }, children: [] }
+    await renderSheet({ block: box, topLevel: box }, onUpdate, vi.fn(), { presetContext: resolveTeachingDocumentSkinPresetContext({ id: 'builtin.preset.warm', version: 1 }) })
+    expect(container!.textContent).toContain('当前：绿色')
+    expect(container!.textContent).toContain('来源：Warm · v1')
+    const variant = container!.querySelector<HTMLSelectElement>('select[aria-label="局部样式"]')
+    expect(variant?.value).toBe('')
+    await act(async () => {
+      variant!.value = 'green'
+      variant!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdate).toHaveBeenCalledWith({ skin: { id: 'builtin.box.left-accent', version: 1, variant: 'green' } })
+
+    const unknownUpdate = vi.fn()
+    const unknownBox = { ...box, skin: { ...box.skin, variant: 'futureVariant' } }
+    await renderSheet({ block: unknownBox, topLevel: unknownBox }, unknownUpdate)
+    expect(container!.textContent).toContain('局部样式不可用：futureVariant')
+    expect(unknownUpdate).not.toHaveBeenCalled()
+    const restore = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent === '恢复跟随整体')
+    await act(async () => restore?.click())
+    expect(unknownUpdate).toHaveBeenCalledWith({ skin: { id: 'builtin.box.left-accent', version: 1 } })
+    for (const call of unknownUpdate.mock.calls) {
+      expect(JSON.stringify(call)).not.toContain('"base"')
+      expect(JSON.stringify(call)).not.toContain('"default"')
+      expect(JSON.stringify(call)).not.toContain('"inherit"')
+      expect(JSON.stringify(call)).not.toContain('null')
+    }
+
+    const zeroVariantUnknownUpdate = vi.fn()
+    const zeroVariantUnknownBox = { ...box, skin: { id: 'builtin.box.header-band', version: 1, variant: 'futureVariant' } }
+    await renderSheet({ block: zeroVariantUnknownBox, topLevel: zeroVariantUnknownBox }, zeroVariantUnknownUpdate)
+    expect(container!.textContent).toContain('当前：futureVariant')
+    expect(container!.textContent).toContain('局部样式不可用：futureVariant')
+    expect(container!.querySelector('select[aria-label="局部样式"]')).toBeNull()
+    expect(zeroVariantUnknownUpdate).not.toHaveBeenCalled()
+    const zeroVariantRestore = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent === '恢复跟随整体')
+    await act(async () => zeroVariantRestore?.click())
+    expect(zeroVariantUnknownUpdate).toHaveBeenCalledWith({ skin: { id: 'builtin.box.header-band', version: 1 } })
+
+    const zeroVariantBox = { ...box, skin: { id: 'builtin.box.header-band', version: 1 } }
+    await renderSheet({ block: zeroVariantBox, topLevel: zeroVariantBox })
+    expect(container!.textContent).not.toContain('局部样式')
+    expect(container!.querySelector('select[aria-label="局部样式"]')).toBeNull()
   })
 
   it('在布局页用显式标记控制对象后的强制换页', async () => {

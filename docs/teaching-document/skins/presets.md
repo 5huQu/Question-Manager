@@ -26,4 +26,12 @@ The version is required. Resolution is exact by `(id, version)`—there is no la
 
 For a block which already has a compatible Skin, effective Variant precedence is: ephemeral preview override, explicit persisted `skin.variant`, resolved Preset binding, then Base. An explicit unknown Variant still wins over a Preset and safely renders Base if unavailable. A Preset never assigns a Skin, writes a Variant into a block, changes `BoxAppearance`, or affects unskinned blocks.
 
-There is no end-user Preset selector, Theme, Token override, migration, or Apply/Freeze Preset operation in this phase.
+## User-facing document style workspace (Phase 2B-4)
+
+Teaching Documents now expose a dedicated 「文档样式」page. It lists registry definitions as selectable cards, including each exact registered version separately. 「默认」means `document.design?.preset === undefined`; choosing it removes the entire empty `design` field rather than persisting a synthetic Preset.
+
+The page renders the real document through the production continuous renderer and A4 pagination path. It summarizes the source Preset’s Skin → Variant mappings and lists explicit block-level overrides, but it never applies Skins or materializes Preset bindings into blocks. A missing current Preset remains visible as unavailable and round-trips unchanged until the user explicitly chooses Default or another exact Preset.
+
+The Heading and Box inspector exposes a Skin-local Variant selector. 「跟随整体」removes `skin.variant`; it never writes `base`, `default`, `inherit`, an empty string, or `null`. The effective source remains explicit block Variant → Preset → Base. Unknown persisted Variant IDs remain visible and safe-fallback until the user explicitly restores following or selects a valid Variant.
+
+Still not implemented: Theme, Token override/editor, explicit persisted Base override, Preset migration, and Apply/Freeze Preset.

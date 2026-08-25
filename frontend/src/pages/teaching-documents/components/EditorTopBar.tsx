@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import {
-  ArrowLeft, Check, ChevronDown, CornerDownRight, FileText, LayoutTemplate,
+  ArrowLeft, Check, ChevronDown, CornerDownRight, FileText, LayoutTemplate, Palette,
   LoaderCircle, Minus, Plus, Redo2, Undo2, AlignLeft,
 } from 'lucide-react'
 import type { TeachingBlock } from '@/types/teachingDocument'
@@ -40,6 +40,7 @@ export function EditorTopBar(props: {
   onCanvasModeChange: (mode: TeachingCanvasMode) => void
   onZoomChange: (zoom: number) => void
   onInsert: (type: TeachingBlock['type'], headingLevel?: HeadingLevel) => void
+  styleHref?: string
   paperActions?: ReactNode
   printActions?: ReactNode
 }) {
@@ -100,6 +101,12 @@ export function EditorTopBar(props: {
         aria-label="文档标题"
         placeholder="未命名文档"
       />
+
+      {props.styleHref ? (
+        <a href={props.styleHref} className="hidden h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100 sm:inline-flex" title="文档样式">
+          <Palette className="size-3.5" />文档样式
+        </a>
+      ) : null}
 
       <div
         className="question-edit-glass-tabs hidden h-7.5 shrink-0 items-center gap-1 rounded-lg px-1.5 lg:flex border border-black/6 dark:border-white/8"

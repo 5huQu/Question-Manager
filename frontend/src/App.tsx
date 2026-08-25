@@ -36,6 +36,7 @@ const QuestionBasket = lazy(() => import('@/components/QuestionBasket').then(mod
 const CandidateFixWorkbenchPage = lazy(() => import('@/pages/import-v2/CandidateFixWorkbenchPage'))
 const TeachingDocumentsPage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentsPage'))
 const TeachingDocumentEditorPage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentEditorPage'))
+const TeachingDocumentStylePage = lazy(() => import('@/pages/teaching-documents/TeachingDocumentStylePage'))
 const QuestionEditorMockPage = import.meta.env.DEV ? lazy(() => import('@/pages/mock/QuestionEditorMockPage')) : null
 const TeachingDocumentMockPage = import.meta.env.DEV || import.meta.env.VITE_TEACHING_DOCUMENT_PERF === '1'
   ? lazy(() => import('@/pages/mock/TeachingDocumentMockPage'))
@@ -252,6 +253,7 @@ export default function App() {
                 <Route path="/teaching-documents" element={<TeachingDocumentsPage />} />
                 {ReferenceDocumentEditorDemoPage ? <Route path="/teaching-documents/demo/reference" element={<ReferenceDocumentEditorDemoPage />} /> : null}
                 {TeachingSkinLabPage ? <Route path="/teaching-documents/demo/skins" element={<TeachingSkinLabPage />} /> : null}
+                <Route path="/teaching-documents/:documentId/style" element={<TeachingDocumentStylePage />} />
                 <Route path="/teaching-documents/:documentId" element={<TeachingDocumentEditorPage />} />
                 <Route path="/tools/pdf-slicer/runs/:runId/questions" element={<LegacyPdfSlicerRunRedirect />} />
                 <Route path="/tools/pdf-slicer/*" element={<LegacyPdfSlicerGone />} />
