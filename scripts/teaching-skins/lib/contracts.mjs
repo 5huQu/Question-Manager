@@ -19,7 +19,7 @@ export function isLocalDesignId(value) {
 
 export function presetDefinitionShapeIssues(preset) {
   const issues = []
-  if (!hasExactKeys(preset, ['apiVersion', 'id', 'version', 'label', 'description', 'bindings'])) return ['Preset may use only apiVersion, id, version, label, description, and bindings.']
+  if (!hasExactKeys(preset, ['apiVersion', 'id', 'version', 'label', 'description', 'bindings', 'recommendedSkins'])) return ['Preset may use only apiVersion, id, version, label, description, bindings, and recommendedSkins.']
   if (preset.apiVersion !== 1) issues.push('Preset apiVersion must be 1.')
   if (!isStableSkinId(preset.id)) issues.push('Preset ID must be a stable namespaced lowercase identifier.')
   if (!Number.isInteger(preset.version) || preset.version < 1) issues.push('Preset version must be a positive integer.')
@@ -29,6 +29,16 @@ export function presetDefinitionShapeIssues(preset) {
   else for (const [skinId, variantId] of Object.entries(preset.bindings)) {
     if (!isStableSkinId(skinId)) issues.push('Preset binding keys must be stable Skin IDs.')
     if (!isLocalDesignId(variantId)) issues.push('Preset binding values must be stable Skin-local Variant IDs.')
+  }
+  if (preset.recommendedSkins !== undefined) {
+    if (!preset.recommendedSkins || typeof preset.recommendedSkins !== 'object' || Array.isArray(preset.recommendedSkins)
+      || !hasExactKeys(preset.recommendedSkins, ['heading', 'box'])) {
+      issues.push('Preset recommendedSkins may use only heading and box stable Skin IDs.')
+    } else {
+      for (const skinId of Object.values(preset.recommendedSkins)) {
+        if (!isStableSkinId(skinId)) issues.push('Preset recommendedSkins values must be stable Skin IDs.')
+      }
+    }
   }
   return issues
 }
@@ -41,6 +51,21 @@ export function presetReferenceIssues(preset, skinDefinitions) {
     if (!skin) { issues.push(`Preset binding references missing Skin ${skinId}.`); continue }
     if (!skin.design) { issues.push(`Preset binding Skin ${skinId} has no design metadata.`); continue }
     if (!Array.isArray(skin.design.variants) || !skin.design.variants.some((variant) => variant?.id === variantId)) issues.push(`Preset binding ${skinId} references missing Variant ${variantId}.`)
+  }
+  const recommended = preset.recommendedSkins
+  if (!recommended || typeof recommended !== 'object' || Array.isArray(recommended)) return issues
+  for (const target of ['heading', 'box']) {
+    const skinId = recommended[target]
+    if (skinId === undefined) continue
+    const skin = skinDefinitions.get(skinId)
+    if (!skin) {
+      issues.push(`Preset recommended ${target} Skin ${skinId} is missing.`)
+      continue
+    }
+    if (skin.target !== target) issues.push(`Preset recommended ${target} Skin ${skinId} has target ${skin.target}.`)
+    if (!Object.prototype.hasOwnProperty.call(preset.bindings, skinId)) {
+      issues.push(`Preset recommended ${target} Skin ${skinId} must also appear in bindings.`)
+    }
   }
   return issues
 }

@@ -31,8 +31,8 @@ async function writePreset(root, name, source) {
   return directory
 }
 
-function presetSource({ id = 'studio.preset.sample', version = 1, bindings = "{ 'studio.heading.sample': 'green' }" } = {}) {
-  return `import { defineTeachingSkinPreset } from '@/utils/teachingDocument/skins/authoring'\nexport default defineTeachingSkinPreset({ id: '${id}', version: ${version}, label: 'Sample', bindings: ${bindings} })\n`
+function presetSource({ id = 'studio.preset.sample', version = 1, bindings = "{ 'studio.heading.sample': 'green' }", recommendedSkins } = {}) {
+  return `import { defineTeachingSkinPreset } from '@/utils/teachingDocument/skins/authoring'\nexport default defineTeachingSkinPreset({ id: '${id}', version: ${version}, label: 'Sample', bindings: ${bindings}${recommendedSkins ? `, recommendedSkins: ${recommendedSkins}` : ''} })\n`
 }
 
 test('skin:new creates heading and box scaffolds without overwriting', async () => {
@@ -86,6 +86,35 @@ test('skin:check validates Preset dependencies and exact version identity', asyn
   await writePreset(root, 'duplicate', presetSource())
   const duplicate = await checkTeachingSkins({ root })
   assert.equal(duplicate.errors.some((error) => error.code === 'duplicate-preset'), true)
+})
+
+test('skin:check validates source-only Preset recommended Skin references', async () => {
+  const root = await tempSkinRoot()
+  const headingDesign = ", design: { tokens: [{ id: 'studio.heading.green', kind: 'color', label: 'Green', printSafe: true, value: { hex: '#16A34A' } }], slots: [{ id: 'accentColor', kind: 'color', defaultTokenId: 'studio.heading.green' }], variants: [{ id: 'green', label: 'Green', tokenBindings: { accentColor: 'studio.heading.green' } }] }"
+  const boxDesign = ", design: { tokens: [{ id: 'studio.box.green', kind: 'color', label: 'Green', printSafe: true, value: { hex: '#16A34A' } }], slots: [{ id: 'headerFill', kind: 'color', defaultTokenId: 'studio.box.green' }], variants: [{ id: 'green', label: 'Green', tokenBindings: { headerFill: 'studio.box.green' } }] }"
+  await writeSkin(root, 'heading', { id: 'studio.heading.sample', className: 'td-skin-studio-heading-sample', support: headingDesign })
+  await writeSkin(root, 'box', { target: 'box', id: 'studio.box.sample', className: 'td-skin-studio-box-sample', support: boxDesign })
+  await writeSkin(root, 'box-unbound', { target: 'box', id: 'studio.box.unbound', className: 'td-skin-studio-box-unbound' })
+  const bindings = "{ 'studio.heading.sample': 'green', 'studio.box.sample': 'green' }"
+
+  await writePreset(root, 'valid', presetSource({ bindings, recommendedSkins: "{ heading: 'studio.heading.sample', box: 'studio.box.sample' }" }))
+  assert.equal((await checkTeachingSkins({ root })).ok, true)
+
+  await writePreset(root, 'wrong-target', presetSource({ id: 'studio.preset.wrong-target', bindings, recommendedSkins: "{ heading: 'studio.box.sample' }" }))
+  await writePreset(root, 'missing', presetSource({ id: 'studio.preset.missing', bindings, recommendedSkins: "{ heading: 'studio.heading.missing' }" }))
+  await writePreset(root, 'not-bound', presetSource({ id: 'studio.preset.not-bound', bindings, recommendedSkins: "{ heading: 'studio.heading.sample', box: 'studio.box.unbound' }" }))
+  await writePreset(root, 'unknown-key', presetSource({ id: 'studio.preset.unknown-key', bindings, recommendedSkins: "{ paragraph: 'studio.heading.sample' }" }))
+  const result = await checkTeachingSkins({ root })
+  assert.equal(result.ok, false)
+  assert.equal(result.errors.filter((error) => error.code === 'preset-reference').length, 3)
+  assert.equal(result.errors.some((error) => error.code === 'preset-definition'), true)
+})
+
+test('skin:check permits a valid Preset without recommendedSkins', async () => {
+  const root = await tempSkinRoot()
+  await writeSkin(root, 'heading', { id: 'studio.heading.sample', className: 'td-skin-studio-heading-sample', support: ", design: { tokens: [{ id: 'studio.color.green', kind: 'color', label: 'Green', printSafe: true, value: { hex: '#16A34A' } }], slots: [{ id: 'accentColor', kind: 'color', defaultTokenId: 'studio.color.green' }], variants: [{ id: 'green', label: 'Green', tokenBindings: { accentColor: 'studio.color.green' } }] }" })
+  await writePreset(root, 'plain', presetSource())
+  assert.equal((await checkTeachingSkins({ root })).ok, true)
 })
 
 test('skin:check keeps Preset source declarative and side-effect-free', async () => {

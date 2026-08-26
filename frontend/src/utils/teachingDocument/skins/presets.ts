@@ -3,8 +3,13 @@ import { isTeachingSkinDefinition, isTeachingSkinLocalDesignId, type TeachingSki
 import type { TeachingSkinRegistry } from './registry'
 
 const STABLE_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$/
-const PRESET_KEYS = new Set(['apiVersion', 'id', 'version', 'label', 'description', 'bindings'])
+const PRESET_KEYS = new Set(['apiVersion', 'id', 'version', 'label', 'description', 'bindings', 'recommendedSkins'])
 const PRESET_REF_KEYS = new Set(['id', 'version'])
+
+export interface TeachingSkinPresetRecommendedSkins {
+  heading?: string
+  box?: string
+}
 
 export interface TeachingSkinPresetDefinition {
   apiVersion: 1
@@ -13,6 +18,8 @@ export interface TeachingSkinPresetDefinition {
   label: string
   description?: string
   bindings: Readonly<Record<string, TeachingSkinVariantId>>
+  /** Source-only hints for the explicit Recommended Style Setup transaction. */
+  recommendedSkins?: Readonly<TeachingSkinPresetRecommendedSkins>
 }
 
 export type TeachingSkinPresetInput = Omit<TeachingSkinPresetDefinition, 'apiVersion'>
@@ -28,6 +35,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null
 }
 
+function isTeachingSkinPresetRecommendedSkins(value: unknown): value is TeachingSkinPresetRecommendedSkins {
+  if (!isPlainObject(value) || Object.keys(value).some((key) => key !== 'heading' && key !== 'box')) return false
+  return Object.values(value).every((skinId) => typeof skinId === 'string' && STABLE_ID.test(skinId))
+}
+
 /** Runtime defensive guard for source definitions and test/HMR mutation. */
 export function isTeachingSkinPresetDefinition(value: unknown): value is TeachingSkinPresetDefinition {
   if (!isPlainObject(value) || Object.keys(value).some((key) => !PRESET_KEYS.has(key))) return false
@@ -35,7 +47,8 @@ export function isTeachingSkinPresetDefinition(value: unknown): value is Teachin
     || !Number.isInteger(value.version) || Number(value.version) < 1
     || typeof value.label !== 'string' || !value.label.trim()
     || (value.description !== undefined && (typeof value.description !== 'string' || !value.description.trim()))
-    || !isPlainObject(value.bindings)) return false
+    || !isPlainObject(value.bindings)
+    || (value.recommendedSkins !== undefined && !isTeachingSkinPresetRecommendedSkins(value.recommendedSkins))) return false
   const bindings = Object.entries(value.bindings)
   return bindings.length > 0 && bindings.every(([skinId, variantId]) => STABLE_ID.test(skinId) && isTeachingSkinLocalDesignId(variantId))
 }

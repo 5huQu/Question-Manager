@@ -17,6 +17,10 @@ const warmV1 = {
     'builtin.heading.left-accent': 'amber',
     'builtin.box.left-accent': 'green',
   },
+  recommendedSkins: {
+    heading: 'builtin.heading.left-accent',
+    box: 'builtin.box.left-accent',
+  },
 }
 
 describe('Teaching Skin Presets', () => {
@@ -33,6 +37,7 @@ describe('Teaching Skin Presets', () => {
     expect(isTeachingSkinPresetDefinition(warmV1)).toBe(true)
     expect(isTeachingSkinPresetDefinition({ ...warmV1, bindings: {} })).toBe(false)
     expect(isTeachingSkinPresetDefinition({ ...warmV1, extra: true })).toBe(false)
+    expect(isTeachingSkinPresetDefinition({ ...warmV1, recommendedSkins: { paragraph: 'builtin.heading.left-accent' } })).toBe(false)
     expect(parseTeachingSkinPresetRef({ id: 'plugin.preset.future', version: 3 })).toEqual({ id: 'plugin.preset.future', version: 3 })
     expect(parseTeachingSkinPresetRef({ id: 'plugin.preset.future' })).toBeUndefined()
     expect(parseTeachingSkinPresetRef({ id: 'plugin.preset.future', version: 3, bindings: {} })).toBeUndefined()
@@ -55,6 +60,15 @@ describe('Teaching Skin Presets', () => {
       mutation(preset)
       expect(resolveTeachingSkinPreset(registry, { id: warmV1.id, version: 1 }, teachingSkinRegistry)).toMatchObject({ status: 'unavailable', issues: [{ code: 'preset-invalid' }] })
     }
+  })
+
+  it('keeps Preset rendering available when only a source recommendation becomes unusable', () => {
+    const registry = new TeachingSkinPresetRegistry()
+    registry.register({ ...warmV1, recommendedSkins: { heading: 'plugin.heading.missing', box: 'builtin.box.left-accent' } })
+    expect(resolveTeachingSkinPreset(registry, { id: warmV1.id, version: 1 }, teachingSkinRegistry)).toMatchObject({
+      status: 'resolved',
+      bindings: warmV1.bindings,
+    })
   })
 
   it('uses preview, explicit Variant, Preset, and Base in the documented order', () => {

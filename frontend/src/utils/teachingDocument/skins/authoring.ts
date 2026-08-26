@@ -28,4 +28,4 @@ export type {
   TeachingSkinVariantDefinition,
   TeachingSkinVariantId,
 } from './types'
-export type { TeachingSkinPresetDefinition, TeachingSkinPresetInput } from './presets'
+export type { TeachingSkinPresetDefinition, TeachingSkinPresetInput, TeachingSkinPresetRecommendedSkins } from './presets'

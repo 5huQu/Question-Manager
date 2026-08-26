@@ -9,4 +9,8 @@ export default defineTeachingSkinPreset({
     'builtin.heading.left-accent': 'amber',
     'builtin.box.left-accent': 'green',
   },
+  recommendedSkins: {
+    heading: 'builtin.heading.left-accent',
+    box: 'builtin.box.left-accent',
+  },
 })

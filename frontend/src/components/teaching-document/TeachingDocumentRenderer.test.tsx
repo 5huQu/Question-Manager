@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest'
 import type { ParagraphBlock, TeachingDocumentV1, TeachingInline } from '@/types/teachingDocument'
 import type { QuestionItem } from '@/types'
 import type { ParagraphFragmentPaginationItem } from '@/utils/teachingDocument'
-import { resolveTeachingSkinDesignRenderState, teachingSkinRegistry } from '@/utils/teachingDocument/skins'
+import { resolveTeachingSkinDesignRenderState, teachingSkinPresetRegistry, teachingSkinRegistry } from '@/utils/teachingDocument/skins'
+import { applyTeachingDocumentRecommendedSkins, planTeachingDocumentPresetRecommendedSkins } from '@/utils/teachingDocument/skins/recommendedSkins'
 import { InlineContent } from './blocks/InlineContent'
 import { ParagraphFragmentRenderer } from './blocks/BlockRenderer'
 import { TeachingDocumentRenderer } from './TeachingDocumentRenderer'
@@ -165,6 +166,28 @@ describe('TeachingDocumentRenderer fallbacks', () => {
     expect(html).not.toMatch(/data-block-id="unskinned"[^>]+data-skin-id/)
     expect(document.content[0]).toMatchObject({ skin: { id: 'builtin.heading.left-accent' } })
     expect((document.content[0] as { skin: { variant?: string } }).skin.variant).toBeUndefined()
+  })
+
+  it('renders Warm amber and green after explicitly applying its recommended Skins', () => {
+    const document: TeachingDocumentV1 = {
+      ...documentWith([
+        { type: 'heading', id: 'recommended-heading', level: 2, content: [{ type: 'text', text: '待应用标题' }] },
+        { type: 'box', id: 'recommended-box', templateId: 'concept', breakBehavior: 'auto', children: [] },
+      ]),
+      design: { preset: { id: 'builtin.preset.warm', version: 1 } },
+    }
+    const warm = teachingSkinPresetRegistry.get('builtin.preset.warm', 1)!
+    const before = renderToStaticMarkup(<TeachingDocumentRenderer document={document} />)
+    expect(before).not.toContain('data-skin-id="builtin.heading.left-accent"')
+    expect(before).not.toContain('data-skin-id="builtin.box.left-accent"')
+
+    const applied = applyTeachingDocumentRecommendedSkins(document, planTeachingDocumentPresetRecommendedSkins(document, warm), { heading: true, box: true })
+    const html = renderToStaticMarkup(<TeachingDocumentRenderer document={applied} />)
+    expect(html).toContain('--td-skin-builtin--heading--left-accent-accent-border:4px solid #B45309')
+    expect(html).toContain('--td-skin-builtin--box--left-accent-frame-border:1px solid #A7F3D0')
+    expect(html).toContain('--td-skin-builtin--box--left-accent-header-fill:#ECFDF5')
+    expect((applied.content[0] as { skin?: { variant?: string } }).skin?.variant).toBeUndefined()
+    expect((applied.content[1] as { skin?: { variant?: string } }).skin?.variant).toBeUndefined()
   })
 
   it('falls back to Base for a missing persisted Variant without changing the stored ref', () => {
