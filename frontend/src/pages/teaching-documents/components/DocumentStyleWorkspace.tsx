@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Check, Layers3 } from 'lucide-react'
 import type { FigureAssetRef, TeachingBlock, TeachingDocumentV1, TeachingSkinPresetRef } from '@/types/teachingDocument'
 import { A4PaginationPreview } from '@/components/teaching-document/A4PaginationPreview'
@@ -12,6 +12,13 @@ import {
   teachingSkinPresetRegistry,
   teachingSkinRegistry,
 } from '@/utils/teachingDocument/skins'
+import {
+  applyTeachingDocumentRecommendedSkins,
+  planTeachingDocumentPresetRecommendedSkins,
+  type TeachingDocumentPresetRecommendedSkinsPlan,
+  type TeachingDocumentRecommendedSkinSelection,
+  type TeachingPresetRecommendedSkinTarget,
+} from '@/utils/teachingDocument/skins/recommendedSkins'
 
 type PreviewMode = 'continuous' | 'a4'
 
@@ -153,6 +160,61 @@ function skinUsageSourceLabel(usage: DocumentSkinUsage, presetLabel?: string) {
   return '基础样式'
 }
 
+function RecommendedStyleSetup({
+  presetLabel,
+  plan,
+  onApply,
+}: {
+  presetLabel: string
+  plan: TeachingDocumentPresetRecommendedSkinsPlan
+  onApply: (selection: TeachingDocumentRecommendedSkinSelection) => void
+}) {
+  const [selection, setSelection] = useState<TeachingDocumentRecommendedSkinSelection>({ heading: true, box: true })
+  const selectedCount = (selection.heading ? plan.heading.eligibleBlockIds.length : 0) + (selection.box ? plan.box.eligibleBlockIds.length : 0)
+
+  useEffect(() => setSelection({ heading: true, box: true }), [presetLabel])
+
+  const targetLabel: Record<TeachingPresetRecommendedSkinTarget, string> = { heading: '章节标题', box: '知识卡' }
+  return (
+    <section className="mt-5 border-t border-zinc-200 pt-5 dark:border-zinc-800">
+      <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">推荐设置</h2>
+      <p className="mt-1 text-xs leading-5 text-zinc-500">让当前文档更完整地使用 {presetLabel}。只会为尚未设置样式的标题和知识卡添加推荐样式；已有设置不会修改。</p>
+      {plan.status === 'unavailable' ? <p className="mt-3 rounded-md bg-amber-50 px-2.5 py-2 text-[11px] leading-4 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">当前推荐样式不可用，不会修改任何元素。</p> : null}
+      <div className="mt-3 space-y-2">
+        {(['heading', 'box'] as const).map((target) => {
+          const targetPlan = plan[target]
+          const eligible = targetPlan.eligibleBlockIds.length
+          const existingCount = targetPlan.alreadyRecommendedCount + targetPlan.existingOtherSkinCount
+          const disabled = targetPlan.status !== 'available' || eligible === 0
+          return <label key={target} className={`flex cursor-pointer gap-2.5 rounded-lg border p-2.5 transition-colors ${selection[target] && !disabled ? 'border-zinc-900 bg-zinc-50/50 dark:border-zinc-100 dark:bg-zinc-900/30' : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950'} ${disabled ? 'cursor-default opacity-70' : 'hover:bg-zinc-50 dark:hover:bg-zinc-900/50'}`}>
+            <input
+              type="checkbox"
+              aria-label={`应用推荐${targetLabel[target]}`}
+              className="mt-0.5 size-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
+              checked={selection[target]}
+              disabled={disabled}
+              onChange={(event) => setSelection((current) => ({ ...current, [target]: event.target.checked }))}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-medium text-zinc-800 dark:text-zinc-200">{targetLabel[target]}</span>
+              <span className="mt-0.5 block text-[11px] leading-4 text-zinc-500">
+                {targetPlan.status === 'unavailable'
+                  ? '推荐样式当前不可用，不会修改。'
+                  : eligible
+                    ? `${eligible} 个尚未应用`
+                    : '已完成 / 无需应用'}
+              </span>
+              {existingCount ? <span className="mt-0.5 block text-[11px] leading-4 text-zinc-400">另外 {existingCount} 个已有样式，不会修改。</span> : null}
+              {targetPlan.incompatibleCount ? <span className="mt-0.5 block text-[11px] leading-4 text-zinc-400">{targetPlan.incompatibleCount} 个元素因当前类型不兼容而跳过。</span> : null}
+            </span>
+          </label>
+        })}
+      </div>
+      {plan.totalEligible ? <button type="button" disabled={!selectedCount} onClick={() => onApply(selection)} className="mt-3 h-8 w-full rounded-md bg-zinc-900 px-3 text-xs font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500">应用到 {selectedCount} 个元素</button> : <p className="mt-3 rounded-md bg-zinc-100 px-2.5 py-2 text-[11px] leading-4 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">当前没有需要补充推荐样式的元素。</p>}
+    </section>
+  )
+}
+
 /** Persists only the exact Preset ref; clearing removes design entirely instead of writing design: {}. */
 export function withTeachingDocumentPreset(document: TeachingDocumentV1, preset?: TeachingSkinPresetRef): TeachingDocumentV1 {
   const { design: _design, ...withoutDesign } = document
@@ -215,7 +277,11 @@ export function DocumentStyleWorkspace({
   const skinUsages = useMemo(() => teachingDocumentSkinUsages(document), [document])
   const currentRef = document.design?.preset
   const presetHasEffect = mappings.some((mapping) => mapping.affectedCount > 0)
-  const presetLabel = presetContext.status === 'resolved' ? `${presetContext.preset.label} · v${presetContext.preset.version}` : undefined
+  const resolvedPreset = presetContext.status === 'resolved' ? presetContext.preset : undefined
+  const presetLabel = resolvedPreset ? `${resolvedPreset.label} · v${resolvedPreset.version}` : undefined
+  const recommendedPlan = useMemo(() => resolvedPreset?.recommendedSkins
+    ? planTeachingDocumentPresetRecommendedSkins(document, resolvedPreset)
+    : undefined, [document, resolvedPreset])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
@@ -247,6 +313,16 @@ export function DocumentStyleWorkspace({
             {!presets.length ? <p className="rounded-lg border border-dashed border-zinc-200 p-3 text-xs text-zinc-500 dark:border-zinc-800">当前没有可选的文档样式。</p> : null}
           </div>
         </section>
+
+        {recommendedPlan && presetLabel && resolvedPreset ? <RecommendedStyleSetup
+          key={`${resolvedPreset.id}:v${resolvedPreset.version}`}
+          presetLabel={presetLabel}
+          plan={recommendedPlan}
+          onApply={(selection) => {
+            const next = applyTeachingDocumentRecommendedSkins(document, recommendedPlan, selection)
+            if (next !== document) onDocumentChange(next)
+          }}
+        /> : null}
 
         <section className="mt-5 border-t border-zinc-200 pt-5 dark:border-zinc-800">
           <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">文档皮肤</h2>

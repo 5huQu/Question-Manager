@@ -1,6 +1,6 @@
 # Teaching Skin Design System Proposal
 
-> Status: architecture proposal with Phase 2B-4 implemented. The Variant/Preset model remains the architectural direction; `TeachingSkinRef.variant` persistence, pinned Presets, and the first end-user Document Style / local Variant UX are now part of the current contract.
+> Status: architecture proposal with Phase 2B-5 implemented. The Variant/Preset model remains the architectural direction; `TeachingSkinRef.variant` persistence, pinned Presets, the Document Style / local Variant UX, and explicit Recommended Skin setup are now part of the current contract.
 
 ## Goals
 
@@ -12,10 +12,10 @@
 
 ## Non Goals
 
-- This proposal does not implement a Document Theme, Token editor, explicit Base persistence, Apply/Freeze Preset operation, or a Variant/Preset migration framework. The exact-Skin pinned Preset runtime and its document style/local Variant UI are implemented through Phase 2B-4; scoped matching and Token bindings remain future work.
+- This proposal does not implement a Document Theme, Token editor, explicit Base persistence, automatic Preset application, Freeze/Detach Preset operation, or a Variant/Preset migration framework. The exact-Skin pinned Preset runtime, document style/local Variant UI, and explicit Recommended Skin setup are implemented through Phase 2B-5; scoped matching and Token bindings remain future work.
 - It does not permit CSS, HTML, class names, React, executable code, arbitrary style strings, or arbitrary CSS-property maps in `TeachingDocument` JSON.
 - It does not change the Heading/Box DOM, pagination algorithms, print pipeline structure, ProseMirror model, or database schema.
-- A Preset is not a mechanism for adding a Skin to an unskinned legacy block. Applying a Skin remains an explicit block-level action.
+- A Preset is not a runtime mechanism for adding a Skin to an unskinned legacy block. The optional source-only `recommendedSkins` hint is consumed solely by an explicit authoring transaction.
 
 ## Current Architecture
 
@@ -235,9 +235,9 @@ An entry that names an unavailable Skin, Variant, or Token is ignored for render
 There are two deliberately separate future operations:
 
 - **Document-level pinned Preset** is runtime design composition. It supplies a Variant/token choice only after a block already has a compatible Skin ref. It never changes block Skin identity, so legacy documents do not change merely because a Preset becomes available.
-- **Explicit Apply Preset / Authoring Profile** is an author-invoked editing transaction. It may inspect controlled Heading level and Box template semantics, write compatible Skin refs and optional Variant refs to matching blocks, and be undone as one transaction. It is not an implicit resolver behavior.
+- **Explicit Recommended Skin setup** is an author-invoked editing transaction. It may inspect controlled Heading level and Box template semantics, writes only compatible Skin `{ id, version }` refs to currently unskinned blocks, and is one document operation. It never writes optional Variant refs and is not an implicit resolver behavior.
 
-If one-click teacher branding needs structural assignment for new documents or existing unskinned content, that responsibility belongs to a future, separately registered **Authoring Profile** (or Style Profile), not to the pinned Preset. Its source-defined rules would map controlled block semantics to Skin IDs and optional Variant IDs; it would be applied explicitly and remain undoable. This preserves both real “数学讲义风格” authoring UX and the legacy fallback guarantee.
+Phase 2B-5 keeps this narrow: a Preset may offer only one explicit recommendation per Heading/Box target, and only when that Skin is also bound by the same exact Preset. More expressive profiles, automatic assignment, and Variant materialization remain future work. This preserves both practical “数学讲义风格” setup and the legacy fallback guarantee.
 
 ## Data Contract Proposal
 
@@ -429,15 +429,15 @@ Teacher branding should exist, but in layers with different persistence responsi
 - **User/workspace default:** an eventual authoring preference can suggest a Preset for new work. It must not alter saved documents implicitly, and it does not require an account-system design.
 - **Document-level pinned Preset:** an explicit document reference makes a shared document’s intended style reproducible, while preserving a fallback when the Preset is unavailable.
 - **Block-level Variant:** an author may explicitly override a document Preset for one selected Skin. This is the exception, not the mechanism for branding every block individually.
-- **Explicit Authoring Profile / Apply Preset:** a separately proposed, undoable authoring action may assign compatible structural Skin refs to new or existing blocks from controlled Heading/Box semantics. It is the route for one-click branding when blocks start unskinned.
+- **Explicit Recommended Skin setup:** a source-only Preset hint may fill compatible, currently unskinned Heading/Box blocks after a user action. It writes only Skin id/version refs and never records provenance or materializes a Variant.
 
 This layering lets Teacher A use a math-handout palette, Teacher B use an olympiad style, and Teacher C use a review-round-one style without inventing separate structural Skins for each color or density combination.
 
-## User UI (Phase 2B-4)
+## User UI (Phase 2B-5)
 
 The Teaching Document 「文档样式」page is a full workspace, not a modal. It reads the real current `TeachingDocument`, displays exact-version registry cards, writes only `design.preset: { id, version }`, and uses the production continuous/A4 render paths for preview. The Default card removes `design.preset` and does not persist an empty `design` object. Unknown Preset references and unknown explicit Variants remain visible and unchanged until an explicit user action replaces or clears them.
 
-The existing Heading and Box inspector includes one shared local Variant selector. It consumes the shared Variant resolver to show whether the current effective style comes from the document Preset, a block-local override, or Base. 「跟随整体」removes `skin.variant`; there is no persisted Base/default/inherit sentinel. Preset selection never assigns Skins or rewrites explicit block Variants.
+The existing Heading and Box inspector includes one shared local Variant selector. It consumes the shared Variant resolver to show whether the current effective style comes from the document Preset, a block-local override, or Base. 「跟随整体」removes `skin.variant`; there is no persisted Base/default/inherit sentinel. Preset selection never assigns Skins or rewrites explicit block Variants. The Document Style page may show an explicit Recommended Skin setup action, but only after the user selects it; existing and unknown Skin refs are never overwritten.
 
 ## Future UI Direction
 
@@ -446,7 +446,7 @@ No UI is proposed for this change. A later UI should keep choices legible:
 - Skin selector: structural treatment only.
 - Variant selector: alternatives valid for the selected Skin only.
 - Document style/Preset selector: applies a composition to compatible, already-selected Skins and clearly shows affected blocks.
-- Apply Preset / Authoring Profile action: previews controlled structural assignments, writes refs only after explicit confirmation, and is undoable as one transaction.
+- Recommended Skin setup action: explicitly fills compatible unskinned Heading/Box blocks from source-only `recommendedSkins`, writes only Skin id/version refs, and is one document transaction.
 - Token controls: expose only declared semantic slots and named options; never an arbitrary CSS editor.
 - Inspector state: distinguish missing Skin, missing Variant, missing Preset, and incompatible target without erasing stored refs.
 
@@ -470,5 +470,6 @@ Any apply action should preview editor, A4, and print behavior and must remain s
 4. **2B-1C:** extend the development Skin Lab with Variant/Token preview and verify A4/layout invalidation behavior. *(Complete.)*
 5. **2B-2:** add optional Variant persistence plus server/client validation, preserving legacy and unavailable refs. *(Complete.)*
 6. **2B-3:** add a Preset source registry and document-level pinned Preset persistence. *(Complete.)*
-7. **2B-4:** add user-facing Preset/Variant UI. *(Complete; explicit Apply Preset / Authoring Profile remains separate.)*
-8. Consider a broader Theme layer only after Preset behavior proves insufficient; it should compose this model rather than replace it.
+7. **2B-4:** add user-facing Preset/Variant UI. *(Complete.)*
+8. **2B-5:** add source-only Preset `recommendedSkins` and explicit setup for compatible unskinned Heading/Box blocks. *(Complete.)*
+9. Consider a broader Theme layer only after Preset behavior proves insufficient; it should compose this model rather than replace it.

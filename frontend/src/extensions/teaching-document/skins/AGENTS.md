@@ -25,13 +25,15 @@ Optional `design` metadata belongs directly in the static `skin.ts` definition o
 
 Variant IDs are published Skin-local semantic data: saved documents may persist `{ skin: { id, variant } }`. Do not rename a published Variant ID or materially change its visual meaning casually; use a new Variant ID or a reviewed migration. Removing a Variant must remain safe because saved documents preserve it and render Base with a runtime unavailable state. Never persist Token values, CSS values, selectors, classes, or design metadata in `TeachingSkinRef`; only the stable Variant ID belongs there.
 
-Preset source lives in `presets/**/preset.ts` and is checked by `npm run skin:check`. A published Preset `(id, version)` is compatibility API: do not materially change its Skin → Variant bindings in place. Publish a new version and retain old versions for pinned documents. Presets never assign a Skin, persist Tokens/CSS, or materialize a Variant into a block.
+Preset source lives in `presets/**/preset.ts` and is checked by `npm run skin:check`. A published Preset `(id, version)` is compatibility API: do not materially change its Skin → Variant bindings or `recommendedSkins` in place. Publish a new version and retain old versions for pinned documents. Presets never assign a Skin during rendering, persist Tokens/CSS, or materialize a Variant into a block. Optional `recommendedSkins` is source-only and may name only a Heading and/or Box Skin which is also bound by the same Preset.
 
 ## User-facing Preset and Variant UI
 
 The Teaching Document 「文档样式」workspace is a consumer of trusted source registries, not an authoring surface. Preset selection persists only the exact `{ id, version }` ref. 「默认」removes the Preset and does not write `design: {}` or a fake base Preset. A block-local Variant override persists only its local `variant` ID; 「跟随整体」removes that key. Never invent `base`, `default`, `inherit`, an empty string, or `null` sentinels.
 
 Unknown Preset, Skin, and Variant refs must remain visible and preserved until the user explicitly chooses a replacement. UI must consume the shared resolver for effective source semantics. It must never materialize a Preset, automatically assign a Skin, or persist Tokens, CSS, classes, bindings, or HTML into a document.
+
+The Document Style page may offer 「应用推荐样式」only as an explicit user action. Its planner may select only compatible Heading/Box blocks with `skin === undefined`; never overwrite existing, missing, or unknown Skin refs. Apply is one document-level operation and writes only `{ skin: { id, version } }`, never a Variant or provenance field. `recommendedSkins` is never persisted in TeachingDocument JSON and must not be inferred from ordinary Preset bindings.
 
 Any Token-driven change to geometry (border width, spacing, radius, typography, display or sizing) must be checked at an A4 boundary and in print/pagination. The runtime invalidates geometry conservatively, but authors remain responsible for confirming a Skin is print-safe.
 

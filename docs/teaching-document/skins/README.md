@@ -29,10 +29,10 @@ The scaffold writes only `frontend/src/extensions/teaching-document/skins/custom
 
 Use [create-heading-skin.md](create-heading-skin.md) or [create-box-skin.md](create-box-skin.md) for a complete example. The core API is documented in [api-reference.md](api-reference.md).
 
-Pinned document-level Skin → Variant composition is documented in [presets.md](presets.md). Phase 2B-4 exposes those source-defined Presets through the Teaching Document 「文档样式」workspace; the page selects only an exact pinned reference and never authors source definitions.
+Pinned document-level Skin → Variant composition is documented in [presets.md](presets.md). The 「文档样式」workspace selects only an exact pinned reference and never authors source definitions. Phase 2B-5 additionally supports an explicit Recommended Skin setup action: a source Preset can recommend compatible Heading/Box Skin identities, and the user may choose to apply them only to blocks with no Skin.
 
 ## Phase 1 boundaries
 
 Implemented: source discovery, registry, resolver/fallback, Heading and Box selectors, persistent refs, and declarative CSS skins.
 
-Not implemented: document themes, theme packs, runtime uploads, custom React renderers, arbitrary CSS persistence, a marketplace, plugin JavaScript, explicit Base persistence, or Apply/Freeze Preset. See [tooling.md](tooling.md) and [agent-playbook.md](agent-playbook.md) for the Phase 2A authoring workflow.
+Not implemented: document themes, theme packs, runtime uploads, custom React renderers, arbitrary CSS persistence, a marketplace, plugin JavaScript, explicit Base persistence, automatic Preset application, or Freeze/Detach Preset. See [tooling.md](tooling.md) and [agent-playbook.md](agent-playbook.md) for the Phase 2A authoring workflow.

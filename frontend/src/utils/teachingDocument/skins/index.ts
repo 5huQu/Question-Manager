@@ -47,7 +47,7 @@ export {
   resolveTeachingSkinPreset,
   TeachingSkinPresetRegistry,
 } from './presets'
-export type { TeachingSkinPresetDefinition, TeachingSkinPresetInput, TeachingSkinPresetIssue, TeachingSkinPresetIssueCode, TeachingSkinPresetResolution } from './presets'
+export type { TeachingSkinPresetDefinition, TeachingSkinPresetInput, TeachingSkinPresetIssue, TeachingSkinPresetIssueCode, TeachingSkinPresetRecommendedSkins, TeachingSkinPresetResolution } from './presets'
 export { teachingSkinPresetRegistry } from './presetRegistryInstance'
 export {
   resolveTeachingSkinDesignRenderState,

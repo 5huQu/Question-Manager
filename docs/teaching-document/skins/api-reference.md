@@ -27,6 +27,8 @@ Persistence validation is structural only and never checks whether the current r
 
 An optional document design object may contain only `preset: { id, version }`. Both fields are required and `version` is a positive integer. It is a pinned source Preset reference, not CSS, Token, or a Variant snapshot. Registry availability is not checked at persistence boundaries: an unknown well-formed reference round-trips unchanged and contributes no runtime binding until its exact version is available. The 「文档样式」page displays it as unavailable but does not mutate it on render; selecting Default or a registry card is the only way the UI changes this ref. See [presets.md](presets.md).
 
+Source Preset definitions may optionally contain `recommendedSkins?: { heading?: string; box?: string }`. This is not part of `TeachingDocument.design`, `TeachingSkinRef`, or any server payload. It is a trusted source hint for the explicit Document Style 「应用推荐样式」action. Each recommendation must be an exact, registered Skin ID with the matching target and an entry in the same Preset’s `bindings`; the source checker rejects every other shape. Applying one recommendation writes only that Skin’s `{ id, version }` into a compatible unskinned block. It never writes the bound Variant or a Base/default/inherit sentinel.
+
 ## Shared definition fields
 
 ```ts

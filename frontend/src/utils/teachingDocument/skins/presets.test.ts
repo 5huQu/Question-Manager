@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { teachingSkinRegistry } from './registryInstance'
+import { teachingSkinPresetRegistry } from './presetRegistryInstance'
 import {
   TeachingSkinPresetRegistry,
   isTeachingSkinPresetDefinition,
@@ -19,20 +20,43 @@ const warmV1 = {
   },
 }
 
+const warmV2 = {
+  ...warmV1,
+  version: 2,
+  recommendedSkins: {
+    heading: 'builtin.heading.left-accent',
+    box: 'builtin.box.left-accent',
+  },
+}
+
 describe('Teaching Skin Presets', () => {
+  it('keeps published Warm v1 unchanged while registering Warm v2 recommendations', () => {
+    const resolvedV1 = resolveTeachingSkinPreset(teachingSkinPresetRegistry, { id: 'builtin.preset.warm', version: 1 }, teachingSkinRegistry)
+    const resolvedV2 = resolveTeachingSkinPreset(teachingSkinPresetRegistry, { id: 'builtin.preset.warm', version: 2 }, teachingSkinRegistry)
+
+    expect(resolvedV1).toMatchObject({ status: 'resolved', bindings: warmV1.bindings })
+    expect(resolvedV2).toMatchObject({ status: 'resolved', bindings: warmV1.bindings })
+    if (resolvedV1.status !== 'resolved' || resolvedV2.status !== 'resolved') throw new Error('Warm Preset fixture failed to resolve')
+    expect(resolvedV1.preset.recommendedSkins).toBeUndefined()
+    expect(resolvedV2.preset.recommendedSkins).toEqual(warmV2.recommendedSkins)
+  })
+
   it('registers multiple versions and resolves only the exact pinned version', () => {
     const registry = new TeachingSkinPresetRegistry()
     registry.register(warmV1)
-    registry.register({ ...warmV1, version: 2, label: 'Warm v2', bindings: { 'builtin.heading.left-accent': 'amber' } })
-    expect(resolveTeachingSkinPreset(registry, { id: warmV1.id, version: 1 }, teachingSkinRegistry).status).toBe('resolved')
+    registry.register(warmV2)
+    expect(resolveTeachingSkinPreset(registry, { id: warmV1.id, version: 1 }, teachingSkinRegistry)).toMatchObject({ status: 'resolved', preset: { version: 1 }, bindings: warmV1.bindings })
+    expect(resolveTeachingSkinPreset(registry, { id: warmV2.id, version: 2 }, teachingSkinRegistry)).toMatchObject({ status: 'resolved', preset: { version: 2, recommendedSkins: warmV2.recommendedSkins }, bindings: warmV1.bindings })
     expect(resolveTeachingSkinPreset(registry, { id: warmV1.id, version: 3 }, teachingSkinRegistry)).toMatchObject({ status: 'unavailable', issues: [{ code: 'preset-version-missing' }] })
     expect(() => registry.register(warmV1)).toThrow(/already registered/)
   })
 
   it('validates source and persistence contracts without registry availability', () => {
     expect(isTeachingSkinPresetDefinition(warmV1)).toBe(true)
+    expect(isTeachingSkinPresetDefinition(warmV2)).toBe(true)
     expect(isTeachingSkinPresetDefinition({ ...warmV1, bindings: {} })).toBe(false)
     expect(isTeachingSkinPresetDefinition({ ...warmV1, extra: true })).toBe(false)
+    expect(isTeachingSkinPresetDefinition({ ...warmV1, recommendedSkins: { paragraph: 'builtin.heading.left-accent' } })).toBe(false)
     expect(parseTeachingSkinPresetRef({ id: 'plugin.preset.future', version: 3 })).toEqual({ id: 'plugin.preset.future', version: 3 })
     expect(parseTeachingSkinPresetRef({ id: 'plugin.preset.future' })).toBeUndefined()
     expect(parseTeachingSkinPresetRef({ id: 'plugin.preset.future', version: 3, bindings: {} })).toBeUndefined()
@@ -55,6 +79,15 @@ describe('Teaching Skin Presets', () => {
       mutation(preset)
       expect(resolveTeachingSkinPreset(registry, { id: warmV1.id, version: 1 }, teachingSkinRegistry)).toMatchObject({ status: 'unavailable', issues: [{ code: 'preset-invalid' }] })
     }
+  })
+
+  it('keeps Preset rendering available when only a source recommendation becomes unusable', () => {
+    const registry = new TeachingSkinPresetRegistry()
+    registry.register({ ...warmV2, recommendedSkins: { heading: 'plugin.heading.missing', box: 'builtin.box.left-accent' } })
+    expect(resolveTeachingSkinPreset(registry, { id: warmV2.id, version: 2 }, teachingSkinRegistry)).toMatchObject({
+      status: 'resolved',
+      bindings: warmV1.bindings,
+    })
   })
 
   it('uses preview, explicit Variant, Preset, and Base in the documented order', () => {
