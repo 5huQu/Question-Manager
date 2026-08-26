@@ -6,7 +6,7 @@ const ISSUE_LABELS: Record<string, string> = {
   choice_options_unrecognized: '选项待核对',
   missing_solution: '缺少解析文档匹配',
   solution_conflict: '解析冲突',
-  unmatched_solution: '多余解析',
+  unmatched_solution: '解析题号未匹配',
 }
 
 const PARSER_DIAGNOSTIC_LABELS: Record<string, string> = {
@@ -15,7 +15,7 @@ const PARSER_DIAGNOSTIC_LABELS: Record<string, string> = {
   metadata_used_as_answer: '说明误作答案',
   table_answer_blocked_by_existing_answer: '答案表未覆盖',
   missing_analysis: '缺少解析',
-  unmatched_solution: '多余解析',
+  unmatched_solution: '解析题号未匹配',
 }
 
 export function importIssueLabel(code?: string) {

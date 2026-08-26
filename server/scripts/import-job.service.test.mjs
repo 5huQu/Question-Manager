@@ -200,6 +200,7 @@ try {
   assert.equal(q1.sourceRefs.some((ref) => ref.kind === 'answer' && ref.blockIds.includes('b_s1_answer')), true)
   assert.equal(q1.sourceRefs.some((ref) => ref.kind === 'analysis' && ref.blockIds.includes('b_s1_analysis')), true)
   assert.equal(q1.issues.some((issue) => issue.code === 'unmatched_solution'), true)
+  assert.match(q1.issues.find((issue) => issue.code === 'unmatched_solution')?.message || '', /原卷识别稿中未检测到这些题号/)
   assert.equal(q2.answerText, '4')
   assert.match(q2.analysisMarkdown, /2a=4/)
   assert.equal(q2.status, 'ready')

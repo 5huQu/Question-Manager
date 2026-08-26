@@ -320,7 +320,7 @@ export function parseCandidatesForImportJob(id: string, body: Record<string, unk
       const solutionOcrRecord = latestOcrDocumentForSource(solutionSource.id)
       const solutionOcrDocument = loadOcrDocument(solutionOcrRecord.id)
       const solutionMatches = parseSolutionDocument(solutionOcrDocument, { config })
-      candidates = mergeQuestionCandidatesWithSolutions(candidates, solutionMatches, solutionOcrDocument)
+      candidates = mergeQuestionCandidatesWithSolutions(candidates, solutionMatches, solutionOcrDocument, questionOcrDocument, config)
       diagnosticDocument = solutionOcrDocument
       sourceRepo.updateSourceDocument(solutionSource.id, { status: 'parsed' })
     }

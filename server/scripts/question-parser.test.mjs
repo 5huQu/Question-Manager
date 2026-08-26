@@ -1007,7 +1007,7 @@ const notesAndFormulaScoreBoundaryDocument = {
     '参考公式：',
     '1. 若 $0 < q < 1$，则 $q^n$ 收敛。',
     '2. $E(X+Y)=E(X)+E(Y)$。',
-    '19. （17分）',
+    '19. （满分17分）',
     '已知函数题干，求函数结论。',
   ].join('\n'),
   pages: [],

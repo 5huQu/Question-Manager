@@ -6,6 +6,9 @@ import { statusForIssues } from './candidate-validator.js'
 import type { SolutionMatch } from './solution-matcher.js'
 import { cleanOcrPresentationMarkdown } from './presentation-cleanup.js'
 import { inferQuestionType } from '../../utils/question-type.js'
+import { detectQuestionNumbers } from './question-number-detector.js'
+import { getParserConfig } from './parser-config.js'
+import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
 
 function hasText(value: string | undefined) {
   return Boolean(String(value || '').trim())
@@ -88,6 +91,8 @@ export function mergeQuestionCandidatesWithSolutions(
   candidates: QuestionCandidate[],
   solutionMatches: Map<string, SolutionMatch>,
   solutionDocument: OCRDocument,
+  questionDocument?: OCRDocument,
+  config: ImportFlowV2ParserConfig = getParserConfig(),
 ): QuestionCandidate[] {
   const matchedQuestionNos = new Set<string>()
   const merged = candidates.map((candidate) => {
@@ -157,7 +162,20 @@ export function mergeQuestionCandidatesWithSolutions(
 
   if (unmatched.length && merged.length) {
     const first = merged[0]
-    first.issues = appendIssue(first.issues, issue('unmatched_solution', `解析文档中存在未匹配题干的题号：${unmatched.join('、')}。`))
+    const sourceQuestionNos = questionDocument
+      ? new Set(detectQuestionNumbers(String(questionDocument.markdown || ''), config).map((match) => match.questionNo))
+      : new Set<string>()
+    const visibleInSource = unmatched.filter((questionNo) => sourceQuestionNos.has(questionNo))
+    const lastCandidateNo = candidates.at(-1)?.questionNo || '未知'
+    const detail = questionDocument
+      ? visibleInSource.length
+        ? `原卷识别稿中能找到这些题号，但当前候选题只解析到第 ${lastCandidateNo} 题；题号所在行可能被说明/参考公式区过滤，请查看原卷题号行后重新解析。`
+        : `原卷识别稿中未检测到这些题号，请先检查原卷 OCR 文本或补充题号起点标记。`
+      : ''
+    first.issues = appendIssue(first.issues, issue(
+      'unmatched_solution',
+      `解析文档中存在未匹配题干的题号：${unmatched.join('、')}。${detail ? ` ${detail}` : ''}`,
+    ))
     first.status = statusForIssues(first.issues)
   }
 
