@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import { defineTeachingSkinPreset, teachingSkinPresetRegistry } from '@/utils/teachingDocument/skins'
-import { DocumentStyleWorkspace, teachingDocumentLocalOverrides, teachingDocumentStyleMappings, withTeachingDocumentPreset } from './DocumentStyleWorkspace'
+import { DocumentStyleWorkspace, teachingDocumentLocalOverrides, teachingDocumentSkinUsages, teachingDocumentStyleMappings, withTeachingDocumentPreset } from './DocumentStyleWorkspace'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -118,5 +118,33 @@ describe('DocumentStyleWorkspace', () => {
     ]))
     expect(teachingDocumentLocalOverrides(document)).toEqual([expect.objectContaining({ blockId: 'box-1', variantId: 'green' })])
     expect(withTeachingDocumentPreset(document).content).toEqual(document.content)
+  })
+
+  it('lists every Skin actually attached to headings and knowledge cards, even without a Preset', async () => {
+    const document = structuredClone(baseDocument)
+    const box = document.content[1]
+    if (box?.type === 'box') box.skin = { id: 'builtin.box.header-band', version: 1 }
+
+    expect(teachingDocumentSkinUsages(document)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ blockLabel: '标题', skinId: 'builtin.heading.left-accent', skinLabel: '左侧强调线', source: 'base', count: 1 }),
+      expect.objectContaining({ blockLabel: '知识卡片', skinId: 'builtin.box.header-band', skinLabel: '深色标题带', source: 'base', count: 1 }),
+    ]))
+
+    await renderWorkspace(document)
+    expect(container!.textContent).toContain('文档皮肤')
+    expect(container!.textContent).toContain('知识卡片 · 深色标题带')
+    expect(container!.textContent).toContain('当前：皮肤基础样式')
+  })
+
+  it('reports Preset and local Variant sources separately for used Skins', () => {
+    const document = structuredClone(baseDocument)
+    document.design = { preset: { id: 'builtin.preset.warm', version: 1 } }
+    const box = document.content[1]
+    if (box?.type === 'box') box.skin = { ...box.skin!, variant: 'green' }
+
+    expect(teachingDocumentSkinUsages(document)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ skinId: 'builtin.heading.left-accent', variantId: 'amber', source: 'preset' }),
+      expect.objectContaining({ skinId: 'builtin.box.left-accent', variantId: 'green', source: 'explicit' }),
+    ]))
   })
 })

@@ -8,6 +8,7 @@ import {
   resolveBoxSkin,
   resolveHeadingSkin,
   resolveTeachingDocumentSkinPresetContext,
+  resolveTeachingSkinVariantSelection,
   teachingSkinPresetRegistry,
   teachingSkinRegistry,
 } from '@/utils/teachingDocument/skins'
@@ -28,6 +29,18 @@ type LocalOverride = {
   skinLabel: string
   variantId: string
   variantLabel?: string
+}
+
+type DocumentSkinUsage = {
+  skinId: string
+  skinVersion?: number
+  skinLabel: string
+  blockLabel: '标题' | '知识卡片'
+  variantId?: string
+  variantLabel?: string
+  source: 'base' | 'preset' | 'explicit'
+  unavailable?: 'missing' | 'incompatible'
+  count: number
 }
 
 function inlineText(block: Extract<TeachingBlock, { type: 'heading' }>) {
@@ -84,6 +97,60 @@ export function teachingDocumentLocalOverrides(document: TeachingDocumentV1): Lo
     })
   })
   return overrides
+}
+
+/**
+ * Presentation-only summary of Skin identities already attached to document blocks.
+ * This intentionally uses the shared resolver so the Style page never recreates
+ * Preset/explicit/Base precedence.
+ */
+export function teachingDocumentSkinUsages(document: TeachingDocumentV1): DocumentSkinUsage[] {
+  const preset = resolveTeachingDocumentSkinPresetContext(document.design?.preset)
+  const usages = new Map<string, DocumentSkinUsage>()
+  visitSkinBlocks(document.content, (block) => {
+    if (!block.skin) return
+    const resolution = block.type === 'heading'
+      ? resolveHeadingSkin(block.skin, block.level)
+      : resolveBoxSkin(block.skin, block.templateId)
+    const selection = resolveTeachingSkinVariantSelection(block.skin, block.skin.id, undefined, preset.bindings)
+    const source = selection.source === 'explicit' || selection.source === 'preset' ? selection.source : 'base'
+    const definition = resolution.status === 'resolved' ? resolution.definition : undefined
+    const unavailable = resolution.status === 'missing' || resolution.status === 'incompatible' ? resolution.status : undefined
+    const variantLabel = selection.requestedVariantId
+      ? definition?.design?.variants?.find((variant) => variant.id === selection.requestedVariantId)?.label
+      : undefined
+    const key = [
+      block.type,
+      block.skin.id,
+      block.skin.version || '',
+      selection.requestedVariantId || '',
+      source,
+      unavailable || '',
+    ].join(':')
+    const existing = usages.get(key)
+    if (existing) {
+      existing.count += 1
+      return
+    }
+    usages.set(key, {
+      skinId: block.skin.id,
+      skinVersion: block.skin.version,
+      skinLabel: definition?.label || block.skin.id,
+      blockLabel: block.type === 'heading' ? '标题' : '知识卡片',
+      variantId: selection.requestedVariantId,
+      variantLabel,
+      source,
+      unavailable,
+      count: 1,
+    })
+  })
+  return [...usages.values()]
+}
+
+function skinUsageSourceLabel(usage: DocumentSkinUsage, presetLabel?: string) {
+  if (usage.source === 'explicit') return '局部覆盖'
+  if (usage.source === 'preset') return presetLabel || '当前整体样式'
+  return '基础样式'
 }
 
 /** Persists only the exact Preset ref; clearing removes design entirely instead of writing design: {}. */
@@ -145,8 +212,10 @@ export function DocumentStyleWorkspace({
   const presets = teachingSkinPresetRegistry.list()
   const mappings = useMemo(() => teachingDocumentStyleMappings(document), [document])
   const overrides = useMemo(() => teachingDocumentLocalOverrides(document), [document])
+  const skinUsages = useMemo(() => teachingDocumentSkinUsages(document), [document])
   const currentRef = document.design?.preset
   const presetHasEffect = mappings.some((mapping) => mapping.affectedCount > 0)
+  const presetLabel = presetContext.status === 'resolved' ? `${presetContext.preset.label} · v${presetContext.preset.version}` : undefined
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
@@ -177,6 +246,19 @@ export function DocumentStyleWorkspace({
             ))}
             {!presets.length ? <p className="rounded-lg border border-dashed border-zinc-200 p-3 text-xs text-zinc-500 dark:border-zinc-800">当前没有可选的文档样式。</p> : null}
           </div>
+        </section>
+
+        <section className="mt-5 border-t border-zinc-200 pt-5 dark:border-zinc-800">
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">文档皮肤</h2>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">当前文档实际已使用的标题和知识卡片皮肤。</p>
+          {skinUsages.length ? <div className="mt-3 space-y-2">{skinUsages.map((usage) => (
+            <div key={`${usage.blockLabel}:${usage.skinId}:v${usage.skinVersion || ''}:${usage.variantId || ''}:${usage.source}:${usage.unavailable || ''}`} className="rounded-lg border border-zinc-200 bg-white p-2.5 dark:border-zinc-800 dark:bg-zinc-950">
+              <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{usage.blockLabel} · {usage.skinLabel}</p>
+              <p className="mt-1 text-[11px] text-zinc-500">当前：{usage.variantLabel || (usage.variantId ? `${usage.variantId}（不可用）` : '皮肤基础样式')}</p>
+              <p className="mt-1 text-[11px] text-zinc-400">来源：{skinUsageSourceLabel(usage, presetLabel)} · {usage.count} 个块</p>
+              {usage.unavailable ? <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[11px] leading-4 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">{usage.unavailable === 'missing' ? '皮肤不可用' : '皮肤与当前元素不兼容'}，已保留原引用并安全回退。</p> : null}
+            </div>
+          ))}</div> : <p className="mt-2 text-xs text-zinc-500">当前文档尚未为标题或知识卡片选择皮肤。</p>}
         </section>
 
         <section className="mt-5 border-t border-zinc-200 pt-5 dark:border-zinc-800">
