@@ -1,0 +1,60 @@
+import './styles.css'
+import { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'
+
+export default defineHeadingSkin({
+  id: 'builtin.heading.underline',
+  label: '下划线规则',
+  description: '标题底部强调规则线，H1 叠加通栏细线的期刊式层级。',
+  version: 1,
+  printSafe: true,
+  className: 'td-skin-heading-underline',
+  supportedLevels: [1, 2, 3, 4],
+  tags: ['builtin', 'heading'],
+  design: {
+    tokens: [
+      { id: 'builtin.heading.underline.accent-blue', kind: 'color', label: '蓝色规则线', printSafe: true, value: { hex: '#2563EB' } },
+      { id: 'builtin.heading.underline.accent-green', kind: 'color', label: '绿色规则线', printSafe: true, value: { hex: '#047857' } },
+      { id: 'builtin.heading.underline.accent-amber', kind: 'color', label: '琥珀规则线', printSafe: true, value: { hex: '#B45309' } },
+      { id: 'builtin.heading.underline.accent-red', kind: 'color', label: '红色规则线', printSafe: true, value: { hex: '#B91C1C' } },
+      { id: 'builtin.heading.underline.accent-purple', kind: 'color', label: '紫色规则线', printSafe: true, value: { hex: '#7C3AED' } },
+      { id: 'builtin.heading.underline.accent-teal', kind: 'color', label: '青色规则线', printSafe: true, value: { hex: '#0F766E' } },
+      { id: 'builtin.heading.underline.accent-neutral', kind: 'color', label: '中性规则线', printSafe: true, value: { hex: '#3F3F46' } },
+      { id: 'builtin.heading.underline.hairline', kind: 'color', label: '通栏细线', printSafe: true, value: { hex: '#D4D4D8' } },
+      { id: 'builtin.heading.underline.rule-blue', kind: 'border', label: '蓝色规则线边框', printSafe: true, value: { widthPx: 3, style: 'solid', colorTokenId: 'builtin.heading.underline.accent-blue' } },
+      { id: 'builtin.heading.underline.rule-green', kind: 'border', label: '绿色规则线边框', printSafe: true, value: { widthPx: 3, style: 'solid', colorTokenId: 'builtin.heading.underline.accent-green' } },
+      { id: 'builtin.heading.underline.rule-amber', kind: 'border', label: '琥珀规则线边框', printSafe: true, value: { widthPx: 3, style: 'solid', colorTokenId: 'builtin.heading.underline.accent-amber' } },
+      { id: 'builtin.heading.underline.rule-red', kind: 'border', label: '红色规则线边框', printSafe: true, value: { widthPx: 3, style: 'solid', colorTokenId: 'builtin.heading.underline.accent-red' } },
+      { id: 'builtin.heading.underline.rule-purple', kind: 'border', label: '紫色规则线边框', printSafe: true, value: { widthPx: 3, style: 'solid', colorTokenId: 'builtin.heading.underline.accent-purple' } },
+      { id: 'builtin.heading.underline.rule-teal', kind: 'border', label: '青色规则线边框', printSafe: true, value: { widthPx: 3, style: 'solid', colorTokenId: 'builtin.heading.underline.accent-teal' } },
+      { id: 'builtin.heading.underline.rule-neutral', kind: 'border', label: '中性规则线边框', printSafe: true, value: { widthPx: 3, style: 'solid', colorTokenId: 'builtin.heading.underline.accent-neutral' } },
+      { id: 'builtin.heading.underline.rule-hairline', kind: 'border', label: '细线规则边框', printSafe: true, value: { widthPx: 1, style: 'solid', colorTokenId: 'builtin.heading.underline.hairline' } },
+    ],
+    slots: [
+      {
+        id: 'ruleBorder',
+        kind: 'border',
+        defaultTokenId: 'builtin.heading.underline.rule-blue',
+        allowedTokenIds: [
+          'builtin.heading.underline.rule-blue',
+          'builtin.heading.underline.rule-green',
+          'builtin.heading.underline.rule-amber',
+          'builtin.heading.underline.rule-red',
+          'builtin.heading.underline.rule-purple',
+          'builtin.heading.underline.rule-teal',
+          'builtin.heading.underline.rule-neutral',
+          'builtin.heading.underline.rule-hairline',
+        ],
+      },
+      { id: 'hairlineBorder', kind: 'border', defaultTokenId: 'builtin.heading.underline.rule-hairline' },
+    ],
+    variants: [
+      { id: 'blue', label: '蓝色', description: '显式选择蓝色规则线（与 Base 一致）。', tokenBindings: { ruleBorder: 'builtin.heading.underline.rule-blue' } },
+      { id: 'green', label: '绿色', description: '将标题规则线切换为绿色。', tokenBindings: { ruleBorder: 'builtin.heading.underline.rule-green' } },
+      { id: 'amber', label: '琥珀', description: '将标题规则线切换为琥珀色。', tokenBindings: { ruleBorder: 'builtin.heading.underline.rule-amber' } },
+      { id: 'red', label: '红色', description: '将标题规则线切换为红色。', tokenBindings: { ruleBorder: 'builtin.heading.underline.rule-red' } },
+      { id: 'purple', label: '紫色', description: '将标题规则线切换为紫色。', tokenBindings: { ruleBorder: 'builtin.heading.underline.rule-purple' } },
+      { id: 'teal', label: '青色', description: '将标题规则线切换为青色。', tokenBindings: { ruleBorder: 'builtin.heading.underline.rule-teal' } },
+      { id: 'neutral', label: '中性', description: '将标题规则线切换为中性灰。', tokenBindings: { ruleBorder: 'builtin.heading.underline.rule-neutral' } },
+    ],
+  },
+})

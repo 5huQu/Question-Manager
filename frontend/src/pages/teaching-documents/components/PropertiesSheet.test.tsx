@@ -96,11 +96,12 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
     await renderSheet({ block: box, topLevel: box }, onUpdate, vi.fn(), { presetContext: resolveTeachingDocumentSkinPresetContext({ id: 'builtin.preset.warm', version: 1 }) })
     expect(container!.textContent).toContain('当前：绿色')
     expect(container!.textContent).toContain('来源：Warm · v1')
-    const variant = container!.querySelector<HTMLSelectElement>('select[aria-label="局部样式"]')
-    expect(variant?.value).toBe('')
+    const variantGroup = container!.querySelector('[role="radiogroup"][aria-label="局部样式配色"]')
+    expect(variantGroup).not.toBeNull()
+    const greenSwatch = Array.from(variantGroup!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.getAttribute('aria-label') === '绿色')
+    expect(greenSwatch).toBeDefined()
     await act(async () => {
-      variant!.value = 'green'
-      variant!.dispatchEvent(new Event('change', { bubbles: true }))
+      greenSwatch!.click()
     })
     expect(onUpdate).toHaveBeenCalledWith({ skin: { id: 'builtin.box.left-accent', version: 1, variant: 'green' } })
 
@@ -109,7 +110,7 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
     await renderSheet({ block: unknownBox, topLevel: unknownBox }, unknownUpdate)
     expect(container!.textContent).toContain('局部样式不可用：futureVariant')
     expect(unknownUpdate).not.toHaveBeenCalled()
-    const restore = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent === '恢复跟随整体')
+    const restore = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent === '跟随整体')
     await act(async () => restore?.click())
     expect(unknownUpdate).toHaveBeenCalledWith({ skin: { id: 'builtin.box.left-accent', version: 1 } })
     for (const call of unknownUpdate.mock.calls) {
@@ -124,7 +125,7 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
     await renderSheet({ block: zeroVariantUnknownBox, topLevel: zeroVariantUnknownBox }, zeroVariantUnknownUpdate)
     expect(container!.textContent).toContain('当前：futureVariant')
     expect(container!.textContent).toContain('局部样式不可用：futureVariant')
-    expect(container!.querySelector('select[aria-label="局部样式"]')).toBeNull()
+    expect(container!.querySelector('[role="radiogroup"]')).toBeNull()
     expect(zeroVariantUnknownUpdate).not.toHaveBeenCalled()
     const zeroVariantRestore = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent === '恢复跟随整体')
     await act(async () => zeroVariantRestore?.click())
@@ -133,7 +134,7 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
     const zeroVariantBox = { ...box, skin: { id: 'builtin.box.header-band', version: 1 } }
     await renderSheet({ block: zeroVariantBox, topLevel: zeroVariantBox })
     expect(container!.textContent).not.toContain('局部样式')
-    expect(container!.querySelector('select[aria-label="局部样式"]')).toBeNull()
+    expect(container!.querySelector('[role="radiogroup"]')).toBeNull()
   })
 
   it('在布局页用显式标记控制对象后的强制换页', async () => {

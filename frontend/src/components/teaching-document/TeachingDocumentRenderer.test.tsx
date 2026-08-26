@@ -115,7 +115,7 @@ describe('TeachingDocumentRenderer fallbacks', () => {
     const html = renderToStaticMarkup(
       <TeachingDocumentRenderer document={documentWith([
         { type: 'heading', id: 'legacy-heading', level: 2, content: [{ type: 'text', text: '旧标题' }] },
-        { type: 'heading', id: 'plain-skin-heading', level: 2, content: [{ type: 'text', text: '普通 Skin' }], skin: { id: 'builtin.heading.pill', version: 1 } },
+        { type: 'box', id: 'plain-skin-box', templateId: 'concept', breakBehavior: 'auto', children: [], skin: { id: 'builtin.box.header-band', version: 1 } },
       ])} />,
     )
     expect(html).not.toContain('--td-skin-')

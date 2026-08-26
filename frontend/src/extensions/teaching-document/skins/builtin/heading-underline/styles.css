@@ -1,0 +1,25 @@
+/* 下划线规则：强调规则线 + H1 叠加通栏细线的双规则层级 */
+.td-skin-heading-underline {
+  border-bottom: var(--td-skin-builtin--heading--underline-rule-border, 3px solid #2563eb);
+  padding-bottom: 0.25em;
+}
+
+/* H1：强调规则线之下再垫一条通栏细线（期刊式双规则） */
+.td-skin-heading-underline[data-level='1'] {
+  border-bottom: var(--td-skin-builtin--heading--underline-hairline-border, 1px solid #d4d4d8);
+  padding-bottom: 0.35em;
+}
+
+.td-skin-heading-underline[data-level='1']::after {
+  content: '';
+  display: block;
+  margin-top: 0.3em;
+  border-bottom: var(--td-skin-builtin--heading--underline-rule-border, 3px solid #2563eb);
+}
+
+/* H3/H4：退化为单条中性细线，不与高级标题抢戏 */
+.td-skin-heading-underline[data-level='3'],
+.td-skin-heading-underline[data-level='4'] {
+  border-bottom: var(--td-skin-builtin--heading--underline-hairline-border, 1px solid #d4d4d8);
+  padding-bottom: 0.2em;
+}

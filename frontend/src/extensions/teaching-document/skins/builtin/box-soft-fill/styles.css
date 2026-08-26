@@ -1,0 +1,18 @@
+/* 软填充卡：整卡浅色底 + 同色系浅边框；边框保住跨页虚线契约与灰度打印结构 */
+.td-skin-box-soft-fill {
+  border: var(--td-skin-builtin--box--soft-fill-frame-border, 1px solid #bfdbfe);
+  border-radius: 4px;
+  background: var(--td-skin-builtin--box--soft-fill-body-fill, #eff6ff);
+}
+
+.td-skin-box-soft-fill .td-box-header {
+  background: var(--td-skin-builtin--box--soft-fill-header-fill, #dbeafe);
+}
+
+.td-skin-box-soft-fill .td-box-header span {
+  color: var(--td-skin-builtin--box--soft-fill-title-color, #1e40af);
+}
+
+.td-skin-box-soft-fill .td-box-body {
+  background: var(--td-skin-builtin--box--soft-fill-body-fill, #eff6ff);
+}

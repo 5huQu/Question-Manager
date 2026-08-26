@@ -1,0 +1,38 @@
+/* 章节色带：整行浅底带 + 左侧实心几何方块；方块保证黑白打印下结构可辨 */
+.td-skin-heading-section-band {
+  background: var(--td-skin-builtin--heading--section-band-band-fill, #eff6ff);
+  padding: 0.28em 0.6em;
+}
+
+.td-skin-heading-section-band::before {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-right: 0.45em;
+  vertical-align: middle;
+  background: var(--td-skin-builtin--heading--section-band-marker-fill, #2563eb);
+}
+
+/* H3：收窄色带，降低存在感 */
+.td-skin-heading-section-band[data-level='3'] {
+  padding: 0.16em 0.45em;
+}
+
+.td-skin-heading-section-band[data-level='3']::before {
+  width: 0.42em;
+  height: 0.42em;
+  margin-right: 0.4em;
+}
+
+/* H4：退化为仅几何方块 + 文字，无底色 */
+.td-skin-heading-section-band[data-level='4'] {
+  background: transparent;
+  padding: 0;
+}
+
+.td-skin-heading-section-band[data-level='4']::before {
+  width: 0.38em;
+  height: 0.38em;
+  margin-right: 0.4em;
+}

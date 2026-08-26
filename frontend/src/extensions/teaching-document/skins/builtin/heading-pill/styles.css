@@ -1,7 +1,7 @@
 .td-skin-heading-pill {
   width: fit-content;
-  border: 1px solid #d4d4d8;
+  border: var(--td-skin-builtin--heading--pill-pill-border, 1px solid #d4d4d8);
   border-radius: 999px;
-  background: #f4f4f5;
+  background: var(--td-skin-builtin--heading--pill-pill-fill, #f4f4f5);
   padding: 0.18em 0.72em;
 }

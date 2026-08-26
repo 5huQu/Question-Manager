@@ -1,0 +1,21 @@
+/* 角标括记：文字左侧的内联角形几何标记（⌐ 形），与竖线/色带/规则轴均不同 */
+.td-skin-heading-bracket::before {
+  content: '';
+  display: inline-block;
+  width: 0.7em;
+  height: 0.72em;
+  margin-right: 0.45em;
+  vertical-align: middle;
+  border-top: var(--td-skin-builtin--heading--bracket-marker-border, 2px solid #2563eb);
+  border-left: var(--td-skin-builtin--heading--bracket-marker-border, 2px solid #2563eb);
+}
+
+/* H3/H4：括记缩小、笔画变细，保持层级克制 */
+.td-skin-heading-bracket[data-level='3']::before,
+.td-skin-heading-bracket[data-level='4']::before {
+  width: 0.5em;
+  height: 0.52em;
+  margin-right: 0.38em;
+  border-top-width: 1.5px;
+  border-left-width: 1.5px;
+}

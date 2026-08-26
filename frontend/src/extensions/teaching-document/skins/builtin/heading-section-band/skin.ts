@@ -1,0 +1,105 @@
+import './styles.css'
+import { defineHeadingSkin } from '@/utils/teachingDocument/skins/authoring'
+
+export default defineHeadingSkin({
+  id: 'builtin.heading.section-band',
+  label: '章节色带',
+  description: '整行浅色底带加左侧几何方块标记的章节标题。',
+  version: 1,
+  printSafe: true,
+  className: 'td-skin-heading-section-band',
+  supportedLevels: [1, 2, 3, 4],
+  tags: ['builtin', 'heading'],
+  design: {
+    tokens: [
+      { id: 'builtin.heading.section-band.band-blue', kind: 'color', label: '浅蓝色带', printSafe: true, value: { hex: '#EFF6FF' } },
+      { id: 'builtin.heading.section-band.band-green', kind: 'color', label: '浅绿色带', printSafe: true, value: { hex: '#ECFDF5' } },
+      { id: 'builtin.heading.section-band.band-amber', kind: 'color', label: '浅琥珀色带', printSafe: true, value: { hex: '#FFFBEB' } },
+      { id: 'builtin.heading.section-band.band-red', kind: 'color', label: '浅红色带', printSafe: true, value: { hex: '#FEF2F2' } },
+      { id: 'builtin.heading.section-band.band-purple', kind: 'color', label: '浅紫色带', printSafe: true, value: { hex: '#F5F3FF' } },
+      { id: 'builtin.heading.section-band.band-teal', kind: 'color', label: '浅青色带', printSafe: true, value: { hex: '#F0FDFA' } },
+      { id: 'builtin.heading.section-band.band-neutral', kind: 'color', label: '中性色带', printSafe: true, value: { hex: '#F4F4F5' } },
+      { id: 'builtin.heading.section-band.marker-blue', kind: 'color', label: '蓝色方块', printSafe: true, value: { hex: '#2563EB' } },
+      { id: 'builtin.heading.section-band.marker-green', kind: 'color', label: '绿色方块', printSafe: true, value: { hex: '#047857' } },
+      { id: 'builtin.heading.section-band.marker-amber', kind: 'color', label: '琥珀方块', printSafe: true, value: { hex: '#B45309' } },
+      { id: 'builtin.heading.section-band.marker-red', kind: 'color', label: '红色方块', printSafe: true, value: { hex: '#B91C1C' } },
+      { id: 'builtin.heading.section-band.marker-purple', kind: 'color', label: '紫色方块', printSafe: true, value: { hex: '#7C3AED' } },
+      { id: 'builtin.heading.section-band.marker-teal', kind: 'color', label: '青色方块', printSafe: true, value: { hex: '#0F766E' } },
+      { id: 'builtin.heading.section-band.marker-neutral', kind: 'color', label: '中性方块', printSafe: true, value: { hex: '#3F3F46' } },
+    ],
+    slots: [
+      {
+        id: 'bandFill',
+        kind: 'color',
+        defaultTokenId: 'builtin.heading.section-band.band-blue',
+        allowedTokenIds: [
+          'builtin.heading.section-band.band-blue',
+          'builtin.heading.section-band.band-green',
+          'builtin.heading.section-band.band-amber',
+          'builtin.heading.section-band.band-red',
+          'builtin.heading.section-band.band-purple',
+          'builtin.heading.section-band.band-teal',
+          'builtin.heading.section-band.band-neutral',
+        ],
+      },
+      {
+        id: 'markerFill',
+        kind: 'color',
+        defaultTokenId: 'builtin.heading.section-band.marker-blue',
+        allowedTokenIds: [
+          'builtin.heading.section-band.marker-blue',
+          'builtin.heading.section-band.marker-green',
+          'builtin.heading.section-band.marker-amber',
+          'builtin.heading.section-band.marker-red',
+          'builtin.heading.section-band.marker-purple',
+          'builtin.heading.section-band.marker-teal',
+          'builtin.heading.section-band.marker-neutral',
+        ],
+      },
+    ],
+    variants: [
+      {
+        id: 'blue',
+        label: '蓝色',
+        description: '显式选择蓝色色带（与 Base 一致）。',
+        tokenBindings: { bandFill: 'builtin.heading.section-band.band-blue', markerFill: 'builtin.heading.section-band.marker-blue' },
+      },
+      {
+        id: 'green',
+        label: '绿色',
+        description: '将章节色带切换为绿色。',
+        tokenBindings: { bandFill: 'builtin.heading.section-band.band-green', markerFill: 'builtin.heading.section-band.marker-green' },
+      },
+      {
+        id: 'amber',
+        label: '琥珀',
+        description: '将章节色带切换为琥珀色。',
+        tokenBindings: { bandFill: 'builtin.heading.section-band.band-amber', markerFill: 'builtin.heading.section-band.marker-amber' },
+      },
+      {
+        id: 'red',
+        label: '红色',
+        description: '将章节色带切换为红色。',
+        tokenBindings: { bandFill: 'builtin.heading.section-band.band-red', markerFill: 'builtin.heading.section-band.marker-red' },
+      },
+      {
+        id: 'purple',
+        label: '紫色',
+        description: '将章节色带切换为紫色。',
+        tokenBindings: { bandFill: 'builtin.heading.section-band.band-purple', markerFill: 'builtin.heading.section-band.marker-purple' },
+      },
+      {
+        id: 'teal',
+        label: '青色',
+        description: '将章节色带切换为青色。',
+        tokenBindings: { bandFill: 'builtin.heading.section-band.band-teal', markerFill: 'builtin.heading.section-band.marker-teal' },
+      },
+      {
+        id: 'neutral',
+        label: '中性',
+        description: '将章节色带切换为中性灰。',
+        tokenBindings: { bandFill: 'builtin.heading.section-band.band-neutral', markerFill: 'builtin.heading.section-band.marker-neutral' },
+      },
+    ],
+  },
+})

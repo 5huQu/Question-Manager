@@ -1,0 +1,19 @@
+/* 细线框卡：纯线框零填充，标题栏仅以细分隔线区隔（灰度打印保留完整结构） */
+.td-skin-box-outline {
+  border: var(--td-skin-builtin--box--outline-frame-border, 1px solid #d4d4d8);
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.td-skin-box-outline .td-box-header {
+  background: transparent;
+  border-bottom: var(--td-skin-builtin--box--outline-divider-border, 1px solid #e4e4e7);
+}
+
+.td-skin-box-outline .td-box-header span {
+  color: var(--td-skin-builtin--box--outline-title-color, #3f3f46);
+}
+
+.td-skin-box-outline .td-box-body {
+  background: #ffffff;
+}

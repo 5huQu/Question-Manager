@@ -3,14 +3,16 @@ import { Copy, FileStack, PanelsTopLeft } from 'lucide-react'
 import { A4PaginationPreview } from '@/components/teaching-document/A4PaginationPreview'
 import { TeachingDocumentRenderer } from '@/components/teaching-document/TeachingDocumentRenderer'
 import type { TeachingSkinTarget, TeachingSkinVariantId } from '@/utils/teachingDocument/skins'
-import { skinLabCompatibility, skinLabDefinitions, skinLabDesignState, skinLabDocument, skinLabVariants } from './teachingSkinLabModel'
+import { teachingSkinVariantSwatchColor } from '@/extensions/teaching-document/skins/shared/palette'
+import { skinLabCompatibility, skinLabDefinitionGroups, skinLabDefinitions, skinLabDesignState, skinLabDocument, skinLabVariants } from './teachingSkinLabModel'
 import '@/components/teaching-document/teaching-document.css'
 
 type TargetFilter = 'all' | TeachingSkinTarget
 
 export default function TeachingSkinLabPage() {
-  const [target, setTarget] = useState<TargetFilter>('heading')
+  const [target, setTarget] = useState<TargetFilter>('all')
   const definitions = useMemo(() => skinLabDefinitions(target === 'all' ? undefined : target), [target])
+  const groups = useMemo(() => skinLabDefinitionGroups(target === 'all' ? undefined : target), [target])
   const [selectedId, setSelectedId] = useState(() => definitions[0]?.id || '')
   const [selectedVariantId, setSelectedVariantId] = useState<TeachingSkinVariantId | null>(null)
   const selected = definitions.find((definition) => definition.id === selectedId) || definitions[0]
@@ -36,7 +38,7 @@ export default function TeachingSkinLabPage() {
 
   return (
     <main className="mx-auto w-full max-w-[1500px] space-y-4">
-      <header className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <header className="sticky top-0 z-10 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Developer tool · Read only</p>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -52,14 +54,22 @@ export default function TeachingSkinLabPage() {
       </header>
 
       <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        {/* 固定在头部卡片下方：外层滚动容器为 app-scroll-container，顶栏偏移 ≈ 头部卡片高度 + 间距 + 页面内边距 */}
+        <aside className="xl:sticky xl:top-[8.5rem] xl:flex xl:max-h-[calc(100vh-10rem)] xl:flex-col xl:overflow-y-auto rounded-xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
           <p className="px-2 pb-2 text-xs font-medium text-zinc-500">自动发现的 Skin（{definitions.length}）</p>
-          <div className="space-y-1">
-            {definitions.map((definition) => (
-              <button key={definition.id} type="button" onClick={() => setSelectedId(definition.id)} data-skin-id={definition.id} className={`w-full rounded-lg border px-3 py-2 text-left ${definition.id === selected.id ? 'border-zinc-900 bg-zinc-50/70 dark:border-zinc-100 dark:bg-zinc-900/50' : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900/50'}`}>
-                <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-100">{definition.label}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-zinc-500">{definition.id}</span>
-              </button>
+          <div className="flex flex-col gap-3">
+            {groups.map((group) => (
+              <div key={group.label}>
+                <p className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-400">{group.label}</p>
+                <div className="space-y-1">
+                  {group.definitions.map((definition) => (
+                    <button key={definition.id} type="button" onClick={() => setSelectedId(definition.id)} data-skin-id={definition.id} className={`w-full rounded-lg border px-3 py-2 text-left ${definition.id === selected.id ? 'border-zinc-900 bg-zinc-50/70 dark:border-zinc-100 dark:bg-zinc-900/50' : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900/50'}`}>
+                      <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-100">{definition.label}</span>
+                      <span className="mt-0.5 block truncate text-[11px] text-zinc-500">{definition.id}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </aside>
@@ -82,7 +92,15 @@ export default function TeachingSkinLabPage() {
               <p className="text-xs font-medium text-zinc-500">Preview variant（仅此实验室会话，不写入文档）</p>
               <div className="mt-2 flex flex-wrap gap-2" aria-label="Skin design variant">
                 <button type="button" onClick={() => setSelectedVariantId(null)} className={`rounded-md border px-2.5 py-1 text-xs font-medium ${selectedVariantId === null ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900'}`}>Base</button>
-                {variants.map((variant) => <button key={variant.id} type="button" onClick={() => setSelectedVariantId(variant.id)} className={`rounded-md border px-2.5 py-1 text-xs font-medium ${selectedVariantId === variant.id ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900'}`}>{variant.label}</button>)}
+                {variants.map((variant) => {
+                  const swatch = teachingSkinVariantSwatchColor(selected, variant.id)
+                  return (
+                    <button key={variant.id} type="button" onClick={() => setSelectedVariantId(variant.id)} className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${selectedVariantId === variant.id ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900'}`}>
+                      {swatch ? <span aria-hidden className="size-2.5 rounded-full border border-black/10" style={{ backgroundColor: swatch }} /> : null}
+                      {variant.label}
+                    </button>
+                  )
+                })}
                 {!variants.length ? <span className="py-1 text-xs text-zinc-400">此 Skin 尚未声明 Design Variant。</span> : null}
               </div>
             </div>
@@ -102,7 +120,7 @@ export default function TeachingSkinLabPage() {
           <PreviewCard title="Screen / continuous preview" icon={<FileStack className="size-4" />}>
             <TeachingDocumentRenderer document={document} skinDesignVariantIds={skinDesignVariantIds} />
           </PreviewCard>
-          <PreviewCard title="A4 / page-boundary preview" icon={<PanelsTopLeft className="size-4" />}>
+          <PreviewCard title="A4 / print preview" icon={<PanelsTopLeft className="size-4" />}>
             <A4PaginationPreview document={document} zoom={0.58} skinDesignVariantIds={skinDesignVariantIds} />
           </PreviewCard>
         </section>

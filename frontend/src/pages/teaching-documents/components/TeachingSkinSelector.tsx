@@ -1,6 +1,7 @@
 import type { TeachingSkinRef } from '@/types/teachingDocument'
 import type { TeachingSkinDefinition, TeachingSkinPresetResolution } from '@/utils/teachingDocument/skins'
 import { resolveBoxSkin, resolveHeadingSkin, resolveTeachingSkinVariantSelection, teachingSkinRegistry } from '@/utils/teachingDocument/skins'
+import { teachingSkinVariantSwatchColor } from '@/extensions/teaching-document/skins/shared/palette'
 import { Field, fieldClass } from './settings/common'
 
 export function HeadingSkinSelector({
@@ -68,17 +69,38 @@ export function TeachingSkinVariantSelector({
         <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200">当前：{activeVariant?.label || (selection.requestedVariantId ? selection.requestedVariantId : '基础样式')}</p>
         <p className="mt-0.5 text-[11px] text-zinc-500">来源：{sourceLabel}</p>
         {selection.source === 'explicit' && !activeVariant ? <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[11px] leading-4 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">局部样式不可用：{skin.variant}。当前会安全回退到基础样式。</p> : null}
-        {variants.length ? <select
-          className={`${fieldClass} mt-2`}
-          aria-label="局部样式"
-          value={skin.variant || ''}
-          onChange={(event) => event.target.value ? onChange({ ...skin, variant: event.target.value }) : clearVariant()}
-        >
-          <option value="">跟随整体</option>
-          {skin.variant !== undefined && !variants.some((item) => item.id === skin.variant) ? <option value={skin.variant} disabled>{`${skin.variant}（不可用）`}</option> : null}
-          {variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.label}</option>)}
-        </select> : null}
-        {selection.source === 'explicit' ? <button type="button" onClick={clearVariant} className="mt-2 text-[11px] font-medium text-zinc-600 underline-offset-2 hover:underline dark:text-zinc-300">恢复跟随整体</button> : null}
+        {variants.length ? (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="局部样式配色">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={skin.variant === undefined}
+              title="跟随整体（基础样式）"
+              onClick={clearVariant}
+              className={`flex h-6 items-center rounded-full border px-2 text-[11px] font-medium ${skin.variant === undefined ? 'border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100' : 'border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900'}`}
+            >跟随整体</button>
+            {variants.map((variant) => {
+              const swatch = teachingSkinVariantSwatchColor(definition, variant.id)
+              const active = skin.variant === variant.id
+              return (
+                <button
+                  key={variant.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  title={variant.label}
+                  aria-label={variant.label}
+                  onClick={() => onChange({ ...skin, variant: variant.id })}
+                  className={`flex size-6 items-center justify-center rounded-full border ${active ? 'border-zinc-900 ring-1 ring-zinc-900 ring-offset-1 dark:border-zinc-100 dark:ring-zinc-100 dark:ring-offset-zinc-950' : 'border-zinc-200 hover:border-zinc-400 dark:border-zinc-800 dark:hover:border-zinc-600'}`}
+                >
+                  {swatch ? <span aria-hidden className="size-3.5 rounded-full border border-black/10" style={{ backgroundColor: swatch }} /> : <span aria-hidden className="size-3.5 rounded-full bg-zinc-200 dark:bg-zinc-700" />}
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
+        {variants.length && activeVariant ? <p className="mt-1.5 text-[11px] text-zinc-500">配色：{activeVariant.label}</p> : null}
+        {selection.source === 'explicit' && !variants.length ? <button type="button" onClick={clearVariant} className="mt-2 text-[11px] font-medium text-zinc-600 underline-offset-2 hover:underline dark:text-zinc-300">恢复跟随整体</button> : null}
       </div>
     </div>
   )

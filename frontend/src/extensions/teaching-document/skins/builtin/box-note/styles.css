@@ -1,0 +1,22 @@
+/* 旁注卡：仅上下水平规则线（顶线强调、底线中性细线），无左右边框的边注结构。
+   跨页时核心会把上下线切为虚线，语义自然成立。 */
+.td-skin-box-note {
+  border-top: var(--td-skin-builtin--box--note-top-border, 2px solid #b45309);
+  border-right: 0 solid transparent;
+  border-bottom: var(--td-skin-builtin--box--note-bottom-border, 1px solid #d4d4d8);
+  border-left: 0 solid transparent;
+  border-radius: 0;
+  background: #ffffff;
+}
+
+.td-skin-box-note .td-box-header {
+  background: transparent;
+}
+
+.td-skin-box-note .td-box-header span {
+  color: var(--td-skin-builtin--box--note-title-color, #92400e);
+}
+
+.td-skin-box-note .td-box-body {
+  background: #ffffff;
+}
