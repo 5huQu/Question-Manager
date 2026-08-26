@@ -174,9 +174,9 @@ describe('TeachingDocumentRenderer fallbacks', () => {
         { type: 'heading', id: 'recommended-heading', level: 2, content: [{ type: 'text', text: '待应用标题' }] },
         { type: 'box', id: 'recommended-box', templateId: 'concept', breakBehavior: 'auto', children: [] },
       ]),
-      design: { preset: { id: 'builtin.preset.warm', version: 1 } },
+      design: { preset: { id: 'builtin.preset.warm', version: 2 } },
     }
-    const warm = teachingSkinPresetRegistry.get('builtin.preset.warm', 1)!
+    const warm = teachingSkinPresetRegistry.get('builtin.preset.warm', 2)!
     const before = renderToStaticMarkup(<TeachingDocumentRenderer document={document} />)
     expect(before).not.toContain('data-skin-id="builtin.heading.left-accent"')
     expect(before).not.toContain('data-skin-id="builtin.box.left-accent"')

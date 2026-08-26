@@ -32,6 +32,10 @@ async function renderWorkspace(document: TeachingDocumentV1, onDocumentChange = 
 
 const documentGlobal = globalThis.document
 
+function warmCard(version: number) {
+  return Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent?.includes('Warm') && button.textContent?.includes(`v${version}`))
+}
+
 afterEach(() => {
   if (root) act(() => root?.unmount())
   root = null
@@ -44,8 +48,7 @@ describe('DocumentStyleWorkspace', () => {
     const onDocumentChange = await renderWorkspace(baseDocument)
     const defaultCard = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent?.includes('默认'))
     expect(defaultCard?.getAttribute('aria-pressed')).toBe('true')
-    const warmCard = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent?.includes('Warm'))
-    await act(async () => warmCard?.click())
+    await act(async () => warmCard(1)?.click())
     expect(onDocumentChange).toHaveBeenCalledWith(expect.objectContaining({ design: { preset: { id: 'builtin.preset.warm', version: 1 } } }))
   })
 
@@ -71,10 +74,9 @@ describe('DocumentStyleWorkspace', () => {
     if (box?.type === 'box') delete box.skin
     const onDocumentChange = await renderWorkspace(document)
 
-    const warmCard = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent?.includes('Warm'))
-    await act(async () => warmCard?.click())
+    await act(async () => warmCard(2)?.click())
     const afterPresetSelection = onDocumentChange.mock.calls[0]?.[0] as TeachingDocumentV1
-    expect(afterPresetSelection.design).toEqual({ preset: { id: 'builtin.preset.warm', version: 1 } })
+    expect(afterPresetSelection.design).toEqual({ preset: { id: 'builtin.preset.warm', version: 2 } })
     expect(afterPresetSelection.content[0]).not.toHaveProperty('skin')
     expect(afterPresetSelection.content[1]).not.toHaveProperty('skin')
 
@@ -101,7 +103,7 @@ describe('DocumentStyleWorkspace', () => {
     const box = document.content[1]
     if (heading?.type === 'heading') delete heading.skin
     if (box?.type === 'box') delete box.skin
-    document.design = { preset: { id: 'builtin.preset.warm', version: 1 } }
+    document.design = { preset: { id: 'builtin.preset.warm', version: 2 } }
     const onDocumentChange = await renderWorkspace(document)
 
     const headingCheckbox = container!.querySelector<HTMLInputElement>('input[aria-label="应用推荐章节标题"]')
@@ -140,25 +142,22 @@ describe('DocumentStyleWorkspace', () => {
   it('replaces or clears an unavailable Preset only after an explicit card choice', async () => {
     const unknown = { ...baseDocument, design: { preset: { id: 'plugin.preset.future', version: 3 } } }
     const onDocumentChange = await renderWorkspace(unknown)
-    const warmCard = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent?.includes('Warm'))
-    await act(async () => warmCard?.click())
+    await act(async () => warmCard(1)?.click())
     expect(onDocumentChange).toHaveBeenLastCalledWith(expect.objectContaining({ design: { preset: { id: 'builtin.preset.warm', version: 1 } } }))
     const defaultCard = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent?.includes('默认'))
     await act(async () => defaultCard?.click())
     expect((onDocumentChange.mock.calls.at(-1)?.[0] as TeachingDocumentV1).design).toBeUndefined()
   })
 
-  it('keeps exact versions distinct instead of selecting a latest version', async () => {
-    if (!teachingSkinPresetRegistry.get('builtin.preset.warm', 2)) {
-      teachingSkinPresetRegistry.register(defineTeachingSkinPreset({
-        id: 'builtin.preset.warm', version: 2, label: 'Warm', description: '新版暖色组合。',
-        bindings: { 'builtin.heading.left-accent': 'amber', 'builtin.box.left-accent': 'green' },
-      }))
-    }
+  it('keeps Warm v1 and v2 distinct: only v2 exposes Recommended Style Setup', async () => {
     await renderWorkspace({ ...baseDocument, design: { preset: { id: 'builtin.preset.warm', version: 1 } } })
-    const selected = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent?.includes('Warm') && button.getAttribute('aria-pressed') === 'true')
-    expect(selected?.textContent).toContain('v1')
+    expect(warmCard(1)?.getAttribute('aria-pressed')).toBe('true')
     expect(container!.textContent).toContain('v2')
+    expect(container!.textContent).not.toContain('推荐设置')
+
+    await act(async () => root!.render(<DocumentStyleWorkspace document={{ ...baseDocument, design: { preset: { id: 'builtin.preset.warm', version: 2 } } }} onDocumentChange={vi.fn()} />))
+    expect(warmCard(2)?.getAttribute('aria-pressed')).toBe('true')
+    expect(container!.textContent).toContain('推荐设置')
   })
 
   it('does not infer Recommended Style Setup from bindings when a Preset has no metadata', async () => {

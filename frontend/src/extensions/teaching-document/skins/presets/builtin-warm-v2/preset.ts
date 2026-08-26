@@ -2,11 +2,15 @@ import { defineTeachingSkinPreset } from '@/utils/teachingDocument/skins/authori
 
 export default defineTeachingSkinPreset({
   id: 'builtin.preset.warm',
-  version: 1,
+  version: 2,
   label: 'Warm',
   description: '暖色教学文档组合。',
   bindings: {
     'builtin.heading.left-accent': 'amber',
     'builtin.box.left-accent': 'green',
+  },
+  recommendedSkins: {
+    heading: 'builtin.heading.left-accent',
+    box: 'builtin.box.left-accent',
   },
 })

@@ -5,7 +5,7 @@ A Teaching Skin Preset is a source-defined, versioned, document-level mapping of
 ```ts
 defineTeachingSkinPreset({
   id: 'builtin.preset.warm',
-  version: 1,
+  version: 2,
   label: 'Warm',
   bindings: {
     'builtin.heading.left-accent': 'amber',
@@ -26,7 +26,7 @@ Documents persist only a pinned reference:
 { "design": { "preset": { "id": "builtin.preset.warm", "version": 1 } } }
 ```
 
-The version is required. Resolution is exact by `(id, version)`—there is no latest-version fallback. Unknown, well-formed references remain saveable and round-trip unchanged; unavailable Presets contribute no bindings. Published Preset versions are compatibility API: changing a material binding requires a new version, while old source versions should remain available.
+The version is required. Resolution is exact by `(id, version)`—there is no latest-version fallback. Unknown, well-formed references remain saveable and round-trip unchanged; unavailable Presets contribute no bindings. Published Preset versions are compatibility API: changing a material binding requires a new version, while old source versions should remain available. For example, Warm v1 retains only its original bindings; Warm v2 adds `recommendedSkins`, because this is a material authoring behavior change.
 
 For a block which already has a compatible Skin, effective Variant precedence is: ephemeral preview override, explicit persisted `skin.variant`, resolved Preset binding, then Base. An explicit unknown Variant still wins over a Preset and safely renders Base if unavailable. A Preset never assigns a Skin during rendering, writes a Variant into a block, changes `BoxAppearance`, or affects unskinned blocks.
 

@@ -6,7 +6,7 @@ import { teachingSkinPresetRegistry } from './presetRegistryInstance'
 import type { TeachingSkinPresetDefinition } from './presets'
 import { applyTeachingDocumentRecommendedSkins, planTeachingDocumentPresetRecommendedSkins } from './recommendedSkins'
 
-const warm = teachingSkinPresetRegistry.get('builtin.preset.warm', 1)!
+const warm = teachingSkinPresetRegistry.get('builtin.preset.warm', 2)!
 
 function documentWithSkinCases(): TeachingDocumentV1 {
   return {
