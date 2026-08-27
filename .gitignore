@@ -53,6 +53,7 @@ frontend/*_design.html
 # Local task package: teaching document outline, section ordering, and numbering.
 /docs/task/teaching-document-outline-numbering/
 /docs/remote-deployment-local.md
+/docs/public-workspace-version-history-plan.md
 /tmp/
 
 # Logs and caches
