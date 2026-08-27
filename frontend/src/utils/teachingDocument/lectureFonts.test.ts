@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   lectureFontCssVars,
+  lectureFontFaceCss,
   resolveDocumentFonts,
   resolveHeadingStyle,
   teachingDocumentLayoutCssVars,
@@ -25,6 +26,20 @@ describe('lecture font resolution', () => {
     expect(vars['--td-body-font']).toContain('td-body-number')
     expect(vars['--td-heading-font']).toContain('td-heading-latin')
     expect(vars['--td-heading-number-font']).toContain('td-heading-number')
+  })
+
+  it('injects the bundled KaTeX Math Italic face for teaching-document Latin text', () => {
+    const css = lectureFontFaceCss(
+      resolveDocumentFonts({}).bodyLatin,
+      resolveDocumentFonts({}).bodyNumber,
+      resolveDocumentFonts({}).headingLatin,
+      resolveDocumentFonts({}).headingNumber,
+    )
+    expect(css).toContain('font-family:"QuestionMathLatin"')
+    expect(css).toContain('unicode-range:U+0041-005A, U+0061-007A')
+    expect(css).toContain('KaTeX_Main-Italic')
+    expect(css).toContain('unicode-range:U+0025, U+0028-0029, U+002B-002F, U+0030-0039, U+003A-003E, U+005B-005D, U+007B-007D')
+    expect(css).toContain('KaTeX_Main-Regular')
   })
 
   it('maps new documents to type-appropriate typography presets', () => {

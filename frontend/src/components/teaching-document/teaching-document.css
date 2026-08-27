@@ -911,6 +911,59 @@ button.td-print-chrome-slot:hover {
   --td-brand-warm: #A8762B;
 }
 
+/*
+ * Keep un-delimited Latin text visually close to KaTeX variables without
+ * changing document content. Latin letters and selected ASCII math symbols use
+ * the same KaTeX family; CJK, full-width punctuation and explicit local
+ * text-font overrides continue to fall back through the document's font stacks.
+ */
+.td-theme-print .td-document {
+  font-family: "QuestionMathLatin", var(--td-body-font, inherit);
+  text-autospace: normal;
+}
+.td-theme-print .td-document h1,
+.td-theme-print .td-document h2,
+.td-theme-print .td-document h3,
+.td-theme-print .td-document h4 {
+  font-family: "QuestionMathLatin", var(--td-heading-font, inherit);
+}
+.td-theme-print .td-document .td-heading[data-level="1"] {
+  font-family: "QuestionMathLatin", var(--td-heading-1-font, var(--td-heading-font, inherit));
+}
+.td-theme-print .td-document .td-heading[data-level="2"] {
+  font-family: "QuestionMathLatin", var(--td-heading-2-font, var(--td-heading-font, inherit));
+}
+.td-theme-print .td-document .td-heading[data-level="3"] {
+  font-family: "QuestionMathLatin", var(--td-heading-3-font, var(--td-heading-font, inherit));
+}
+.td-theme-print .td-document .td-heading[data-level="4"] {
+  font-family: "QuestionMathLatin", var(--td-heading-4-font, var(--td-heading-font, inherit));
+}
+.td-theme-print .td-document .td-heading-number {
+  font-family: "QuestionMathLatin", var(--td-heading-number-font, var(--td-heading-font, inherit));
+}
+.td-theme-print .td-document .td-question,
+.td-theme-print .td-document .td-question .td-question-text,
+.td-theme-print .td-document .td-question .td-question-markdown,
+.td-theme-print .td-document .td-question .td-question-options,
+.td-theme-print .td-document .td-question .td-question-answer > .markdown-content,
+.td-theme-print .td-document .td-question [data-question-inline-editor] {
+  font-family: "QuestionMathLatin", var(--td-question-font, var(--td-body-font, inherit));
+}
+
+/* Choice markers (A./B./C./D.) are labels, not question-body Latin text. */
+.td-theme-print .td-document .choice-label {
+  font-family: var(--td-question-font, var(--td-body-font, inherit));
+}
+
+/* Inline formulas use the same baseline and size as nearby document text.
+ * Block formulas are intentionally excluded from this rule. */
+.td-theme-print .td-document .td-inline-math .katex,
+.td-theme-print .td-document [data-inline-math] .katex {
+  font-size: 1em;
+  vertical-align: baseline;
+}
+
 /* 印刷风标题层级收紧；用户在工具条设置的级别字号继续生效。 */
 .td-theme-print .td-document .td-heading[data-level="1"],
 .td-theme-print .td-document h1[data-level="1"] { font-size: var(--td-heading-1-size, 19px); letter-spacing: 0.01em; }

@@ -17,7 +17,7 @@ import type { ChoiceLayoutOverrides } from '@/utils/choiceLayout'
 import { TEACHING_DOM } from '@/utils/teachingDocument'
 import { headingLabelByBlockId } from '@/utils/teachingDocument'
 import { BlockRenderer, type FigureResolution, type QuestionResolution, type TeachingDocumentResolvers } from './blocks/BlockRenderer'
-import { teachingDocumentLayoutCssVars } from '@/utils/teachingDocument/lectureFonts'
+import { QUESTION_MATH_LATIN_FONT_FACE_CSS, teachingDocumentLayoutCssVars } from '@/utils/teachingDocument/lectureFonts'
 import { showsDocumentTitle } from '@/utils/teachingDocument/wrongQuestionCollection'
 import { resolveTeachingDocumentSkinDesignContext, type TeachingSkinDesignVariantIds } from '@/utils/teachingDocument/skins'
 import 'katex/dist/katex.min.css'
@@ -109,38 +109,41 @@ export function TeachingDocumentRenderer({
   const headingLabels = headingLabelByBlockId(document)
   let flowWrapActive = false
   return (
-    <TeachingDocumentFrame
-      document={document}
-      className={className}
-      showTitle={showTitle}
-      surface={surface}
-    >
-      {document.content.map((block, index) => {
-        const isTextBlock = block.type === 'heading' || block.type === 'paragraph'
-        const isSideWrappedFigure = block.type === 'figure'
-          && (block.textWrap === 'square-left' || block.textWrap === 'square-right')
-        const flowWrappedText = flowWrapActive && isTextBlock
-        // 一个新的图片锚点或任意独立块都结束前一个图片的文字环绕范围。
-        flowWrapActive = isSideWrappedFigure
-          ? true
-          : isTextBlock && flowWrapActive
+    <>
+      <style>{QUESTION_MATH_LATIN_FONT_FACE_CSS}</style>
+      <TeachingDocumentFrame
+        document={document}
+        className={className}
+        showTitle={showTitle}
+        surface={surface}
+      >
+        {document.content.map((block, index) => {
+          const isTextBlock = block.type === 'heading' || block.type === 'paragraph'
+          const isSideWrappedFigure = block.type === 'figure'
+            && (block.textWrap === 'square-left' || block.textWrap === 'square-right')
+          const flowWrappedText = flowWrapActive && isTextBlock
+          // 一个新的图片锚点或任意独立块都结束前一个图片的文字环绕范围。
+          flowWrapActive = isSideWrappedFigure
             ? true
-            : false
-        return (
-          <BlockRenderer
-            key={`${block.id}:${index}`}
-            block={block}
-            resolvers={resolvers}
-            sourceIndex={index}
-            selectedBlockId={selectedBlockId}
-            headingLabel={headingLabels.get(block.id)}
-            flowWrappedText={flowWrappedText}
-          />
-        )
-      })}
-      {!document.content.length ? (
-        <p className="py-12 text-center text-sm text-zinc-400">文档内容为空</p>
-      ) : null}
-    </TeachingDocumentFrame>
+            : isTextBlock && flowWrapActive
+              ? true
+              : false
+          return (
+            <BlockRenderer
+              key={`${block.id}:${index}`}
+              block={block}
+              resolvers={resolvers}
+              sourceIndex={index}
+              selectedBlockId={selectedBlockId}
+              headingLabel={headingLabels.get(block.id)}
+              flowWrappedText={flowWrappedText}
+            />
+          )
+        })}
+        {!document.content.length ? (
+          <p className="py-12 text-center text-sm text-zinc-400">文档内容为空</p>
+        ) : null}
+      </TeachingDocumentFrame>
+    </>
   )
 }

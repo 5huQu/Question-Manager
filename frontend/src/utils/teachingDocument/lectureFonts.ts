@@ -4,6 +4,8 @@
  */
 
 import type { TeachingDocumentStyle, TeachingDocumentType, TeachingDocumentTypographyPreset, TeachingTextStyle } from '@/types/teachingDocument'
+import katexMainItalicUrl from 'katex/dist/fonts/KaTeX_Main-Italic.woff2?url'
+import katexMainRegularUrl from 'katex/dist/fonts/KaTeX_Main-Regular.woff2?url'
 
 export interface LectureFontOption {
   id: string
@@ -207,6 +209,14 @@ export function lectureFontCssVars(
 
 const LATIN_UNICODE_RANGE = 'U+0041-005A, U+0061-007A, U+00C0-024F'
 const NUMBER_UNICODE_RANGE = 'U+0030-0039, U+FF10-FF19'
+const QUESTION_MATH_LATIN_UNICODE_RANGE = 'U+0041-005A, U+0061-007A'
+const QUESTION_MATH_SYMBOL_UNICODE_RANGE = 'U+0025, U+0028-0029, U+002B-002F, U+0030-0039, U+003A-003E, U+005B-005D, U+007B-007D'
+
+/** Shared CSS faces used by every teaching-document renderer surface. */
+export const QUESTION_MATH_LATIN_FONT_FACE_CSS = [
+  `@font-face{font-family:"QuestionMathLatin";src:url("${katexMainItalicUrl}") format("woff2");font-style:normal;font-weight:400;unicode-range:${QUESTION_MATH_LATIN_UNICODE_RANGE};font-display:block;}`,
+  `@font-face{font-family:"QuestionMathLatin";src:url("${katexMainRegularUrl}") format("woff2");font-style:normal;font-weight:400;unicode-range:${QUESTION_MATH_SYMBOL_UNICODE_RANGE};font-display:block;}`,
+].join('')
 
 /**
  * 英文和数字都可能被同一字体覆盖，单靠 font-family 无法把二者分开。使用受控
@@ -226,6 +236,7 @@ export function lectureFontFaceCss(
     return `@font-face{font-family:"${family}";src:${sources};unicode-range:${range};font-display:block;}`
   }
   return [
+    QUESTION_MATH_LATIN_FONT_FACE_CSS,
     face('td-body-latin', bodyLatin, LATIN_UNICODE_RANGE),
     face('td-body-number', bodyNumber, NUMBER_UNICODE_RANGE),
     face('td-heading-latin', headingLatin, LATIN_UNICODE_RANGE),
