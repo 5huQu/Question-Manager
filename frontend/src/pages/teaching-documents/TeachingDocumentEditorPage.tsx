@@ -77,6 +77,7 @@ import { OutlinePanel } from './components/OutlinePanel'
 import { PropertiesSheet, type SelectedLocation } from './components/PropertiesSheet'
 import { DocumentFormattingToolbar } from './components/DocumentFormattingToolbar'
 import { QuestionEditDialog } from './components/QuestionEditDialog'
+import { reflowQuestionAfterTypeChange } from '@/utils/teachingDocument/questionTypeReflow'
 import { QuestionPickerDrawer } from './components/QuestionPickerDrawer'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
 import { USER_BLOCK_LABEL, CARD_CHILD_TYPES } from './components/blockLabels'
@@ -159,7 +160,7 @@ export default function TeachingDocumentEditorPage() {
     assets: editor.record?.assets,
   })
   // 连续流是正文撰写面：卡片正文以一个连续文本区编辑；页面编辑保留给版式核对。
-  const [canvasMode, setCanvasMode] = useState<TeachingCanvasMode>('continuous')
+  const [canvasMode, setCanvasMode] = useState<TeachingCanvasMode>('a4')
   // 编辑画布实际模式：a4 打印预览期间画布保持挂载（隐藏）以保留编辑器与撤销历史。
   const [editCanvasMode, setEditCanvasMode] = useState<'continuous' | 'paginated'>('continuous')
   const sheetPaper = useMemo<PaperSpec>(
@@ -1186,7 +1187,24 @@ export default function TeachingDocumentEditorPage() {
             question={editingQuestion}
             onClose={() => setEditingQuestionBlockId('')}
             onWrittenBack={(item) => {
+              const previousType = editingQuestion.questionType
               setQuestionMap((current) => ({ ...current, [item.id]: item }))
+              const currentDocument = editor.document
+              if (currentDocument && previousType !== item.questionType) {
+                const resolvedQuestionMap: Record<string, QuestionItem> = Object.fromEntries(
+                  Object.entries({ ...questionMap, [item.id]: item }).filter(
+                    (entry): entry is [string, QuestionItem] => Boolean(entry[1]),
+                  ),
+                )
+                const nextDocument = reflowQuestionAfterTypeChange(
+                  currentDocument,
+                  resolvedQuestionMap,
+                  item.id,
+                  previousType,
+                  item.questionType,
+                )
+                if (nextDocument !== currentDocument) editor.dispatch({ type: 'replaceDocument', document: nextDocument })
+              }
               patchQuestionBlock(editingLocation, { localContent: undefined })
               setEditingQuestionBlockId('')
             }}

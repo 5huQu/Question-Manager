@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { QuestionFigure, QuestionItem } from '@/types'
 import type { QuestionBlock } from '@/types/teachingDocument'
-import { createQuestionRuntimeModel, type QuestionFigureRegion, type QuestionAnswerSpaceRegion } from './questionRegions'
+import { renderTeachingDocumentKatex } from '@/utils/teachingDocument/katexCache'
+import { createQuestionRuntimeModel, type QuestionFigureRegion, type QuestionAnswerSpaceRegion, type QuestionMathRegion } from './questionRegions'
 
 function question(patch: Partial<QuestionItem> = {}): QuestionItem {
   return {
@@ -33,6 +34,138 @@ function question(patch: Partial<QuestionItem> = {}): QuestionItem {
 }
 
 describe('createQuestionRuntimeModel', () => {
+  function runtimeModel(markdown: string) {
+    const block: QuestionBlock = { type: 'question', id: 'question-block', questionId: 'question-1' }
+    return createQuestionRuntimeModel(block, question({ stemMarkdown: markdown, questionType: '解答题' }))
+  }
+
+  function mathRegions(markdown: string): QuestionMathRegion[] {
+    return runtimeModel(markdown).regions
+      .filter((region): region is QuestionMathRegion => region.kind === 'math')
+  }
+
+  function inlineMathLatex(markdown: string) {
+    return runtimeModel(markdown).regions.flatMap((region) => region.kind === 'paragraph'
+      ? region.paragraph.content.flatMap((inline) => inline.type === 'inlineMath' ? [inline.latex] : [])
+      : [])
+  }
+
+  function markdownRegions(markdown: string) {
+    return runtimeModel(markdown).regions.flatMap((region) => region.kind === 'markdown' ? [region.markdown] : [])
+  }
+
+  it('extracts a standard block formula as pure LaTeX source', () => {
+    expect(mathRegions('$$\nx+1\n$$')).toMatchObject([
+      { kind: 'math', latex: 'x+1' },
+    ])
+  })
+
+  it.each([
+    ['single-line display math', '$$x$$', [{ latex: 'x', displayMode: true }]],
+    ['display math followed by inline math', '$$x$$ 后接 $y$', [{ latex: 'x', displayMode: true }, { latex: 'y', displayMode: false }]],
+    ['malformed display opener', '$$x$', []],
+    ['malformed inline opener', '$x', []],
+    ['isolated dollar', '$', []],
+    ['isolated double dollar', '$$', []],
+  ] as const)('matches shared scanner semantics for %s', (_name, markdown, expected) => {
+    const model = runtimeModel(markdown)
+    const actual = model.regions.flatMap((region) => {
+      if (region.kind === 'math') return [{ latex: region.latex, displayMode: true }]
+      if (region.kind !== 'paragraph') return []
+      return region.paragraph.content.flatMap((inline) => inline.type === 'inlineMath'
+        ? [{ latex: inline.latex, displayMode: false }]
+        : [])
+    })
+    expect(actual).toEqual(expected)
+  })
+
+  it('keeps display source identical from scanner semantics through MathRegion', () => {
+    const model = runtimeModel('$$\n\\begin{cases}\nx=1\\\\\ny=2\n\\end{cases}\n$$')
+    const region = model.regions.find((item): item is QuestionMathRegion => item.kind === 'math')
+    expect(region?.latex).toBe('\\begin{cases}\nx=1\\\\\ny=2\n\\end{cases}')
+    expect(renderTeachingDocumentKatex(region!.latex, true)).toContain('katex-display')
+  })
+
+  it.each([
+    ['a block delimiter', '`$$x$$`'],
+    ['an inline delimiter only', '`$x$`'],
+    ['an inline delimiter', '示例 `$x+1$`'],
+    ['a block delimiter after ordinary text', '示例 `$$x+1$$`'],
+    ['multiple code spans', '`$a$` + `$$b$$` + $c$'],
+    ['a multi-backtick span', '`` `$$x$$` ``'],
+  ])('does not extract math from inline code containing %s', (_name, markdown) => {
+    expect(mathRegions(markdown)).toEqual([])
+    expect(inlineMathLatex(markdown)).toEqual([])
+    expect(markdownRegions(markdown)).toHaveLength(1)
+    expect(markdownRegions(markdown)[0]).toContain(markdown)
+  })
+
+  it('preserves inline code while extracting a following real block formula', () => {
+    const model = runtimeModel('示例 `$$x$$`\n\n$$\ny=2\n$$')
+
+    expect(model.regions.filter((region) => region.kind === 'math')).toMatchObject([
+      { latex: 'y=2' },
+    ])
+    expect(markdownRegions('示例 `$$x$$`\n\n$$\ny=2\n$$')[0]).toContain('示例 `$$x$$`')
+    expect(inlineMathLatex('示例 `$$x$$`\n\n$$\ny=2\n$$')).toEqual([])
+  })
+
+  it('does not treat an escaped backtick run as an inline code boundary', () => {
+    expect(mathRegions('\\`$$x$$\\`')).toMatchObject([
+      { latex: 'x' },
+    ])
+  })
+
+  it.each([
+    ['a Markdown fence containing display delimiters', '```md\n$$\nx\n$$\n```'],
+    ['a JavaScript fence containing inline delimiters', '```js\nconst formula = "$x$";\n```'],
+  ])('keeps %s protected from math extraction', (_name, markdown) => {
+    expect(mathRegions(markdown)).toEqual([])
+    expect(inlineMathLatex(markdown)).toEqual([])
+    expect(markdownRegions(markdown)).toHaveLength(1)
+    expect(markdownRegions(markdown)[0]).toContain(markdown)
+  })
+
+  it.each([
+    ['cases', '$$\n\\begin{cases}\nx=1\\\\\ny=2\n\\end{cases}\n$$', '\\begin{cases}\nx=1\\\\\ny=2\n\\end{cases}'],
+    ['aligned', '$$\n\\begin{aligned}\na&=1\\\\\nb&=2\n\\end{aligned}\n$$', '\\begin{aligned}\na&=1\\\\\nb&=2\n\\end{aligned}'],
+  ])('keeps complete %s source without Markdown delimiters and renders it directly with KaTeX', (_name, markdown, latex) => {
+    const [region] = mathRegions(markdown)
+
+    expect(region).toMatchObject({ kind: 'math', latex })
+    expect(region?.latex).not.toContain('$$')
+    expect(renderTeachingDocumentKatex(region!.latex, true)).toContain('katex-display')
+  })
+
+  it('keeps surrounding text, block math, and following inline math in reading order', () => {
+    const block: QuestionBlock = { type: 'question', id: 'question-block', questionId: 'question-1' }
+    const model = createQuestionRuntimeModel(block, question({
+      stemMarkdown: '由题意可知：\n\n$$\nx+1=2\n$$\n\n所以 $x=1$。',
+      questionType: '解答题',
+    }))
+
+    expect(model.regions.filter((region) => region.type === 'stem').map((region) => region.kind)).toEqual(['paragraph', 'math', 'paragraph'])
+    expect(model.regions.find((region) => region.kind === 'math')).toMatchObject({ latex: 'x+1=2' })
+    expect(model.regions.filter((region) => region.kind === 'paragraph').at(-1)).toMatchObject({
+      paragraph: { content: [{ type: 'text', text: '所以 ' }, { type: 'inlineMath', latex: 'x=1' }, { type: 'text', text: '。' }] },
+    })
+  })
+
+  it('preserves hard breaks in editable text while using scanner inline math', () => {
+    const [region] = runtimeModel('第一行\n第二行 $x$').regions.filter((item) => item.kind === 'paragraph')
+
+    expect(region?.paragraph.content.slice(-4)).toEqual([
+      { type: 'text', text: '第一行' },
+      { type: 'hardBreak' },
+      { type: 'text', text: '第二行 ' },
+      { type: 'inlineMath', latex: 'x' },
+    ])
+  })
+
+  it('keeps multiple block formulas as separate math regions in source order', () => {
+    expect(mathRegions('$$\nx=1\n$$\n\n中间文字\n\n$$\ny=2\n$$').map((region) => region.latex)).toEqual(['x=1', 'y=2'])
+  })
+
   it('creates deterministic semantic regions in display order', () => {
     const block: QuestionBlock = {
       type: 'question',

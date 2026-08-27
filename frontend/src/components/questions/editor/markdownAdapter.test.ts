@@ -1,8 +1,37 @@
+import { Editor } from '@tiptap/core'
+import StarterKit from '@tiptap/starter-kit'
 import { describe, expect, it } from 'vitest'
+import { FormulaBlock, FormulaInline } from './FormulaNode'
 import { editorJsonToMarkdown, markdownToEditorHtml } from './markdownAdapter'
 
 function paragraph(text: string) {
   return { type: 'paragraph', content: [{ type: 'text', text }] }
+}
+
+type MathToken = { latex: string; displayMode: boolean }
+
+function editorJsonForMarkdown(markdown: string) {
+  const editor = new Editor({
+    extensions: [StarterKit.configure({ codeBlock: false }), FormulaInline, FormulaBlock],
+    content: markdownToEditorHtml(markdown),
+  })
+  try {
+    return editor.getJSON()
+  } finally {
+    editor.destroy()
+  }
+}
+
+function formulaTokens(node: { type?: string; attrs?: Record<string, unknown>; content?: unknown[] }): MathToken[] {
+  const current = node.type === 'formulaInline' || node.type === 'formulaBlock'
+    ? [{ latex: String(node.attrs?.latex || ''), displayMode: node.type === 'formulaBlock' }]
+    : []
+  return [...current, ...(node.content || []).flatMap((child) => formulaTokens(child as typeof node))]
+}
+
+function codeTexts(node: { type?: string; text?: string; marks?: Array<{ type?: string }>; content?: unknown[] }): string[] {
+  const current = node.type === 'text' && node.marks?.some((mark) => mark.type === 'code') ? [node.text || ''] : []
+  return [...current, ...(node.content || []).flatMap((child) => codeTexts(child as typeof node))]
 }
 
 describe('markdownAdapter tables', () => {
@@ -59,5 +88,65 @@ describe('markdownAdapter tables', () => {
         ],
       }],
     })).toBe(source)
+  })
+})
+
+describe('markdownAdapter inline code spans', () => {
+  it.each([
+    ['basic inline code', '`$x$`', ['$x$'], []],
+    ['text followed by inline code', '示例 `$x+1$`', ['$x+1$'], []],
+    ['block delimiter inside inline code', '`$$x+1$$`', ['$$x+1$$'], []],
+    ['code and a real formula', '示例 `$x$`，实际公式为 $y$。', ['$x$'], [{ latex: 'y', displayMode: false }]],
+    ['multiple code spans and a formula', '`$a$` + $b$ + `$$c$$`', ['$a$', '$$c$$'], [{ latex: 'b', displayMode: false }]],
+    ['a double-backtick code span containing backticks', '`` `$x$` ``', ['`$x$`'], []],
+  ] as const)('does not parse math delimiters in %s', (_name, markdown, expectedCode, expectedMath) => {
+    const json = editorJsonForMarkdown(markdown)
+    expect(codeTexts(json)).toEqual(expectedCode)
+    expect(formulaTokens(json)).toEqual(expectedMath)
+  })
+
+  it('does not let an escaped backtick start a code span', () => {
+    const json = editorJsonForMarkdown('\\`$x$`')
+    expect(codeTexts(json)).toEqual([])
+    expect(formulaTokens(json)).toEqual([{ latex: 'x', displayMode: false }])
+  })
+
+  it('preserves code semantics rather than serializing code-delimited dollars as a formula', () => {
+    const source = '示例 `$x$`，实际公式为 $y$。'
+    const serialized = editorJsonToMarkdown(editorJsonForMarkdown(source))
+
+    expect(serialized).toContain('`$x$`')
+    expect(formulaTokens(editorJsonForMarkdown(serialized))).toEqual([{ latex: 'y', displayMode: false }])
+    expect(codeTexts(editorJsonForMarkdown(serialized))).toEqual(['$x$'])
+  })
+
+  it('round-trips a multiple-backtick code span without exposing its dollars to math parsing', () => {
+    const source = '`` `$x$` ``'
+    const serialized = editorJsonToMarkdown(editorJsonForMarkdown(source))
+
+    expect(serialized).toBe(source)
+    expect(formulaTokens(editorJsonForMarkdown(serialized))).toEqual([])
+    expect(codeTexts(editorJsonForMarkdown(serialized))).toEqual(['`$x$`'])
+  })
+
+  it('does not expose display delimiters from a fenced code block when called directly', () => {
+    expect(formulaTokens(editorJsonForMarkdown('```md\n$$x$$\n```'))).toEqual([])
+  })
+})
+
+describe('markdownAdapter canonical math delimiters', () => {
+  it.each([
+    ['single-line display math', '$$x$$', [{ latex: 'x', displayMode: true }]],
+    ['display math followed by inline math', '$$x$$ 后接 $y$', [{ latex: 'x', displayMode: true }, { latex: 'y', displayMode: false }]],
+    ['text around display math', '前文 $$x$$ 后文', [{ latex: 'x', displayMode: true }]],
+  ] as const)('uses the shared display/inline semantics for %s', (_name, markdown, expected) => {
+    expect(formulaTokens(editorJsonForMarkdown(markdown))).toEqual(expected)
+  })
+
+  it.each(['$$x$$', '$$x$$ 后接 $y$'])('preserves math semantics through the editor round-trip: %s', (markdown) => {
+    const first = formulaTokens(editorJsonForMarkdown(markdown))
+    const serialized = editorJsonToMarkdown(editorJsonForMarkdown(markdown))
+
+    expect(formulaTokens(editorJsonForMarkdown(serialized))).toEqual(first)
   })
 })

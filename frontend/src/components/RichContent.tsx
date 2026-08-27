@@ -1,9 +1,9 @@
 import { memo, useMemo } from 'react'
-import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import type { QuestionFigure, RichBlock, RichInline } from '../types'
 import { choiceLayoutForTexts } from '../utils/choiceLayout'
 import { assetUrl } from '../utils/questionDisplay'
+import { renderKatexWithStatus } from '@/utils/katexValidation'
 
 export function normalizeRichBlocks(value: unknown): RichBlock[] {
   if (!Array.isArray(value)) return []
@@ -27,11 +27,10 @@ function inlinePlainText(inlines: RichInline[]) {
 
 function MathSpan({ tex, display = false }: { tex: string; display?: boolean }) {
   const rendered = useMemo(() => {
-    try {
-      return { html: katex.renderToString(tex, { displayMode: display, throwOnError: true, strict: 'ignore' }), error: '' }
-    } catch {
-      return { html: '', error: '公式未规范化' }
-    }
+    const result = renderKatexWithStatus(tex, display)
+    return result.validation.valid
+      ? { html: result.html, error: '' }
+      : { html: '', error: '公式格式有误' }
   }, [display, tex])
   if (!rendered.html) {
     return <span className={display ? 'block rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-900' : 'inline-flex items-baseline gap-1 rounded bg-amber-50 px-1 text-amber-900'}><code>{tex || '公式为空'}</code><span className="text-[10px] text-amber-700">{rendered.error}</span></span>

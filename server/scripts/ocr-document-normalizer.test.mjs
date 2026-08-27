@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { normalizeGlmOCRDocument } from '../dist/services/ocr-providers/glm.normalizer.js'
 import { normalizeDoc2xOCRDocument } from '../dist/services/ocr-providers/doc2x.normalizer.js'
+import { prepareOcrDocumentMarkdownForStorage, repairOcrMathMarkdown } from '../dist/services/ocr-providers/ocr-document.normalizer.js'
 import { applyWatermarkCleanup, cleanWatermarkText } from '../dist/services/import-flow-v2/watermark-cleanup.js'
 
 const glmPayload = {
@@ -124,6 +125,68 @@ assert.doesNotMatch(watermarkedDocument.markdown, /鼎尖教育/)
 assert.equal(watermarkedDocument.pages[0].blocks[0].content, '')
 assert.equal(watermarkedDocument.pages[0].blocks[1].content, '1. 已知函数。')
 assert.equal(watermarkedDocument.metadata.watermarkCleanup.enabled, true)
+
+// OCR delimiter repair is deliberately input-only. Precision matters more
+// than recall: valid Markdown must be a fixed point even when it includes a
+// complete display formula on the same line as prose or inline math.
+function assertOcrRepairFixedPoint(name, input, expected = input) {
+  const once = repairOcrMathMarkdown(input)
+  const twice = repairOcrMathMarkdown(once)
+  const thrice = repairOcrMathMarkdown(twice)
+  assert.equal(once, expected, `${name}: first repair`)
+  assert.equal(twice, once, `${name}: second repair`)
+  assert.equal(thrice, once, `${name}: third repair`)
+}
+
+for (const [name, input] of [
+  ['one inline formula', '$a$'],
+  ['two inline formulas with prose', '由 $a=1$ 得 $b=2$'],
+  ['adjacent inline formulas', '$a=1$，$b=2$'],
+  ['one single-line display formula', '$$x$$'],
+  ['single-line display formula followed by inline math', '$$x$$ 后接 $y$'],
+  ['prose around a single-line display formula', '前文 $$x$$ 后文'],
+  ['prose, display formula, and inline math', '前文 $$x$$ 后文 $y$'],
+  ['multiline display formula', '$$\nx+1\n$$'],
+  ['cases display formula', '$$\n\\begin{cases}\nx=1\\\\\ny=2\n\\end{cases}\n$$'],
+  ['aligned display formula', '$$\n\\begin{aligned}\na&=1\\\\\nb&=2\n\\end{aligned}\n$$'],
+  ['multiple display formulas', '$$x$$\n\n文字\n\n$$y$$'],
+  ['escaped dollar', '价格为 \\$100'],
+  ['inline code', '示例 `$foo$` 和 `price = "$100"`。'],
+  ['inline code containing a dirty OCR-looking delimiter', '`$设 $$ p_n = 1 $ $`'],
+  ['fenced code', '```js\nconst value = "$x$";\n```'],
+  ['fenced code containing a dirty OCR-looking delimiter', '```tex\n$设 $$ p_n = 1 $ $\n```'],
+]) {
+  assertOcrRepairFixedPoint(name, input)
+}
+
+// The three historical rules each keep one high-confidence OCR fixture. The
+// paired negative fixture protects a complete `$$...$$` from each rule.
+for (const [name, input, expected] of [
+  ['nested-prefix heuristic', '$说明 $$ 公式 $ $', '说明 $公式$'],
+  ['double-open-plus-separated-close heuristic', '$$ 公式 $ $', '$公式$'],
+  ['double-open-plus-single-close heuristic', '$$ 公式 $', '$公式$'],
+  ['nested-prefix must not cross a complete display formula', '$a$ $$x$$ 后接 $y$', '$a$ $$x$$ 后接 $y$'],
+  ['separated-close must not reinterpret a complete display formula', '$$x$$ 后接 $y$', '$$x$$ 后接 $y$'],
+  ['single-close must not restart at a display closing delimiter', '前文 $$x$$ 后文 $y$', '前文 $$x$$ 后文 $y$'],
+]) {
+  assertOcrRepairFixedPoint(name, input, expected)
+}
+
+const dirtyOcrDelimiterMarkdown = '$设 $$ p_{2(m+1)}+\\lambda=-\\frac{1}{4}(p_{2m}+\\lambda)$ $\n$所以 $$ \\left\\{p_{2m}-\\frac{1}{2}\\right\\}$ $是等比数列。\n\n$$\\frac{1}{2}$$'
+const repairedOcrDelimiterMarkdown = '设 $p_{2(m+1)}+\\lambda=-\\frac{1}{4}(p_{2m}+\\lambda)$\n所以 $\\left\\{p_{2m}-\\frac{1}{2}\\right\\}$是等比数列。\n\n$$\\frac{1}{2}$$'
+assertOcrRepairFixedPoint('nested OCR document delimiter repair', dirtyOcrDelimiterMarkdown, repairedOcrDelimiterMarkdown)
+
+const repairBoundaryDocument = prepareOcrDocumentMarkdownForStorage({
+  ...glmDocument,
+  markdown: dirtyOcrDelimiterMarkdown,
+  pages: [{
+    pageNo: 1,
+    width: 800,
+    height: 1200,
+    blocks: [{ id: 'repair-boundary-text', pageNo: 1, type: 'text', content: '不相关文本' }],
+  }],
+})
+assert.equal(repairBoundaryDocument.markdown, repairedOcrDelimiterMarkdown)
 
 import { localizeRemoteImages, figuresForQuestionBank } from '../dist/services/import-flow-v2/import-flow-v2.service.js'
 

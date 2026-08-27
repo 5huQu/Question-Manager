@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { InputRule, mergeAttributes, Node } from '@tiptap/core'
 import type { NodeType } from '@tiptap/pm/model'
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react'
-import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { FormulaEditorDialog } from './FormulaEditorDialog'
+import { renderKatexWithStatus } from '@/utils/katexValidation'
 
 /**
  * Turn a just-completed `$…$` sequence into the atomic formula node.  Imported
@@ -35,14 +35,9 @@ function FormulaNodeView({ node, updateAttributes, selected }: NodeViewProps) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState(String(node.attrs.latex || ''))
   const displayMode = node.type.name === 'formulaBlock'
-  let markup = ''
-  let invalid = false
-  try {
-    markup = katex.renderToString(String(node.attrs.latex || ''), { displayMode, throwOnError: true, strict: false })
-  } catch {
-    invalid = true
-    markup = katex.renderToString(String(node.attrs.latex || ''), { displayMode, throwOnError: false, strict: false })
-  }
+  const rendered = renderKatexWithStatus(String(node.attrs.latex || ''), displayMode)
+  const markup = rendered.html
+  const invalid = !rendered.validation.valid
 
   return (
     <NodeViewWrapper
@@ -52,7 +47,8 @@ function FormulaNodeView({ node, updateAttributes, selected }: NodeViewProps) {
     >
       <button
         type="button"
-        aria-label={`${displayMode ? '块级' : '行内'}公式，按 Enter 编辑`}
+        aria-label={`${displayMode ? '块级' : '行内'}公式${invalid ? '，公式格式有误' : ''}，按 Enter 编辑`}
+        title={invalid ? '公式格式有误' : undefined}
         aria-invalid={invalid}
         className={`rounded-md border px-1.5 py-0.5 text-zinc-900 transition-colors hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-50 dark:hover:bg-zinc-800 ${selected ? 'border-zinc-900 dark:border-zinc-100' : invalid ? 'border-amber-400 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20' : 'border-transparent'}`}
         onClick={() => { setDraft(String(node.attrs.latex || '')); setOpen(true) }}

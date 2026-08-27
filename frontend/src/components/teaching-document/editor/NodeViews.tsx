@@ -15,7 +15,7 @@ import { getBoxTemplateOrFallback } from '@/utils/teachingDocument/boxTemplates'
 import { boxBodyStyle, boxFrameStyle, parseBoxAppearance, skinBoxBodyStyle, skinBoxFrameStyle } from '@/utils/teachingDocument/boxAppearance'
 import { parseTeachingSkinRef, resolveBoxSkin, resolveTeachingSkinDesignRenderState, resolveTeachingSkinVariantRequest } from '@/utils/teachingDocument/skins'
 import { createQuestionRuntimeModel } from '@/utils/teachingDocument/layout/questionRegions'
-import { BoxFragmentRenderer, QuestionRuntimeContent, QuestionPlaceholder } from '../blocks/BlockRenderer'
+import { BoxFragmentRenderer, BoxIcon, QuestionRuntimeContent, QuestionPlaceholder } from '../blocks/BlockRenderer'
 import { BlockInlineEditor } from '../BlockInlineEditor/BlockInlineEditor'
 import { BoxFlowEditor } from './BoxFlowEditor'
 import { MarkdownContent } from '@/components/MarkdownContent'
@@ -157,7 +157,7 @@ export function BlockMathNodeView({ node, selected }: NodeViewProps) {
         ) : (
           <span className="inline-block rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
             <code>{latex || '公式为空'}</code>
-            <span className="ml-2 text-xs text-amber-600">公式渲染失败</span>
+            <span className="ml-2 text-xs text-amber-600">公式格式有误</span>
           </span>
         )}
         {label ? <span className="float-right text-sm text-zinc-400">{label}</span> : null}
@@ -902,6 +902,7 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
         <div className={`td-box overflow-hidden border ${skinActive ? resolvedSkin.definition.className : ''}`} data-skin-id={skinActive ? resolvedSkin.definition.id : undefined} data-skin-state={skin ? resolvedSkin.status : undefined} style={{ ...(skinActive ? skinBoxFrameStyle(appearance, template) : boxFrameStyle(appearance, template)), ...(designVariables || {}) } as CSSProperties}>
           {(template.showHeader || title) ? (
             <div className="td-box-header flex min-w-0 items-center gap-2 px-4 py-2.5" style={skinActive ? undefined : { background: `var(--box-${template.tone}-header)` }} onPointerDown={selectBox}>
+              <BoxIcon name={icon || template.defaultIcon} className="size-4 shrink-0" />
               {editingTitle && selected ? (
                 <input
                   autoFocus

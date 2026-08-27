@@ -201,6 +201,9 @@ describe('TeachingDocumentEditorPage A4 分页 generation 稳定性', () => {
 
     const zoomInput = container.querySelector<HTMLInputElement>('[aria-label="视图缩放比例"]')
     expect(zoomInput?.value).toBe('100')
+    const initialPreviewButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('打印预览'))
+    expect(initialPreviewButton?.getAttribute('aria-selected')).toBe('true')
     const zoomInButton = container.querySelector<HTMLButtonElement>('[aria-label="放大视图"]')
     await act(async () => zoomInButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 

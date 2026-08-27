@@ -126,7 +126,7 @@ const ICON_MAP: Record<string, typeof BookOpen> = {
   Box,
 }
 
-function BoxIcon({ name, className }: { name?: string; className?: string }) {
+export function BoxIcon({ name, className }: { name?: string; className?: string }) {
   const Icon = (name && ICON_MAP[name]) || Box
   return <Icon className={className || 'size-4'} />
 }
@@ -253,7 +253,7 @@ function BlockMathBlockView({ block }: { block: BlockMathBlock }) {
       ) : (
         <span className="inline-block rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
           <code>{block.latex || '公式为空'}</code>
-          <span className="ml-2 text-xs text-amber-600">公式渲染失败</span>
+          <span className="ml-2 text-xs text-amber-600">公式格式有误</span>
         </span>
       )}
       {block.label ? <span className="float-right text-sm text-zinc-400">{block.label}</span> : null}
@@ -461,6 +461,24 @@ function replaceInlineRange(inlines: TeachingInline[], range: InlineRange, repla
   return [...before, ...replacement, ...after]
 }
 
+/** Math regions already hold parsed LaTeX, so they must bypass Markdown parsing. */
+function QuestionMathRegionContent({ latex }: { latex: string }) {
+  const html = useMemo(() => renderTeachingDocumentKatex(latex, true), [latex])
+
+  return (
+    <div className="td-question-math td-question-markdown text-sm leading-7">
+      {html ? (
+        <span dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <span className="inline-block rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+          <code>{latex || '公式为空'}</code>
+          <span className="ml-2 text-xs text-amber-600">公式格式有误</span>
+        </span>
+      )}
+    </div>
+  )
+}
+
 function QuestionRegionContent({
   region,
   item,
@@ -522,7 +540,7 @@ function QuestionRegionContent({
     return <MarkdownContent className="td-question-markdown text-sm leading-7" content={region.markdown} />
   }
   if (region.kind === 'math') {
-    return <MarkdownContent className="td-question-markdown text-sm leading-7" content={`$$${region.latex}$$`} />
+    return <QuestionMathRegionContent latex={region.latex} />
   }
   if (region.kind === 'figure') {
     const figureRegion = region as QuestionFigureRegion

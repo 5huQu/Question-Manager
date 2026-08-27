@@ -73,4 +73,13 @@ describe('FormulaLiveInput', () => {
     })
     expect(onOpenKeyboard).toHaveBeenCalledTimes(1)
   })
+
+  it('marks invalid LaTeX while preserving the source', () => {
+    act(() => {
+      root.render(<FormulaLiveInput value={'\\notARealCommand'} onChange={() => undefined} />)
+    })
+
+    expect(container.textContent).toContain('\\notARealCommand')
+    expect(container.textContent).toContain('公式格式有误')
+  })
 })

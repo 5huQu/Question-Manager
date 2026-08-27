@@ -64,6 +64,12 @@ describe('InlineContent security and degradation', () => {
     // 仅已知字体产生一条 font-family 声明；未知 id 与缺省均回退（不加样式）
     expect(html.match(/font-family:/g) || []).toHaveLength(1)
   })
+
+  it('preserves invalid inline LaTeX source with a format error', () => {
+    const html = renderToStaticMarkup(<InlineContent inlines={[{ type: 'inlineMath', latex: '\\notARealCommand' }]} />)
+    expect(html).toContain('\\notARealCommand')
+    expect(html).toContain('公式格式有误')
+  })
 })
 
 describe('ParagraphFragmentRenderer', () => {

@@ -5,6 +5,9 @@
   "author": "Question Manager contributors",
   "private": false,
   "license": "AGPL-3.0-only",
+  "overrides": {
+    "katex": "$katex"
+  },
   "type": "module",
   "main": "electron/main.cjs",
   "engines": {

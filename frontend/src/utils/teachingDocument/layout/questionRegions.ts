@@ -26,7 +26,7 @@ import {
   figuresByUsage,
   parseChoiceQuestion,
 } from '@/utils/questionDisplay'
-import { parseInlineMarkdown } from '../markdownCompat'
+import { scanMathDelimiters } from '@/utils/mathDelimiterScanner'
 
 export type QuestionRegionType =
   | 'heading'
@@ -166,8 +166,6 @@ export interface QuestionRuntimeModel {
 }
 
 const FIGURE_MARKER = /<!--\s*DOC2X_FIGURE:([^>\s]+)\s*-->/gi
-const BLOCK_MATH = /\$\$([\s\S]*?)\$\$/g
-
 function stableRegionKey(
   blockId: string,
   type: QuestionRegionType,
@@ -197,12 +195,25 @@ export function isEditableQuestionText(value: string) {
   return Boolean(value.trim()) && !/[#*_~`[\]<>|]/.test(value)
 }
 
+function scannerTextToInlines(value: string): TeachingInline[] {
+  return value.split('\n').flatMap((line, index, lines) => [
+    ...(line ? [{ type: 'text', text: line } as const] : []),
+    ...(index < lines.length - 1 ? [{ type: 'hardBreak' } as const] : []),
+  ])
+}
+
 function inlineContentOrFallback(inlineContent: QuestionInlineContent | undefined, key: string, value: string) {
   if (inlineContent && Object.prototype.hasOwnProperty.call(inlineContent, key)) return inlineContent[key]
   const normalized = normalizeLatexMathDelimiters(value)
-  // 块级公式仍交给 MarkdownContent 渲染；内联编辑器只接收行内内容。
-  if (/(?:^|\n)\s*\$\$/.test(normalized)) return undefined
-  return isEditableQuestionText(normalized) ? parseInlineMarkdown(normalized) : undefined
+  const segments = scanMathDelimiters(normalized)
+  // Block math and code remain Markdown/MathRegion content; only plain text
+  // plus scanner-confirmed inline math can enter the editable inline model.
+  if (segments.some((segment) => segment.type === 'code' || (segment.type === 'math' && segment.displayMode))) return undefined
+  if (!isEditableQuestionText(normalized)) return undefined
+  return segments.flatMap((segment): TeachingInline[] => {
+    if (segment.type === 'math') return [{ type: 'inlineMath', latex: segment.latex }]
+    return scannerTextToInlines(segment.value)
+  })
 }
 
 function contentRegions(input: {
@@ -218,77 +229,58 @@ function contentRegions(input: {
   const usedFigures = new Set<QuestionFigure>()
   let index = input.startIndex
 
-  const pushText = (source: string) => {
-    let cursor = 0
-    BLOCK_MATH.lastIndex = 0
-    let match: RegExpExecArray | null
-    while ((match = BLOCK_MATH.exec(source))) {
-      const before = source.slice(cursor, match.index)
-      before.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean).forEach((part) => {
-        const key = stableRegionKey(input.blockId, input.type, index)
-        if (simpleParagraph(part)) {
-          regions.push({
-            key,
-            type: input.type,
-            index,
-            kind: 'paragraph',
-            splitPolicy: 'paragraph',
-            paragraph: {
-              type: 'paragraph',
-              id: key,
-              content: inlineContentOrFallback(input.inlineContent, key, part) || parseInlineMarkdown(part),
-            },
-          })
-        } else {
-          regions.push({
-            key,
-            type: input.type,
-            index,
-            kind: 'markdown',
-            splitPolicy: 'never',
-            markdown: part,
-          })
-        }
-        index += 1
-      })
+  const pushTextRegion = (part: string) => {
+    const key = stableRegionKey(input.blockId, input.type, index)
+    if (simpleParagraph(part)) {
       regions.push({
-        key: stableRegionKey(input.blockId, input.type, index),
+        key,
         type: input.type,
         index,
-        kind: 'math',
-        splitPolicy: 'never',
-        latex: match[1].trim(),
+        kind: 'paragraph',
+        splitPolicy: 'paragraph',
+        paragraph: {
+          type: 'paragraph',
+          id: key,
+          content: inlineContentOrFallback(input.inlineContent, key, part) || [],
+        },
       })
-      index += 1
-      cursor = match.index + match[0].length
+    } else {
+      regions.push({
+        key,
+        type: input.type,
+        index,
+        kind: 'markdown',
+        splitPolicy: 'never',
+        markdown: part,
+      })
     }
-    source.slice(cursor).split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean).forEach((part) => {
-      const key = stableRegionKey(input.blockId, input.type, index)
-      if (simpleParagraph(part)) {
+    index += 1
+  }
+
+  const pushText = (source: string) => {
+    let text = ''
+    const flushText = () => {
+      text.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean).forEach(pushTextRegion)
+      text = ''
+    }
+    for (const segment of scanMathDelimiters(source)) {
+      if (segment.type === 'math' && segment.displayMode) {
+        flushText()
         regions.push({
-          key,
+          key: stableRegionKey(input.blockId, input.type, index),
           type: input.type,
           index,
-          kind: 'paragraph',
-          splitPolicy: 'paragraph',
-          paragraph: {
-            type: 'paragraph',
-            id: key,
-              content: inlineContentOrFallback(input.inlineContent, key, part) || parseInlineMarkdown(part),
-          },
-        })
-      } else {
-        regions.push({
-          key,
-          type: input.type,
-          index,
-          kind: 'markdown',
+          kind: 'math',
           splitPolicy: 'never',
-          markdown: part,
+          latex: segment.latex,
         })
+        index += 1
+        continue
       }
-      index += 1
-    })
+      if (segment.type === 'math') text += `$${segment.latex}$`
+      else text += segment.value
+    }
+    flushText()
   }
 
   // Keep supported HTML tables intact until MarkdownContent renders them. The

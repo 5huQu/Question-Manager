@@ -26,8 +26,9 @@ function InlineMathSpan({ latex }: { latex: string }) {
 
   if (!html) {
     return (
-      <span className="td-inline-math-error" title="公式渲染失败">
+      <span className="td-inline-math-error" title="公式格式有误">
         <code className="rounded bg-amber-50 px-1 text-amber-900 dark:bg-amber-950/30 dark:text-amber-400">{latex || '∅'}</code>
+        <span className="text-[10px] text-amber-700">公式格式有误</span>
       </span>
     )
   }

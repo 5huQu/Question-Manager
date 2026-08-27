@@ -9,15 +9,15 @@
  * - InlineMathNode：原子公式节点，复用 FormulaEditorDialog 编辑，
  *   KaTeX 通过 ref + renderToString 挂载（不使用 dangerouslySetInnerHTML）
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Node, Mark, mergeAttributes } from '@tiptap/core'
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Paragraph from '@tiptap/extension-paragraph'
-import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { FormulaEditorDialog } from '@/components/questions/editor/FormulaEditorDialog'
 import { fontStackById } from '@/utils/teachingDocument/lectureFonts'
+import { renderKatexWithStatus } from '@/utils/katexValidation'
 
 // ─── UnknownMark：保留无法识别的 mark 原始数据 ───────────────────────────────
 
@@ -223,21 +223,23 @@ function InlineMathNodeView({ node, updateAttributes, selected }: NodeViewProps)
   const [open, setOpen] = useState(false)
   const mathRef = useRef<HTMLSpanElement>(null)
   const latex = String(node.attrs.latex || '')
+  const rendered = useMemo(() => renderKatexWithStatus(latex, false), [latex])
 
   useEffect(() => {
     if (!mathRef.current) return
     mathRef.current.textContent = ''
-    const container = katex.renderToString(latex, { displayMode: false, throwOnError: false, strict: false })
     const template = document.createElement('template')
-    template.innerHTML = container
+    template.innerHTML = rendered.html
     mathRef.current.appendChild(template.content)
-  }, [latex])
+  }, [rendered.html])
 
   return (
     <NodeViewWrapper as="span" className="inline-block align-middle" data-inline-math="">
       <button
         type="button"
-        aria-label="行内公式，点击编辑"
+        aria-label={`行内公式${rendered.validation.valid ? '' : '，公式格式有误'}，点击编辑`}
+        aria-invalid={rendered.validation.valid ? undefined : true}
+        title={rendered.validation.valid ? undefined : '公式格式有误'}
         data-inline-math-button=""
         className={`rounded border px-1 py-0.5 align-middle transition-colors hover:bg-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:hover:bg-zinc-800 ${
           selected ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900' : 'border-zinc-200 dark:border-zinc-700'
@@ -245,6 +247,7 @@ function InlineMathNodeView({ node, updateAttributes, selected }: NodeViewProps)
         onClick={() => setOpen(true)}
       >
         <span ref={mathRef} className="text-[0.95em]" />
+        {rendered.validation.valid ? null : <span className="ml-1 text-[10px] text-amber-700">公式格式有误</span>}
       </button>
       {open ? (
         <FormulaEditorDialog

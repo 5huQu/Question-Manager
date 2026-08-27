@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import katex from 'katex'
 import { Sigma } from 'lucide-react'
+import { renderKatexWithStatus } from '@/utils/katexValidation'
 
 export interface FormulaLiveInputProps {
   value: string
@@ -35,25 +35,8 @@ export function FormulaLiveInput({
   const { renderedHtml, renderError } = useMemo(() => {
     const trimmed = value.trim()
     if (!trimmed) return { renderedHtml: '', renderError: false }
-    try {
-      const html = katex.renderToString(trimmed, {
-        displayMode,
-        throwOnError: true,
-        strict: false,
-      })
-      return { renderedHtml: html, renderError: false }
-    } catch {
-      try {
-        const fallbackHtml = katex.renderToString(trimmed, {
-          displayMode,
-          throwOnError: false,
-          strict: false,
-        })
-        return { renderedHtml: fallbackHtml, renderError: true }
-      } catch {
-        return { renderedHtml: '', renderError: true }
-      }
-    }
+    const rendered = renderKatexWithStatus(trimmed, displayMode)
+    return { renderedHtml: rendered.html, renderError: !rendered.validation.valid }
   }, [value, displayMode])
 
   return (
@@ -80,7 +63,7 @@ export function FormulaLiveInput({
         <div className="mb-1 flex items-center justify-between text-[10px] font-medium tracking-wider text-zinc-400 uppercase dark:text-zinc-500">
           <span>即时渲染预览</span>
           {renderError ? (
-            <span className="text-amber-600 dark:text-amber-400">语法警告</span>
+            <span className="text-amber-600 dark:text-amber-400">公式格式有误</span>
           ) : null}
         </div>
         <div className="flex min-h-[40px] items-center justify-center overflow-x-auto text-center">
@@ -92,7 +75,7 @@ export function FormulaLiveInput({
           ) : value.trim() ? (
             <div className="text-xs text-amber-600 dark:text-amber-400">
               <code>{value}</code>
-              <span className="ml-2 text-[11px] opacity-75">公式渲染失败</span>
+              <span className="ml-2 text-[11px] opacity-75">公式格式有误</span>
             </div>
           ) : (
             <span className="text-xs italic text-zinc-400 dark:text-zinc-600">

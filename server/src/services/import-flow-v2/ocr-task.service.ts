@@ -21,6 +21,7 @@ import {
   resumeDoc2xParsing,
 } from '../ocr-providers/doc2x.provider.js'
 import { normalizeGlmOCRDocument } from '../ocr-providers/glm.normalizer.js'
+import { prepareOcrDocumentMarkdownForStorage } from '../ocr-providers/ocr-document.normalizer.js'
 import { assertGlmOcrConfigured, callGlmLayoutParsing, GlmOcrProviderError } from '../ocr-providers/glm.provider.js'
 import { normalizeOcrProvider, readOcrSettings } from '../settings/ocr-settings.js'
 import { localizeRemoteImages } from './figure-mapping.js'
@@ -163,10 +164,12 @@ async function prepareNormalizedOcrDocument(input: {
     : normalizeGlmOCRDocument(input.payload, options)
 
   await localizeRemoteImages(normalized)
-  const documentForStorage = applyWatermarkCleanup(
-    normalized,
-    sourceRepo.getSourceDocument(input.sourceDocumentId)?.metadata,
-  ).document
+  const documentForStorage = prepareOcrDocumentMarkdownForStorage(
+    applyWatermarkCleanup(
+      normalized,
+      sourceRepo.getSourceDocument(input.sourceDocumentId)?.metadata,
+    ).document,
+  )
   writeText(markdownPath, documentForStorage.markdown)
   writeJson(pagesPath, documentForStorage.pages)
   writeJson(assetsPath, documentForStorage.assets)

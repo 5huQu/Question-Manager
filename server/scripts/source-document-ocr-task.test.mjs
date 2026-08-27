@@ -12,6 +12,8 @@ process.env.DOC2X_MODEL = 'v3-2026'
 process.env.DOC2X_POLL_SECONDS = '1'
 
 const doc2xFormula = String.raw`\(\gamma _ {1} + \delta ^ {2}\)`
+const doc2xDirtyDelimiter = '$设 $$ p_n = 1 $ $'
+const doc2xValidSingleLineDisplay = '$$x$$ 后接 $y$'
 const doc2xPayload = {
   code: 'success',
   data: {
@@ -24,10 +26,10 @@ const doc2xPayload = {
           page_idx: 0,
           width: 800,
           height: 1100,
-          md: `1. Doc2X 公式保持 ${doc2xFormula}`,
+          md: `1. Doc2X 公式保持 ${doc2xFormula}\n${doc2xDirtyDelimiter}\n${doc2xValidSingleLineDisplay}`,
           layout: {
             blocks: [
-              { id: 'doc2x_text_status_1', type: 'Text', text: `1. Doc2X 公式保持 ${doc2xFormula}`, bbox: [10, 20, 620, 80] },
+              { id: 'doc2x_text_status_1', type: 'Text', text: `1. Doc2X 公式保持 ${doc2xFormula}\n${doc2xDirtyDelimiter}\n${doc2xValidSingleLineDisplay}`, bbox: [10, 20, 620, 80] },
             ],
           },
         },
@@ -142,6 +144,10 @@ try {
   const document = loadOcrDocument(ocrRecord.id)
   assert.equal(document.provider, 'doc2x')
   assert.ok(document.markdown.includes(doc2xFormula), 'Doc2X formula markdown must stay unchanged through the OCR task')
+  assert.ok(document.markdown.includes('设 $p_n = 1$'), 'the OCR input boundary must repair the supported dirty delimiter before canonical Markdown is stored')
+  assert.equal(document.markdown.includes(doc2xDirtyDelimiter), false, 'the stored OCR Markdown must not retain the repaired delimiter pattern')
+  assert.ok(document.markdown.includes(doc2xValidSingleLineDisplay), 'a complete display formula must stay unchanged at the OCR storage boundary')
+  assert.doesNotMatch(document.markdown, /^\$\$x\$后接\$y\$$/m, 'the OCR boundary must not reinterpret a display closing delimiter')
   assert.equal(preuploadCalls, 1)
   assert.equal(uploadCalls, 1)
   assert.equal(statusCalls, 1)

@@ -6,8 +6,11 @@ import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import { normalizeLatexMathDelimiters } from '@/utils/mathMarkdown'
+import { scanMathDelimiters } from '@/utils/mathDelimiterScanner'
 import { blankNodeToHast, remarkFillBlank } from '@/utils/fillBlankMarkdown'
 import { splitHtmlTableSegments, type HtmlTable } from '@/utils/htmlTables'
+import { KATEX_STRICT } from '@/utils/katexPolicy'
+import { rehypeApplyMathValidation, rehypeCollectMathValidation } from '@/utils/katexValidation'
 
 export const MarkdownContent = memo(function MarkdownContent({ content, className = '' }: { content: string; className?: string }) {
   const segments = useMemo(() => splitHtmlTableSegments(content), [content])
@@ -25,11 +28,11 @@ function MarkdownSegment({ content }: { content: string }) {
     <ReactMarkdown
       remarkPlugins={[remarkMath, remarkGfm, remarkBreaks, remarkFillBlank]}
       remarkRehypeOptions={{ handlers: { blank: blankNodeToHast } as any }}
-      rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
+      rehypePlugins={[rehypeCollectMathValidation, [rehypeKatex, { strict: KATEX_STRICT }], rehypeApplyMathValidation]}
       urlTransform={markdownUrlTransform}
       components={markdownComponents}
     >
-      {normalizeMarkdownForRender(content)}
+      {canonicalizeMathDelimitersForRemark(normalizeMarkdownForRender(content))}
     </ReactMarkdown>
   )
 }
@@ -39,11 +42,11 @@ function HtmlTableCellContent({ content }: { content: string }) {
     <ReactMarkdown
       remarkPlugins={[remarkMath, remarkGfm, remarkBreaks, remarkFillBlank]}
       remarkRehypeOptions={{ handlers: { blank: blankNodeToHast } as any }}
-      rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
+      rehypePlugins={[rehypeCollectMathValidation, [rehypeKatex, { strict: KATEX_STRICT }], rehypeApplyMathValidation]}
       urlTransform={markdownUrlTransform}
       components={{ ...markdownComponents, p: ({ children }) => <>{children}</> }}
     >
-      {normalizeLatexMathDelimiters(stripDoc2xNoiseComments(content))}
+      {canonicalizeMathDelimitersForRemark(normalizeLatexMathDelimiters(stripDoc2xNoiseComments(content)))}
     </ReactMarkdown>
   )
 }
@@ -75,9 +78,18 @@ const markdownComponents = {
   strong: ({ children }: { children?: React.ReactNode }) => <strong className="font-semibold">{children}</strong>,
   blockquote: ({ children }: { children?: React.ReactNode }) => <blockquote className="my-2 border-l-2 border-zinc-300 pl-3 text-zinc-600">{children}</blockquote>,
   code: ({ children }: { children?: React.ReactNode }) => <code className="rounded bg-zinc-100 px-1 py-0.5 text-[0.92em]">{children}</code>,
-  span: ({ className, children, node: _node, ...props }: { className?: string; children?: React.ReactNode; node?: unknown }) => String(className || '').includes('katex-error')
-    ? <span {...props} className="inline-flex items-baseline gap-1 rounded bg-amber-50 px-1 text-amber-900"><code>{children}</code><span className="text-[10px] text-amber-700">公式未规范化</span></span>
-    : <span {...props} className={className}>{children}</span>,
+  span: ({ className, children, node: rawNode, ...props }: { className?: string; children?: React.ReactNode; node?: unknown }) => {
+    const properties = (rawNode as { properties?: Record<string, unknown> } | undefined)?.properties
+    const invalid = String(properties?.['data-math-invalid'] || '') === 'true' || String(className || '').includes('katex-error')
+    if (!invalid) return <span {...props} className={className}>{children}</span>
+    const source = String(properties?.['data-math-source'] || '')
+    return (
+      <span {...props} aria-invalid="true" className="inline-flex items-baseline gap-1 rounded bg-amber-50 px-1 text-amber-900">
+        <code>{source || children}</code>
+        <span className="text-[10px] text-amber-700">公式格式有误</span>
+      </span>
+    )
+  },
   ['blank' as any]: ({ node }: any) => {
     const count = Number((node?.properties as { dataBlank?: string } | undefined)?.dataBlank) || 3
     const width = `${Math.min(2 + count * 0.35, 8)}em`
@@ -104,6 +116,79 @@ export function plainTextLength(value: string) {
 
 export function normalizeMarkdownForRender(value: string) {
   return normalizeMarkdownTables(normalizeHtmlTables(normalizeLatexMathDelimiters(stripDoc2xNoiseComments(String(value || '')))))
+}
+
+/**
+ * remark-math treats same-line `$$...$$` as inline math. Reformat only the
+ * display tokens already identified by the shared scanner. Protected code and
+ * ordinary Markdown are preserved, apart from escaping ambiguous unpaired
+ * double-dollar runs below.
+ */
+export function canonicalizeMathDelimitersForRemark(value: string) {
+  return scanMathDelimiters(value).map((segment) => {
+    if (segment.type === 'code') return segment.value
+    if (segment.type === 'text') return escapeUnparsedDoubleDollarRuns(segment.value)
+    if (!segment.displayMode) return `$${segment.latex}$`
+    return `\n\n$$\n${segment.latex}\n$$\n\n`
+  }).join('')
+}
+
+/**
+ * remark-math accepts an otherwise-unpaired double-dollar run as an empty
+ * display token (notably an isolated `$$`). The shared scanner has already
+ * established that these signs are ordinary text, so escape only unescaped
+ * double-dollar runs in text segments before handing the source to remark.
+ */
+function escapeUnparsedDoubleDollarRuns(value: string) {
+  let hasUnparsedDoubleDollar = false
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] !== '$' || isEscapedDollar(value, index)) continue
+    let end = index
+    while (value[end] === '$') end += 1
+    if (end - index >= 2) {
+      hasUnparsedDoubleDollar = true
+      break
+    }
+    index = end - 1
+  }
+  if (hasUnparsedDoubleDollar) return escapeAllUnescapedDollars(value)
+
+  let output = ''
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] !== '$') {
+      output += value[index]
+      continue
+    }
+    const runStart = index
+    let runEnd = runStart
+    while (value[runEnd] === '$') runEnd += 1
+    const run = value.slice(runStart, runEnd)
+    if (run.length < 2) {
+      output += run
+      index = runEnd - 1
+      continue
+    }
+    for (let offset = 0; offset < run.length; offset += 1) {
+      output += isEscapedDollar(value, runStart + offset) ? '$' : '\\$'
+    }
+    index = runEnd - 1
+  }
+  return output
+}
+
+function isEscapedDollar(value: string, index: number) {
+  let backslashes = 0
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === '\\'; cursor -= 1) backslashes += 1
+  return backslashes % 2 === 1
+}
+
+function escapeAllUnescapedDollars(value: string) {
+  let output = ''
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === '$' && !isEscapedDollar(value, index)) output += '\\$'
+    else output += value[index]
+  }
+  return output
 }
 
 export function stripDoc2xNoiseComments(value: string) {

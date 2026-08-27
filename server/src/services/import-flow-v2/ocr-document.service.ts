@@ -5,7 +5,10 @@ import type { OCRAsset, OCRDocument, OCRPage } from '../../types/ocr-document.js
 import { RouteError } from '../../utils/http-error.js'
 import { nowIso } from '../../utils/ids.js'
 import { assetPathFor, resolveStoragePath } from '../../utils/paths.js'
-import { ensureOcrDocumentFiguresAndPlaceholders } from '../ocr-providers/ocr-document.normalizer.js'
+import {
+  ensureOcrDocumentFiguresAndPlaceholders,
+  prepareOcrDocumentMarkdownForStorage,
+} from '../ocr-providers/ocr-document.normalizer.js'
 import { ensureDir, readJsonFile, readText, storedOcrDocumentDir, writeJson, writeText } from './import-flow-v2.paths.js'
 import { localizeRemoteImages } from './figure-mapping.js'
 import { applyWatermarkCleanup } from './watermark-cleanup.js'
@@ -59,7 +62,9 @@ export async function importOCRDocumentJson(body: Record<string, unknown>) {
   
   ensureOcrDocumentFiguresAndPlaceholders(normalized)
   await localizeRemoteImages(normalized)
-  normalized = applyWatermarkCleanup(normalized, source.metadata).document
+  normalized = prepareOcrDocumentMarkdownForStorage(
+    applyWatermarkCleanup(normalized, source.metadata).document,
+  )
 
   const ocrId = normalized.id || ''
   const finalId = ocrId && !ocrRepo.getOcrDocument(ocrId) ? ocrId : ''

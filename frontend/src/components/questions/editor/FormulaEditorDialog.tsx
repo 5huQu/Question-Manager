@@ -1,9 +1,9 @@
-import { createElement, useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { createElement, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
-import katex from 'katex'
 import { Braces, Code2, FileText, ImagePlus, Sparkles, X } from 'lucide-react'
 import type { VirtualKeyboardLayout } from 'mathlive'
 import { MarkdownContent } from '../../MarkdownContent'
+import { renderKatexWithStatus } from '@/utils/katexValidation'
 
 type MathFieldElement = HTMLElement & { value: string; focus(): void }
 type MathliveStatus = 'loading' | 'ready' | 'error'
@@ -360,6 +360,8 @@ export function FormulaEditorDialog({
   const mixedMarkdownDetected = Boolean(onApplyMixedMarkdown && looksLikeMixedMarkdown(draft))
   const visualMixedPreview = !advanced && mixedMarkdownDetected
   const modelRequirements = onApplyMixedMarkdown ? MIXED_MARKDOWN_MODEL_REQUIREMENTS : FORMULA_MODEL_REQUIREMENTS
+  const directPreview = useMemo(() => renderKatexWithStatus(draft, displayMode), [draft, displayMode])
+  const directPreviewInvalid = !directPreview.validation.valid
 
   useEffect(() => {
     let active = true
@@ -464,7 +466,10 @@ export function FormulaEditorDialog({
                 {mixedMarkdownMode ? (
                   draft.trim() ? <MarkdownContent content={draft} /> : <p className="text-xs italic text-zinc-400">输入混合源码后在此预览。</p>
                 ) : (
-                  <div className="flex min-h-[16rem] items-center justify-center overflow-x-auto text-center" dangerouslySetInnerHTML={{ __html: katex.renderToString(draft, { displayMode, throwOnError: false, strict: false }) }} />
+                  <>
+                    <div className="flex min-h-[16rem] items-center justify-center overflow-x-auto text-center" aria-invalid={directPreviewInvalid || undefined} dangerouslySetInnerHTML={{ __html: directPreview.html }} />
+                    {directPreviewInvalid ? <p role="alert" className="mt-2 text-center text-xs text-amber-700">公式格式有误</p> : null}
+                  </>
                 )}
               </div>
             </div>
@@ -495,7 +500,8 @@ export function FormulaEditorDialog({
                 </div>
                 <div className="min-h-0 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/20">
                   <div className="mb-2 text-[11px] font-medium text-zinc-500">实时渲染预览</div>
-                  <div className="flex min-h-[16rem] items-center justify-center overflow-x-auto text-center" dangerouslySetInnerHTML={{ __html: katex.renderToString(draft, { displayMode, throwOnError: false, strict: false }) }} />
+                  <div className="flex min-h-[16rem] items-center justify-center overflow-x-auto text-center" aria-invalid={directPreviewInvalid || undefined} dangerouslySetInnerHTML={{ __html: directPreview.html }} />
+                  {directPreviewInvalid ? <p role="alert" className="mt-2 text-center text-xs text-amber-700">公式格式有误</p> : null}
                 </div>
               </div>
             )

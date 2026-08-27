@@ -1,23 +1,40 @@
 import type { JSONContent } from '@tiptap/react'
 import { normalizeLatexMathDelimiters } from '@/utils/mathMarkdown'
+import { scanMathDelimiters, type MathDelimiterSegment } from '@/utils/mathDelimiterScanner'
 import { splitHtmlTableSegments, type HtmlTable, type HtmlTableAlignment } from '@/utils/htmlTables'
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+const BACKTICK = String.fromCharCode(96)
+
+function normalizeCodeSpanContent(value: string) {
+  const normalized = value.replace(/\r?\n/g, ' ')
+  return normalized.length > 1 && normalized.startsWith(' ') && normalized.endsWith(' ') && /[^ ]/.test(normalized)
+    ? normalized.slice(1, -1)
+    : normalized
+}
+
+function inlineCodeToHtml(value: string) {
+  let delimiterLength = 0
+  while (value[delimiterLength] === BACKTICK) delimiterLength += 1
+  return '<code>' + escapeHtml(normalizeCodeSpanContent(value.slice(delimiterLength, -delimiterLength))) + '</code>'
+}
+
+/**
+ * The shared scanner is the only production source of truth for deciding
+ * inline versus display math. This adapter only serializes its segments to
+ * Tiptap-safe HTML.
+ */
 function inlineToHtml(value: string): string {
-  const output: string[] = []
-  let cursor = 0
-  const formula = /(?<!\\)\$([^\n$]+?)(?<!\\)\$/g
-  for (const match of value.matchAll(formula)) {
-    const index = match.index ?? 0
-    output.push(escapeHtml(value.slice(cursor, index)))
-    output.push(`<span data-formula="inline" data-latex="${escapeHtml(match[1])}"></span>`)
-    cursor = index + match[0].length
-  }
-  output.push(escapeHtml(value.slice(cursor)))
-  return output.join('')
+  return scanMathDelimiters(value).map((segment) => {
+    if (segment.type === 'text') return escapeHtml(segment.value)
+    if (segment.type === 'code') return segment.fenced ? escapeHtml(segment.value) : inlineCodeToHtml(segment.value)
+    const tag = segment.displayMode ? 'div' : 'span'
+    const mode = segment.displayMode ? 'block' : 'inline'
+    return `<${tag} data-formula="${mode}" data-latex="${escapeHtml(segment.latex)}"></${tag}>`
+  }).join('')
 }
 
 function isTableSeparator(line: string): boolean {
@@ -71,25 +88,10 @@ function htmlTableToEditorHtml(table: HtmlTable): string {
   }).join('')}</tr>`).join('')}</tbody></table>`
 }
 
-function markdownSegmentToEditorHtml(markdown: string): string {
+function markdownTextToEditorHtml(markdown: string): string {
   const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
   const blocks: string[] = []
   for (let index = 0; index < lines.length;) {
-    if (lines[index].trim() === '$$') {
-      const end = lines.indexOf('$$', index + 1)
-      if (end > index) {
-        const latex = lines.slice(index + 1, end).join('\n')
-        blocks.push(`<div data-formula="block" data-latex="${escapeHtml(latex)}"></div>`)
-        index = end + 1
-        continue
-      }
-    }
-    if (lines[index].trim().startsWith('$$') && lines[index].trim().endsWith('$$') && lines[index].trim().length > 4) {
-      const latex = lines[index].trim().slice(2, -2)
-      blocks.push(`<div data-formula="block" data-latex="${escapeHtml(latex)}"></div>`)
-      index += 1
-      continue
-    }
     if (index + 1 < lines.length && lines[index].includes('|') && isTableSeparator(lines[index + 1])) {
       const header = tableCells(lines[index])
       const alignments = tableCells(lines[index + 1]).map(markdownTableAlignment)
@@ -116,6 +118,40 @@ function markdownSegmentToEditorHtml(markdown: string): string {
   return blocks.join('') || '<p></p>'
 }
 
+function sourceForTextSegment(segment: MathDelimiterSegment) {
+  if (segment.type === 'math') return `$${segment.latex}$`
+  return segment.value
+}
+
+function markdownSegmentToEditorHtml(markdown: string): string {
+  const blocks: string[] = []
+  let text = ''
+  const flushText = () => {
+    if (!text) return
+    blocks.push(markdownTextToEditorHtml(text))
+    text = ''
+  }
+
+  for (const segment of scanMathDelimiters(markdown)) {
+    if (segment.type === 'math' && segment.displayMode) {
+      flushText()
+      blocks.push(`<div data-formula="block" data-latex="${escapeHtml(segment.latex)}"></div>`)
+      continue
+    }
+    // RichMarkdownEditor keeps fenced code in source mode. Retaining it as a
+    // literal preformatted block here prevents its dollars reaching the inline
+    // serializer if this adapter is called directly.
+    if (segment.type === 'code' && segment.fenced) {
+      flushText()
+      blocks.push(`<pre><code>${escapeHtml(segment.value)}</code></pre>`)
+      continue
+    }
+    text += sourceForTextSegment(segment)
+  }
+  flushText()
+  return blocks.join('') || '<p></p>'
+}
+
 /** Converts the supported Markdown and HTML-table subset into Tiptap-safe HTML. */
 export function markdownToEditorHtml(markdown: string): string {
   const normalized = normalizeLatexMathDelimiters(markdown)
@@ -131,13 +167,20 @@ function inlineJson(node: JSONContent): string {
       if (mark.type === 'bold') text = `**${text}**`
       if (mark.type === 'italic') text = `*${text}*`
       if (mark.type === 'strike') text = `~~${text}~~`
-      if (mark.type === 'code') text = `\`${text}\``
+      if (mark.type === 'code') text = codeSpanMarkdown(text)
     }
     return text
   }
   if (node.type === 'hardBreak') return '\n'
   if (node.type === 'formulaInline') return `$${node.attrs?.latex || ''}$`
   return (node.content || []).map(inlineJson).join('')
+}
+
+function codeSpanMarkdown(text: string) {
+  const longestRun = Math.max(0, ...Array.from(text.matchAll(/`+/g)).map((match) => match[0].length))
+  const delimiter = BACKTICK.repeat(longestRun + 1)
+  const needsPadding = Boolean(text) && (/^[`\s]/.test(text) || /[`\s]$/.test(text))
+  return delimiter + (needsPadding ? ' ' : '') + text + (needsPadding ? ' ' : '') + delimiter
 }
 
 function cellMarkdown(cell: JSONContent): string {

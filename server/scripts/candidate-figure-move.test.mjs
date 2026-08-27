@@ -8,7 +8,11 @@ process.env.QUESTION_DATA_DIR = tempRoot
 process.env.QUESTION_AUTH_MODE = 'disabled'
 
 const { closeDatabase } = await import('../dist/index.js')
-const { importOCRDocumentJson } = await import('../dist/services/import-flow-v2/ocr-document.service.js')
+const {
+  importOCRDocumentJson,
+  loadOcrDocument,
+  updateOcrDocumentMarkdown,
+} = await import('../dist/services/import-flow-v2/ocr-document.service.js')
 const { moveCandidateFigure, uploadCandidateFigure } = await import('../dist/services/import-flow-v2/candidate.service.js')
 const candidateRepo = await import('../dist/repositories/question-candidates.repo.js')
 
@@ -21,7 +25,7 @@ try {
       id: ocrDocumentId,
       sourceDocumentId,
       provider: 'doc2x',
-      markdown: '5. 第五题。\n6. 第六题。',
+      markdown: '5. 第五题。\n6. 第六题。\n$设 $$ p_n = 1 $ $\n$$x$$ 后接 $y$',
       pages: [{
         pageNo: 1,
         width: 1000,
@@ -42,6 +46,15 @@ try {
       }],
     },
   })
+
+  const canonicalOcrDocument = loadOcrDocument(ocrDocumentId)
+  assert.match(canonicalOcrDocument.markdown, /设 \$p_n = 1\$/)
+  assert.match(canonicalOcrDocument.markdown, /\$\$x\$\$ 后接 \$y\$/)
+  assert.doesNotMatch(canonicalOcrDocument.markdown, /^\$\$x\$后接\$y\$$/m)
+
+  const manuallyAuthoredMarkdown = '$$x$$ 后接 $y$'
+  updateOcrDocumentMarkdown(ocrDocumentId, { markdown: manuallyAuthoredMarkdown })
+  assert.equal(loadOcrDocument(ocrDocumentId).markdown, manuallyAuthoredMarkdown, 'manual Markdown updates must not use the OCR delimiter heuristic')
 
   const source = candidateRepo.createQuestionCandidate({
     id: 'candidate_q5',
