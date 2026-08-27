@@ -232,6 +232,21 @@ function contentRegions(input: {
   const pushTextRegion = (part: string) => {
     const key = stableRegionKey(input.blockId, input.type, index)
     if (simpleParagraph(part)) {
+      const editableContent = inlineContentOrFallback(input.inlineContent, key, part)
+      // Unsupported editable syntax must remain visible through MarkdownContent.
+      // An empty paragraph here would silently discard a non-empty question stem.
+      if (!editableContent) {
+        regions.push({
+          key,
+          type: input.type,
+          index,
+          kind: 'markdown',
+          splitPolicy: 'never',
+          markdown: part,
+        })
+        index += 1
+        return
+      }
       regions.push({
         key,
         type: input.type,
@@ -241,7 +256,7 @@ function contentRegions(input: {
         paragraph: {
           type: 'paragraph',
           id: key,
-          content: inlineContentOrFallback(input.inlineContent, key, part) || [],
+          content: editableContent,
         },
       })
     } else {

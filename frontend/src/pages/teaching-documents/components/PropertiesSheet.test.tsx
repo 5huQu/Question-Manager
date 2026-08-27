@@ -53,7 +53,20 @@ function renderSheet(
   })
 }
 
+async function expandSkinPanel() {
+  const toggle = container!.querySelector<HTMLButtonElement>('button[aria-expanded]')
+  if (toggle?.getAttribute('aria-expanded') === 'false') {
+    await act(async () => toggle.click())
+  }
+}
+
 describe('PropertiesSheet 对齐与卡片内容列表', () => {
+  it('题目属性窗默认打开样式页', async () => {
+    const block = { type: 'question' as const, id: 'question-style-default', questionId: 'q1', breakBehavior: 'auto' as const, display: {} }
+    await renderSheet({ block, topLevel: block })
+    expect(container!.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('样式')
+  })
+
   it('filters Heading and Box skin selectors and clears the explicit ref for the default option', async () => {
     const skinTiles = () => Array.from(container!.querySelectorAll<HTMLButtonElement>('[role="radiogroup"][aria-label="皮肤"] [role="radio"]'))
     const tileByLabel = (label: string) => skinTiles().find((tile) => tile.getAttribute('aria-label') === label)
@@ -61,6 +74,7 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
     const onHeadingUpdate = vi.fn()
     const heading = { type: 'heading' as const, id: 'heading-skin', level: 2 as const, content: [{ type: 'text' as const, text: '标题' }] }
     await renderSheet({ block: heading, topLevel: heading }, onHeadingUpdate)
+    await expandSkinPanel()
     expect(skinTiles().map((tile) => tile.getAttribute('aria-label'))).toContain('圆角标签标题')
     expect(skinTiles().map((tile) => tile.getAttribute('aria-label'))).not.toContain('深色标题带')
     expect(tileByLabel('默认')?.getAttribute('aria-checked')).toBe('true')
@@ -75,6 +89,7 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
     const styleTab = Array.from(container!.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
       .find((button) => button.textContent === '样式')
     await act(async () => styleTab?.click())
+    await expandSkinPanel()
     expect(skinTiles().map((tile) => tile.getAttribute('aria-label'))).toContain('深色标题带')
     expect(skinTiles().map((tile) => tile.getAttribute('aria-label'))).not.toContain('圆角标签标题')
     expect(tileByLabel('左侧强调线')?.getAttribute('aria-checked')).toBe('true')
@@ -89,6 +104,7 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
     const variantStyleTab = Array.from(container!.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
       .find((button) => button.textContent === '样式')
     await act(async () => variantStyleTab?.click())
+    await expandSkinPanel()
     await act(async () => {
       tileByLabel('深色标题带')?.click()
     })
@@ -102,6 +118,7 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
     const styleTab = Array.from(container!.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
       .find((button) => button.textContent === '样式')
     await act(async () => styleTab?.click())
+    await expandSkinPanel()
     expect(container!.textContent).toContain('当前：绿色')
     expect(container!.textContent).toContain('来源：Warm · v1')
     const variantGroup = container!.querySelector('[role="radiogroup"][aria-label="局部样式配色"]')
@@ -119,6 +136,7 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
     const unknownStyleTab = Array.from(container!.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
       .find((button) => button.textContent === '样式')
     await act(async () => unknownStyleTab?.click())
+    await expandSkinPanel()
     expect(container!.textContent).toContain('局部样式不可用：futureVariant')
     expect(unknownUpdate).not.toHaveBeenCalled()
     const restore = Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent === '跟随整体')
@@ -137,6 +155,7 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
     const zeroVariantUnknownStyleTab = Array.from(container!.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
       .find((button) => button.textContent === '样式')
     await act(async () => zeroVariantUnknownStyleTab?.click())
+    await expandSkinPanel()
     expect(container!.textContent).toContain('当前：futureVariant')
     expect(container!.textContent).toContain('局部样式不可用：futureVariant')
     expect(container!.querySelector('[role="radiogroup"][aria-label="局部样式配色"]')).toBeNull()
@@ -150,6 +169,7 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
     const zeroVariantStyleTab = Array.from(container!.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
       .find((button) => button.textContent === '样式')
     await act(async () => zeroVariantStyleTab?.click())
+    await expandSkinPanel()
     expect(container!.textContent).not.toContain('局部样式')
     expect(container!.querySelector('[role="radiogroup"][aria-label="局部样式配色"]')).toBeNull()
   })
@@ -176,10 +196,22 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
   it('将样式标签置于内容之前，并将卡片默认定位到样式页', async () => {
     const box = { type: 'box' as const, id: 'box-style-structure', templateId: 'concept', breakBehavior: 'auto' as const, children: [] }
     await renderSheet({ block: box, topLevel: box })
+    await expandSkinPanel()
     expect(Array.from(container!.querySelectorAll('[role="tab"]')).map((tab) => tab.textContent)).toEqual(['样式', '内容', '布局'])
     expect(container!.textContent).toContain('卡片模板')
     expect(container!.querySelector('[role="radiogroup"][aria-label="皮肤"]')).not.toBeNull()
     expect(container!.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('样式')
+  })
+
+  it('收起皮肤面板不会取消当前对象选择', async () => {
+    const box = { type: 'box' as const, id: 'box-skin-collapse', templateId: 'concept', breakBehavior: 'auto' as const, children: [] }
+    await renderSheet({ block: box, topLevel: box })
+    const summary = container!.querySelector('button[aria-expanded]')
+    expect(summary).not.toBeNull()
+    await expandSkinPanel()
+    await act(async () => summary?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(container!.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('样式')
+    expect(container!.querySelector('[role="tablist"]')).not.toBeNull()
   })
 
   it('在布局页用显式标记控制对象后的强制换页', async () => {

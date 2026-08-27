@@ -2,7 +2,7 @@ import type { FigureAlignment } from '@/types/teachingDocument'
 import { clampFigureWidthMm } from '@/components/teaching-document/editor/resizeLogic'
 
 /** 题库题图在讲义中的默认物理宽度，避免未设置覆盖时占用过多版面。 */
-export const DEFAULT_QUESTION_FIGURE_WIDTH_MM = 60
+export const DEFAULT_QUESTION_FIGURE_WIDTH_MM = 30
 
 export type FigureLayoutPreset =
   | 'block-center'

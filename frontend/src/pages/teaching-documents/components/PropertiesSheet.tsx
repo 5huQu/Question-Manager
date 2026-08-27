@@ -109,7 +109,7 @@ function PropertiesSheetPanel(props: {
     ? props.selected.topLevel
     : block
   // 卡片通常先调整模板、皮肤与外观；其余对象打开后仍优先显示可编辑内容。
-  const [tab, setTab] = useState<'content' | 'style' | 'layout'>(() => displayBlock.type === 'box' ? 'style' : 'content')
+  const [tab, setTab] = useState<'content' | 'style' | 'layout'>(() => displayBlock.type === 'box' || displayBlock.type === 'question' ? 'style' : 'content')
   const updateDisplayBlock = displayBlock.id === block.id ? props.onUpdate : props.onUpdateTopLevel
   const layoutBlock = displayBlock.type === 'box' ? displayBlock : block
   // 换页符只能位于顶层对象之间。卡片内对象的面板仍提供此项，但作用于所属卡片之后。
@@ -175,7 +175,8 @@ function PropertiesSheetPanel(props: {
 
         {tab === 'content' ? <SheetBody {...props} onUpdateDisplayBlock={updateDisplayBlock} /> : null}
         {tab === 'style' && displayBlock.type === 'box' ? <BoxStyleSettings block={displayBlock} presetContext={props.presetContext} onUpdate={updateDisplayBlock} /> : null}
-        {tab === 'style' && displayBlock.type !== 'box' ? <div className="min-h-12" /> : null}
+        {tab === 'style' && displayBlock.type === 'question' ? <QuestionSettings {...props} mode="style" block={displayBlock} boxId={props.selected.boxId} question={props.question} onUpdate={updateDisplayBlock} /> : null}
+        {tab === 'style' && displayBlock.type !== 'box' && displayBlock.type !== 'question' ? <div className="min-h-12" /> : null}
 
         {/* 高级区 */}
         {tab === 'layout' ? <details open className="group rounded-lg border border-zinc-200 dark:border-zinc-800">

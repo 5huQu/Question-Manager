@@ -1,4 +1,6 @@
-import type { CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
+import { ChevronDown } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
 import type { TeachingSkinRef } from '@/types/teachingDocument'
 import type { TeachingSkinDefinition, TeachingSkinPresetResolution, TeachingSkinVariantId } from '@/utils/teachingDocument/skins'
 import { resolveBoxSkin, resolveHeadingSkin, resolveTeachingSkinDesignRenderState, resolveTeachingSkinVariantSelection, teachingSkinRegistry } from '@/utils/teachingDocument/skins'
@@ -162,36 +164,62 @@ function SkinSelect({
   options: TeachingSkinDefinition[]
   onChange: (skin: TeachingSkinRef | undefined) => void
 }) {
+  const [expanded, setExpanded] = useState(false)
   const selectedIsAvailable = !skin || options.some((definition) => definition.id === skin.id)
   const previewVariantId = (definition: TeachingSkinDefinition): TeachingSkinVariantId | undefined => {
     if (skin?.id === definition.id) return resolveTeachingSkinVariantSelection(skin, definition.id, undefined, presetContext?.bindings).requestedVariantId
     return presetContext?.bindings?.[definition.id]
   }
   return (
-    <>
-      <div className="space-y-1">
-        <p className="text-[13px] font-medium text-zinc-500">皮肤</p>
-        <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="皮肤">
-          <SkinTile label="默认" active={skin === undefined} dashed onSelect={() => onChange(undefined)}>
-            {target === 'heading' ? <MiniPlainHeading /> : <MiniPlainBox />}
-          </SkinTile>
-          {options.map((definition) => (
-            <SkinTile
-              key={definition.id}
-              label={definition.label}
-              active={selectedIsAvailable && skin?.id === definition.id}
-              onSelect={() => onChange({ id: definition.id, version: definition.version })}
-            >
-              {target === 'heading'
-                ? <MiniHeadingPreview definition={definition} level={level || 2} variantId={previewVariantId(definition)} />
-                : <MiniBoxPreview definition={definition} variantId={previewVariantId(definition)} />}
-            </SkinTile>
-          ))}
-        </div>
-        {resolutionLabel ? <p className="text-[11px] leading-4 text-amber-700 dark:text-amber-300">{resolutionLabel}；会保留原引用并按默认视觉显示。</p> : null}
-      </div>
-      {skin && definition ? <TeachingSkinVariantSelector skin={skin} definition={definition} presetContext={presetContext} onChange={onChange} /> : null}
-    </>
+    <div className="rounded-md border border-zinc-200/70 dark:border-zinc-800/70">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        className="flex cursor-pointer list-none items-center justify-between px-2.5 py-2 text-[13px] font-medium text-zinc-500 [&::-webkit-details-marker]:hidden"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation()
+          setExpanded((current) => !current)
+        }}
+      >
+        皮肤
+        <motion.span animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}><ChevronDown className="size-3.5" /></motion.span>
+      </button>
+      <AnimatePresence initial={false}>
+        {expanded ? (
+          <motion.div
+            key="skin-panel"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="overflow-hidden"
+          >
+            <div className="space-y-2 border-t border-zinc-100 px-2.5 py-2.5 dark:border-zinc-900">
+              <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="皮肤">
+                <SkinTile label="默认" active={skin === undefined} dashed onSelect={() => onChange(undefined)}>
+                  {target === 'heading' ? <MiniPlainHeading /> : <MiniPlainBox />}
+                </SkinTile>
+                {options.map((definition) => (
+                  <SkinTile
+                    key={definition.id}
+                    label={definition.label}
+                    active={selectedIsAvailable && skin?.id === definition.id}
+                    onSelect={() => onChange({ id: definition.id, version: definition.version })}
+                  >
+                    {target === 'heading'
+                      ? <MiniHeadingPreview definition={definition} level={level || 2} variantId={previewVariantId(definition)} />
+                      : <MiniBoxPreview definition={definition} variantId={previewVariantId(definition)} />}
+                  </SkinTile>
+                ))}
+              </div>
+              {resolutionLabel ? <p className="text-[11px] text-amber-700 dark:text-amber-300">{resolutionLabel}；会保留原引用并按默认视觉显示。</p> : null}
+              {skin && definition ? <TeachingSkinVariantSelector skin={skin} definition={definition} presetContext={presetContext} onChange={onChange} /> : null}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
   )
 }
 

@@ -308,6 +308,39 @@ describe('createQuestionRuntimeModel', () => {
       .toEqual(['markdown', 'markdown', 'markdown'])
   })
 
+  it('preserves a non-editable formula stem instead of silently dropping it', () => {
+    const markdown = '已知复数 $ z=-2-i $ ，则 $ |z| $为\n\nA. 1 B. 2 C. $ \\sqrt{5} $ D. 5'
+    const block: QuestionBlock = {
+      type: 'question',
+      id: 'question-block',
+      questionId: 'question-1',
+    }
+    const model = createQuestionRuntimeModel(block, question({ stemMarkdown: markdown }))
+    const stem = model.regions.find((region) => region.type === 'stem')
+
+    expect(stem).toMatchObject({ kind: 'markdown' })
+    expect(stem && 'markdown' in stem ? stem.markdown : '').toContain('已知复数')
+    expect(stem && 'markdown' in stem ? stem.markdown : '').toContain('$ z=-2-i $')
+    expect(stem && 'markdown' in stem ? stem.markdown : '').toContain('$ |z| $')
+    const options = model.regions.find((region) => region.kind === 'options-row')
+    expect(options).toBeDefined()
+    expect(options && options.kind === 'options-row' ? options.options[2]?.content : '').toContain('$ \\sqrt{5} $')
+  })
+
+  it.each([
+    ['a Markdown table', `| A | B |
+|---|---|
+| 1 | 2 |`],
+    ['HTML content', '<span>复杂题干</span>'],
+  ])('keeps %s visible when it cannot enter the editable model', (_name, markdown) => {
+    const block: QuestionBlock = { type: 'question', id: 'question-block', questionId: 'question-1' }
+    const model = createQuestionRuntimeModel(block, question({ stemMarkdown: markdown, questionType: '解答题' }))
+    const stemRegions = model.regions.filter((region) => region.type === 'stem')
+
+    expect(stemRegions).not.toHaveLength(0)
+    expect(stemRegions.some((region) => region.kind === 'markdown' && region.markdown.includes(markdown.split('\n')[0]))).toBe(true)
+  })
+
   it('keeps an unresolved figure marker as an explicit runtime region', () => {
     const block: QuestionBlock = {
       type: 'question',

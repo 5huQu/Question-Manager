@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, Database, ImagePlus, Pencil, Trash2 } from 'lucide-react'
+import { AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowUp, Database, ImagePlus, Pencil, Trash2 } from 'lucide-react'
 import type { QuestionItem } from '@/types'
 import type { QuestionBlock, TeachingBlock } from '@/types/teachingDocument'
 import { figureDisplayLabels, orderQuestionFiguresByUsage, parseChoiceQuestion, questionFigureUsage } from '@/utils/questionDisplay'
@@ -10,6 +10,7 @@ import { Divider, Field, fieldClass, Section } from './common'
 const DEFAULT_GROUP_HEIGHT_MM = 50
 
 export function QuestionSettings(props: {
+  mode?: 'content' | 'style'
   onUpdate: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
   onEditQuestion?: (blockId: string) => void
   onOpenQuestionPicker?: (blockId: string, boxId?: string) => void
@@ -20,6 +21,8 @@ export function QuestionSettings(props: {
 }) {
   const [uploading, setUploading] = useState(false)
   const { block } = props
+  const contentMode = props.mode !== 'style'
+  const styleMode = props.mode === 'style'
   const answerSpace = block.display?.answerSpace
   const orderedFigures = orderQuestionFiguresByUsage(props.question?.figures || [])
   const figureLabels = figureDisplayLabels(orderedFigures)
@@ -27,6 +30,7 @@ export function QuestionSettings(props: {
 
   return (
     <div className="space-y-3">
+      {contentMode ? <>
       <div className="space-y-1.5">
         <p className="text-[13px] font-medium text-zinc-500">从题库选择</p>
         <button
@@ -66,27 +70,6 @@ export function QuestionSettings(props: {
       <Field label="显示编号">
         <input className={fieldClass} value={block.display?.displayNumberAuto ? '' : (block.display?.displayNumber || '')} onChange={(event) => props.onUpdate({ display: { ...block.display, displayNumber: event.target.value, displayNumberAuto: false } })} placeholder="如 1、例 2" />
       </Field>
-      {hasChoices ? (
-        <Section title="选项布局">
-          <Field label="本题选项排布">
-            <select
-              className={fieldClass}
-              aria-label="本题选项排布"
-              value={block.display?.choiceLayout || 'auto'}
-              onChange={(event) => props.onUpdate({ display: {
-                ...block.display,
-                choiceLayout: event.target.value as NonNullable<NonNullable<QuestionBlock['display']>['choiceLayout']>,
-              } })}
-            >
-              <option value="auto">自动</option>
-              <option value="four">1×4（四栏）</option>
-              <option value="two">2×2（两栏）</option>
-              <option value="one">4×1（单栏）</option>
-            </select>
-          </Field>
-          <p className="text-[11px] leading-4 text-zinc-500">自动会按当前纸张宽度和选项实际内容测量；固定布局会同时作用于预览、分页和打印。</p>
-        </Section>
-      ) : null}
       <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
         <input type="checkbox" className="size-3.5 rounded border-zinc-300" checked={Boolean(block.display?.showAnswer)} onChange={(event) => props.onUpdate({ display: { ...block.display, showAnswer: event.target.checked } })} />
         显示答案
@@ -147,10 +130,21 @@ export function QuestionSettings(props: {
           </div>
         ) : null}
       </Section>
+      </> : null}
 
-      <Divider />
+      {styleMode && hasChoices ? (
+        <Section title="选项布局">
+          <ChoiceLayoutControl
+            value={block.display?.choiceLayout || 'auto'}
+            onChange={(choiceLayout) => props.onUpdate({ display: { ...block.display, choiceLayout } })}
+          />
+          <p className="text-[11px] leading-4 text-zinc-500">自动会按当前纸张宽度和选项实际内容测量；固定布局会同时作用于预览、分页和打印。</p>
+        </Section>
+      ) : null}
 
-      {props.question?.figures?.length ? (
+      {styleMode ? <Divider /> : null}
+
+      {styleMode && props.question?.figures?.length ? (
         <Section title="题图尺寸">
           {orderedFigures.map((figure, index) => {
             const key = figure.id || figure.blockId || `figure-${index + 1}`
@@ -167,7 +161,7 @@ export function QuestionSettings(props: {
                   max={240}
                   step={1}
                   unit="mm"
-                  presets={[60, 80, 120, 160]}
+                  presets={[20, 30, 40, 50]}
                   onChange={(val) => props.onUpdate({ display: {
                     ...block.display,
                     figureOverrides: {
@@ -176,45 +170,31 @@ export function QuestionSettings(props: {
                     },
                   } }, `figure-override:${block.id}:${key}`)}
                 />
-                <Field label="对齐">
-                  <select
-                    className={fieldClass}
-                    value={override?.alignment || 'center'}
-                    onChange={(event) => props.onUpdate({ display: {
-                      ...block.display,
-                      figureOverrides: {
-                        ...block.display?.figureOverrides,
-                        [key]: { ...override, widthMm: override?.widthMm ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM, alignment: event.target.value as 'left' | 'center' | 'right' },
+                <AlignmentControl
+                  value={override?.alignment || 'center'}
+                  onChange={(alignment) => props.onUpdate({ display: {
+                    ...block.display,
+                    figureOverrides: {
+                      ...block.display?.figureOverrides,
+                      [key]: { ...override, widthMm: override?.widthMm ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM, alignment, layoutPreset: undefined },
+                    },
+                  } })}
+                />
+                <WrapModeControl
+                  value={override?.textWrap || 'top-bottom'}
+                  disabled={Boolean(override?.groupWithNext)}
+                  onChange={(textWrap) => props.onUpdate({ display: {
+                    ...block.display,
+                    figureOverrides: {
+                      ...block.display?.figureOverrides,
+                      [key]: {
+                        ...override,
+                        textWrap: textWrap === 'top-bottom' ? undefined : textWrap,
+                        wrapGapMm: textWrap === 'top-bottom' ? undefined : (override?.wrapGapMm ?? 4),
                       },
-                    } })}
-                  >
-                    <option value="left">左对齐</option>
-                    <option value="center">居中</option>
-                    <option value="right">右对齐</option>
-                  </select>
-                </Field>
-                <Field label="文字环绕">
-                  <select
-                    className={fieldClass}
-                    value={override?.textWrap || 'top-bottom'}
-                    disabled={Boolean(override?.groupWithNext)}
-                    onChange={(event) => props.onUpdate({ display: {
-                      ...block.display,
-                      figureOverrides: {
-                        ...block.display?.figureOverrides,
-                        [key]: {
-                          ...override,
-                          textWrap: event.target.value === 'top-bottom' ? undefined : event.target.value as 'square-left' | 'square-right',
-                          wrapGapMm: event.target.value === 'top-bottom' ? undefined : (override?.wrapGapMm ?? 4),
-                        },
-                      },
-                    } })}
-                  >
-                    <option value="top-bottom">上下型（独占一行）</option>
-                    <option value="square-left">左侧图片，右侧文字环绕</option>
-                    <option value="square-right">右侧图片，左侧文字环绕</option>
-                  </select>
-                </Field>
+                    },
+                  } })}
+                />
                 {override?.textWrap === 'square-left' || override?.textWrap === 'square-right' ? (
                   <InspectorSlider
                     label="文字间距"
@@ -310,6 +290,7 @@ export function QuestionSettings(props: {
           })}
         </Section>
       ) : null}
+      {contentMode ? <>
       <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
         <input type="checkbox" className="size-3.5 rounded border-zinc-300" checked={Boolean(block.display?.showAnalysis)} onChange={(event) => props.onUpdate({ display: { ...block.display, showAnalysis: event.target.checked } })} />
         显示解析
@@ -318,6 +299,8 @@ export function QuestionSettings(props: {
         <input type="checkbox" className="size-3.5 rounded border-zinc-300" checked={Boolean(block.display?.showScore)} onChange={(event) => props.onUpdate({ display: { ...block.display, showScore: event.target.checked } })} />
         显示分数
       </label>
+      </> : null}
+      {styleMode ? <>
       <Divider />
 
       <Section title="插入文档图片">
@@ -350,13 +333,10 @@ export function QuestionSettings(props: {
                     <button type="button" aria-label="删除图片" title="删除" onClick={() => props.onUpdate({ display: { ...block.display, insertedFigures: figures.filter((item) => item.id !== figure.id).map((item, itemIndex) => ({ ...item, order: itemIndex })) } })} className="rounded p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"><Trash2 className="size-3.5" /></button>
                   </div>
                 </div>
-                <Field label="对齐">
-                  <select className={fieldClass} value={figure.alignment || 'center'} onChange={(event) => props.onUpdate({ display: { ...block.display, insertedFigures: figures.map((item) => item.id === figure.id ? { ...item, alignment: event.target.value as 'left' | 'center' | 'right' } : item) } })}>
-                    <option value="left">左对齐</option>
-                    <option value="center">居中</option>
-                    <option value="right">右对齐</option>
-                  </select>
-                </Field>
+                <AlignmentControl
+                  value={figure.alignment || 'center'}
+                  onChange={(alignment) => props.onUpdate({ display: { ...block.display, insertedFigures: figures.map((item) => item.id === figure.id ? { ...item, alignment, layoutPreset: undefined } : item) } })}
+                />
                 <Field label="插入位置">
                   <select className={fieldClass} value={figure.slot} onChange={(event) => props.onUpdate({ display: { ...block.display, insertedFigures: figures.map((item) => item.id === figure.id ? { ...item, slot: event.target.value as typeof item.slot } : item) } })}>
                     <option value="stem-start">题干开头</option>
@@ -369,24 +349,17 @@ export function QuestionSettings(props: {
                     <option value="analysis-end">解析末尾</option>
                   </select>
                 </Field>
-                <Field label="文字环绕">
-                  <select
-                    className={fieldClass}
-                    value={figure.textWrap || 'top-bottom'}
-                    onChange={(event) => props.onUpdate({ display: {
-                      ...block.display,
-                      insertedFigures: figures.map((item) => item.id === figure.id ? {
-                        ...item,
-                        textWrap: event.target.value === 'top-bottom' ? undefined : event.target.value as 'square-left' | 'square-right',
-                        wrapGapMm: event.target.value === 'top-bottom' ? undefined : (item.wrapGapMm ?? 4),
-                      } : item),
-                    } })}
-                  >
-                    <option value="top-bottom">上下型（独占一行）</option>
-                    <option value="square-left">左侧图片，右侧文字环绕</option>
-                    <option value="square-right">右侧图片，左侧文字环绕</option>
-                  </select>
-                </Field>
+                <WrapModeControl
+                  value={figure.textWrap || 'top-bottom'}
+                  onChange={(textWrap) => props.onUpdate({ display: {
+                    ...block.display,
+                    insertedFigures: figures.map((item) => item.id === figure.id ? {
+                      ...item,
+                      textWrap: textWrap === 'top-bottom' ? undefined : textWrap,
+                      wrapGapMm: textWrap === 'top-bottom' ? undefined : (item.wrapGapMm ?? 4),
+                    } : item),
+                  } })}
+                />
                 {figure.textWrap === 'square-left' || figure.textWrap === 'square-right' ? (
                   <InspectorSlider
                     label="文字间距"
@@ -409,7 +382,7 @@ export function QuestionSettings(props: {
                   max={240}
                   step={1}
                   unit="mm"
-                  presets={[60, 80, 120, 160]}
+                  presets={[20, 30, 40, 50]}
                   onChange={(val) => props.onUpdate({ display: { ...block.display, insertedFigures: figures.map((item) => item.id === figure.id ? { ...item, widthMm: val } : item) } }, `inserted-figure-width:${block.id}:${figure.id}`)}
                 />
               </div>
@@ -417,6 +390,130 @@ export function QuestionSettings(props: {
           </div>
         ) : null}
       </Section>
+      </> : null}
+    </div>
+  )
+}
+
+type WrapMode = 'top-bottom' | 'square-left' | 'square-right'
+
+type ChoiceLayout = NonNullable<NonNullable<QuestionBlock['display']>['choiceLayout']>
+
+function ChoiceLayoutControl(props: { value: ChoiceLayout; onChange: (value: ChoiceLayout) => void }) {
+  const options: Array<{ value: ChoiceLayout; label: string; columns: number }> = [
+    { value: 'auto', label: '自动', columns: 2 },
+    { value: 'four', label: '1×4', columns: 4 },
+    { value: 'two', label: '2×2', columns: 2 },
+    { value: 'one', label: '4×1', columns: 1 },
+  ]
+  return (
+    <div className="space-y-1">
+      <span className="text-[13px] font-medium text-zinc-500">本题选项排布</span>
+      <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="本题选项排布">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-label={option.label}
+            aria-checked={props.value === option.value}
+            title={option.label}
+            onClick={() => props.onChange(option.value)}
+            className={`flex h-12 flex-col items-center justify-center gap-0.5 rounded-md border transition-colors ${
+              props.value === option.value
+                ? 'border-zinc-900 bg-zinc-100 text-zinc-900 dark:border-zinc-100 dark:bg-zinc-800 dark:text-zinc-50'
+                : 'border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900'
+            }`}
+          >
+            <span className="grid h-5 w-8 gap-0.5" style={{ gridTemplateColumns: `repeat(${option.columns}, minmax(0, 1fr))` }} aria-hidden="true">
+              {[0, 1, 2, 3].map((item) => <i key={item} className="rounded-[1px] border border-current" />)}
+            </span>
+            <span className="text-[10px] leading-none">{option.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+type FigureAlignment = 'left' | 'center' | 'right'
+
+function AlignmentControl(props: { value: FigureAlignment; onChange: (value: FigureAlignment) => void }) {
+  const options: Array<{ value: FigureAlignment; label: string; icon: typeof AlignLeft }> = [
+    { value: 'left', label: '左对齐', icon: AlignLeft },
+    { value: 'center', label: '居中', icon: AlignCenter },
+    { value: 'right', label: '右对齐', icon: AlignRight },
+  ]
+  return (
+    <div className="space-y-1">
+      <span className="text-[13px] font-medium text-zinc-500">对齐</span>
+      <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="对齐">
+        {options.map((option) => {
+          const Icon = option.icon
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-label={option.label}
+              aria-checked={props.value === option.value}
+              title={option.label}
+              onClick={() => props.onChange(option.value)}
+              className={`flex h-12 flex-col items-center justify-center gap-0.5 rounded-md border transition-colors ${
+                props.value === option.value
+                  ? 'border-zinc-900 bg-zinc-100 text-zinc-900 dark:border-zinc-100 dark:bg-zinc-800 dark:text-zinc-50'
+                  : 'border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900'
+              }`}
+            >
+              <Icon className="size-4" />
+              <span className="text-[10px] leading-none">{option.label}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function WrapModeControl(props: { value: WrapMode; onChange: (value: WrapMode) => void; disabled?: boolean }) {
+  const options: Array<{ value: WrapMode; label: string; imageSide?: 'left' | 'right' }> = [
+    { value: 'top-bottom', label: '嵌入型' },
+    { value: 'square-left', label: '左侧文字', imageSide: 'right' },
+    { value: 'square-right', label: '右侧文字', imageSide: 'left' },
+  ]
+  return (
+    <div className="space-y-1">
+      <span className="text-[13px] font-medium text-zinc-500">文字环绕</span>
+      <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="文字环绕">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={props.value === option.value}
+            disabled={props.disabled}
+            title={option.label}
+            onClick={() => props.onChange(option.value)}
+            className={`flex h-14 flex-col items-center justify-center gap-1 rounded-md border text-[10px] transition-colors ${
+              props.value === option.value
+                ? 'border-zinc-900 bg-zinc-100 text-zinc-900 dark:border-zinc-100 dark:bg-zinc-800 dark:text-zinc-50'
+                : 'border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900'
+            } disabled:cursor-not-allowed disabled:opacity-40`}
+          >
+            <span className="relative flex h-6 w-10 items-center justify-center" aria-hidden="true">
+              {option.imageSide ? (
+                <>
+                  <span className={`absolute ${option.imageSide === 'left' ? 'left-0' : 'right-0'} h-5 w-4 rounded-sm border-2 border-current bg-white dark:bg-zinc-900`} />
+                  <span className={`flex w-7 flex-col gap-0.5 ${option.imageSide === 'left' ? 'ml-3' : 'mr-3'}`}><i className="h-0.5 w-full bg-current" /><i className="h-0.5 w-5/6 bg-current" /><i className="h-0.5 w-2/3 bg-current" /></span>
+                </>
+              ) : (
+                <span className="flex flex-col items-center gap-0.5"><span className="h-4 w-6 rounded-sm border-2 border-current bg-white dark:bg-zinc-900" /><i className="h-0.5 w-8 bg-current" /></span>
+              )}
+            </span>
+            {option.label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

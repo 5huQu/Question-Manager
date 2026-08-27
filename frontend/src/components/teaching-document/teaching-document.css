@@ -889,11 +889,11 @@ button.td-print-chrome-slot:hover {
   overflow: visible;
 }
 
-.dark .td-paper-page .td-document,
-.dark .td-paper-page .td-document h1,
-.dark .td-paper-page .td-document h2,
-.dark .td-paper-page .td-document h3,
-.dark .td-paper-page .td-document h4 {
+.dark .td-paper-page:not(.td-editor-chrome) .td-document,
+.dark .td-paper-page:not(.td-editor-chrome) .td-document h1,
+.dark .td-paper-page:not(.td-editor-chrome) .td-document h2,
+.dark .td-paper-page:not(.td-editor-chrome) .td-document h3,
+.dark .td-paper-page:not(.td-editor-chrome) .td-document h4 {
   color: #18181b;
 }
 

@@ -340,8 +340,9 @@ export function TeachingDocumentCanvas(props: TeachingDocumentCanvasProps) {
   return (
     <div
       ref={setCanvasViewport}
-      className={paginated ? 'td-pagination-experiment td-paginated-canvas td-theme-print min-w-0' : ''}
-      style={paginated ? (fontVars as CSSProperties | undefined) : undefined}
+      // 印刷主题是内容排版的共同基线；编辑器专属 chrome 仍由下方编辑态规则控制。
+      className={`td-theme-print min-w-0${paginated ? ' td-pagination-experiment td-paginated-canvas' : ''}`}
+      style={fontVars as CSSProperties | undefined}
       data-layout-pending={paginated ? String(layoutPending) : undefined}
       data-canvas-scale={displayScale}
     >
