@@ -8,6 +8,7 @@ import { parserConfigForRequest } from '../parser-config.js'
 import { detectSolutionQuestionNumbers } from '../question-number-detector.js'
 import {
   extractInlineAnswerTableBlocks,
+  extractHtmlAnswerTableBlocks,
   findSolutionSections,
   maskNonSolutionBlocks,
   metadataBlockRanges,
@@ -89,15 +90,13 @@ function collectStructureTokens(markdown: string, lines: LineOffset[], config: I
   }
 
   if (config.answerTablePolicy !== 'disabled') {
-    for (const tableMatch of markdown.matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)) {
-      const start = tableMatch.index || 0
-      if (!/题号|序号/.test(tableMatch[0]) || !/答案/.test(tableMatch[0])) continue
+    for (const table of extractHtmlAnswerTableBlocks(markdown)) {
       const token = tokenFor(lines, {
-        id: `answer-table:${start}`,
+        id: `answer-table:${table.start}`,
         kind: 'answer_table',
-        start,
-        end: start + tableMatch[0].length,
-        label: '答案表',
+        start: table.start,
+        end: table.end,
+        label: table.kind === 'manual' ? '人工答案表' : table.kind === 'inferred' ? '推断答案表' : '答案表',
         severity: 'info',
       })
       if (token) tokens.push(token)

@@ -1,0 +1,20 @@
+/* 居中双翼端线：试卷分卷头与章节总结。 */
+.td-skin-heading-winged {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2rem;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  text-align: center;
+  letter-spacing: 0.08em;
+}
+
+.td-skin-heading-winged::before,
+.td-skin-heading-winged::after {
+  height: 1px;
+  max-width: 180px;
+  background: var(--td-skin-builtin--heading--winged-line-color, #d4d4d8);
+  content: '';
+  flex: 1;
+}

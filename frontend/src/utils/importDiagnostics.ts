@@ -14,6 +14,7 @@ const PARSER_DIAGNOSTIC_LABELS: Record<string, string> = {
   question_before_solution_heading: '题号位置异常',
   metadata_used_as_answer: '说明误作答案',
   table_answer_blocked_by_existing_answer: '答案表未覆盖',
+  answer_table_not_recognized: '答案表未识别',
   missing_analysis: '缺少解析',
   unmatched_solution: '解析题号未匹配',
 }

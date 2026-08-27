@@ -39,7 +39,11 @@ export function teachingSkinPaletteHue(id: string): TeachingSkinPaletteHue | und
 }
 
 /** 不属于任何色系的中性固定值（纸面白色、极浅分隔线）。 */
-export const TEACHING_SKIN_PALETTE_FIXED_HEXES: readonly string[] = ['#FFFFFF', '#E4E4E7']
+export const TEACHING_SKIN_PALETTE_FIXED_HEXES: readonly string[] = [
+  '#FFFFFF', '#E4E4E7',
+  // Proposal-authored neutral print colors used by the nine built-in skins.
+  '#000000', '#18181B', '#1E293B', '#475569', '#64748B', '#CBD5E1', '#E2E8F0', '#F1F5F9', '#EF4444',
+]
 
 /** 色板中出现过的全部十六进制值，用于一致性测试校验皮肤 Token 字面量。 */
 export function teachingSkinPaletteHexValues(): ReadonlySet<string> {

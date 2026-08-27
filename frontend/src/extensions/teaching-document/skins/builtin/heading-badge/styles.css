@@ -1,0 +1,26 @@
+/* 序号徽章型：受控编号成为方圆实色锚点。 */
+.td-skin-heading-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  --td-heading-number-display: none;
+}
+
+.td-skin-heading-badge::before {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.7em;
+  height: 1.7em;
+  margin-right: 0;
+  padding: 0 0.35em;
+  border-radius: 4px;
+  background: var(--td-skin-builtin--heading--badge-marker-fill, #18181b);
+  color: #fff;
+  content: attr(data-number-label);
+  font-size: 0.75em;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}

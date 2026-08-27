@@ -1,0 +1,35 @@
+/* 学术定理框：中性纸面、左侧内凹双线和衬线标题。 */
+.td-skin-box-theorem-math {
+  position: relative;
+  border: var(--td-skin-builtin--box--theorem-math-frame-border, 1px solid #d4d4d8);
+  border-left: 3px solid var(--td-skin-builtin--box--theorem-math-accent-color, #3f3f46);
+  border-radius: 0 6px 6px 0;
+  background: #f8fafc;
+}
+
+.td-skin-box-theorem-math::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  z-index: 1;
+  width: 1px;
+  background: color-mix(in srgb, var(--td-skin-builtin--box--theorem-math-accent-color, #3f3f46) 52%, white);
+  content: '';
+  pointer-events: none;
+}
+
+.td-skin-box-theorem-math .td-box-header {
+  padding-left: 1.1rem;
+  background: transparent;
+  color: #0f172a;
+  font-family: 'Times New Roman', 'Songti SC', serif;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.td-skin-box-theorem-math .td-box-body {
+  padding-left: 1.1rem;
+  background: transparent;
+  color: #1e293b;
+}

@@ -558,20 +558,20 @@
 
 /* ─── 盒子跨页 continuation 样式 ─────────────────────────────────────── */
 
-.td-box[data-continuation="single"] {
+:where(.td-box[data-continuation="single"]) {
   margin: var(--box-margin-block) 0;
   border-radius: var(--box-radius);
   border-style: var(--box-border-style-solid);
 }
 
-.td-box[data-continuation="start"] {
+:where(.td-box[data-continuation="start"]) {
   margin: var(--box-margin-block) 0 0;
   border-radius: var(--box-radius) var(--box-radius) 0 0;
   border-style: var(--box-border-style-solid);
   border-bottom-style: var(--box-border-style-dashed);
 }
 
-.td-box[data-continuation="middle"] {
+:where(.td-box[data-continuation="middle"]) {
   margin: 0;
   border-radius: 0;
   border-style: var(--box-border-style-solid);
@@ -579,7 +579,7 @@
   border-bottom-style: var(--box-border-style-dashed);
 }
 
-.td-box[data-continuation="end"] {
+:where(.td-box[data-continuation="end"]) {
   margin: 0 0 var(--box-margin-block);
   border-radius: 0 0 var(--box-radius) var(--box-radius);
   border-style: var(--box-border-style-solid);
@@ -595,6 +595,12 @@
   font-size: var(--box-continuation-label-size);
   color: var(--box-continuation-label-color);
   user-select: none;
+}
+
+/* Skin child decorations must never turn the continuation marker into content. */
+.td-box-continuation-label::before {
+  display: none !important;
+  content: none !important;
 }
 
 /* 分页测量时读取真实续页栏/标签的高度。常规渲染不显示，也不占用布局空间。 */
@@ -753,13 +759,15 @@
   font-style: var(--td-question-style, inherit);
 }
 
-.td-heading[data-number-label]::before {
-  content: attr(data-number-label) " ";
-  white-space: pre;
-  font-family: var(--td-heading-number-font, var(--td-heading-font, inherit));
+.td-heading-content,
+.td-heading-text {
+  min-width: 0;
 }
 
 .td-heading-number {
+  display: var(--td-heading-number-display, inline-block);
+  margin-right: 0.28em;
+  white-space: nowrap;
   font-family: var(--td-heading-number-font, var(--td-heading-font, inherit));
 }
 

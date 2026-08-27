@@ -37,6 +37,28 @@ describe('document editor manual page break', () => {
 })
 
 describe('document editor heading serialization', () => {
+  it('renders automatic numbering separately from the editable heading text', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: createDocumentEditorExtensions(),
+      content: {
+        type: 'doc',
+        content: [{
+          type: 'docHeading',
+          attrs: { blockId: 'heading-numbered', level: 2, numberLabel: 'A.', skin: JSON.stringify({ id: 'builtin.heading.winged', version: 1 }) },
+          content: [{ type: 'text', text: '轨迹方程' }],
+        }],
+      },
+    })
+    editors.push(editor)
+
+    const heading = editor.view.dom.querySelector<HTMLElement>('[data-block-id="heading-numbered"]')
+    expect(heading?.querySelector(':scope > .td-heading-content > .td-heading-number')?.textContent).toBe('A.')
+    expect(heading?.querySelector(':scope > .td-heading-content > .td-heading-text')?.textContent).toBe('轨迹方程')
+    expect(heading?.classList.contains('td-skin-heading-winged')).toBe(true)
+    expect(editor.getText()).toBe('轨迹方程')
+  })
+
   it('keeps the heading id and object after typing', () => {
     const document: TeachingDocumentV1 = {
       version: 1,

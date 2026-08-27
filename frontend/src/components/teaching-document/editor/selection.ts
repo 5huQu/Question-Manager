@@ -147,12 +147,12 @@ function nodeBlockId(node: { attrs?: Record<string, unknown> } | null | undefine
  * 因此必须优先读取 selection.node / nodeAfter，并且兜底区间采用右开区间，
  * 否则点击盒子会错误命中前一个题目。
  */
-export function blockIdFromEditorSelection(state: EditorState): string {
-  const selectedNode = state.selection instanceof NodeSelection ? state.selection.node : null
+export function blockIdFromSelection(selection: EditorState['selection'], doc: EditorState['doc']): string {
+  const selectedNode = selection instanceof NodeSelection ? selection.node : null
   const selectedNodeId = nodeBlockId(selectedNode)
   if (selectedNodeId) return selectedNodeId
 
-  const { $from } = state.selection
+  const { $from } = selection
   for (let depth = $from.depth; depth >= 0; depth -= 1) {
     const blockId = nodeBlockId($from.node(depth))
     if (blockId) return blockId
@@ -165,7 +165,7 @@ export function blockIdFromEditorSelection(state: EditorState): string {
 
   const position = $from.pos
   let blockId = ''
-  state.doc.descendants((node, nodePosition) => {
+  doc.descendants((node, nodePosition) => {
     if (blockId) return false
     if (position >= nodePosition && position < nodePosition + node.nodeSize) {
       blockId = nodeBlockId(node)
@@ -174,6 +174,10 @@ export function blockIdFromEditorSelection(state: EditorState): string {
     return true
   })
   return blockId
+}
+
+export function blockIdFromEditorSelection(state: EditorState): string {
+  return blockIdFromSelection(state.selection, state.doc)
 }
 
 /**

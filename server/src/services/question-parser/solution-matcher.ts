@@ -48,11 +48,25 @@ export type InlineAnswerTableBlock = {
   entries: InlineAnswerTableEntry[]
 }
 
+export type HtmlAnswerTableBlock = {
+  start: number
+  end: number
+  entries: InlineAnswerTableEntry[]
+  kind: 'labeled' | 'inferred' | 'manual'
+}
+
+export type UnrecognizedAnswerTable = {
+  start: number
+  end: number
+  reason: string
+}
+
 const PAGE_MARKER_RE = /<!--\s*(?:GLM|DOC2X)_PAGE:\d+\s*-->/g
 const ANSWER_MARKER_RE = /<!--\s*QM:ANSWER\s*-->|【\s*(?:参考答案|答案)\s*】|(?:参考答案|答案)\s*[:：]/
 const ANALYSIS_MARKER_RE = /<!--\s*QM:ANALYSIS\s*-->|【\s*(?:解析|分析|详解)\s*】|(?:解析|分析|详解)\s*[:：]/
 const MANUAL_FIELD_END_MARKER_RE = /<!--\s*QM:END\s*-->/
 const ANSWER_TABLE_RE = /<table\b[^>]*>[\s\S]*?<\/table>/gi
+const MANUAL_ANSWER_TABLE_BLOCK_RE = /<!--\s*QM:ANSWER_TABLE\s*-->([\s\S]*?)<!--\s*QM:END\s*-->/gi
 const INLINE_ANSWER_MARKER_RE = /(?:^|\s)([0-9０-９]{1,3})\s*(?:\\cdot|[、:：]|[.．](?![0-9０-９]))\s*/g
 const COMPACT_NUMERIC_INLINE_ANSWER_MARKER_RE = /(?:^|\s)([0-9０-９]{1,3})\s*[.．]\s*/g
 const COMPACT_RANGE_ANSWER_RE = /(?:^|\s)([0-9０-９]{1,3})\s*[-－至到]\s*([0-9０-９]{1,3})\s+([A-Ha-h]+)(?=\s|$)/g
@@ -126,6 +140,127 @@ function normalizeInlineQuestionNo(value: string) {
   const normalized = normalizeDigits(value).trim()
   const parsed = Number.parseInt(normalized, 10)
   return Number.isFinite(parsed) && parsed > 0 ? String(parsed) : ''
+}
+
+function tableRows(table: string) {
+  const rows: string[][] = []
+  const rowPattern = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi
+  for (const rowMatch of table.matchAll(rowPattern)) {
+    const cellPattern = /<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi
+    const cells = Array.from(rowMatch[1].matchAll(cellPattern))
+      .map((cellMatch) => cellMatch[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').trim())
+    if (cells.length) rows.push(cells)
+  }
+  return rows
+}
+
+function normalizedTableQuestionNo(value: string) {
+  const normalized = normalizeDigits(String(value || '')).trim()
+  const match = /^(?:第\s*)?(\d{1,3})(?:\s*题)?$/.exec(normalized)
+  return match?.[1] || ''
+}
+
+function answerCellLooksPlausible(value: string) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim()
+  return Boolean(text) && text.length <= 100 && !/(?:题号|序号|答案|解析|分析|详解)/.test(text)
+}
+
+function rowsForUnlabeledAnswerTable(rows: string[][], allowNonSequential = false) {
+  if (rows.length !== 2 || rows[0].length < 2 || rows[0].length !== rows[1].length) return undefined
+  const questionNos = rows[0].map(normalizedTableQuestionNo)
+  if (questionNos.some((questionNo) => !questionNo) || new Set(questionNos).size !== questionNos.length) return undefined
+  if (!allowNonSequential && questionNos.some((questionNo, index) => index > 0 && Number(questionNo) !== Number(questionNos[index - 1]) + 1)) return undefined
+  if (rows[1].some((answer) => !answerCellLooksPlausible(answer))) return undefined
+  return questionNos
+}
+
+function labeledAnswerTableEntries(rows: string[][], start: number, end: number): InlineAnswerTableEntry[] {
+  const headerRowIndex = rows.findIndex((row) => row.some((cell) => /题号|序号/.test(cell)))
+  if (headerRowIndex < 0) return []
+  const answerRowIndex = rows.findIndex((row, index) => index !== headerRowIndex && row.some((cell) => /答案/.test(cell)))
+  if (answerRowIndex < 0) return []
+  const headerRow = rows[headerRowIndex]
+  const answerRow = rows[answerRowIndex]
+  const labelColIndex = headerRow.findIndex((cell) => /题号|序号/.test(cell))
+  const answerLabelColIndex = answerRow.findIndex((cell) => /答案/.test(cell))
+  const startCol = Math.max(labelColIndex + 1, answerLabelColIndex + 1)
+  const entries: InlineAnswerTableEntry[] = []
+  for (let index = startCol; index < Math.min(headerRow.length, answerRow.length); index += 1) {
+    const questionNo = normalizedTableQuestionNo(headerRow[index])
+    const answerText = answerRow[index].trim()
+    if (questionNo && answerText) entries.push({ questionNo, answerText, range: { start, end } })
+  }
+  return entries
+}
+
+function answerTableContextLooksLikely(source: string, start: number) {
+  const context = source.slice(Math.max(0, start - 260), start).replace(/<[^>]+>/g, ' ')
+  return /(?:参考答案|答案|单项选择题|多项选择题|单选题|多选题|选择题|填空题)/.test(context)
+}
+
+/**
+ * Recognize both labelled answer tables and the common OCR form with a row of
+ * consecutive question numbers followed by the corresponding answer row.
+ * A manual QM:ANSWER_TABLE marker deliberately relaxes only the consecutive
+ * numbering requirement; it still requires a two-row numeric mapping.
+ */
+export function extractHtmlAnswerTableBlocks(source: string): HtmlAnswerTableBlock[] {
+  const text = String(source || '')
+  const manualRanges = Array.from(text.matchAll(MANUAL_ANSWER_TABLE_BLOCK_RE)).map((match) => ({
+    start: match.index || 0,
+    end: (match.index || 0) + match[0].length,
+  }))
+  const blocks: HtmlAnswerTableBlock[] = []
+  for (const tableMatch of text.matchAll(ANSWER_TABLE_RE)) {
+    const start = tableMatch.index || 0
+    const end = start + tableMatch[0].length
+    const rows = tableRows(tableMatch[0])
+    const labeledEntries = labeledAnswerTableEntries(rows, start, end)
+    if (labeledEntries.length) {
+      blocks.push({ start, end, entries: labeledEntries, kind: 'labeled' })
+      continue
+    }
+    const manuallyMarked = manualRanges.some((range) => range.start <= start && range.end >= end)
+    const questionNos = rowsForUnlabeledAnswerTable(rows, manuallyMarked)
+    if (!questionNos || (!manuallyMarked && !answerTableContextLooksLikely(text, start))) continue
+    blocks.push({
+      start,
+      end,
+      entries: questionNos.map((questionNo, index) => ({ questionNo, answerText: rows[1][index].trim(), range: { start, end } })),
+      kind: manuallyMarked ? 'manual' : 'inferred',
+    })
+  }
+  return blocks
+}
+
+/** Returns actionable reasons only for table-shaped content that resembles an answer key. */
+export function findUnrecognizedAnswerTables(source: string): UnrecognizedAnswerTable[] {
+  const text = String(source || '')
+  const recognizedStarts = new Set(extractHtmlAnswerTableBlocks(text).map((block) => block.start))
+  const result: UnrecognizedAnswerTable[] = []
+  for (const tableMatch of text.matchAll(ANSWER_TABLE_RE)) {
+    const start = tableMatch.index || 0
+    if (recognizedStarts.has(start)) continue
+    const end = start + tableMatch[0].length
+    const rows = tableRows(tableMatch[0])
+    if (rows.length !== 2 || rows[0].length < 2) continue
+    const questionNos = rows[0].map(normalizedTableQuestionNo)
+    if (questionNos.filter(Boolean).length < 2) continue
+    let reason = ''
+    if (rows[0].length !== rows[1].length) {
+      reason = '首行题号数与次行答案数不一致，无法安全建立一一对应关系。'
+    } else if (questionNos.some((questionNo) => !questionNo)) {
+      reason = '首行混有非题号单元格，无法确认题号与答案的列对应关系。'
+    } else if (questionNos.some((questionNo, index) => index > 0 && Number(questionNo) !== Number(questionNos[index - 1]) + 1)) {
+      reason = '首行题号不是连续递增序列；为避免把普通数据表误当答案表，自动识别已跳过。'
+    } else if (!rows[1].every(answerCellLooksPlausible)) {
+      reason = '次行内容不像简短答案，自动识别已跳过以避免误判。'
+    } else if (!answerTableContextLooksLikely(text, start)) {
+      reason = '表格缺少“题号 / 答案”表头，且附近没有答案或题型标题，自动识别已跳过。'
+    }
+    if (reason) result.push({ start, end, reason })
+  }
+  return result
 }
 
 function trimmedRange(offset: number, source: string, start: number, end: number): MarkdownRange {
@@ -286,9 +421,8 @@ export function firstAnswerTableStart(source: string, config: ImportFlowV2Parser
   if (!answerTableDetectionEnabled(config)) return undefined
   const text = String(source || '')
   let first: number | undefined
-  for (const match of text.matchAll(ANSWER_TABLE_RE)) {
-    if (!/题号|序号/.test(match[0]) || !/答案/.test(match[0])) continue
-    first = Math.min(first ?? Number.POSITIVE_INFINITY, match.index || 0)
+  for (const block of extractHtmlAnswerTableBlocks(text)) {
+    first = Math.min(first ?? Number.POSITIVE_INFINITY, block.start)
   }
   for (const block of extractInlineAnswerTableBlocks(text)) {
     first = Math.min(first ?? Number.POSITIVE_INFINITY, block.start)
@@ -299,10 +433,8 @@ export function firstAnswerTableStart(source: string, config: ImportFlowV2Parser
 function answerTableRanges(source: string, config: ImportFlowV2ParserConfig = getParserConfig()): MarkdownRange[] {
   if (!answerTableDetectionEnabled(config)) return []
   const ranges: MarkdownRange[] = []
-  for (const match of source.matchAll(ANSWER_TABLE_RE)) {
-    if (!/题号|序号/.test(match[0]) || !/答案/.test(match[0])) continue
-    const start = match.index || 0
-    ranges.push({ start, end: start + match[0].length })
+  for (const block of extractHtmlAnswerTableBlocks(source)) {
+    ranges.push({ start: block.start, end: block.end })
   }
   for (const block of extractInlineAnswerTableBlocks(source)) {
     ranges.push({ start: block.start, end: block.end })

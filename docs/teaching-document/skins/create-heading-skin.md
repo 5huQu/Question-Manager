@@ -41,6 +41,8 @@ export default defineHeadingSkin({
 
 Restart the frontend development server if it was already running, then select the heading. The selector contains only Heading skins compatible with the selected level. The core adds both your class and `data-skin-id="studio.heading.lesson-title"` to the existing heading element.
 
+The core owns the heading's semantic content structure: `.td-heading-content` contains the optional automatic `.td-heading-number` and the editable `.td-heading-text`. A Skin should style only its root and root pseudo-elements. Do not target these core child classes or generate chapter numbers with `content`; this keeps numbering, editor selection, preview, and print behavior consistent. Root `::before` and `::after` remain available for purely decorative markers or rules because numbering is rendered as a real core-owned element.
+
 Before finishing, run `npm run skin:check -- --path frontend/src/extensions/teaching-document/skins/custom/studio-heading-lesson-title`.
 
 Keep the visual static and print-safe. Do not use React, portals, fixed positioning, required hover states, or animation. Do not target or replace the editor's `data-block-id`, `data-block-type`, editable content, or selection DOM.

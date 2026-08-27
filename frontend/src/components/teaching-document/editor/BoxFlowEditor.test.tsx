@@ -40,6 +40,7 @@ describe('BoxFlowEditor', () => {
     // 嵌入对象（figure）在流内渲染，段落带业务块 id
     expect(container.querySelector('[data-block-id="fig1"]')).toBeTruthy()
     expect(container.querySelector<HTMLElement>('[data-block-id="p1"]')?.textContent).toContain('第一段')
+    expect(container.querySelectorAll('[data-box-flow-item]')).toHaveLength(2)
 
     await act(async () => {
       editor!.focus()
@@ -54,6 +55,7 @@ describe('BoxFlowEditor', () => {
     // Enter 分段产生的段落必须拥有全新 id，不能与原段落共享
     expect(latest[2]?.id).not.toBe('p1')
     expect(new Set(latest.map((child) => child.id)).size).toBe(latest.length)
+    expect(container.querySelectorAll('[data-box-flow-item]')).toHaveLength(3)
   })
 
   it('为每个连续段落输出业务块 id，供悬停插入锚点定位', async () => {
@@ -71,6 +73,34 @@ describe('BoxFlowEditor', () => {
     const paragraphNodes = container.querySelectorAll('[data-box-text-editor] p')
     expect(paragraphNodes[0]?.getAttribute('data-block-id')).toBe('p1')
     expect(paragraphNodes[1]?.getAttribute('data-block-id')).toBe('p2')
+    expect(paragraphNodes[0]?.hasAttribute('data-box-flow-item')).toBe(true)
+    expect(paragraphNodes[1]?.hasAttribute('data-box-flow-item')).toBe(true)
+  })
+
+  it('Shift+Enter 仅创建段内换行，不新增流程项', async () => {
+    const onChange = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root!.render(
+        <BoxFlowEditor children={[paragraph('p1', '第一步')]} onChange={onChange} />,
+      )
+    })
+    const editor = container.querySelector<HTMLElement>('[data-box-text-editor]')
+    await act(async () => {
+      editor!.focus()
+      editor!.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }))
+    })
+    const latest = onChange.mock.calls.at(-1)?.[0] as BoxChildBlock[]
+    expect(latest).toHaveLength(1)
+    expect(latest[0]?.type).toBe('paragraph')
+    expect(container.querySelectorAll('[data-box-flow-item]')).toHaveLength(1)
   })
 
   it('外部内容变化（undo/redo 回写）时同步编辑器且不产生回写循环', async () => {

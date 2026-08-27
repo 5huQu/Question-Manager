@@ -5,6 +5,7 @@ import { getParserConfig } from './parser-config.js'
 import type { ImportFlowV2ParserConfig } from './default-parser-config.js'
 import {
   answerTableDetectionEnabled,
+  extractHtmlAnswerTableBlocks,
   extractSolutionMatches,
   extractInlineAnswerTableEntries,
   firstAnswerTableStart,
@@ -253,46 +254,7 @@ export function extractAnswerTableEntries(
   if (!answerTableDetectionEnabled(config)) return []
   const entries: AnswerTableEntry[] = []
   const source = String(markdown || '')
-  const tablePattern = /<table\b[^>]*>([\s\S]*?)<\/table>/gi
-
-  for (const tableMatch of source.matchAll(tablePattern)) {
-    const tableStart = tableMatch.index || 0
-    const tableEnd = tableStart + tableMatch[0].length
-    const tableContent = tableMatch[1]
-    const rowPattern = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi
-    const rows: string[][] = []
-
-    for (const rowMatch of tableContent.matchAll(rowPattern)) {
-      const cellPattern = /<td\b[^>]*>([\s\S]*?)<\/td>/gi
-      const cells: string[] = []
-      for (const cellMatch of rowMatch[1].matchAll(cellPattern)) {
-        cells.push(cellMatch[1].replace(/<[^>]+>/g, '').trim())
-      }
-      if (cells.length) rows.push(cells)
-    }
-
-    const headerRowIndex = rows.findIndex((row) => row.some((cell) => /题号|序号/.test(cell)))
-    if (headerRowIndex < 0) continue
-
-    const answerRowIndex = rows.findIndex((row, idx) => idx !== headerRowIndex && row.some((cell) => /答案/.test(cell)))
-    if (answerRowIndex < 0) continue
-
-    const headerRow = rows[headerRowIndex]
-    const answerRow = rows[answerRowIndex]
-    const labelColIndex = headerRow.findIndex((cell) => /题号|序号/.test(cell))
-    const answerLabelColIndex = answerRow.findIndex((cell) => /答案/.test(cell))
-    const startCol = Math.max(labelColIndex + 1, answerLabelColIndex + 1)
-
-    for (let col = startCol; col < Math.min(headerRow.length, answerRow.length); col++) {
-      const questionNo = headerRow[col].replace(/[^\d０-９]/g, '').trim()
-      const answer = answerRow[col].trim()
-      if (questionNo && answer) {
-        // Normalize full-width digits in question number
-        const normalizedNo = questionNo.replace(/[０-９]/g, (ch) => String(ch.charCodeAt(0) - '０'.charCodeAt(0)))
-        entries.push({ questionNo: normalizedNo, answerText: answer, range: { start: tableStart, end: tableEnd } })
-      }
-    }
-  }
+  for (const block of extractHtmlAnswerTableBlocks(source)) entries.push(...block.entries)
   for (const entry of extractInlineAnswerTableEntries(source)) {
     entries.push(entry)
   }

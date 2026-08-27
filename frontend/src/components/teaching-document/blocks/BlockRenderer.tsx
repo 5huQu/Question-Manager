@@ -152,11 +152,14 @@ function HeadingBlockView({ block, numberLabel, skinDesignVariantIds, skinPreset
       data-block-id={block.id}
       data-block-type="heading"
       data-level={block.level}
+      data-number-label={numberLabel || undefined}
       data-skin-id={skin.status === 'resolved' ? skin.definition.id : undefined}
       data-skin-state={block.skin ? skin.status : undefined}
     >
-      {numberLabel ? <span className="td-heading-number" aria-hidden="true">{numberLabel} </span> : null}
-      <InlineContent inlines={block.content} />
+      <span className="td-heading-content">
+        {numberLabel ? <span className="td-heading-number" aria-hidden="true">{numberLabel}</span> : null}
+        <span className="td-heading-text"><InlineContent inlines={block.content} /></span>
+      </span>
     </Tag>
   )
 }
@@ -955,12 +958,15 @@ function BoxTitleText({
   templateLabel,
   continuation,
   editable,
+  inheritColor,
   onEditTitle,
 }: {
   block: BoxBlock
   templateLabel: string
   continuation: 'single' | 'start' | 'middle' | 'end'
   editable?: boolean
+  /** 已解析皮肤负责标题颜色；无皮肤时保留核心默认色。 */
+  inheritColor?: boolean
   onEditTitle?: (boxId: string, title: string) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -991,7 +997,7 @@ function BoxTitleText({
         onBlur={commit}
         aria-label="卡片标题"
         placeholder={templateLabel}
-        className="min-w-0 flex-1 truncate bg-transparent text-sm font-semibold text-zinc-700 outline-none placeholder:font-normal placeholder:text-zinc-400 dark:text-zinc-200"
+        className={`min-w-0 flex-1 truncate bg-transparent text-sm font-semibold outline-none placeholder:font-normal placeholder:text-zinc-400 ${inheritColor ? '' : 'text-zinc-700 dark:text-zinc-200'}`}
       />
     )
   }
@@ -999,7 +1005,7 @@ function BoxTitleText({
     <span
       onDoubleClick={editable ? (event) => { event.stopPropagation(); startEdit() } : undefined}
       title={editable ? '单击选中卡片，双击编辑标题' : undefined}
-      className={`truncate text-sm font-semibold text-zinc-700 dark:text-zinc-200 ${editable ? 'cursor-text rounded decoration-zinc-300 underline-offset-2 hover:underline dark:decoration-zinc-600' : ''}`}
+      className={`truncate text-sm font-semibold ${inheritColor ? '' : 'text-zinc-700 dark:text-zinc-200'} ${editable ? 'cursor-text rounded decoration-zinc-300 underline-offset-2 hover:underline dark:decoration-zinc-600' : ''}`}
     >
       {block.title || templateLabel}
       {suffix}
@@ -1077,7 +1083,7 @@ function BoxFrame({
             }}
           >
             <BoxIcon name={iconName} className="size-4 shrink-0" />
-            <BoxTitleText block={block} templateLabel={template.label} continuation={continuation} editable={titleEditable} onEditTitle={onEditTitle} />
+            <BoxTitleText block={block} templateLabel={template.label} continuation={continuation} editable={titleEditable} inheritColor={skinActive} onEditTitle={onEditTitle} />
           </div>
         ) : null
       )}
@@ -1212,7 +1218,7 @@ export function BoxFragmentRenderer({
           if (!child || child.id !== childItem.childBlockId) return null
           if (childItem.kind === 'paragraph-child-fragment' && child.type === 'paragraph') {
             return (
-              <div key={`paragraph-child:${childItem.childIndex}:${childItem.fragmentIndex}`}>
+              <div key={`paragraph-child:${childItem.childIndex}:${childItem.fragmentIndex}`} data-box-flow-item="">
                 {renderEditableParagraph
                   ? renderEditableParagraph(child, childItem)
                   : (
@@ -1238,6 +1244,7 @@ export function BoxFragmentRenderer({
               return (
                 <div
                   key={`question-child-fallback:${childItem.childIndex}`}
+                  data-box-flow-item=""
                   onClick={(event) => {
                     if (!onSelectChild) return
                     event.stopPropagation()
@@ -1261,6 +1268,7 @@ export function BoxFragmentRenderer({
               <div
                 key={`question-child:${childItem.childIndex}:${childItem.fragmentIndex}`}
                 className={`td-question-fragment td-block-shell ${selectedBlockId === child.id ? 'td-block-selected' : ''}`}
+                data-box-flow-item=""
                 onClick={(event) => {
                   if (!onSelectChild) return
                   event.stopPropagation()
@@ -1297,6 +1305,7 @@ export function BoxFragmentRenderer({
             return (
               <div
                 key={`raw-markdown-child:${childItem.childIndex}:${childItem.fragmentIndex}`}
+                data-box-flow-item=""
                 onClick={(event) => {
                   if (!onSelectChild) return
                   event.stopPropagation()
@@ -1566,6 +1575,7 @@ export function BlockRenderer({
       className={`td-block-shell ${figureSideWrapped ? 'td-block-shell-wrapped' : ''} ${flowWrappedText && supportsFlowWrap ? 'td-block-shell-flow-text' : ''} ${selectedBlockId === block.id ? 'td-block-selected' : ''}`}
       style={figureShellStyle}
       data-text-wrap={block.type === 'figure' ? figureTextWrap : undefined}
+      data-box-flow-item={parentBlockId ? '' : undefined}
       {...blockDomAttributes(block, parentBlockId, sourceIndex, childIndex, {
         rawMarkdownContainsTable: block.type === 'rawMarkdown'
           ? rawMarkdownContainsTable(block.markdown)

@@ -913,10 +913,10 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
                     if (event.key === 'Escape') { event.preventDefault(); setEditingTitle(false) }
                   }}
                   onBlur={(event) => commitTitle(event.currentTarget.value)}
-                  className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-zinc-700 outline-none dark:text-zinc-200"
+                  className={`min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none ${skinActive ? '' : 'text-zinc-700 dark:text-zinc-200'}`}
                 />
               ) : (
-                <span onDoubleClick={(event) => { event.stopPropagation(); setEditingTitle(true) }} title="单击选中卡片，双击编辑标题" className={`text-sm font-semibold text-zinc-700 dark:text-zinc-200 ${selected ? 'cursor-text rounded hover:underline' : ''}`}>{title || template.label}</span>
+                <span onDoubleClick={(event) => { event.stopPropagation(); setEditingTitle(true) }} title="单击选中卡片，双击编辑标题" className={`text-sm font-semibold ${skinActive ? '' : 'text-zinc-700 dark:text-zinc-200'} ${selected ? 'cursor-text rounded hover:underline' : ''}`}>{title || template.label}</span>
               )}
             </div>
           ) : null}

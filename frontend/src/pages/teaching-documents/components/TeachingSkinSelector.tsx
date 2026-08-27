@@ -1,8 +1,8 @@
+import type { CSSProperties } from 'react'
 import type { TeachingSkinRef } from '@/types/teachingDocument'
-import type { TeachingSkinDefinition, TeachingSkinPresetResolution } from '@/utils/teachingDocument/skins'
-import { resolveBoxSkin, resolveHeadingSkin, resolveTeachingSkinVariantSelection, teachingSkinRegistry } from '@/utils/teachingDocument/skins'
+import type { TeachingSkinDefinition, TeachingSkinPresetResolution, TeachingSkinVariantId } from '@/utils/teachingDocument/skins'
+import { resolveBoxSkin, resolveHeadingSkin, resolveTeachingSkinDesignRenderState, resolveTeachingSkinVariantSelection, teachingSkinRegistry } from '@/utils/teachingDocument/skins'
 import { teachingSkinVariantSwatchColor } from '@/extensions/teaching-document/skins/shared/palette'
-import { Field, fieldClass } from './settings/common'
 
 export function HeadingSkinSelector({
   skin,
@@ -17,7 +17,7 @@ export function HeadingSkinSelector({
 }) {
   const resolution = resolveHeadingSkin(skin, level)
   const available = teachingSkinRegistry.list('heading').filter((definition) => !definition.supportedLevels || definition.supportedLevels.includes(level))
-  return <SkinSelect skin={skin} definition={resolution.status === 'resolved' ? resolution.definition : undefined} presetContext={presetContext} resolutionLabel={resolution.status === 'resolved' ? undefined : skin ? `当前引用不可用：${resolution.status === 'missing' ? '皮肤缺失' : '不支持该层级'}` : undefined} options={available} onChange={onChange} />
+  return <SkinSelect skin={skin} definition={resolution.status === 'resolved' ? resolution.definition : undefined} presetContext={presetContext} resolutionLabel={resolution.status === 'resolved' ? undefined : skin ? `当前引用不可用：${resolution.status === 'missing' ? '皮肤缺失' : '不支持该层级'}` : undefined} target="heading" level={level} options={available} onChange={onChange} />
 }
 
 export function BoxSkinSelector({
@@ -33,7 +33,44 @@ export function BoxSkinSelector({
 }) {
   const resolution = resolveBoxSkin(skin, templateId)
   const available = teachingSkinRegistry.list('box').filter((definition) => !definition.supportedTemplates || definition.supportedTemplates.includes(templateId))
-  return <SkinSelect skin={skin} definition={resolution.status === 'resolved' ? resolution.definition : undefined} presetContext={presetContext} resolutionLabel={resolution.status === 'resolved' ? undefined : skin ? `当前引用不可用：${resolution.status === 'missing' ? '皮肤缺失' : '不支持该模板'}` : undefined} options={available} onChange={onChange} />
+  return <SkinSelect skin={skin} definition={resolution.status === 'resolved' ? resolution.definition : undefined} presetContext={presetContext} resolutionLabel={resolution.status === 'resolved' ? undefined : skin ? `当前引用不可用：${resolution.status === 'missing' ? '皮肤缺失' : '不支持该模板'}` : undefined} target="box" options={available} onChange={onChange} />
+}
+
+/** Visual document-level picker. It shares the exact miniature production previews used by the block inspector. */
+export function TeachingGlobalSkinPicker({
+  target,
+  skinId,
+  presetContext,
+  onChange,
+}: {
+  target: 'heading' | 'box'
+  skinId: string
+  presetContext?: TeachingSkinPresetResolution
+  onChange: (skinId: string) => void
+}) {
+  const options = teachingSkinRegistry.list(target)
+  const label = target === 'heading' ? '全局标题皮肤' : '全局知识卡片皮肤'
+  const defaultLabel = target === 'heading' ? '不调整标题' : '不调整知识卡片'
+  return (
+    <div className="space-y-1">
+      <p className="text-[11px] font-medium text-zinc-500">{target === 'heading' ? '标题皮肤' : '知识卡片皮肤'}</p>
+      <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-label={label}>
+        <SkinTile label={defaultLabel} active={!skinId} dashed onSelect={() => onChange('')}>
+          <span className="flex min-h-4 items-center justify-center text-[10px] leading-3 text-zinc-400 dark:text-zinc-500">不调整</span>
+        </SkinTile>
+        {options.map((definition) => {
+          const variantId = presetContext?.bindings?.[definition.id]
+          return (
+            <SkinTile key={definition.id} label={definition.label} active={skinId === definition.id} onSelect={() => onChange(definition.id)}>
+              {target === 'heading'
+                ? <MiniHeadingPreview definition={definition} level={2} variantId={variantId} />
+                : <MiniBoxPreview definition={definition} variantId={variantId} />}
+            </SkinTile>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 /** Shared inspector control: it consumes the production resolver and persists only a Skin-local Variant ID. */
@@ -111,6 +148,8 @@ function SkinSelect({
   definition,
   presetContext,
   resolutionLabel,
+  target,
+  level,
   options,
   onChange,
 }: {
@@ -118,29 +157,105 @@ function SkinSelect({
   definition?: TeachingSkinDefinition
   presetContext?: TeachingSkinPresetResolution
   resolutionLabel?: string
-  options: Array<{ id: string; label: string; version: number }>
+  target: 'heading' | 'box'
+  level?: 1 | 2 | 3 | 4
+  options: TeachingSkinDefinition[]
   onChange: (skin: TeachingSkinRef | undefined) => void
 }) {
   const selectedIsAvailable = !skin || options.some((definition) => definition.id === skin.id)
+  const previewVariantId = (definition: TeachingSkinDefinition): TeachingSkinVariantId | undefined => {
+    if (skin?.id === definition.id) return resolveTeachingSkinVariantSelection(skin, definition.id, undefined, presetContext?.bindings).requestedVariantId
+    return presetContext?.bindings?.[definition.id]
+  }
   return (
     <>
-      <Field label="皮肤">
-      <select
-        className={fieldClass}
-        aria-label="皮肤"
-        value={skin?.id || ''}
-        onChange={(event) => {
-          const definition = options.find((item) => item.id === event.target.value)
-          onChange(definition ? { id: definition.id, version: definition.version } : undefined)
-        }}
-      >
-        <option value="">默认 / 跟随默认</option>
-        {!selectedIsAvailable && skin ? <option value={skin.id} disabled>{`${skin.id}（${resolutionLabel || '不可用'}）`}</option> : null}
-        {options.map((definition) => <option key={definition.id} value={definition.id}>{definition.label}</option>)}
-      </select>
-        {resolutionLabel ? <p className="mt-1 text-[11px] leading-4 text-amber-700 dark:text-amber-300">{resolutionLabel}；会保留原引用并按默认视觉显示。</p> : null}
-      </Field>
+      <div className="space-y-1">
+        <p className="text-[13px] font-medium text-zinc-500">皮肤</p>
+        <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="皮肤">
+          <SkinTile label="默认" active={skin === undefined} dashed onSelect={() => onChange(undefined)}>
+            {target === 'heading' ? <MiniPlainHeading /> : <MiniPlainBox />}
+          </SkinTile>
+          {options.map((definition) => (
+            <SkinTile
+              key={definition.id}
+              label={definition.label}
+              active={selectedIsAvailable && skin?.id === definition.id}
+              onSelect={() => onChange({ id: definition.id, version: definition.version })}
+            >
+              {target === 'heading'
+                ? <MiniHeadingPreview definition={definition} level={level || 2} variantId={previewVariantId(definition)} />
+                : <MiniBoxPreview definition={definition} variantId={previewVariantId(definition)} />}
+            </SkinTile>
+          ))}
+        </div>
+        {resolutionLabel ? <p className="text-[11px] leading-4 text-amber-700 dark:text-amber-300">{resolutionLabel}；会保留原引用并按默认视觉显示。</p> : null}
+      </div>
       {skin && definition ? <TeachingSkinVariantSelector skin={skin} definition={definition} presetContext={presetContext} onChange={onChange} /> : null}
     </>
+  )
+}
+
+/** One skin candidate rendered as a miniature real-preview tile. */
+export function SkinTile({ label, active, dashed, onSelect, children }: {
+  label: string
+  active: boolean
+  dashed?: boolean
+  onSelect: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      aria-label={label}
+      title={label}
+      onClick={onSelect}
+      className={`overflow-hidden rounded-md border p-1.5 text-left ${dashed ? 'border-dashed' : ''} ${active ? 'border-zinc-900 ring-1 ring-zinc-900 dark:border-zinc-100 dark:ring-zinc-100' : 'border-zinc-200 hover:border-zinc-400 dark:border-zinc-800 dark:hover:border-zinc-600'}`}
+    >
+      <span className="block min-h-4">{children}</span>
+      <span className="mt-1 block truncate text-[10px] leading-3 text-zinc-500 dark:text-zinc-400">{label}</span>
+    </button>
+  )
+}
+
+export function MiniPlainHeading() {
+  return <span className="block truncate text-[12px] font-semibold leading-4 text-zinc-800 dark:text-zinc-200">标题</span>
+}
+
+export function MiniPlainBox() {
+  return (
+    <span className="block overflow-hidden rounded border border-zinc-200 dark:border-zinc-800">
+      <span className="block truncate bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium leading-3 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">卡片标题</span>
+      <span className="block truncate px-1.5 py-0.5 text-[9px] leading-3 text-zinc-400">正文示意</span>
+    </span>
+  )
+}
+
+/** Renders the production skin class plus resolved design variables, mirroring the document renderer. */
+export function MiniHeadingPreview({ definition, level, variantId }: { definition: TeachingSkinDefinition; level: 1 | 2 | 3 | 4; variantId?: TeachingSkinVariantId }) {
+  const Tag = `h${level}` as 'h1' | 'h2' | 'h3' | 'h4'
+  const design = resolveTeachingSkinDesignRenderState(definition, variantId)
+  return (
+    <Tag
+      className={`td-heading truncate text-[12px] font-semibold leading-4 text-zinc-900 dark:text-zinc-50 ${definition.className}`}
+      style={{ ...(design.status === 'resolved' ? design.cssVariables : {}) } as CSSProperties}
+      data-level={level}
+    >标题</Tag>
+  )
+}
+
+export function MiniBoxPreview({ definition, variantId }: { definition: TeachingSkinDefinition; variantId?: TeachingSkinVariantId }) {
+  const design = resolveTeachingSkinDesignRenderState(definition, variantId)
+  return (
+    <span
+      className={`td-box block overflow-hidden border ${definition.className}`}
+      style={{ ...(design.status === 'resolved' ? design.cssVariables : {}) } as CSSProperties}
+    >
+      <span className="td-box-header flex items-center px-1.5 py-0.5">
+        <span className="truncate text-[10px] font-medium leading-3 text-zinc-900 dark:text-zinc-100">卡片标题</span>
+      </span>
+      <span className="td-box-body block truncate px-1.5 py-0.5 text-[9px] leading-3 text-zinc-500 dark:text-zinc-400">正文示意</span>
+    </span>
   )
 }

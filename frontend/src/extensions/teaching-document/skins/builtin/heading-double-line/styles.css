@@ -1,0 +1,16 @@
+/* 经典公文双线：一粗一细的独立规则线。 */
+.td-skin-heading-double-line {
+  position: relative;
+  padding-bottom: 0.35em;
+  border-bottom: 2px solid var(--td-skin-builtin--heading--double-line-accent-color, #18181b);
+}
+
+.td-skin-heading-double-line::after {
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--td-skin-builtin--heading--double-line-accent-color, #18181b);
+  content: '';
+}

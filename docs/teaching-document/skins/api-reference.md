@@ -65,6 +65,8 @@ defineHeadingSkin({
 
 `supportedLevels` is optional. Omit it to support levels 1 through 4.
 
+Heading content and numbering are core-owned. The stable root contains `.td-heading-content`, with an optional `.td-heading-number` followed by editable `.td-heading-text`. Skin CSS must not select or replace these protected children. Use the Skin root and its pseudo-elements only for decoration; never synthesize semantic numbering through CSS `content`.
+
 ## Box definition
 
 ```ts

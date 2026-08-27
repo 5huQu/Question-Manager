@@ -1,0 +1,26 @@
+/* 菱形极客标签：前置菱形和标题下的渐隐光带。 */
+.td-skin-heading-diamond-tag {
+  display: flex;
+  position: relative;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.td-skin-heading-diamond-tag::before {
+  display: inline-block;
+  color: var(--td-skin-builtin--heading--diamond-tag-accent-color, #7c3aed);
+  content: '◆';
+  font-size: 0.75em;
+  transform: scale(0.9);
+}
+
+.td-skin-heading-diamond-tag::after {
+  position: absolute;
+  bottom: -4px;
+  left: 1.25em;
+  width: calc(100% - 1.25em);
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--td-skin-builtin--heading--diamond-tag-accent-color, #7c3aed) 0%, transparent 100%);
+  content: '';
+}

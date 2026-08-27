@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Braces, FileText, ListPlus, LoaderCircle, PencilLine, Save, X } from 'lucide-react'
+import { Braces, FileText, ListPlus, LoaderCircle, PencilLine, Save, Table2, X } from 'lucide-react'
 import {
   importV2Api,
   type ImportFlowV2ParserConfig,
@@ -310,6 +310,34 @@ export function MarkdownStructurePreviewDialog({
     focusMarkerCursor(nextCursor, previousScrollTop)
   }
 
+  function markSelectedAnswerTable() {
+    const textarea = markdownTextareaRef.current
+    if (!textarea) return
+    const { start, end } = selectedLineRange()
+    const content = markdownDraft.slice(start, end).trim()
+    if (!content) {
+      setError('请先选中完整的答案表内容。')
+      return
+    }
+    if (!/<table\b[\s\S]*?<\/table>/i.test(content)) {
+      setError('“答案表”标记目前仅用于 HTML 表格；请选中完整的 <table>…</table> 内容。')
+      return
+    }
+    const previousScrollTop = textarea.scrollTop
+    const leadingNewline = start > 0 && !markdownDraft.slice(0, start).endsWith('\n') ? '\n' : ''
+    const block = [
+      '<!-- QM:ANSWER_TABLE -->',
+      content,
+      '<!-- QM:END -->',
+      '',
+    ].join('\n')
+    const nextDraft = `${markdownDraft.slice(0, start)}${leadingNewline}${block}${markdownDraft.slice(end)}`
+    const nextCursor = start + leadingNewline.length + block.length
+    setError('')
+    setMarkdownDraft(nextDraft)
+    focusMarkerCursor(nextCursor, previousScrollTop)
+  }
+
   async function rerunParserPreview(nextConfig: ImportFlowV2ParserConfig) {
     if (!effectiveOcrDocumentId) return
     setWorkingPresetId('')
@@ -537,6 +565,17 @@ export function MarkdownStructurePreviewDialog({
                     onClick={() => markSelectedContent('analysis')}
                   >
                     选中为解析
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    icon={Table2}
+                    title="将完整 HTML 表格标记为答案表；适用于没有“题号 / 答案”表头的两行表格"
+                    className="sf-pressable"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={markSelectedAnswerTable}
+                  >
+                    选中为答案表
                   </Button>
                 </div>
                 <span className="shrink-0 text-[11px] text-zinc-400">{markdownLineCount} 行</span>

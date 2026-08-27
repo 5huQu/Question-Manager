@@ -18,7 +18,7 @@ import { figureDisplayLabels } from '@/utils/questionDisplay'
 import { FIGURE_LAYOUT_PRESETS, resolveFigureLayout } from '@/utils/teachingDocument/figureLayoutPresets'
 import { InspectorSlider } from '@/components/ui/InspectorSlider'
 import { CARD_CHILD_TYPES, USER_BLOCK_LABEL } from './blockLabels'
-import { BoxAppearanceSettings, BoxSettings } from './settings/boxSettings'
+import { BoxSettings, BoxStyleSettings } from './settings/boxSettings'
 import { RichTextMarkdownSettings } from './settings/rawMarkdownSettings'
 import { QuestionSettings } from './settings/questionSettings'
 import { FigureSettings } from './settings/figureSettings'
@@ -32,8 +32,6 @@ export type SelectedLocation = {
   topLevel: TeachingBlock
   boxId?: string
 }
-
-const ICONS = ['BookOpen', 'Lightbulb', 'PenLine', 'AlertTriangle', 'Pencil', 'ListChecks', 'Box']
 
 function inlineContentOf(block: TeachingBlock): TeachingInline[] {
   if (block.type !== 'heading' && block.type !== 'paragraph') return []
@@ -106,11 +104,12 @@ function PropertiesSheetPanel(props: {
   reduced: boolean | null
 }) {
   const block = props.selected.block
-  const [tab, setTab] = useState<'content' | 'style' | 'layout'>('content')
   // 卡片内段落：卡片是"一个文本框对象"，文字是框的流——面板显示卡片页而非段落对象页。
   const displayBlock = props.selected.boxId && block.type === 'paragraph' && props.selected.topLevel.type === 'box'
     ? props.selected.topLevel
     : block
+  // 卡片通常先调整模板、皮肤与外观；其余对象打开后仍优先显示可编辑内容。
+  const [tab, setTab] = useState<'content' | 'style' | 'layout'>(() => displayBlock.type === 'box' ? 'style' : 'content')
   const updateDisplayBlock = displayBlock.id === block.id ? props.onUpdate : props.onUpdateTopLevel
   const layoutBlock = displayBlock.type === 'box' ? displayBlock : block
   // 换页符只能位于顶层对象之间。卡片内对象的面板仍提供此项，但作用于所属卡片之后。
@@ -135,7 +134,7 @@ function PropertiesSheetPanel(props: {
       </div>
 
       <div role="tablist" aria-label="属性分组" className="question-edit-glass-tabs flex items-center gap-0.5 p-1 m-3 shrink-0">
-        {([['content', '内容'], ['style', '样式'], ['layout', '布局']] as const).map(([value, label]) => (
+        {([['style', '样式'], ['content', '内容'], ['layout', '布局']] as const).map(([value, label]) => (
           <button
             key={value}
             type="button"
@@ -175,7 +174,7 @@ function PropertiesSheetPanel(props: {
         </div>
 
         {tab === 'content' ? <SheetBody {...props} onUpdateDisplayBlock={updateDisplayBlock} /> : null}
-        {tab === 'style' && displayBlock.type === 'box' ? <BoxAppearanceSettings block={displayBlock} onUpdate={updateDisplayBlock} /> : null}
+        {tab === 'style' && displayBlock.type === 'box' ? <BoxStyleSettings block={displayBlock} presetContext={props.presetContext} onUpdate={updateDisplayBlock} /> : null}
         {tab === 'style' && displayBlock.type !== 'box' ? <div className="min-h-12" /> : null}
 
         {/* 高级区 */}
@@ -219,14 +218,6 @@ function PropertiesSheetPanel(props: {
                   <input className={fieldClass} value={block.questionId} onChange={(event) => props.onUpdate({ questionId: event.target.value }, `question-id:${block.id}`)} placeholder="题库 ID" />
                 </Field>
               </>
-            ) : null}
-            {layoutBlock.type === 'box' ? (
-              <Field label="图标">
-                <select className={fieldClass} value={layoutBlock.icon || ''} onChange={(event) => updateDisplayBlock({ icon: event.target.value || undefined })}>
-                  <option value="">跟随模板</option>
-                  {ICONS.map((icon) => <option key={icon} value={icon}>{icon}</option>)}
-                </select>
-              </Field>
             ) : null}
           </div>
         </details> : null}

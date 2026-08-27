@@ -1,0 +1,30 @@
+/* 虚线演练框：留白作答区和 28px 纸面横线。 */
+.td-skin-box-dashed-workspace {
+  position: relative;
+  border: var(--td-skin-builtin--box--dashed-workspace-frame-border, 1px dashed #d4d4d8);
+  border-width: 1.5px;
+  border-radius: 8px;
+  background: #fafbfc;
+}
+
+.td-skin-box-dashed-workspace .td-box-header {
+  border-bottom: 1px dashed #e2e8f0;
+  background: transparent;
+  color: var(--td-skin-builtin--box--dashed-workspace-title-color, #475569);
+  font-size: 0.85rem;
+}
+
+.td-skin-box-dashed-workspace .td-box-header::after {
+  margin-left: auto;
+  color: #94a3b8;
+  content: '请在此处书写规范解答过程';
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.td-skin-box-dashed-workspace .td-box-body {
+  min-height: 110px;
+  background-color: transparent;
+  background-image: repeating-linear-gradient(transparent, transparent 27px, #f1f5f9 27px, #f1f5f9 28px);
+  color: #334155;
+}

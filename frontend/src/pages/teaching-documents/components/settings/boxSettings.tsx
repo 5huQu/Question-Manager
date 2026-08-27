@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, BookOpen, Box, Lightbulb, ListChecks, PenLine, Pencil, type LucideIcon } from 'lucide-react'
 import type { BoxAppearance, BoxBlock, BoxChildBlock, BoxPadding, TeachingBlock } from '@/types/teachingDocument'
 import { BlockInlineEditor } from '@/components/teaching-document/BlockInlineEditor/BlockInlineEditor'
 import { BUILTIN_BOX_TEMPLATES, hasProtectedInlineContent, protectedInlineReason } from '@/utils/teachingDocument'
+import { BOX_TEMPLATE_ICON_NAMES, getBoxTemplateOrFallback, type BoxTemplateIconName } from '@/utils/teachingDocument/boxTemplates'
 import { CARD_CHILD_TYPES, USER_BLOCK_LABEL } from '../blockLabels'
 import { ActionButton, Field, fieldClass, inlineContentOf } from './common'
 import { BoxSkinSelector } from '../TeachingSkinSelector'
@@ -9,7 +11,6 @@ import type { TeachingSkinPresetResolution } from '@/utils/teachingDocument/skin
 
 export function BoxSettings(props: {
   block: BoxBlock
-  presetContext?: TeachingSkinPresetResolution
   onUpdate: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
   onInsertChild: (box: BoxBlock, type: BoxChildBlock['type']) => void
   onDeleteBoxChildren: (boxId: string, childIds: string[]) => boolean
@@ -102,12 +103,6 @@ export function BoxSettings(props: {
 
   return (
     <div className="space-y-3">
-      <Field label="卡片模板">
-        <select className={fieldClass} value={props.block.templateId} onChange={(event) => props.onUpdate({ templateId: event.target.value })}>
-          {BUILTIN_BOX_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.label}</option>)}
-        </select>
-      </Field>
-      <BoxSkinSelector skin={props.block.skin} templateId={props.block.templateId} presetContext={props.presetContext} onChange={(skin) => props.onUpdate({ skin })} />
       <Field label="卡片标题">
         <input className={fieldClass} value={props.block.title || ''} onChange={(event) => props.onUpdate({ title: event.target.value }, `box-title:${props.block.id}`)} />
       </Field>
@@ -170,9 +165,38 @@ export function BoxSettings(props: {
   )
 }
 
+/** 卡片模板、皮肤与外观属于同一组视觉配置，供属性面板的「样式」页使用。 */
+export function BoxStyleSettings(props: {
+  block: BoxBlock
+  presetContext?: TeachingSkinPresetResolution
+  onUpdate: (patch: Partial<TeachingBlock>, mergeKey?: string) => void
+}) {
+  return (
+    <div className="space-y-3">
+      <Field label="卡片模板">
+        <select className={fieldClass} value={props.block.templateId} onChange={(event) => props.onUpdate({ templateId: event.target.value })}>
+          {BUILTIN_BOX_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.label}</option>)}
+        </select>
+      </Field>
+      <BoxSkinSelector skin={props.block.skin} templateId={props.block.templateId} presetContext={props.presetContext} onChange={(skin) => props.onUpdate({ skin })} />
+      <BoxAppearanceSettings block={props.block} onUpdate={props.onUpdate} />
+    </div>
+  )
+}
+
 const PADDING_SIDES = [
   ['top', '上'], ['right', '右'], ['bottom', '下'], ['left', '左'],
 ] as const
+
+const BOX_ICON_OPTIONS: Record<BoxTemplateIconName, { label: string; Icon: LucideIcon }> = {
+  BookOpen: { label: '知识点', Icon: BookOpen },
+  Lightbulb: { label: '提示', Icon: Lightbulb },
+  PenLine: { label: '例题', Icon: PenLine },
+  AlertTriangle: { label: '提醒', Icon: AlertTriangle },
+  Pencil: { label: '练习', Icon: Pencil },
+  ListChecks: { label: '小结', Icon: ListChecks },
+  Box: { label: '文本框', Icon: Box },
+}
 
 /** 只暴露持久化契约允许的卡片外观 token。 */
 export function BoxAppearanceSettings(props: {
@@ -190,8 +214,48 @@ export function BoxAppearanceSettings(props: {
       : { ...appearance.padding, [side]: value }
     updateAppearance({ padding })
   }
+  const template = getBoxTemplateOrFallback(props.block.templateId)
+  const defaultIcon = template.defaultIcon
+  const DefaultIcon = BOX_ICON_OPTIONS[defaultIcon].Icon
   return (
     <div className="space-y-3">
+      <div className="space-y-1">
+        <p className="text-[13px] font-medium text-zinc-500">标题图标</p>
+        <p className="text-[11px] leading-4 text-zinc-400">图标属于当前卡片，不随皮肤切换；可跟随卡片模板或单独覆盖。</p>
+        <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="卡片标题图标">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={props.block.icon === undefined}
+            aria-label={`跟随模板：${template.label}（${BOX_ICON_OPTIONS[defaultIcon].label}）`}
+            title={`跟随模板：${template.label}`}
+            onClick={() => props.onUpdate({ icon: undefined })}
+            className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-md border px-1 py-1 text-[10px] transition-colors ${props.block.icon === undefined ? 'border-zinc-900 bg-zinc-50 text-zinc-900 ring-1 ring-zinc-900 dark:border-zinc-100 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-100' : 'border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-900'}`}
+          >
+            <DefaultIcon className="size-4" aria-hidden="true" />
+            <span className="truncate">跟随模板</span>
+          </button>
+          {BOX_TEMPLATE_ICON_NAMES.map((iconName) => {
+            const { Icon, label } = BOX_ICON_OPTIONS[iconName]
+            const active = props.block.icon === iconName
+            return (
+              <button
+                key={iconName}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                aria-label={label}
+                title={label}
+                onClick={() => props.onUpdate({ icon: iconName })}
+                className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-md border px-1 py-1 text-[10px] transition-colors ${active ? 'border-zinc-900 bg-zinc-50 text-zinc-900 ring-1 ring-zinc-900 dark:border-zinc-100 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-100' : 'border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-900'}`}
+              >
+                <Icon className="size-4" aria-hidden="true" />
+                <span className="truncate">{label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
       <Field label="卡片底色">
         <select className={fieldClass} value={appearance.background || 'template'} onChange={(event) => updateAppearance({ background: event.target.value as NonNullable<BoxAppearance['background']> })}>
           <option value="template">跟随模板</option><option value="white">白色</option><option value="blue">浅蓝</option><option value="gray">浅灰</option><option value="amber">浅黄</option><option value="green">浅绿</option>

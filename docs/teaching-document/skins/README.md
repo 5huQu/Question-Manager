@@ -29,7 +29,7 @@ The scaffold writes only `frontend/src/extensions/teaching-document/skins/custom
 
 Use [create-heading-skin.md](create-heading-skin.md) or [create-box-skin.md](create-box-skin.md) for a complete example. The core API is documented in [api-reference.md](api-reference.md).
 
-Pinned document-level Skin → Variant composition is documented in [presets.md](presets.md). Phase 2B-4 exposes those source-defined Presets through the Teaching Document 「文档样式」workspace; the page selects only an exact pinned reference and never authors source definitions.
+Pinned document-level Skin → Variant composition is documented in [presets.md](presets.md). The Teaching Document 「文档样式」workspace exposes these source-defined Presets and an explicit global Skin application action; users choose whether to preserve existing local Skin/Variant refs or replace compatible refs across the document.
 
 ## Phase 1 boundaries
 

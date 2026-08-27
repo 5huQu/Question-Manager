@@ -3,6 +3,7 @@ import type { ImportFlowV2ParserConfig } from '../default-parser-config.js'
 import { splitMarkdownByQuestionNumbers } from '../markdown-question-splitter.js'
 import { detectSolutionQuestionNumbers } from '../question-number-detector.js'
 import {
+  findUnrecognizedAnswerTables,
   findSolutionSections,
   maskNonSolutionBlocks,
 } from '../solution-matcher.js'
@@ -48,6 +49,17 @@ export function candidatePreviewsFromMatches(markdown: string, matches: Map<stri
 
 export function strategyDiagnostics(markdown: string, config: ImportFlowV2ParserConfig): ParserDiagnostic[] {
   const diagnostics: ParserDiagnostic[] = []
+  if (config.answerTablePolicy !== 'disabled') {
+    for (const table of findUnrecognizedAnswerTables(markdown)) {
+      diagnostics.push({
+        code: 'answer_table_not_recognized',
+        severity: 'warning',
+        message: `疑似答案表未识别：${table.reason} 可在“编辑识别稿 / 人工标记”中选中整张表后使用“选中为答案表”。`,
+        start: table.start,
+        end: table.end,
+      })
+    }
+  }
   const shouldSuggestQuestionThenHeading = config.solutionBindingStrategy !== 'question_then_heading'
   const sections = findSolutionSections(markdown, config)
   const questionMatches = detectSolutionQuestionNumbers(maskNonSolutionBlocks(markdown, config), config)

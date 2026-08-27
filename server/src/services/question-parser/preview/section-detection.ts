@@ -1,5 +1,5 @@
 import type { ImportFlowV2ParserConfig } from '../default-parser-config.js'
-import { extractInlineAnswerTableEntries } from '../solution-matcher.js'
+import { extractHtmlAnswerTableBlocks, extractInlineAnswerTableEntries } from '../solution-matcher.js'
 import { cleanPreviewText } from './markdown-utils.js'
 import type { TableAnswerEntry } from './types.js'
 
@@ -55,35 +55,7 @@ export function containsAnswerTable(markdown: string, config: ImportFlowV2Parser
 export function extractAnswerTableEntries(markdown: string, config: ImportFlowV2ParserConfig): TableAnswerEntry[] {
   if (config.answerTablePolicy === 'disabled') return []
   const entries: TableAnswerEntry[] = []
-  const tablePattern = /<table\b[^>]*>([\s\S]*?)<\/table>/gi
-  for (const tableMatch of markdown.matchAll(tablePattern)) {
-    const tableStart = tableMatch.index || 0
-    const tableEnd = tableStart + tableMatch[0].length
-    const tableContent = tableMatch[1]
-    const rowPattern = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi
-    const rows: string[][] = []
-    for (const rowMatch of tableContent.matchAll(rowPattern)) {
-      const cellPattern = /<td\b[^>]*>([\s\S]*?)<\/td>/gi
-      const cells = Array.from(rowMatch[1].matchAll(cellPattern)).map((cellMatch) => cellMatch[1].replace(/<[^>]+>/g, '').trim())
-      if (cells.length) rows.push(cells)
-    }
-
-    const headerRowIndex = rows.findIndex((row) => row.some((cell) => /题号|序号/.test(cell)))
-    if (headerRowIndex < 0) continue
-    const answerRowIndex = rows.findIndex((row, rowIndex) => rowIndex !== headerRowIndex && row.some((cell) => /答案/.test(cell)))
-    if (answerRowIndex < 0) continue
-
-    const headerRow = rows[headerRowIndex]
-    const answerRow = rows[answerRowIndex]
-    const labelColIndex = headerRow.findIndex((cell) => /题号|序号/.test(cell))
-    const answerLabelColIndex = answerRow.findIndex((cell) => /答案/.test(cell))
-    const startCol = Math.max(labelColIndex + 1, answerLabelColIndex + 1)
-    for (let col = startCol; col < Math.min(headerRow.length, answerRow.length); col += 1) {
-      const questionNo = headerRow[col].replace(/[^\d０-９]/g, '').replace(/[０-９]/g, (ch) => String(ch.charCodeAt(0) - '０'.charCodeAt(0))).trim()
-      const answerText = answerRow[col].trim()
-      if (questionNo && answerText) entries.push({ questionNo, answerText, range: { start: tableStart, end: tableEnd } })
-    }
-  }
+  for (const block of extractHtmlAnswerTableBlocks(markdown)) entries.push(...block.entries)
   for (const entry of extractInlineAnswerTableEntries(markdown)) {
     entries.push(entry)
   }

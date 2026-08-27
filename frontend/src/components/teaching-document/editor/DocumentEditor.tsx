@@ -10,7 +10,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
-import type { Transaction } from '@tiptap/pm/state'
+import { NodeSelection, TextSelection, type Transaction } from '@tiptap/pm/state'
+import type { JSONContent } from '@tiptap/react'
 import type { TeachingDocumentV1 } from '@/types/teachingDocument'
 import type { TeachingDocumentLayoutChangeSet } from '@/utils/teachingDocument/layout/changeSet'
 import { createDocumentEditorExtensions } from './schema'
@@ -23,12 +24,79 @@ import {
 import { PaperProvider, PaginationProvider, ResolverProvider, type DocumentEditorResolvers } from './NodeViews'
 import { createDocumentPrintLayout, resolveDocumentPaper, type PaginationResult, type PrintLayoutSpec } from '@/utils/teachingDocument'
 import type { EditorPaginationLayout } from './paginationDecorations'
-import { DOCUMENT_EXTERNAL_SYNC_META, isExternalDocumentSync, TopLevelMultiSelectDecoration } from './selection'
+import { blockIdFromSelection, DOCUMENT_EXTERNAL_SYNC_META, isExternalDocumentSync, TopLevelMultiSelectDecoration } from './selection'
 import { DOCUMENT_LAYOUT_CHANGE_SET_META, mergeStructuralChangeSets } from './structuralActions'
 import { resolveHeadingSkin, resolveTeachingDocumentSkinPresetContext, resolveTeachingSkinDesignRenderState, resolveTeachingSkinVariantRequest, teachingDocumentHeadingSkinDesignSignature } from '@/utils/teachingDocument/skins'
 
 /** 普通键入在编辑器内即时生效；整篇领域模型同步采用短暂合并，避免逐字序列化。 */
 export const DEFAULT_DOCUMENT_MODEL_SYNC_DELAY_MS = 350
+
+/**
+ * setContent 整篇替换后，把被改属性源块内漂移出去的选区拉回源块。
+ *
+ * ProseMirror 的 diff-mapping 会把“属性变化的块”当作新节点，把落在其内部的
+ * 旧选区映射到替换区间边界，而该边界正好是下一块的起点——属性面板切个皮肤，
+ * 选中对象就会跳到下一个块。仅当源块文本内容未变（纯属性变化：皮肤、对齐等）
+ * 时恢复；撤销/重做、远端重载等真实内容变化仍保留映射后的选区。
+ */
+interface ExternalSyncSelectionSnapshot {
+  blockId: string
+  nodeType: string
+  contentSig: string
+  kind: 'node' | 'text'
+  anchorOffset?: number
+  headOffset?: number
+}
+
+function captureExternalSyncSelection(selection: Transaction['selection'], doc: Transaction['doc'], editorDoc: JSONContent): ExternalSyncSelectionSnapshot | null {
+  const blockId = blockIdFromSelection(selection, doc)
+  if (!blockId || blockId === '__empty__') return null
+  const editorBlock = (editorDoc.content || []).find((node) => String(node.attrs?.blockId || '') === blockId)
+  if (!editorBlock) return null
+  let offset = 0
+  for (let index = 0; index < doc.childCount; index += 1) {
+    const child = doc.child(index)
+    if (String(child.attrs.blockId || '') === blockId) {
+      if (selection instanceof NodeSelection) {
+        return { blockId, nodeType: editorBlock.type || '', contentSig: JSON.stringify(editorBlock.content ?? null), kind: 'node' }
+      }
+      return {
+        blockId,
+        nodeType: editorBlock.type || '',
+        contentSig: JSON.stringify(editorBlock.content ?? null),
+        kind: 'text',
+        anchorOffset: selection.anchor - offset - 1,
+        headOffset: selection.head - offset - 1,
+      }
+    }
+    offset += child.nodeSize
+  }
+  return null
+}
+
+function restoreSelectionAcrossExternalSync(tr: Transaction, snapshot: ExternalSyncSelectionSnapshot | null, nextEditorDoc: JSONContent): boolean {
+  if (!snapshot) return true
+  const nextBlockNode = (nextEditorDoc.content || []).find((node) => String(node.attrs?.blockId || '') === snapshot.blockId)
+  if (!nextBlockNode) return true
+  if (nextBlockNode.type !== snapshot.nodeType || JSON.stringify(nextBlockNode.content ?? null) !== snapshot.contentSig) return true
+  let offset = 0
+  for (let index = 0; index < tr.doc.childCount; index += 1) {
+    const child = tr.doc.child(index)
+    if (String(child.attrs.blockId || '') === snapshot.blockId) {
+      if (snapshot.kind === 'node' && child.isAtom) {
+        tr.setSelection(NodeSelection.create(tr.doc, offset))
+      } else if (snapshot.kind === 'text' && !child.isAtom) {
+        const maxOffset = child.content.size
+        const anchor = offset + 1 + Math.min(Math.max(snapshot.anchorOffset ?? 0, 0), maxOffset)
+        const head = offset + 1 + Math.min(Math.max(snapshot.headOffset ?? 0, 0), maxOffset)
+        tr.setSelection(TextSelection.create(tr.doc, anchor, head))
+      }
+      return true
+    }
+    offset += child.nodeSize
+  }
+  return true
+}
 
 export interface DocumentEditorProps {
   /** 文档数据（唯一事实来源） */
@@ -219,6 +287,8 @@ export function DocumentEditor({
         lastEmittedOutlineSig.current = outlineSig
         return
       }
+      // 同步前记录选区所在块及其内容签名，用于 setContent 后识别纯属性变化。
+      const selectionSnapshot = captureExternalSyncSelection(editor.state.selection, editor.state.doc, currentJson)
       // 外部更新：同步编辑器内容
       syncing.current = true
       try {
@@ -227,6 +297,7 @@ export function DocumentEditor({
           .setMeta(DOCUMENT_EXTERNAL_SYNC_META, true)
           .setMeta('addToHistory', false)
           .setContent(nextEditorDoc, { emitUpdate: false })
+          .command(({ tr }) => restoreSelectionAcrossExternalSync(tr, selectionSnapshot, nextEditorDoc))
           .run()
       } finally {
         syncing.current = false

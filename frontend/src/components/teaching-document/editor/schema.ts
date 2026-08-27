@@ -103,10 +103,10 @@ export const DocHeading = Node.create({
   },
   parseHTML() {
     return [
-      { tag: 'h1[data-block-type="heading"]', attrs: { level: 1 } },
-      { tag: 'h2[data-block-type="heading"]', attrs: { level: 2 } },
-      { tag: 'h3[data-block-type="heading"]', attrs: { level: 3 } },
-      { tag: 'h4[data-block-type="heading"]', attrs: { level: 4 } },
+      { tag: 'h1[data-block-type="heading"]', attrs: { level: 1 }, contentElement: '.td-heading-text' },
+      { tag: 'h2[data-block-type="heading"]', attrs: { level: 2 }, contentElement: '.td-heading-text' },
+      { tag: 'h3[data-block-type="heading"]', attrs: { level: 3 }, contentElement: '.td-heading-text' },
+      { tag: 'h4[data-block-type="heading"]', attrs: { level: 4 }, contentElement: '.td-heading-text' },
     ]
   },
   renderHTML({ node, HTMLAttributes }) {
@@ -119,14 +119,21 @@ export const DocHeading = Node.create({
     const designStyle = resolvedSkin.status === 'resolved'
       ? teachingSkinDesignStyleAttribute(resolveTeachingSkinDesignRenderState(resolvedSkin.definition, resolveTeachingSkinVariantRequest(resolvedSkin.skin, resolvedSkin.definition.id)).cssVariables)
       : undefined
-    return [`h${level}`, mergeAttributes(HTMLAttributes, {
+    const headingAttributes = mergeAttributes(HTMLAttributes, {
       class: ['td-heading', resolvedSkin.status === 'resolved' ? resolvedSkin.definition.className : ''].filter(Boolean).join(' '),
       'data-block-type': 'heading',
       'data-indent-level': indentLevel || undefined,
       'data-skin-id': resolvedSkin.status === 'resolved' ? resolvedSkin.definition.id : undefined,
       'data-skin-state': skin ? resolvedSkin.status : undefined,
       style: `text-align: ${alignment};${indentLevel ? ` margin-left: ${indentLevel * 1.5}em;` : ''}${designStyle ? ` ${designStyle};` : ''}`,
-    }), 0]
+    })
+    const numberLabel = String(node.attrs.numberLabel || '')
+    return [`h${level}`, headingAttributes,
+      ['span', { class: 'td-heading-content' },
+        ...(numberLabel ? [['span', { class: 'td-heading-number', contenteditable: 'false', 'aria-hidden': 'true' }, numberLabel]] : []),
+        ['span', { class: 'td-heading-text' }, 0],
+      ],
+    ]
   },
 })
 

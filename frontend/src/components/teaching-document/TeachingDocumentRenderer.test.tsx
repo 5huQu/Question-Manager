@@ -111,6 +111,51 @@ describe('ParagraphFragmentRenderer', () => {
 })
 
 describe('TeachingDocumentRenderer fallbacks', () => {
+  it('lets a resolved box Skin control its title color while preserving the unskinned default', () => {
+    const skinned = renderToStaticMarkup(
+      <TeachingDocumentRenderer document={documentWith([{
+        type: 'box',
+        id: 'monochrome-box',
+        title: '定理',
+        templateId: 'concept',
+        breakBehavior: 'auto',
+        skin: { id: 'builtin.box.monochrome-double', version: 1 },
+        children: [],
+      }])} />,
+    )
+    const unskinned = renderToStaticMarkup(
+      <TeachingDocumentRenderer document={documentWith([{
+        type: 'box',
+        id: 'plain-box',
+        title: '定义',
+        templateId: 'concept',
+        breakBehavior: 'auto',
+        children: [],
+      }])} />,
+    )
+    expect(skinned).toContain('td-skin-box-monochrome-double')
+    expect(skinned).not.toContain('text-zinc-700')
+    expect(unskinned).toContain('text-zinc-700')
+  })
+
+  it('marks each box child as one flow item without marking continuation helpers', () => {
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer document={documentWith([{
+        type: 'box',
+        id: 'step-box',
+        templateId: 'method',
+        breakBehavior: 'auto',
+        skin: { id: 'builtin.box.step-flow', version: 1 },
+        children: [
+          { type: 'paragraph', id: 'step-1', content: [{ type: 'text', text: '第一步' }] },
+          { type: 'paragraph', id: 'step-2', content: [{ type: 'text', text: '第二步' }] },
+        ],
+      }])} />,
+    )
+    expect(html.match(/data-box-flow-item=""/g) || []).toHaveLength(2)
+    expect(html).toContain('data-skin-id="builtin.box.step-flow"')
+  })
+
   it('keeps legacy and no-design Skin roots free of design custom properties', () => {
     const html = renderToStaticMarkup(
       <TeachingDocumentRenderer document={documentWith([

@@ -102,7 +102,14 @@ export function BoxFlowEditor({
   const [extraSelectedIds, setExtraSelectedIds] = useState<string[]>([])
   const extraSelectedRef = useRef<string[]>([])
   extraSelectedRef.current = extraSelectedIds
-  /** 多选环 decoration：给集合内的原子块加视觉环；装饰随事务重算，故状态变化后派发空事务刷新。 */
+  /**
+   * 卡片流 decoration：
+   * - 给每个顶层子块标记稳定的流程项边界，供步骤类皮肤逐段绘制节点；
+   * - 给多选集合内的原子块加视觉环。
+   *
+   * 流程项只对应 ProseMirror 顶层块，因此 Enter 新建段落会新增节点，
+   * Shift+Enter 的 hardBreak 与浏览器自动折行都仍留在同一节点内。
+   */
   const MultiSelectDecoration = useMemo(() => Extension.create({
     name: 'boxMultiSelectDecoration',
     addProseMirrorPlugins() {
@@ -110,8 +117,10 @@ export function BoxFlowEditor({
         props: {
           decorations(state) {
             const ids = extraSelectedRef.current
-            if (!ids.length) return DecorationSet.empty
             const decorations: Decoration[] = []
+            state.doc.forEach((node, offset) => {
+              decorations.push(Decoration.node(offset, offset + node.nodeSize, { 'data-box-flow-item': '' }))
+            })
             state.doc.descendants((node, pos) => {
               if (!node.isAtom) return true
               if (ids.includes(String(node.attrs?.blockId || ''))) {

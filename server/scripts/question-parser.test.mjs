@@ -218,6 +218,44 @@ const inlineAnswerWithDecimalAnalysisSolutions = parseSolutionDocument(inlineAns
 })
 assert.equal(inlineAnswerWithDecimalAnalysisSolutions.get('9')?.answerText, 'ACD')
 assert.match(inlineAnswerWithDecimalAnalysisSolutions.get('9')?.analysisMarkdown || '', /20\.10/)
+
+const unlabeledTwoRowAnswerTableDocument = {
+  ...ocrDocument,
+  id: 'ocr_unlabeled_two_row_answer_table_test',
+  markdown: [
+    '# 数学参考答案',
+    '## 一、单项选择题',
+    '<table border="1"><tr><td>1</td><td>2</td><td>3</td><td>4</td></tr><tr><td>C</td><td>A</td><td>B</td><td>B</td></tr></table>',
+    '## 二、多项选择题',
+    '<table border="1"><tr><td>9</td><td>10</td><td>11</td></tr><tr><td>ABD</td><td>BC</td><td>BCD</td></tr></table>',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const unlabeledTwoRowAnswers = parseSolutionDocument(unlabeledTwoRowAnswerTableDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.equal(unlabeledTwoRowAnswers.get('1')?.answerText, 'C')
+assert.equal(unlabeledTwoRowAnswers.get('4')?.answerText, 'B')
+assert.equal(unlabeledTwoRowAnswers.get('9')?.answerText, 'ABD')
+assert.equal(unlabeledTwoRowAnswers.get('11')?.answerText, 'BCD')
+const unlabeledTwoRowPreview = buildParserPreview(unlabeledTwoRowAnswerTableDocument)
+assert.equal(unlabeledTwoRowPreview.structures.filter((token) => token.kind === 'answer_table' && token.label === '推断答案表').length, 2)
+
+const manuallyMarkedNonConsecutiveAnswerTableDocument = {
+  ...ocrDocument,
+  id: 'ocr_manually_marked_answer_table_test',
+  markdown: [
+    '<!-- QM:ANSWER_TABLE -->',
+    '<table border="1"><tr><td>1</td><td>3</td></tr><tr><td>A</td><td>C</td></tr></table>',
+    '<!-- QM:END -->',
+  ].join('\n'),
+  pages: [],
+  assets: [],
+}
+const manuallyMarkedAnswers = parseSolutionDocument(manuallyMarkedNonConsecutiveAnswerTableDocument, { now: '2026-06-24T00:00:00.000Z' })
+assert.equal(manuallyMarkedAnswers.get('1')?.answerText, 'A')
+assert.equal(manuallyMarkedAnswers.get('3')?.answerText, 'C')
+const manuallyMarkedPreview = buildParserPreview(manuallyMarkedNonConsecutiveAnswerTableDocument)
+assert.equal(manuallyMarkedPreview.structures.some((token) => token.kind === 'answer_table' && token.label === '人工答案表'), true)
 assert.match(inlineAnswerWithDecimalAnalysisSolutions.get('9')?.analysisMarkdown || '', /D正确/)
 assert.doesNotMatch(inlineAnswerWithDecimalAnalysisSolutions.get('9')?.analysisMarkdown || '', /第十题解析/)
 

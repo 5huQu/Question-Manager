@@ -1,0 +1,45 @@
+/* 错因诊断框：警戒标题与红绿辨析对照。 */
+.td-skin-box-trap-alert {
+  border: var(--td-skin-builtin--box--trap-alert-frame-border, 1px solid #fecaca);
+  border-left: 4px solid var(--td-skin-builtin--box--trap-alert-accent-color, #b91c1c);
+  border-radius: 0 8px 8px 0;
+  background: var(--td-skin-builtin--box--trap-alert-body-fill, #fef2f2);
+}
+
+.td-skin-box-trap-alert .td-box-header {
+  padding: 0.4rem 0.9rem;
+  background: var(--td-skin-builtin--box--trap-alert-header-fill, #fee2e2);
+  color: #991b1b;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.td-skin-box-trap-alert .td-box-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  background: transparent;
+  color: #7f1d1d;
+}
+
+.td-skin-box-trap-alert .td-box-body > :first-child {
+  grid-column: 1 / -1;
+}
+
+.td-skin-box-trap-alert .td-box-body > :nth-child(2),
+.td-skin-box-trap-alert .td-box-body > :nth-child(3) {
+  padding: 0.6rem;
+  border-radius: 4px;
+}
+
+.td-skin-box-trap-alert .td-box-body > :nth-child(2) {
+  border: 1px solid #fecdd3;
+  background: #ffe4e6;
+  color: #9f1239;
+}
+
+.td-skin-box-trap-alert .td-box-body > :nth-child(3) {
+  border: 1px solid #a7f3d0;
+  background: #ecfdf5;
+  color: #065f46;
+}

@@ -1,9 +1,9 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { TeachingDocumentV1 } from '@/types/teachingDocument'
+import type { TeachingBlock, TeachingDocumentV1 } from '@/types/teachingDocument'
 import { defineTeachingSkinPreset, teachingSkinPresetRegistry } from '@/utils/teachingDocument/skins'
-import { DocumentStyleWorkspace, teachingDocumentLocalOverrides, teachingDocumentSkinUsages, teachingDocumentStyleMappings, withTeachingDocumentPreset } from './DocumentStyleWorkspace'
+import { applyTeachingDocumentPreset, DocumentStyleWorkspace, teachingDocumentLocalOverrides, teachingDocumentSkinUsages, teachingDocumentStyleMappings, withTeachingDocumentPreset } from './DocumentStyleWorkspace'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -63,6 +63,19 @@ describe('DocumentStyleWorkspace', () => {
     expect(onDocumentChange).not.toHaveBeenCalled()
   })
 
+  it('can explicitly reapply the already selected Preset to previously unskinned objects', async () => {
+    const document = structuredClone(baseDocument)
+    document.design = { preset: { id: 'builtin.preset.warm', version: 1 } }
+    const plainHeading = document.content[2]
+    if (plainHeading?.type === 'heading') delete plainHeading.skin
+    const onDocumentChange = await renderWorkspace(document)
+    const applyCurrent = Array.from(container!.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === '将当前组合应用到整篇文档')
+    await act(async () => applyCurrent?.click())
+    const next = onDocumentChange.mock.calls.at(-1)?.[0] as TeachingDocumentV1
+    expect((next.content[2] as Extract<TeachingBlock, { type: 'heading' }>).skin?.id).toBe('builtin.heading.left-accent')
+  })
+
   it('clears the Preset without leaving an empty design object and preserves explicit block variants', async () => {
     const document = structuredClone(baseDocument)
     document.design = { preset: { id: 'builtin.preset.warm', version: 1 } }
@@ -120,6 +133,55 @@ describe('DocumentStyleWorkspace', () => {
     expect(withTeachingDocumentPreset(document).content).toEqual(document.content)
   })
 
+  it('applies a document style in either preserve-local or replace-all mode', () => {
+    const document = structuredClone(baseDocument)
+    const heading = document.content[0]
+    const box = document.content[1]
+    if (heading?.type === 'heading') heading.skin = { ...heading.skin!, variant: 'green' }
+    if (box?.type === 'box') box.skin = { ...box.skin!, variant: 'blue' }
+    document.content.push(
+      { type: 'heading', id: 'unskinned-heading', level: 2, content: [{ type: 'text', text: '待应用标题' }] },
+      { type: 'box', id: 'unskinned-box', templateId: 'concept', breakBehavior: 'auto', children: [] },
+    )
+    const warm = teachingSkinPresetRegistry.get('builtin.preset.warm', 1)!
+
+    const preserved = applyTeachingDocumentPreset(document, warm, 'preserve')
+    expect((preserved.content[0] as Extract<TeachingBlock, { type: 'heading' }>).skin).toEqual({ id: 'builtin.heading.left-accent', version: 1, variant: 'green' })
+    expect((preserved.content[1] as Extract<TeachingBlock, { type: 'box' }>).skin).toEqual({ id: 'builtin.box.left-accent', version: 1, variant: 'blue' })
+    expect((preserved.content[3] as Extract<TeachingBlock, { type: 'heading' }>).skin).toEqual({ id: 'builtin.heading.left-accent', version: 1 })
+    expect((preserved.content[4] as Extract<TeachingBlock, { type: 'box' }>).skin).toEqual({ id: 'builtin.box.left-accent', version: 1 })
+
+    const replaced = applyTeachingDocumentPreset(document, warm, 'replace')
+    expect((replaced.content[0] as Extract<TeachingBlock, { type: 'heading' }>).skin).toEqual({ id: 'builtin.heading.left-accent', version: 1 })
+    expect((replaced.content[1] as Extract<TeachingBlock, { type: 'box' }>).skin).toEqual({ id: 'builtin.box.left-accent', version: 1 })
+  })
+
+  it('lets the global skin selector apply only the chosen target with the selected mode', async () => {
+    const onDocumentChange = await renderWorkspace(baseDocument)
+    const headingPicker = container!.querySelector('[role="radiogroup"][aria-label="全局标题皮肤"]')
+    expect(headingPicker).not.toBeNull()
+    const badge = Array.from(headingPicker!.querySelectorAll<HTMLButtonElement>('[role="radio"]'))
+      .find((button) => button.getAttribute('aria-label') === '序号徽章')
+    await act(async () => {
+      badge?.click()
+    })
+    const apply = Array.from(container!.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === '应用且局部替换')
+    await act(async () => apply?.click())
+    const next = onDocumentChange.mock.calls.at(-1)?.[0] as TeachingDocumentV1
+    expect((next.content[0] as Extract<TeachingBlock, { type: 'heading' }>).skin?.id).toBe('builtin.heading.left-accent')
+    expect((next.content[2] as Extract<TeachingBlock, { type: 'heading' }>).skin?.id).toBe('builtin.heading.badge')
+  })
+
+  it('labels the global apply action according to the shared application mode', async () => {
+    await renderWorkspace(baseDocument)
+    expect(Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).some((button) => button.textContent === '应用且局部替换')).toBe(true)
+    const replace = Array.from(container!.querySelectorAll<HTMLButtonElement>('[role="radio"]'))
+      .find((button) => button.textContent?.includes('统一替换'))
+    await act(async () => replace?.click())
+    expect(Array.from(container!.querySelectorAll<HTMLButtonElement>('button')).some((button) => button.textContent === '应用到整篇文档')).toBe(true)
+  })
+
   it('lists every Skin actually attached to headings and knowledge cards, even without a Preset', async () => {
     const document = structuredClone(baseDocument)
     const box = document.content[1]
@@ -131,7 +193,7 @@ describe('DocumentStyleWorkspace', () => {
     ]))
 
     await renderWorkspace(document)
-    expect(container!.textContent).toContain('文档皮肤')
+    expect(container!.textContent).toContain('已使用的皮肤')
     expect(container!.textContent).toContain('知识卡片 · 深色标题带')
     expect(container!.textContent).toContain('当前：皮肤基础样式')
   })
