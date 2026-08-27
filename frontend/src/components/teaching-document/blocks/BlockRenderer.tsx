@@ -662,32 +662,36 @@ function QuestionRegionContent({
   }
   if (region.kind === 'answer') {
     return (
-      <div className={`td-question-answer mt-3 border border-blue-200/70 bg-blue-50/80 px-3 py-2 dark:border-blue-900/60 dark:bg-blue-950/30 ${joinWithAnalysis ? 'rounded-t-md border-b-0' : 'rounded-md'}`}>
-        <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">参考答案：</span>
-        {editableQuestionText && region.inlineContent ? (
-          <div
-            className="mt-1"
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <BlockInlineEditor
-              inlines={region.inlineContent}
-              variant="embedded"
-              toolbar="none"
-              editorContext="question"
-              ariaLabel="参考答案"
-              onChange={(content) => onInlineContentChange?.(region.key, content)}
+      <div className={`td-box td-skin-box-theorem-math td-question-answer td-question-solution-card mt-3 overflow-hidden ${joinWithAnalysis ? 'rounded-t-md border-b-0' : ''}`}>
+        <div className="td-box-header flex min-w-0 items-center gap-2 px-4 py-2.5">
+          <BoxIcon name="Lightbulb" className="size-4 shrink-0" />
+          <span className="text-sm font-semibold">参考答案</span>
+        </div>
+        <div className="td-box-body px-4 py-3">
+          {editableQuestionText && region.inlineContent ? (
+            <div
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <BlockInlineEditor
+                inlines={region.inlineContent}
+                variant="embedded"
+                toolbar="none"
+                editorContext="question"
+                ariaLabel="参考答案"
+                onChange={(content) => onInlineContentChange?.(region.key, content)}
+              />
+            </div>
+          ) : (
+            <MarkdownWithInlineFigures
+              className="text-sm"
+              content={region.markdown}
+              figures={region.figures}
+              showFigureCaptions={false}
+              bareFigures
             />
-          </div>
-        ) : (
-          <MarkdownWithInlineFigures
-            className="mt-1 text-sm text-blue-950 dark:text-blue-100"
-            content={region.markdown}
-            figures={region.figures}
-            showFigureCaptions={false}
-            bareFigures
-          />
-        )}
+          )}
+        </div>
       </div>
     )
   }
@@ -810,7 +814,7 @@ export function QuestionRuntimeContent({
             : false
         return (
           <div
-            className={`td-question-region ${flowWrappedText ? 'td-question-region-flow-text' : 'flow-root'} ${isAnalysis ? `td-question-analysis-region border-x border-blue-200/70 bg-blue-50/80 px-3 py-2 dark:border-blue-900/60 dark:bg-blue-950/30 ${analysisStart && !analysisJoinsAnswer ? 'rounded-t-md border-t' : ''} ${analysisStart && analysisJoinsAnswer ? 'border-t-0' : ''} ${analysisEnd ? 'rounded-b-md border-b' : ''}` : ''}`}
+            className={`td-question-region ${flowWrappedText ? 'td-question-region-flow-text' : 'flow-root'} ${isAnalysis ? `td-box td-skin-box-theorem-math td-question-analysis-region td-question-solution-card overflow-hidden ${analysisStart && analysisJoinsAnswer ? 'border-t-0' : ''} ${analysisEnd ? 'rounded-b-md' : ''}` : ''}`}
             key={`${region.key}:${item?.kind === 'question-paragraph-fragment' ? item.fragmentIndex : 0}`}
             style={regionStyle}
             {...{
@@ -828,16 +832,31 @@ export function QuestionRuntimeContent({
                 : {}),
             }}
           >
-            <QuestionRegionContent
-              region={region}
-              item={item}
-              layoutEditor={layoutEditor}
-              resolveFigure={resolveFigure}
-              choiceLayoutBlockId={choiceLayoutBlockId}
-              editableQuestionText={editableQuestionText}
-              joinWithAnalysis={region.kind === 'answer' && nextRegion?.type === 'analysis'}
-              onInlineContentChange={onInlineContentChange}
-            />
+            {isAnalysis ? (
+              <div className="td-box-body px-4 py-3">
+                <QuestionRegionContent
+                  region={region}
+                  item={item}
+                  layoutEditor={layoutEditor}
+                  resolveFigure={resolveFigure}
+                  choiceLayoutBlockId={choiceLayoutBlockId}
+                  editableQuestionText={editableQuestionText}
+                  joinWithAnalysis={false}
+                  onInlineContentChange={onInlineContentChange}
+                />
+              </div>
+            ) : (
+              <QuestionRegionContent
+                region={region}
+                item={item}
+                layoutEditor={layoutEditor}
+                resolveFigure={resolveFigure}
+                choiceLayoutBlockId={choiceLayoutBlockId}
+                editableQuestionText={editableQuestionText}
+                joinWithAnalysis={region.kind === 'answer' && nextRegion?.type === 'analysis'}
+                onInlineContentChange={onInlineContentChange}
+              />
+            )}
           </div>
         )
       })}

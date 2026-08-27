@@ -742,12 +742,20 @@
 .td-document .td-question .td-question-text,
 .td-document .td-question .td-question-markdown,
 .td-document .td-question .td-question-options,
-.td-document .td-question .td-question-answer > .markdown-content {
+.td-document .td-question .td-question-answer .markdown-content {
   font-family: var(--td-question-font, inherit);
   font-size: var(--td-question-size, inherit) !important;
   color: var(--td-question-color, inherit);
   font-weight: var(--td-question-weight, inherit);
   font-style: var(--td-question-style, inherit);
+}
+
+/* 教师版答案卡片复用学术定理皮肤的边框与标题结构，但正文保持纯白纸面。 */
+.td-document .td-question .td-question-solution-card {
+  background: #fff;
+}
+.td-document .td-question .td-question-solution-card .td-box-body {
+  background: #fff;
 }
 
 /* 题卡内的局部编辑器也继承题目块全局样式；选中文字产生的 mark 样式优先覆盖这些默认值。 */
@@ -925,28 +933,28 @@ button.td-print-chrome-slot:hover {
 .td-theme-print .td-document h2,
 .td-theme-print .td-document h3,
 .td-theme-print .td-document h4 {
-  font-family: "QuestionMathLatin", var(--td-heading-font, inherit);
+  font-family: var(--td-heading-font, inherit);
 }
 .td-theme-print .td-document .td-heading[data-level="1"] {
-  font-family: "QuestionMathLatin", var(--td-heading-1-font, var(--td-heading-font, inherit));
+  font-family: var(--td-heading-1-font, var(--td-heading-font, inherit));
 }
 .td-theme-print .td-document .td-heading[data-level="2"] {
-  font-family: "QuestionMathLatin", var(--td-heading-2-font, var(--td-heading-font, inherit));
+  font-family: var(--td-heading-2-font, var(--td-heading-font, inherit));
 }
 .td-theme-print .td-document .td-heading[data-level="3"] {
-  font-family: "QuestionMathLatin", var(--td-heading-3-font, var(--td-heading-font, inherit));
+  font-family: var(--td-heading-3-font, var(--td-heading-font, inherit));
 }
 .td-theme-print .td-document .td-heading[data-level="4"] {
-  font-family: "QuestionMathLatin", var(--td-heading-4-font, var(--td-heading-font, inherit));
+  font-family: var(--td-heading-4-font, var(--td-heading-font, inherit));
 }
 .td-theme-print .td-document .td-heading-number {
-  font-family: "QuestionMathLatin", var(--td-heading-number-font, var(--td-heading-font, inherit));
+  font-family: var(--td-heading-number-font, var(--td-heading-font, inherit));
 }
 .td-theme-print .td-document .td-question,
 .td-theme-print .td-document .td-question .td-question-text,
 .td-theme-print .td-document .td-question .td-question-markdown,
 .td-theme-print .td-document .td-question .td-question-options,
-.td-theme-print .td-document .td-question .td-question-answer > .markdown-content,
+.td-theme-print .td-document .td-question .td-question-answer .markdown-content,
 .td-theme-print .td-document .td-question [data-question-inline-editor] {
   font-family: "QuestionMathLatin", var(--td-question-font, var(--td-body-font, inherit));
 }
@@ -1060,10 +1068,10 @@ button.td-print-chrome-slot:hover {
   color: color-mix(in srgb, var(--td-brand-ink) 70%, transparent);
 }
 
-/* 教师版答案、解析统一使用低饱和蓝底；解析的多个可分页区域连续呈现。 */
+/* 教师版答案、解析沿用卡片皮肤的白色纸面；解析的多个可分页区域连续呈现。 */
 .td-theme-print .td-question-answer,
 .td-theme-print .td-question-analysis-region {
-  background: #eff6ff !important;
+  background: #fff !important;
 }
 .td-theme-print .td-question-analysis-region + .td-question-analysis-region {
   margin-top: 0;

@@ -74,6 +74,10 @@ describe('PropertiesSheet 对齐与卡片内容列表', () => {
     const onHeadingUpdate = vi.fn()
     const heading = { type: 'heading' as const, id: 'heading-skin', level: 2 as const, content: [{ type: 'text' as const, text: '标题' }] }
     await renderSheet({ block: heading, topLevel: heading }, onHeadingUpdate)
+    const headingStyleTab = Array.from(container!.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find((button) => button.textContent === '样式')
+    expect(container!.querySelector('[role="radiogroup"][aria-label="皮肤"]')).toBeNull()
+    await act(async () => headingStyleTab?.click())
     await expandSkinPanel()
     expect(skinTiles().map((tile) => tile.getAttribute('aria-label'))).toContain('圆角标签标题')
     expect(skinTiles().map((tile) => tile.getAttribute('aria-label'))).not.toContain('深色标题带')

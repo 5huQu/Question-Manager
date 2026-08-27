@@ -176,7 +176,8 @@ function PropertiesSheetPanel(props: {
         {tab === 'content' ? <SheetBody {...props} onUpdateDisplayBlock={updateDisplayBlock} /> : null}
         {tab === 'style' && displayBlock.type === 'box' ? <BoxStyleSettings block={displayBlock} presetContext={props.presetContext} onUpdate={updateDisplayBlock} /> : null}
         {tab === 'style' && displayBlock.type === 'question' ? <QuestionSettings {...props} mode="style" block={displayBlock} boxId={props.selected.boxId} question={props.question} onUpdate={updateDisplayBlock} /> : null}
-        {tab === 'style' && displayBlock.type !== 'box' && displayBlock.type !== 'question' ? <div className="min-h-12" /> : null}
+        {tab === 'style' && displayBlock.type === 'heading' ? <HeadingSkinSelector skin={displayBlock.skin} level={displayBlock.level} presetContext={props.presetContext} onChange={(skin) => updateDisplayBlock({ skin })} /> : null}
+        {tab === 'style' && displayBlock.type !== 'box' && displayBlock.type !== 'question' && displayBlock.type !== 'heading' ? <div className="min-h-12" /> : null}
 
         {/* 高级区 */}
         {tab === 'layout' ? <details open className="group rounded-lg border border-zinc-200 dark:border-zinc-800">
@@ -315,7 +316,6 @@ function SheetBody(props: {
                 {[1, 2, 3, 4].map((level) => <option key={level} value={level}>{['一级章节', '二级章节', '三级章节', '四级章节'][level - 1]}</option>)}
               </select>
             </Field>
-            <HeadingSkinSelector skin={block.skin} level={block.level} presetContext={props.presetContext} onChange={(skin) => props.onUpdate({ skin })} />
             <Field label="本章节编号">
               <select className={fieldClass} value={block.numbering?.mode || 'inherit'} onChange={(event) => props.onUpdate({ numbering: { ...block.numbering, mode: event.target.value as 'inherit' | 'none' | 'manual' } })}>
                 <option value="inherit">跟随文档设置</option><option value="none">不显示编号</option><option value="manual">手动标签</option>
