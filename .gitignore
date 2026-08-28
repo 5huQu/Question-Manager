@@ -35,6 +35,7 @@ tools/export_brand_samples.py
 tools/test_brand_layout_optimization.py
 
 # Temporary planning docs
+/AGENTS.md
 tmp/app-monolith-split/
 PROJECT_MEMORY.md
 .claude/settings.local.json
