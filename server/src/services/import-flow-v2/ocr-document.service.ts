@@ -30,6 +30,24 @@ function ocrImportRecord(value: unknown, label: string) {
   return value as Record<string, unknown>
 }
 
+const OCR_BLOCK_TYPES = new Set(['text', 'formula', 'image', 'table', 'unknown'])
+const OCR_ASSET_TYPES = new Set(['image', 'table_image', 'page_image', 'crop'])
+
+function validateOptionalOcrBBox(value: unknown, label: string) {
+  if (value === undefined) return
+  if (!Array.isArray(value) || value.length !== 4 || value.some((coordinate) => typeof coordinate !== 'number' || !Number.isFinite(coordinate))) {
+    ocrImportError(`${label} 必须是包含 4 个有限数字的数组。`)
+  }
+}
+
+function validateOptionalOcrNumber(value: unknown, label: string) {
+  if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) ocrImportError(`${label} 必须是数字。`)
+}
+
+function validateOptionalOcrString(value: unknown, label: string) {
+  if (value !== undefined && typeof value !== 'string') ocrImportError(`${label} 必须是字符串。`)
+}
+
 /**
  * Validates only documents supplied through the JSON import endpoint. The
  * normalizer below intentionally remains tolerant for persisted historical
@@ -55,13 +73,22 @@ export function validateImportedOCRDocumentJson(body: Record<string, unknown>) {
     for (const [blockIndex, rawBlock] of page.blocks.entries()) {
       const block = ocrImportRecord(rawBlock, `pages[${index}].blocks[${blockIndex}]`)
       for (const field of ['id', 'type', 'content']) if (typeof block[field] !== 'string') ocrImportError(`pages[${index}].blocks[${blockIndex}].${field} 必须是字符串。`)
-      if (block.pageNo !== undefined && (typeof block.pageNo !== 'number' || !Number.isFinite(block.pageNo))) ocrImportError(`pages[${index}].blocks[${blockIndex}].pageNo 必须是数字。`)
+      if (!OCR_BLOCK_TYPES.has(block.type as string)) ocrImportError(`pages[${index}].blocks[${blockIndex}].type 无效。`)
+      if (typeof block.pageNo !== 'number' || !Number.isFinite(block.pageNo)) ocrImportError(`pages[${index}].blocks[${blockIndex}].pageNo 必须是数字。`)
+      validateOptionalOcrBBox(block.bbox, `pages[${index}].blocks[${blockIndex}].bbox`)
+      validateOptionalOcrNumber(block.markdownStart, `pages[${index}].blocks[${blockIndex}].markdownStart`)
+      validateOptionalOcrNumber(block.markdownEnd, `pages[${index}].blocks[${blockIndex}].markdownEnd`)
+      validateOptionalOcrNumber(block.confidence, `pages[${index}].blocks[${blockIndex}].confidence`)
+      validateOptionalOcrString(block.assetId, `pages[${index}].blocks[${blockIndex}].assetId`)
     }
   }
   for (const [index, rawAsset] of raw.assets.entries()) {
     const asset = ocrImportRecord(rawAsset, `assets[${index}]`)
     for (const field of ['id', 'type', 'path']) if (typeof asset[field] !== 'string') ocrImportError(`assets[${index}].${field} 必须是字符串。`)
-    if (asset.pageNo !== undefined && (typeof asset.pageNo !== 'number' || !Number.isFinite(asset.pageNo))) ocrImportError(`assets[${index}].pageNo 必须是数字。`)
+    if (!OCR_ASSET_TYPES.has(asset.type as string)) ocrImportError(`assets[${index}].type 无效。`)
+    validateOptionalOcrNumber(asset.pageNo, `assets[${index}].pageNo`)
+    validateOptionalOcrBBox(asset.bbox, `assets[${index}].bbox`)
+    validateOptionalOcrString(asset.sourceBlockId, `assets[${index}].sourceBlockId`)
   }
   if (body.sourceDocument !== undefined) {
     const source = ocrImportRecord(body.sourceDocument, 'sourceDocument')

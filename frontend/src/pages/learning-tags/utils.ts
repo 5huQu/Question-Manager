@@ -56,11 +56,13 @@ export function exportPayload(library: LearningTagLibrary) {
     version: library.version,
     source: library.source,
     libraryType: library.libraryType,
+    baseKnowledgeLibraryId: library.baseKnowledgeLibraryId,
+    baseKnowledgeLibraryCode: library.baseKnowledgeLibraryCode,
+    baseKnowledgeLibraryName: library.baseKnowledgeLibraryName,
   }
   if (library.libraryType === 'method_tag') {
     return {
       ...base,
-      baseKnowledgeLibraryCode: library.baseKnowledgeLibraryCode,
       groups: library.chapters.map((chapter) => ({
         code: chapter.code,
         name: chapter.name,
@@ -127,6 +129,15 @@ function importedRecord(value: unknown, label: string) {
 
 function requiredImportedString(record: Record<string, unknown>, field: string) {
   if (typeof record[field] !== 'string' || !(record[field] as string).trim()) importedLibraryError(`字段 ${field} 必须是非空字符串。`)
+  return (record[field] as string).trim()
+}
+
+function importedTagLibraryCode(value: string) {
+  const code = value.toLowerCase()
+  if (!/^[a-z0-9_-]{1,96}$/.test(code)) {
+    importedLibraryError('字段 code 只能包含字母、数字、_ 或 -，且长度不能超过 96。')
+  }
+  return code
 }
 
 /** Strict contract for user-edited/imported JSON; draft normalization stays lenient. */
@@ -135,7 +146,8 @@ export function parseImportedLibrary(value: unknown): LearningTagLibrary {
   if (library.libraryType !== 'knowledge_point' && library.libraryType !== 'method_tag') {
     importedLibraryError('字段 libraryType 必须为 knowledge_point 或 method_tag；不支持 library_type，也不会默认知识点库。')
   }
-  for (const field of ['code', 'name', 'subject', 'stage']) requiredImportedString(library, field)
+  const code = importedTagLibraryCode(requiredImportedString(library, 'code'))
+  for (const field of ['name', 'subject', 'stage']) requiredImportedString(library, field)
   for (const field of ['locale', 'version', 'source', 'baseKnowledgeLibraryId', 'baseKnowledgeLibraryCode', 'baseKnowledgeLibraryName']) {
     if (library[field] !== undefined && typeof library[field] !== 'string') importedLibraryError(`字段 ${field} 必须是字符串。`)
   }
@@ -150,17 +162,20 @@ export function parseImportedLibrary(value: unknown): LearningTagLibrary {
     const section = importedRecord(rawSection, `${sectionField}[${sectionIndex}]`)
     requiredImportedString(section, 'code')
     requiredImportedString(section, 'name')
+    if (section.sortOrder !== undefined && (typeof section.sortOrder !== 'number' || !Number.isFinite(section.sortOrder))) importedLibraryError(`${sectionField}[${sectionIndex}].sortOrder 必须是数字。`)
     if (!Array.isArray(section[pointField]) || !section[pointField].length) importedLibraryError(`${sectionField}[${sectionIndex}].${pointField} 必须是非空数组。`)
     for (const [pointIndex, rawPoint] of (section[pointField] as unknown[]).entries()) {
       const point = importedRecord(rawPoint, `${sectionField}[${sectionIndex}].${pointField}[${pointIndex}]`)
       requiredImportedString(point, 'code')
       requiredImportedString(point, 'name')
+      if (point.description !== undefined && typeof point.description !== 'string') importedLibraryError(`${sectionField}[${sectionIndex}].${pointField}[${pointIndex}].description 必须是字符串。`)
+      if (point.sortOrder !== undefined && (typeof point.sortOrder !== 'number' || !Number.isFinite(point.sortOrder))) importedLibraryError(`${sectionField}[${sectionIndex}].${pointField}[${pointIndex}].sortOrder 必须是数字。`)
       if (point.tagType !== undefined && typeof point.tagType !== 'string') importedLibraryError(`${sectionField}[${sectionIndex}].${pointField}[${pointIndex}].tagType 必须是字符串。`)
       if (isMethod && point.tagType !== undefined && !['method', 'problem_type', 'strategy', 'other'].includes(point.tagType as string)) importedLibraryError(`${sectionField}[${sectionIndex}].${pointField}[${pointIndex}].tagType 无效。`)
       if (point.appliesTo !== undefined && (!Array.isArray(point.appliesTo) || point.appliesTo.some((item) => typeof item !== 'string'))) importedLibraryError(`${sectionField}[${sectionIndex}].${pointField}[${pointIndex}].appliesTo 必须是字符串数组。`)
     }
   }
-  return normalizeLibrary(library)
+  return normalizeLibrary({ ...library, code })
 }
 
 export function validate(library: LearningTagLibrary | null, jsonError = '') {

@@ -43,6 +43,28 @@ try {
   }), /题目 JSON schema 错误/)
   const after = db.prepare('SELECT COUNT(*) AS count FROM question_bank_items').get().count
   assert.equal(after, before, '整批验证失败时不得留下前面已解析的题目')
+
+  const transactionBefore = db.prepare('SELECT COUNT(*) AS count FROM question_bank_items').get().count
+  db.exec(`
+    CREATE TRIGGER question_json_import_force_second_insert_failure
+    BEFORE INSERT ON question_bank_items
+    WHEN NEW.stem_markdown = '强制第二次 INSERT 失败'
+    BEGIN
+      SELECT RAISE(ABORT, 'forced second question JSON insert failure');
+    END;
+  `)
+  try {
+    assert.throws(() => importJsonItems({
+      questions: [
+        { problem_text: '真实事务中的第一题', answer: 'A' },
+        { problem_text: '强制第二次 INSERT 失败', answer: 'B' },
+      ],
+    }), /forced second question JSON insert failure/)
+    const transactionAfter = db.prepare('SELECT COUNT(*) AS count FROM question_bank_items').get().count
+    assert.equal(transactionAfter, transactionBefore, '第二次实际 INSERT 失败时必须回滚已经写入的第一题')
+  } finally {
+    db.exec('DROP TRIGGER IF EXISTS question_json_import_force_second_insert_failure')
+  }
 } finally {
   closeDatabase()
   fs.rmSync(tempRoot, { recursive: true, force: true })

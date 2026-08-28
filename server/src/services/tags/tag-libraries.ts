@@ -66,6 +66,14 @@ export function safeTagLibraryCode(value: unknown, fallback = 'custom_library') 
   return (raw.replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || fallback).slice(0, 96)
 }
 
+function importedTagLibraryCode(value: string) {
+  const code = value.toLowerCase()
+  if (!/^[a-z0-9_-]{1,96}$/.test(code)) {
+    importedLibraryError('字段 code 只能包含字母、数字、_ 或 -，且长度不能超过 96。')
+  }
+  return code
+}
+
 export function tagLibraryFilePath(code: string) {
   return path.join(tagLibrariesDir, `${safeTagLibraryCode(code)}.json`)
 }
@@ -145,6 +153,9 @@ function importedSections(value: unknown, sectionField: 'chapters' | 'groups', p
     const section = importedRecord(rawSection, `${sectionField}[${sectionIndex}]`)
     const code = requiredImportedString(section, 'code')
     const name = requiredImportedString(section, 'name')
+    if (section.sortOrder !== undefined && (typeof section.sortOrder !== 'number' || !Number.isFinite(section.sortOrder))) {
+      importedLibraryError(`${sectionField}[${sectionIndex}].sortOrder 必须是数字。`)
+    }
     if (!Array.isArray(section[pointField]) || !section[pointField].length) {
       importedLibraryError(`${sectionField}[${sectionIndex}].${pointField} 必须是非空数组。`)
     }
@@ -152,7 +163,7 @@ function importedSections(value: unknown, sectionField: 'chapters' | 'groups', p
       id: code,
       code,
       name,
-      sortOrder: typeof section.sortOrder === 'number' && Number.isFinite(section.sortOrder) ? section.sortOrder : sectionIndex + 1,
+      sortOrder: typeof section.sortOrder === 'number' ? section.sortOrder : sectionIndex + 1,
       knowledgePoints: (section[pointField] as unknown[]).map((rawPoint, pointIndex) => {
         const point = importedRecord(rawPoint, `${sectionField}[${sectionIndex}].${pointField}[${pointIndex}]`)
         const pointCode = requiredImportedString(point, 'code')
@@ -188,7 +199,7 @@ export function normalizeImportedLearningTagLibrary(rawValue: unknown) {
     importedLibraryError('字段 libraryType 必须为 knowledge_point 或 method_tag；不支持 library_type，也不会默认知识点库。')
   }
   const libraryType = raw.libraryType
-  const code = safeTagLibraryCode(requiredImportedString(raw, 'code'))
+  const code = importedTagLibraryCode(requiredImportedString(raw, 'code'))
   const name = requiredImportedString(raw, 'name')
   const subject = requiredImportedString(raw, 'subject')
   const stage = requiredImportedString(raw, 'stage')
@@ -196,7 +207,9 @@ export function normalizeImportedLearningTagLibrary(rawValue: unknown) {
   if (raw.version !== undefined && typeof raw.version !== 'string') importedLibraryError('字段 version 必须是字符串。')
   if (raw.source !== undefined && typeof raw.source !== 'string') importedLibraryError('字段 source 必须是字符串。')
   if (raw.isDefault !== undefined && typeof raw.isDefault !== 'boolean') importedLibraryError('字段 isDefault 必须是布尔值。')
-  if (raw.baseKnowledgeLibraryCode !== undefined && typeof raw.baseKnowledgeLibraryCode !== 'string') importedLibraryError('字段 baseKnowledgeLibraryCode 必须是字符串。')
+  for (const field of ['baseKnowledgeLibraryId', 'baseKnowledgeLibraryCode', 'baseKnowledgeLibraryName']) {
+    if (raw[field] !== undefined && typeof raw[field] !== 'string') importedLibraryError(`字段 ${field} 必须是字符串。`)
+  }
 
   if (libraryType === 'knowledge_point' && raw.groups !== undefined) importedLibraryError('knowledge_point 只能使用 chapters / knowledgePoints，不能使用 groups / tags。')
   if (libraryType === 'method_tag' && raw.chapters !== undefined) importedLibraryError('method_tag 只能使用 groups / tags，不能使用 chapters / knowledgePoints。')
@@ -231,11 +244,13 @@ export function serializeLearningTagLibrary(library: ReturnType<typeof normalize
     version: library.version,
     source: library.source,
     libraryType: library.libraryType,
+    baseKnowledgeLibraryId: library.baseKnowledgeLibraryId,
+    baseKnowledgeLibraryCode: library.baseKnowledgeLibraryCode,
+    baseKnowledgeLibraryName: library.baseKnowledgeLibraryName,
   }
   if (library.libraryType === 'method_tag') {
     return {
       ...base,
-      baseKnowledgeLibraryCode: library.baseKnowledgeLibraryCode,
       groups: library.chapters.map((chapter) => ({
         code: chapter.code,
         name: chapter.name,
@@ -263,6 +278,7 @@ export function serializeLearningTagLibrary(library: ReturnType<typeof normalize
         name: point.name,
         description: point.description,
         tagType: point.tagType || 'knowledge',
+        appliesTo: point.appliesTo,
         sortOrder: point.sortOrder,
       })),
     })),
@@ -296,7 +312,25 @@ export function readLearningTagLibraries() {
   return libraries.sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.name.localeCompare(right.name, 'zh-CN'))
 }
 
-export function writeLearningTagLibraries(rawPayloads: unknown[]) {
+type TagLibraryFileOps = Pick<typeof fs, 'existsSync' | 'renameSync' | 'unlinkSync' | 'writeFileSync'>
+
+function rollbackStagedTagLibraryWrites(staged: Array<{ target: string; temp: string; backup: string; hadTarget: boolean }>, fileOps: TagLibraryFileOps) {
+  for (const item of staged) {
+    try {
+      if (fileOps.existsSync(item.temp)) fileOps.unlinkSync(item.temp)
+      if (fileOps.existsSync(item.backup)) {
+        if (fileOps.existsSync(item.target)) fileOps.unlinkSync(item.target)
+        fileOps.renameSync(item.backup, item.target)
+      } else if (!item.hadTarget && fileOps.existsSync(item.target)) {
+        fileOps.unlinkSync(item.target)
+      }
+    } catch {
+      // Preserve the original replacement failure; best-effort rollback avoids masking it.
+    }
+  }
+}
+
+export function writeLearningTagLibraries(rawPayloads: unknown[], fileOps: TagLibraryFileOps = fs) {
   if (!Array.isArray(rawPayloads) || !rawPayloads.length) importedLibraryError('必须提供非空标签库数组。')
   const libraries = rawPayloads.map(normalizeImportedLearningTagLibrary)
   const duplicate = libraries.find((library, index) => libraries.findIndex((candidate) => candidate.code === library.code) !== index)
@@ -319,23 +353,25 @@ export function writeLearningTagLibraries(rawPayloads: unknown[]) {
       const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`
       const temp = `${target}.${token}.tmp`
       const backup = `${target}.${token}.bak`
-      fs.writeFileSync(temp, `${JSON.stringify(serializeLearningTagLibrary(library), null, 2)}\n`)
-      staged.push({ target, temp, backup, hadTarget: fs.existsSync(target) })
+      const item = { target, temp, backup, hadTarget: fileOps.existsSync(target) }
+      staged.push(item)
+      fileOps.writeFileSync(temp, `${JSON.stringify(serializeLearningTagLibrary(library), null, 2)}\n`)
     }
-    for (const item of staged) if (item.hadTarget) fs.renameSync(item.target, item.backup)
-    for (const item of staged) fs.renameSync(item.temp, item.target)
-    for (const item of staged) if (fs.existsSync(item.backup)) fs.unlinkSync(item.backup)
+    for (const item of staged) if (item.hadTarget) fileOps.renameSync(item.target, item.backup)
+    for (const item of staged) fileOps.renameSync(item.temp, item.target)
   } catch (error) {
-    for (const item of staged) {
-      if (fs.existsSync(item.temp)) fs.unlinkSync(item.temp)
-      if (fs.existsSync(item.backup)) {
-        if (fs.existsSync(item.target)) fs.unlinkSync(item.target)
-        fs.renameSync(item.backup, item.target)
-      } else if (!item.hadTarget && fs.existsSync(item.target)) {
-        fs.unlinkSync(item.target)
-      }
-    }
+    rollbackStagedTagLibraryWrites(staged, fileOps)
     throw error
+  }
+
+  // All replacements have completed: this is the durable commit point. A later
+  // backup cleanup failure must not roll back already committed new files.
+  for (const item of staged) {
+    try {
+      if (fileOps.existsSync(item.backup)) fileOps.unlinkSync(item.backup)
+    } catch {
+      // A stale backup is recoverable housekeeping, not a failed import.
+    }
   }
   return libraries.map((library) => normalizeLearningTagLibrary(serializeLearningTagLibrary(library)))
 }

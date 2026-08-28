@@ -30,6 +30,18 @@ try {
 
   assert.rejects(() => importOCRDocumentJson({}), /OCRDocument JSON schema 错误/)
   assert.rejects(() => importOCRDocumentJson({ ocrDocument: { ...validDocument, pages: {} } }), /OCRDocument JSON schema 错误/)
+  assert.rejects(() => importOCRDocumentJson({
+    ocrDocument: { ...validDocument, pages: [{ ...validDocument.pages[0], blocks: [{ ...validDocument.pages[0].blocks[0], type: 'heading' }] }] },
+  }), /OCRDocument JSON schema 错误/)
+  assert.rejects(() => importOCRDocumentJson({
+    ocrDocument: { ...validDocument, pages: [{ ...validDocument.pages[0], blocks: [{ id: 'missing_page', type: 'text', content: '缺少页码' }] }] },
+  }), /OCRDocument JSON schema 错误/)
+  assert.rejects(() => importOCRDocumentJson({
+    ocrDocument: { ...validDocument, assets: [{ id: 'asset_1', type: 'attachment', path: 'asset.png' }] },
+  }), /OCRDocument JSON schema 错误/)
+  assert.rejects(() => importOCRDocumentJson({
+    ocrDocument: { ...validDocument, pages: [{ ...validDocument.pages[0], blocks: [{ ...validDocument.pages[0].blocks[0], bbox: [0, 0, 1] }] }] },
+  }), /OCRDocument JSON schema 错误/)
 } finally {
   closeDatabase()
   fs.rmSync(tempRoot, { recursive: true, force: true })
