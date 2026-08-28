@@ -67,6 +67,7 @@ function docToChildren(json: JSONContent, previous: BoxChildBlock[]): BoxChildBl
 export function BoxFlowEditor({
   children,
   boxId = '',
+  flowLayout = true,
   onChange,
   onActiveChildChange,
   autoFocusChildId,
@@ -74,6 +75,8 @@ export function BoxFlowEditor({
   children: BoxChildBlock[]
   /** 所属卡片 id：多选事件按卡片归属过滤。 */
   boxId?: string
+  /** 仅步骤流程皮肤需要把顶层段落标记为可视化流程项。 */
+  flowLayout?: boolean
   onChange: (children: BoxChildBlock[]) => void
   /** 光标所在子块同步给外层选择/插入锚点。 */
   onActiveChildChange?: (childId: string) => void
@@ -118,9 +121,11 @@ export function BoxFlowEditor({
           decorations(state) {
             const ids = extraSelectedRef.current
             const decorations: Decoration[] = []
-            state.doc.forEach((node, offset) => {
-              decorations.push(Decoration.node(offset, offset + node.nodeSize, { 'data-box-flow-item': '' }))
-            })
+            if (flowLayout) {
+              state.doc.forEach((node, offset) => {
+                decorations.push(Decoration.node(offset, offset + node.nodeSize, { 'data-box-flow-item': '' }))
+              })
+            }
             state.doc.descendants((node, pos) => {
               if (!node.isAtom) return true
               if (ids.includes(String(node.attrs?.blockId || ''))) {
@@ -133,7 +138,7 @@ export function BoxFlowEditor({
         },
       })]
     },
-  }), [])
+  }), [flowLayout])
   const editor = useEditor({
     immediatelyRender: false,
     editable,

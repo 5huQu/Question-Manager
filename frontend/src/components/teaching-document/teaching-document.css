@@ -753,9 +753,22 @@
 /* 教师版答案卡片复用学术定理皮肤的边框与标题结构，但正文保持纯白纸面。 */
 .td-document .td-question .td-question-solution-card {
   background: #fff;
+  /* 题目根节点已统一管理题间距；卡片本身不能额外制造未计入 region 分页的外边距。 */
+  margin: 0;
 }
 .td-document .td-question .td-question-solution-card .td-box-body {
   background: #fff;
+}
+
+/* 答案与解析都是真正的同一张学术定理卡片；解析段落只是在卡片内部流动。 */
+.td-document .td-question .td-question-solution-card .td-question-analysis-region:not(.td-question-analysis-label) {
+  padding-inline: 1.1rem;
+}
+.td-document .td-question .td-question-solution-section-header {
+  padding-left: 1.1rem;
+}
+.td-document .td-question .td-question-analysis-label .td-question-solution-section-header {
+  border-top: 1px solid color-mix(in srgb, #3f3f46 20%, transparent);
 }
 
 /* 题卡内的局部编辑器也继承题目块全局样式；选中文字产生的 mark 样式优先覆盖这些默认值。 */

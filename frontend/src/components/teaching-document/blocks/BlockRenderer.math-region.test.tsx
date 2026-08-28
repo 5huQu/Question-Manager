@@ -56,4 +56,40 @@ describe('QuestionRuntimeContent math regions', () => {
     expect(html).toContain(latex)
     expect(html).toContain('公式格式有误')
   })
+
+  it('keeps answer and multi-paragraph analysis inside one theorem-skin solution card', () => {
+    const html = renderToStaticMarkup(
+      <QuestionRuntimeContent
+        block={{ ...block, display: { showAnswer: true, showAnalysis: true } }}
+        model={{
+          ...modelForMath('x'),
+          regions: [
+            {
+              key: 'answer', type: 'answer', index: 0, kind: 'answer', splitPolicy: 'never',
+              markdown: '答案', figures: [],
+            },
+            {
+              key: 'analysis-label', type: 'analysis', index: -1, kind: 'label', splitPolicy: 'never',
+              keepWithNext: true, label: '解析：',
+            },
+            {
+              key: 'analysis-1', type: 'analysis', index: 0, kind: 'paragraph', splitPolicy: 'paragraph',
+              paragraph: { type: 'paragraph', id: 'analysis-1', content: [{ type: 'text', text: '第一段解析' }] },
+            },
+            {
+              key: 'analysis-2', type: 'analysis', index: 1, kind: 'paragraph', splitPolicy: 'paragraph',
+              paragraph: { type: 'paragraph', id: 'analysis-2', content: [{ type: 'text', text: '第二段解析' }] },
+            },
+          ],
+        }}
+      />,
+    )
+
+    expect(html.match(/td-skin-box-theorem-math/g) || []).toHaveLength(1)
+    expect(html.match(/td-question-analysis-region/g) || []).toHaveLength(3)
+    expect(html.match(/td-question-solution-card/g) || []).toHaveLength(1)
+    expect(html.match(/td-question-solution-section-header/g) || []).toHaveLength(2)
+    expect(html).toContain('data-continuation="single"')
+    expect(html).toContain('解析')
+  })
 })

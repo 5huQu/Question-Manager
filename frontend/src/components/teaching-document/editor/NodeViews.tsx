@@ -926,6 +926,7 @@ export function BoxNodeView({ node, selected, updateAttributes, editor, getPos }
               <BoxFlowEditor
                 children={children}
                 boxId={boxBlock.id}
+                flowLayout={skinActive && resolvedSkin.definition.id === 'builtin.box.step-flow'}
                 autoFocusChildId={focusChildId}
                 onChange={updateChildren}
                 onActiveChildChange={(childId) => emitBoxChildSelect({ blockId: childId, parentBlockId: boxBlock.id })}

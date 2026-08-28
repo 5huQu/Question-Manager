@@ -164,7 +164,9 @@ export function measureQuestionCore(input: MeasureQuestionCoreInput): QuestionMe
 
   const regionElements = new Map<string, HTMLElement[]>()
   questionRoot?.querySelectorAll<HTMLElement>(
-    `:scope > [${TEACHING_DOM.questionRegion}]`,
+    // 答案与解析现在位于同一张运行时卡片内，因此它们不再都是题目根节点的
+    // 直接子元素；仍限定在当前 questionRoot 内，避免匹配到相邻题目。
+    `[${TEACHING_DOM.questionRegion}]`,
   ).forEach((element) => {
     const key = element.getAttribute(TEACHING_DOM.questionRegionKey) || ''
     regionElements.set(key, [...(regionElements.get(key) || []), element])

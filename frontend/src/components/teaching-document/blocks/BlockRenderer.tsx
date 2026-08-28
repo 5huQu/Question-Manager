@@ -486,7 +486,6 @@ function QuestionRegionContent({
   resolveFigure,
   choiceLayoutBlockId,
   editableQuestionText = false,
-  joinWithAnalysis = false,
   onInlineContentChange,
 }: {
   region: QuestionRuntimeRegion
@@ -495,8 +494,6 @@ function QuestionRegionContent({
   resolveFigure?: (asset: FigureAssetRef) => FigureResolution
   choiceLayoutBlockId?: string
   editableQuestionText?: boolean
-  /** 答案后紧接解析时，两者共用一个连续的蓝底容器。 */
-  joinWithAnalysis?: boolean
   onInlineContentChange?: (key: string, content: TeachingInline[]) => void
 }) {
   if (region.kind === 'heading') return null
@@ -662,12 +659,12 @@ function QuestionRegionContent({
   }
   if (region.kind === 'answer') {
     return (
-      <div className={`td-box td-skin-box-theorem-math td-question-answer td-question-solution-card mt-3 overflow-hidden ${joinWithAnalysis ? 'rounded-t-md border-b-0' : ''}`}>
-        <div className="td-box-header flex min-w-0 items-center gap-2 px-4 py-2.5">
+      <>
+        <div className="td-box-header td-question-solution-section-header flex min-w-0 items-center gap-2 px-4 py-2.5">
           <BoxIcon name="Lightbulb" className="size-4 shrink-0" />
           <span className="text-sm font-semibold">参考答案</span>
         </div>
-        <div className="td-box-body px-4 py-3">
+        <div className="td-box-body td-question-answer px-4 py-3">
           {editableQuestionText && region.inlineContent ? (
             <div
               onMouseDown={(event) => event.stopPropagation()}
@@ -692,6 +689,14 @@ function QuestionRegionContent({
             />
           )}
         </div>
+      </>
+    )
+  }
+  if (region.kind === 'label' && region.type === 'analysis') {
+    return (
+      <div className="td-box-header td-question-solution-section-header flex min-w-0 items-center gap-2 px-4 py-2.5">
+        <BoxIcon name="Lightbulb" className="size-4 shrink-0" />
+        <span className="text-sm font-semibold">解析</span>
       </div>
     )
   }
@@ -717,7 +722,7 @@ function QuestionRegionContent({
       />
     )
   }
-  return <span className="text-xs font-semibold text-zinc-500">{region.label}</span>
+  return null
 }
 
 export function QuestionRuntimeContent({
@@ -760,6 +765,101 @@ export function QuestionRuntimeContent({
         .filter((region): region is QuestionRuntimeRegion => Boolean(region))
     : model.regions
   let flowWrapActive = false
+  const isSolutionRegion = (region: QuestionRuntimeRegion | undefined) => Boolean(
+    region && (region.kind === 'answer' || region.type === 'analysis'),
+  )
+  const renderRegion = (region: QuestionRuntimeRegion) => {
+    const item = itemByKey.get(region.key)
+    const isAnalysis = region.type === 'analysis'
+    const isTextRegion = region.kind === 'paragraph' || region.kind === 'markdown'
+    const isSideWrappedFigure = region.kind === 'figure'
+      && !region.groupFigureKeys?.length
+      && (region.textWrap === 'square-left' || region.textWrap === 'square-right')
+    const flowWrappedText = flowWrapActive && isTextRegion
+    const clearFlowWrap = flowWrapActive && !isTextRegion && !isSideWrappedFigure
+    const regionStyle: CSSProperties | undefined = isSideWrappedFigure
+      ? {
+          float: region.textWrap === 'square-left' ? 'left' : 'right',
+          clear: 'both',
+          width: `${resolveFigureLayout({
+            preset: region.layoutPreset,
+            explicitWidthMm: region.widthOverrideMm ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM,
+            legacyAlignment: region.alignmentOverride,
+            containerWidthMm: layoutEditor?.contentWidthMm || 160,
+          }).widthMm * CSS_PIXELS_PER_MM}px`,
+          maxWidth: '100%',
+          margin: `0 ${region.textWrap === 'square-left' ? Math.max(0, region.wrapGapMm ?? 4) : 0}mm ${Math.max(0, region.wrapGapMm ?? 4)}mm ${region.textWrap === 'square-right' ? Math.max(0, region.wrapGapMm ?? 4) : 0}mm`,
+        }
+      : clearFlowWrap ? { clear: 'both' } : undefined
+    flowWrapActive = isSideWrappedFigure
+      ? true
+      : isTextRegion && flowWrapActive
+        ? true
+        : false
+    return (
+      <div
+        className={`td-question-region ${flowWrappedText ? 'td-question-region-flow-text' : 'flow-root'} ${isAnalysis ? `td-question-analysis-region ${region.kind === 'label' ? 'td-question-analysis-label' : ''}` : ''}`}
+        key={`${region.key}:${item?.kind === 'question-paragraph-fragment' ? item.fragmentIndex : 0}`}
+        style={regionStyle}
+        {...{
+          [TEACHING_DOM.questionRegion]: region.type,
+          [TEACHING_DOM.questionRegionKey]: region.key,
+          [TEACHING_DOM.questionRegionIndex]: region.index,
+          [TEACHING_DOM.questionSplitPolicy]: region.splitPolicy,
+          'data-text-wrap': isSideWrappedFigure ? region.textWrap : undefined,
+          ...(region.kind === 'options-row'
+            ? {
+                [TEACHING_DOM.questionOptionRow]: region.rowIndex,
+                [TEACHING_DOM.questionOptionStart]: region.optionStart,
+                [TEACHING_DOM.questionOptionEnd]: region.optionEnd,
+              }
+            : {}),
+        }}
+      >
+        <QuestionRegionContent
+          region={region}
+          item={item}
+          layoutEditor={layoutEditor}
+          resolveFigure={resolveFigure}
+          choiceLayoutBlockId={choiceLayoutBlockId}
+          editableQuestionText={editableQuestionText}
+          onInlineContentChange={onInlineContentChange}
+        />
+      </div>
+    )
+  }
+  const renderedRegions: ReactNode[] = []
+  for (let regionIndex = 0; regionIndex < regions.length;) {
+    const region = regions[regionIndex]
+    if (!isSolutionRegion(region)) {
+      renderedRegions.push(renderRegion(region))
+      regionIndex += 1
+      continue
+    }
+    let groupEnd = regionIndex
+    while (groupEnd + 1 < regions.length && isSolutionRegion(regions[groupEnd + 1])) groupEnd += 1
+    const firstRegion = regions[regionIndex]
+    const lastRegion = regions[groupEnd]
+    const firstGlobalIndex = model.regions.findIndex((item) => item.key === firstRegion.key)
+    const lastGlobalIndex = model.regions.findIndex((item) => item.key === lastRegion.key)
+    const startsCard = firstGlobalIndex <= 0 || !isSolutionRegion(model.regions[firstGlobalIndex - 1])
+    const endsCard = lastGlobalIndex < 0 || lastGlobalIndex === model.regions.length - 1 || !isSolutionRegion(model.regions[lastGlobalIndex + 1])
+    const cardContinuation = startsCard
+      ? endsCard ? 'single' : 'start'
+      : endsCard ? 'end' : 'middle'
+    const cardRegions = []
+    for (let index = regionIndex; index <= groupEnd; index += 1) cardRegions.push(renderRegion(regions[index]))
+    renderedRegions.push(
+      <div
+        className="td-box td-skin-box-theorem-math td-question-solution-card overflow-hidden"
+        data-continuation={cardContinuation}
+        key={`solution-card:${firstRegion.key}:${lastRegion.key}`}
+      >
+        {cardRegions}
+      </div>,
+    )
+    regionIndex = groupEnd + 1
+  }
 
   return (
     <div
@@ -779,87 +879,7 @@ export function QuestionRuntimeContent({
       {continuation === 'middle' || continuation === 'end' ? (
         <div className="mb-1 text-[10px] font-medium text-zinc-400">续题</div>
       ) : null}
-      {regions.map((region, regionIndex) => {
-        const item = itemByKey.get(region.key)
-        const previousRegion = regions[regionIndex - 1]
-        const nextRegion = regions[regionIndex + 1]
-        const isAnalysis = region.type === 'analysis'
-        const analysisStart = isAnalysis && previousRegion?.type !== 'analysis'
-        const analysisEnd = isAnalysis && nextRegion?.type !== 'analysis'
-        const analysisJoinsAnswer = analysisStart && previousRegion?.kind === 'answer'
-        const isTextRegion = region.kind === 'paragraph' || region.kind === 'markdown'
-        const isSideWrappedFigure = region.kind === 'figure'
-          && !region.groupFigureKeys?.length
-          && (region.textWrap === 'square-left' || region.textWrap === 'square-right')
-        const flowWrappedText = flowWrapActive && isTextRegion
-        const clearFlowWrap = flowWrapActive && !isTextRegion && !isSideWrappedFigure
-        const regionStyle: CSSProperties | undefined = isSideWrappedFigure
-          ? {
-              float: region.textWrap === 'square-left' ? 'left' : 'right',
-              clear: 'both',
-              width: `${resolveFigureLayout({
-                preset: region.layoutPreset,
-                explicitWidthMm: region.widthOverrideMm ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM,
-                legacyAlignment: region.alignmentOverride,
-                containerWidthMm: layoutEditor?.contentWidthMm || 160,
-              }).widthMm * CSS_PIXELS_PER_MM}px`,
-              maxWidth: '100%',
-              margin: `0 ${region.textWrap === 'square-left' ? Math.max(0, region.wrapGapMm ?? 4) : 0}mm ${Math.max(0, region.wrapGapMm ?? 4)}mm ${region.textWrap === 'square-right' ? Math.max(0, region.wrapGapMm ?? 4) : 0}mm`,
-            }
-          : clearFlowWrap ? { clear: 'both' } : undefined
-        flowWrapActive = isSideWrappedFigure
-          ? true
-          : isTextRegion && flowWrapActive
-            ? true
-            : false
-        return (
-          <div
-            className={`td-question-region ${flowWrappedText ? 'td-question-region-flow-text' : 'flow-root'} ${isAnalysis ? `td-box td-skin-box-theorem-math td-question-analysis-region td-question-solution-card overflow-hidden ${analysisStart && analysisJoinsAnswer ? 'border-t-0' : ''} ${analysisEnd ? 'rounded-b-md' : ''}` : ''}`}
-            key={`${region.key}:${item?.kind === 'question-paragraph-fragment' ? item.fragmentIndex : 0}`}
-            style={regionStyle}
-            {...{
-              [TEACHING_DOM.questionRegion]: region.type,
-              [TEACHING_DOM.questionRegionKey]: region.key,
-              [TEACHING_DOM.questionRegionIndex]: region.index,
-              [TEACHING_DOM.questionSplitPolicy]: region.splitPolicy,
-              'data-text-wrap': isSideWrappedFigure ? region.textWrap : undefined,
-              ...(region.kind === 'options-row'
-                ? {
-                    [TEACHING_DOM.questionOptionRow]: region.rowIndex,
-                    [TEACHING_DOM.questionOptionStart]: region.optionStart,
-                    [TEACHING_DOM.questionOptionEnd]: region.optionEnd,
-                  }
-                : {}),
-            }}
-          >
-            {isAnalysis ? (
-              <div className="td-box-body px-4 py-3">
-                <QuestionRegionContent
-                  region={region}
-                  item={item}
-                  layoutEditor={layoutEditor}
-                  resolveFigure={resolveFigure}
-                  choiceLayoutBlockId={choiceLayoutBlockId}
-                  editableQuestionText={editableQuestionText}
-                  joinWithAnalysis={false}
-                  onInlineContentChange={onInlineContentChange}
-                />
-              </div>
-            ) : (
-              <QuestionRegionContent
-                region={region}
-                item={item}
-                layoutEditor={layoutEditor}
-                resolveFigure={resolveFigure}
-                choiceLayoutBlockId={choiceLayoutBlockId}
-                editableQuestionText={editableQuestionText}
-                joinWithAnalysis={region.kind === 'answer' && nextRegion?.type === 'analysis'}
-                onInlineContentChange={onInlineContentChange}
-              />
-            )}
-          </div>
-        )
-      })}
+      {renderedRegions}
     </div>
   )
 }
@@ -1170,6 +1190,7 @@ function BoxBlockView({
   boxTitleEditable?: boolean
   onEditBoxTitle?: (boxId: string, title: string) => void
 }) {
+  const flowLayout = block.skin?.id === 'builtin.box.step-flow'
   return (
     <BoxFrame block={block} titleEditable={boxTitleEditable} onEditTitle={onEditBoxTitle} skinDesignVariantIds={resolvers.skinDesignVariantIds} skinPresetBindings={resolvers.skinPresetBindings}>
       {block.children.map((child, index) => (
@@ -1178,6 +1199,7 @@ function BoxBlockView({
           block={child as TeachingBlock}
           resolvers={resolvers}
           parentBlockId={block.id}
+          boxFlowLayout={flowLayout}
           sourceIndex={sourceIndex}
           childIndex={index}
           selectedBlockId={selectedBlockId}
@@ -1223,6 +1245,7 @@ export function BoxFragmentRenderer({
   onSelectBox?: () => void
   clearFlowWrap?: boolean
 }) {
+  const flowLayout = block.skin?.id === 'builtin.box.step-flow'
   return (
     <div
       className={`td-box-fragment td-block-shell relative ${selectedBlockId === block.id ? 'td-block-selected' : ''}`}
@@ -1255,7 +1278,7 @@ export function BoxFragmentRenderer({
           if (!child || child.id !== childItem.childBlockId) return null
           if (childItem.kind === 'paragraph-child-fragment' && child.type === 'paragraph') {
             return (
-              <div key={`paragraph-child:${childItem.childIndex}:${childItem.fragmentIndex}`} data-box-flow-item="">
+              <div key={`paragraph-child:${childItem.childIndex}:${childItem.fragmentIndex}`} data-box-flow-item={flowLayout ? '' : undefined}>
                 {renderEditableParagraph
                   ? renderEditableParagraph(child, childItem)
                   : (
@@ -1281,7 +1304,7 @@ export function BoxFragmentRenderer({
               return (
                 <div
                   key={`question-child-fallback:${childItem.childIndex}`}
-                  data-box-flow-item=""
+                  data-box-flow-item={flowLayout ? '' : undefined}
                   onClick={(event) => {
                     if (!onSelectChild) return
                     event.stopPropagation()
@@ -1305,7 +1328,7 @@ export function BoxFragmentRenderer({
               <div
                 key={`question-child:${childItem.childIndex}:${childItem.fragmentIndex}`}
                 className={`td-question-fragment td-block-shell ${selectedBlockId === child.id ? 'td-block-selected' : ''}`}
-                data-box-flow-item=""
+                data-box-flow-item={flowLayout ? '' : undefined}
                 onClick={(event) => {
                   if (!onSelectChild) return
                   event.stopPropagation()
@@ -1342,7 +1365,7 @@ export function BoxFragmentRenderer({
             return (
               <div
                 key={`raw-markdown-child:${childItem.childIndex}:${childItem.fragmentIndex}`}
-                data-box-flow-item=""
+                data-box-flow-item={flowLayout ? '' : undefined}
                 onClick={(event) => {
                   if (!onSelectChild) return
                   event.stopPropagation()
@@ -1518,6 +1541,7 @@ export function BlockRenderer({
   onEditBoxTitle,
   headingLabel,
   flowWrappedText = false,
+  boxFlowLayout = false,
 }: {
   block: TeachingBlock
   resolvers: TeachingDocumentResolvers
@@ -1534,6 +1558,8 @@ export function BlockRenderer({
   headingLabel?: string
   /** 前方左右环绕图片尚在当前文档流内，文本块需要允许逐行绕排。 */
   flowWrappedText?: boolean
+  /** 仅步骤流程皮肤的直接子块需要流程项标记。 */
+  boxFlowLayout?: boolean
 }) {
   const figureTextWrap = block.type === 'figure' ? block.textWrap || 'top-bottom' : 'top-bottom'
   const figureSideWrapped = figureTextWrap === 'square-left' || figureTextWrap === 'square-right'
@@ -1612,7 +1638,7 @@ export function BlockRenderer({
       className={`td-block-shell ${figureSideWrapped ? 'td-block-shell-wrapped' : ''} ${flowWrappedText && supportsFlowWrap ? 'td-block-shell-flow-text' : ''} ${selectedBlockId === block.id ? 'td-block-selected' : ''}`}
       style={figureShellStyle}
       data-text-wrap={block.type === 'figure' ? figureTextWrap : undefined}
-      data-box-flow-item={parentBlockId ? '' : undefined}
+      data-box-flow-item={parentBlockId && boxFlowLayout ? '' : undefined}
       {...blockDomAttributes(block, parentBlockId, sourceIndex, childIndex, {
         rawMarkdownContainsTable: block.type === 'rawMarkdown'
           ? rawMarkdownContainsTable(block.markdown)
