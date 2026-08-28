@@ -118,6 +118,109 @@ export function normalizeLearningTagLibrary(rawValue: unknown, fallbackCode = 'l
   }
 }
 
+function importedLibraryError(message: string): never {
+  throw new Error(`标签库 JSON schema 错误：${message}`)
+}
+
+function importedRecord(value: unknown, label: string) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) importedLibraryError(`${label}必须是对象。`)
+  return value as Record<string, unknown>
+}
+
+function requiredImportedString(raw: Record<string, unknown>, field: string) {
+  const value = raw[field]
+  if (typeof value !== 'string' || !value.trim()) importedLibraryError(`字段 ${field} 必须是非空字符串。`)
+  return value.trim()
+}
+
+function optionalImportedString(raw: Record<string, unknown>, field: string) {
+  if (raw[field] === undefined) return undefined
+  if (typeof raw[field] !== 'string') importedLibraryError(`字段 ${field} 必须是字符串。`)
+  return raw[field]
+}
+
+function importedSections(value: unknown, sectionField: 'chapters' | 'groups', pointField: 'knowledgePoints' | 'tags', libraryType: 'knowledge_point' | 'method_tag') {
+  if (!Array.isArray(value) || !value.length) importedLibraryError(`字段 ${sectionField} 必须是非空数组。`)
+  return value.map((rawSection, sectionIndex) => {
+    const section = importedRecord(rawSection, `${sectionField}[${sectionIndex}]`)
+    const code = requiredImportedString(section, 'code')
+    const name = requiredImportedString(section, 'name')
+    if (!Array.isArray(section[pointField]) || !section[pointField].length) {
+      importedLibraryError(`${sectionField}[${sectionIndex}].${pointField} 必须是非空数组。`)
+    }
+    return {
+      id: code,
+      code,
+      name,
+      sortOrder: typeof section.sortOrder === 'number' && Number.isFinite(section.sortOrder) ? section.sortOrder : sectionIndex + 1,
+      knowledgePoints: (section[pointField] as unknown[]).map((rawPoint, pointIndex) => {
+        const point = importedRecord(rawPoint, `${sectionField}[${sectionIndex}].${pointField}[${pointIndex}]`)
+        const pointCode = requiredImportedString(point, 'code')
+        const pointName = requiredImportedString(point, 'name')
+        if (point.sortOrder !== undefined && (typeof point.sortOrder !== 'number' || !Number.isFinite(point.sortOrder))) {
+          importedLibraryError(`${sectionField}[${sectionIndex}].${pointField}[${pointIndex}].sortOrder 必须是数字。`)
+        }
+        if (point.appliesTo !== undefined && (!Array.isArray(point.appliesTo) || point.appliesTo.some((item) => typeof item !== 'string'))) {
+          importedLibraryError(`${sectionField}[${sectionIndex}].${pointField}[${pointIndex}].appliesTo 必须是字符串数组。`)
+        }
+        const tagType = optionalImportedString(point, 'tagType')
+        if (libraryType === 'method_tag' && tagType && !['method', 'problem_type', 'strategy', 'other'].includes(tagType)) {
+          importedLibraryError(`${sectionField}[${sectionIndex}].${pointField}[${pointIndex}].tagType 无效。`)
+        }
+        return {
+          id: pointCode,
+          code: pointCode,
+          name: pointName,
+          description: optionalImportedString(point, 'description'),
+          tagType: tagType || (libraryType === 'method_tag' ? 'method' : 'knowledge'),
+          appliesTo: point.appliesTo as string[] | undefined,
+          sortOrder: typeof point.sortOrder === 'number' ? point.sortOrder : pointIndex + 1,
+        }
+      }),
+    }
+  })
+}
+
+/** Strict contract for user-imported JSON. Historical file reads use normalizeLearningTagLibrary instead. */
+export function normalizeImportedLearningTagLibrary(rawValue: unknown) {
+  const raw = importedRecord(rawValue, '标签库')
+  if (raw.libraryType !== 'knowledge_point' && raw.libraryType !== 'method_tag') {
+    importedLibraryError('字段 libraryType 必须为 knowledge_point 或 method_tag；不支持 library_type，也不会默认知识点库。')
+  }
+  const libraryType = raw.libraryType
+  const code = safeTagLibraryCode(requiredImportedString(raw, 'code'))
+  const name = requiredImportedString(raw, 'name')
+  const subject = requiredImportedString(raw, 'subject')
+  const stage = requiredImportedString(raw, 'stage')
+  if (raw.locale !== undefined && typeof raw.locale !== 'string') importedLibraryError('字段 locale 必须是字符串。')
+  if (raw.version !== undefined && typeof raw.version !== 'string') importedLibraryError('字段 version 必须是字符串。')
+  if (raw.source !== undefined && typeof raw.source !== 'string') importedLibraryError('字段 source 必须是字符串。')
+  if (raw.isDefault !== undefined && typeof raw.isDefault !== 'boolean') importedLibraryError('字段 isDefault 必须是布尔值。')
+  if (raw.baseKnowledgeLibraryCode !== undefined && typeof raw.baseKnowledgeLibraryCode !== 'string') importedLibraryError('字段 baseKnowledgeLibraryCode 必须是字符串。')
+
+  if (libraryType === 'knowledge_point' && raw.groups !== undefined) importedLibraryError('knowledge_point 只能使用 chapters / knowledgePoints，不能使用 groups / tags。')
+  if (libraryType === 'method_tag' && raw.chapters !== undefined) importedLibraryError('method_tag 只能使用 groups / tags，不能使用 chapters / knowledgePoints。')
+  const chapters = libraryType === 'method_tag'
+    ? importedSections(raw.groups, 'groups', 'tags', libraryType)
+    : importedSections(raw.chapters, 'chapters', 'knowledgePoints', libraryType)
+  return {
+    id: code,
+    code,
+    name,
+    subject,
+    stage,
+    locale: (raw.locale as string | undefined) || 'zh-CN',
+    version: (raw.version as string | undefined) || '1.0.0',
+    source: (raw.source as string | undefined) || 'local-edit',
+    libraryType,
+    baseKnowledgeLibraryId: optionalImportedString(raw, 'baseKnowledgeLibraryId'),
+    baseKnowledgeLibraryCode: optionalImportedString(raw, 'baseKnowledgeLibraryCode'),
+    baseKnowledgeLibraryName: optionalImportedString(raw, 'baseKnowledgeLibraryName'),
+    isDefault: libraryType === 'knowledge_point' && Boolean(raw.isDefault),
+    chapters,
+  }
+}
+
 export function serializeLearningTagLibrary(library: ReturnType<typeof normalizeLearningTagLibrary>) {
   const base = {
     code: library.code,
@@ -193,21 +296,52 @@ export function readLearningTagLibraries() {
   return libraries.sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.name.localeCompare(right.name, 'zh-CN'))
 }
 
-export function writeLearningTagLibrary(rawPayload: unknown) {
-  const library = normalizeLearningTagLibrary(rawPayload)
-  const error = validateLearningTagLibrary(library)
-  if (error) throw new Error(error)
-  if (library.isDefault && library.libraryType === 'knowledge_point') {
+export function writeLearningTagLibraries(rawPayloads: unknown[]) {
+  if (!Array.isArray(rawPayloads) || !rawPayloads.length) importedLibraryError('必须提供非空标签库数组。')
+  const libraries = rawPayloads.map(normalizeImportedLearningTagLibrary)
+  const duplicate = libraries.find((library, index) => libraries.findIndex((candidate) => candidate.code === library.code) !== index)
+  if (duplicate) importedLibraryError(`同一批次包含重复 code：${duplicate.code}。`)
+
+  const toWrite = new Map<string, ReturnType<typeof normalizeLearningTagLibrary>>()
+  for (const library of libraries) toWrite.set(library.code, library)
+  if (libraries.some((library) => library.libraryType === 'knowledge_point' && library.isDefault)) {
     for (const existing of readLearningTagLibraries()) {
-      if (existing.code === library.code || existing.libraryType !== 'knowledge_point' || !existing.isDefault) continue
-      const existingPath = tagLibraryFilePath(existing.code)
-      if (fs.existsSync(existingPath)) {
-        fs.writeFileSync(existingPath, `${JSON.stringify(serializeLearningTagLibrary({ ...existing, isDefault: false }), null, 2)}\n`)
+      if (existing.libraryType === 'knowledge_point' && existing.isDefault && !toWrite.has(existing.code)) {
+        toWrite.set(existing.code, { ...existing, isDefault: false })
       }
     }
   }
-  fs.writeFileSync(tagLibraryFilePath(library.code), `${JSON.stringify(serializeLearningTagLibrary(library), null, 2)}\n`)
-  return normalizeLearningTagLibrary(serializeLearningTagLibrary(library))
+
+  const staged: Array<{ target: string; temp: string; backup: string; hadTarget: boolean }> = []
+  try {
+    for (const [code, library] of toWrite) {
+      const target = tagLibraryFilePath(code)
+      const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const temp = `${target}.${token}.tmp`
+      const backup = `${target}.${token}.bak`
+      fs.writeFileSync(temp, `${JSON.stringify(serializeLearningTagLibrary(library), null, 2)}\n`)
+      staged.push({ target, temp, backup, hadTarget: fs.existsSync(target) })
+    }
+    for (const item of staged) if (item.hadTarget) fs.renameSync(item.target, item.backup)
+    for (const item of staged) fs.renameSync(item.temp, item.target)
+    for (const item of staged) if (fs.existsSync(item.backup)) fs.unlinkSync(item.backup)
+  } catch (error) {
+    for (const item of staged) {
+      if (fs.existsSync(item.temp)) fs.unlinkSync(item.temp)
+      if (fs.existsSync(item.backup)) {
+        if (fs.existsSync(item.target)) fs.unlinkSync(item.target)
+        fs.renameSync(item.backup, item.target)
+      } else if (!item.hadTarget && fs.existsSync(item.target)) {
+        fs.unlinkSync(item.target)
+      }
+    }
+    throw error
+  }
+  return libraries.map((library) => normalizeLearningTagLibrary(serializeLearningTagLibrary(library)))
+}
+
+export function writeLearningTagLibrary(rawPayload: unknown) {
+  return writeLearningTagLibraries([rawPayload])[0]
 }
 
 export function readTagLibraries() {

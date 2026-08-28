@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { unsupportedImportReason } from './importFiles'
+import { parseOcrDocumentJsonFile, unsupportedImportReason } from './importFiles'
 
 describe('unsupportedImportReason', () => {
   it('explains how to handle Word files', () => {
@@ -11,5 +11,17 @@ describe('unsupportedImportReason', () => {
     for (const name of ['paper.pdf', 'paper.JPG', 'paper.jpeg', 'paper.png']) {
       expect(unsupportedImportReason(name)).toBe('')
     }
+  })
+})
+
+describe('parseOcrDocumentJsonFile', () => {
+  it('reads a strict JSON object instead of treating it as a binary upload', async () => {
+    const file = new File(['{"provider":"doc2x","markdown":"题干","pages":[],"assets":[]}'], 'ocr.json', { type: 'application/json' })
+    await expect(parseOcrDocumentJsonFile(file)).resolves.toMatchObject({ provider: 'doc2x' })
+  })
+
+  it('rejects malformed JSON and non-object roots', async () => {
+    await expect(parseOcrDocumentJsonFile(new File(['{'], 'bad.json'))).rejects.toThrow(/严格合法/)
+    await expect(parseOcrDocumentJsonFile(new File(['[]'], 'array.json'))).rejects.toThrow(/顶层必须是对象/)
   })
 })

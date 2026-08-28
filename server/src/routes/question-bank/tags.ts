@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import type { Express } from 'express'
-import { readTagLibraries, readLearningTagLibraries, writeLearningTagLibrary, safeTagLibraryCode, tagLibraryFilePath } from '../../services/tags/tag-libraries.js'
+import { readTagLibraries, readLearningTagLibraries, writeLearningTagLibraries, writeLearningTagLibrary, safeTagLibraryCode, tagLibraryFilePath } from '../../services/tags/tag-libraries.js'
 
 export function mountTagRoutes(app: Express) {
   app.get('/api/question-bank/tag-libraries', (_, res) => {
@@ -15,6 +15,16 @@ export function mountTagRoutes(app: Express) {
     try {
       const library = writeLearningTagLibrary(req.body)
       res.json({ library })
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
+    }
+  })
+
+  app.post('/api/learning-tags/libraries/import-json', (req, res) => {
+    try {
+      const body = req.body as Record<string, unknown>
+      if (!Array.isArray(body?.libraries)) throw new Error('标签库 JSON schema 错误：字段 libraries 必须是数组。')
+      res.status(201).json({ libraries: writeLearningTagLibraries(body.libraries) })
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : String(error) })
     }

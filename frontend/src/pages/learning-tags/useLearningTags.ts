@@ -9,6 +9,7 @@ import {
   formatKnowledgeDirectory,
   newLibrary,
   normalizeLibrary,
+  parseImportedLibrary,
   slugCode,
   stageLabel,
   stats,
@@ -61,9 +62,9 @@ export function useLearningTags() {
   const parsedJson = useMemo(() => {
     if (mode !== 'json') return { library: editor, error: '' }
     try {
-      return { library: normalizeLibrary(JSON.parse(jsonText)), error: '' }
-    } catch {
-      return { library: null, error: '当前内容不是有效 JSON' }
+      return { library: parseImportedLibrary(JSON.parse(jsonText)), error: '' }
+    } catch (error) {
+      return { library: null, error: error instanceof Error ? error.message : '当前内容不是有效 JSON' }
     }
   }, [editor, jsonText, mode])
   const activeLibrary = mode === 'json' ? parsedJson.library : editor
@@ -226,7 +227,11 @@ export function useLearningTags() {
       return
     }
 
-    const payloads = Array.isArray(parsed) ? parsed : [parsed]
+    if (!Array.isArray(parsed)) {
+      setError('AI JSON 导入只接受标签库 JSON 数组。')
+      return
+    }
+    const payloads = parsed
     if (!payloads.length) {
       setError('JSON 数组为空。')
       return
@@ -235,11 +240,9 @@ export function useLearningTags() {
     setAiImporting(true)
     setError('')
     try {
-      const imported: LearningTagLibrary[] = []
-      for (const payload of payloads) {
-        const result = await learningTagsApi.createLibrary(payload as Record<string, unknown>)
-        imported.push(normalizeLibrary(result.library))
-      }
+      const normalizedPayloads = payloads.map((payload) => JSON.parse(stringifyLibrary(parseImportedLibrary(payload))) as Record<string, unknown>)
+      const result = await learningTagsApi.importLibraries(normalizedPayloads)
+      const imported = result.libraries.map(normalizeLibrary)
       await loadLibraries()
       if (imported.at(-1)) selectLibrary(imported.at(-1)!)
       setAddDialogOpen(false)

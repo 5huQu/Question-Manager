@@ -5,7 +5,7 @@ import { settingsApi } from '@/api/settings'
 import { useAsync } from '@/hooks/useAsync'
 import { cityOptionsForProvince, provinceForCity, yearOptionsFromServerYear } from '@/utils/metadataOptions'
 import { ensureStageValue, gradeOptionsForTeachingStages } from '@/utils/stages'
-import { unsupportedImportReason } from '@/utils/importFiles'
+import { parseOcrDocumentJsonFile, unsupportedImportReason } from '@/utils/importFiles'
 import { importJobDocumentPath } from '../importV2Routes'
 import { type UploadDocumentMode, type Doc2xPackageDocumentMode, isGaokaoRegion, initialMetadata, subjectOptions } from './constants'
 
@@ -237,8 +237,30 @@ export function useImportUpload() {
       }
       setUploading(true)
       try {
-        const res = await importV2Api.uploadSourceDocument(file, metadataPayload(metadataDraft))
         const metadata = metadataPayload(metadataDraft)
+        if (file.name.toLowerCase().endsWith('.json')) {
+          const ocrDocument = await parseOcrDocumentJsonFile(file)
+          const imported = await importV2Api.importOcrDocumentJson({
+            ocrDocument,
+            sourceDocument: {
+              title: metadata.paperTitle || baseNameFromFile(file),
+              metadata,
+            },
+          })
+          const jobRes = await importV2Api.createImportJob({
+            title: metadata.paperTitle || imported.sourceDocument.title || baseNameFromFile(file),
+            mode: 'single_document',
+            ...metadata,
+          })
+          await importV2Api.addSourceDocumentToImportJob(jobRes.importJob.id, {
+            sourceDocumentId: imported.sourceDocument.id,
+            role: 'full',
+            sortOrder: 0,
+          })
+          navigate(importJobDocumentPath(jobRes.importJob.id, imported.sourceDocument.id))
+          return
+        }
+        const res = await importV2Api.uploadSourceDocument(file, metadata)
         const jobRes = await importV2Api.createImportJob({
           title: metadata.paperTitle || res.sourceDocument.title || baseNameFromFile(file),
           mode: 'single_document',

@@ -94,9 +94,7 @@ export function questionsFromPayload(payload: unknown) {
   if (payload && typeof payload === 'object') {
     const record = payload as Record<string, unknown>
     if (Array.isArray(record.questions)) return record.questions
-    const hasQuestionShape = ['problem_text', 'problemText', 'stemMarkdown', 'answer', 'answerText', 'analysis', 'analysisMarkdown', 'analysisText']
-      .some((key) => record[key] != null)
-    if (hasQuestionShape) return [payload]
+    return [payload]
   }
   return []
 }
@@ -120,6 +118,78 @@ type PaperQuestionPreview = {
   issues: string[]
 }
 
+export class QuestionJsonSchemaError extends Error {
+  constructor(message: string) {
+    super(`题目 JSON schema 错误：${message}`)
+    this.name = 'QuestionJsonSchemaError'
+  }
+}
+
+function schemaError(message: string): never {
+  throw new QuestionJsonSchemaError(message)
+}
+
+function questionRecord(value: unknown, index: number) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) schemaError(`questions[${index}] 必须是对象。`)
+  return value as Record<string, unknown>
+}
+
+function strictString(record: Record<string, unknown>, keys: string[], label: string) {
+  for (const key of keys) {
+    if (record[key] === undefined) continue
+    if (typeof record[key] !== 'string') schemaError(`字段 ${key}（${label}）必须是字符串。`)
+    return record[key] as string
+  }
+  return undefined
+}
+
+function strictBoolean(record: Record<string, unknown>, keys: string[], label: string) {
+  for (const key of keys) {
+    if (record[key] === undefined) continue
+    if (typeof record[key] !== 'boolean') schemaError(`字段 ${key}（${label}）必须是布尔值。`)
+  }
+}
+
+function strictNumber(record: Record<string, unknown>, keys: string[], label: string) {
+  for (const key of keys) {
+    if (record[key] === undefined) continue
+    if (typeof record[key] !== 'number' || !Number.isFinite(record[key])) schemaError(`字段 ${key}（${label}）必须是有限数字。`)
+  }
+}
+
+function strictTags(record: Record<string, unknown>, keys: string[], label: string) {
+  for (const key of keys) {
+    if (record[key] === undefined) continue
+    const value = record[key]
+    if (typeof value !== 'string' && !Array.isArray(value)) schemaError(`字段 ${key}（${label}）必须是字符串或字符串数组。`)
+    if (Array.isArray(value) && value.some((item) => typeof item !== 'string')) schemaError(`字段 ${key}（${label}）只能包含字符串。`)
+  }
+}
+
+function strictArray(record: Record<string, unknown>, keys: string[], label: string) {
+  for (const key of keys) {
+    if (record[key] !== undefined && !Array.isArray(record[key])) schemaError(`字段 ${key}（${label}）必须是数组。`)
+  }
+}
+
+/** Validates exactly the aliases supported by the question import API. */
+export function validateQuestionJson(question: unknown, index: number) {
+  const record = questionRecord(question, index)
+  const stem = strictString(record, ['problem_text', 'stemMarkdown', 'problemText'], '题干')
+  if (!stem?.trim()) schemaError(`questions[${index}] 缺少非空题干（problem_text、stemMarkdown 或 problemText）。`)
+  strictString(record, ['question_no', 'questionNo'], '题号')
+  strictString(record, ['stage'], '学段')
+  strictString(record, ['question_type', 'questionType'], '题型')
+  strictString(record, ['source_title', 'sourceTitle', 'paperTitle'], '来源')
+  strictString(record, ['answer', 'answerText'], '答案')
+  strictString(record, ['analysis', 'analysisMarkdown', 'analysisText'], '解析')
+  strictBoolean(record, ['needs_human_review', 'needsHumanReview'], '人工复核')
+  strictNumber(record, ['difficulty_score_10', 'difficultyScore10', 'total_score', 'totalScore'], '数值')
+  strictTags(record, ['knowledge_points', 'knowledgePoints', 'solution_methods', 'solutionMethods'], '标签')
+  strictArray(record, ['scoring_rubric', 'scoringRubric'], '评分细则')
+  return record
+}
+
 export function buildPaperQuestionPreview(question: unknown, index: number): PaperQuestionPreview {
   const questionNo = questionField(question, ['question_no', 'questionNo']) || String(index + 1)
   const problemText = questionField(question, ['problem_text', 'stemMarkdown', 'problemText'])
@@ -136,5 +206,13 @@ export function buildPaperQuestionPreview(question: unknown, index: number): Pap
 export function parseStrictQuestionsFromJsonText(text: string) {
   const payload: unknown = JSON.parse(text)
   const questions = questionsFromPayload(payload)
+  if (!questions.length) schemaError('必须提供至少一道题目，或包含 questions 数组。')
+  if (!Array.isArray(payload)) {
+    const outer = payload as Record<string, unknown>
+    if (outer.sourceTitle !== undefined && typeof outer.sourceTitle !== 'string') schemaError('字段 sourceTitle 必须是字符串。')
+    if (outer.paperTitle !== undefined && typeof outer.paperTitle !== 'string') schemaError('字段 paperTitle 必须是字符串。')
+    if (outer.stage !== undefined && typeof outer.stage !== 'string') schemaError('字段 stage 必须是字符串。')
+  }
+  questions.forEach(validateQuestionJson)
   return { payload, questions, previews: questions.map(buildPaperQuestionPreview) }
 }

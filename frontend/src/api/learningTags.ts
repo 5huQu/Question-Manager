@@ -15,6 +15,13 @@ export const learningTagsApi = {
       body: JSON.stringify(payload),
     })
   },
+  importLibraries(payloads: Record<string, unknown>[]) {
+    return api<{ libraries: LearningTagLibrary[] }>('/api/learning-tags/libraries/import-json', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ libraries: payloads }),
+    })
+  },
   updateLibrary(id: string, payload: Partial<LearningTagLibrary>) {
     return api<{ library: LearningTagLibrary }>(`/api/learning-tags/libraries/${encodeURIComponent(id)}`, {
       method: 'PATCH',

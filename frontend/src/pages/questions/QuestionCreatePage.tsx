@@ -292,7 +292,7 @@ export function QuestionCreatePage() {
 
       {activeTab === 'single-json' ? (
         <form className={`${panelClass} space-y-5 p-5`} onSubmit={createSingleFromJson}>
-          <PanelHeading icon={Code} title="JSON 单题录入" description="输入严格合法的 JSON。" />
+          <PanelHeading icon={Code} title="JSON 单题录入" description="输入符合题目 schema 的严格 JSON。" />
           <textarea className={`${textareaClass} min-h-80`} value={singleJsonText} onChange={(event) => setSingleJsonText(event.target.value)} placeholder='{"questionNo":"1","problemText":"...","answerText":"..."}' spellCheck={false} />
           <JsonStatus status={singleJson} expected="single" />
           <div className="flex justify-end"><Button type="submit" icon={Plus} disabled={saving || singleJson.status !== 'valid' || singleJson.count !== 1}>{saving ? '保存中…' : '解析并保存'}</Button></div>
@@ -387,7 +387,7 @@ function JsonStatus({ status, expected }: { status: StrictJsonStatus; expected: 
     </div>
   )
   const countValid = expected === 'single' ? status.count === 1 : status.count > 0
-  return <div className={`flex items-center gap-2 rounded-lg border p-3 text-xs ${countValid ? 'border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-400' : 'border-amber-200 bg-amber-50/50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-400'}`}>{countValid ? <CheckCircle className="size-4" /> : <AlertTriangle className="size-4" />}{expected === 'single' && status.count !== 1 ? `检测到 ${status.count} 道题，单题录入必须恰好包含一道题。` : `严格 JSON 校验通过，检测到 ${status.count} 道题。`}</div>
+  return <div className={`flex items-center gap-2 rounded-lg border p-3 text-xs ${countValid ? 'border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-400' : 'border-amber-200 bg-amber-50/50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-400'}`}>{countValid ? <CheckCircle className="size-4" /> : <AlertTriangle className="size-4" />}{expected === 'single' && status.count !== 1 ? `题目 schema 校验通过，检测到 ${status.count} 道题；单题录入必须恰好包含一道题。` : `JSON 语法和题目 schema 校验通过，检测到 ${status.count} 道题。`}</div>
 }
 
 function QuestionPreview({ rows }: { rows: ReturnType<typeof parseStrictQuestionsFromJsonText>['previews'] }) {

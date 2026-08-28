@@ -87,6 +87,7 @@ const expectedRoutes = new Set([
   'GET /api/question-bank/tag-libraries',
   'GET /api/learning-tags/libraries',
   'POST /api/learning-tags/libraries',
+  'POST /api/learning-tags/libraries/import-json',
   'DELETE /api/learning-tags/libraries/:id',
   'GET /api/tools/pdf-slicer/rules',
   'PUT /api/tools/pdf-slicer/rules',

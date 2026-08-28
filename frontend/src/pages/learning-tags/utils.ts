@@ -43,33 +43,7 @@ export function slugCode(value: string) {
 }
 
 export function stringifyLibrary(library: LearningTagLibrary) {
-  return JSON.stringify({
-    code: library.code,
-    name: library.name,
-    subject: library.subject,
-    stage: library.stage,
-    locale: library.locale,
-    version: library.version,
-    source: library.source,
-    libraryType: library.libraryType,
-    baseKnowledgeLibraryId: library.baseKnowledgeLibraryId,
-    baseKnowledgeLibraryCode: library.baseKnowledgeLibraryCode,
-    baseKnowledgeLibraryName: library.baseKnowledgeLibraryName,
-    isDefault: library.isDefault,
-    chapters: library.chapters.map((chapter) => ({
-      code: chapter.code,
-      name: chapter.name,
-      sortOrder: chapter.sortOrder,
-      knowledgePoints: chapter.knowledgePoints.map((point) => ({
-        code: point.code,
-        name: point.name,
-        description: point.description,
-        tagType: point.tagType,
-        appliesTo: point.appliesTo,
-        sortOrder: point.sortOrder,
-      })),
-    })),
-  }, null, 2)
+  return JSON.stringify(exportPayload(library), null, 2)
 }
 
 export function exportPayload(library: LearningTagLibrary) {
@@ -140,6 +114,53 @@ export function normalizeLibrary(value: unknown): LearningTagLibrary {
       })) : [],
     })) : [],
   }
+}
+
+function importedLibraryError(message: string): never {
+  throw new Error(`标签库 JSON schema 错误：${message}`)
+}
+
+function importedRecord(value: unknown, label: string) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) importedLibraryError(`${label}必须是对象。`)
+  return value as Record<string, unknown>
+}
+
+function requiredImportedString(record: Record<string, unknown>, field: string) {
+  if (typeof record[field] !== 'string' || !(record[field] as string).trim()) importedLibraryError(`字段 ${field} 必须是非空字符串。`)
+}
+
+/** Strict contract for user-edited/imported JSON; draft normalization stays lenient. */
+export function parseImportedLibrary(value: unknown): LearningTagLibrary {
+  const library = importedRecord(value, '标签库')
+  if (library.libraryType !== 'knowledge_point' && library.libraryType !== 'method_tag') {
+    importedLibraryError('字段 libraryType 必须为 knowledge_point 或 method_tag；不支持 library_type，也不会默认知识点库。')
+  }
+  for (const field of ['code', 'name', 'subject', 'stage']) requiredImportedString(library, field)
+  for (const field of ['locale', 'version', 'source', 'baseKnowledgeLibraryId', 'baseKnowledgeLibraryCode', 'baseKnowledgeLibraryName']) {
+    if (library[field] !== undefined && typeof library[field] !== 'string') importedLibraryError(`字段 ${field} 必须是字符串。`)
+  }
+  if (library.isDefault !== undefined && typeof library.isDefault !== 'boolean') importedLibraryError('字段 isDefault 必须是布尔值。')
+  const isMethod = library.libraryType === 'method_tag'
+  const sectionField = isMethod ? 'groups' : 'chapters'
+  const pointField = isMethod ? 'tags' : 'knowledgePoints'
+  const forbiddenField = isMethod ? 'chapters' : 'groups'
+  if (library[forbiddenField] !== undefined) importedLibraryError(`${library.libraryType} 不支持字段 ${forbiddenField}。`)
+  if (!Array.isArray(library[sectionField]) || !library[sectionField].length) importedLibraryError(`字段 ${sectionField} 必须是非空数组。`)
+  for (const [sectionIndex, rawSection] of (library[sectionField] as unknown[]).entries()) {
+    const section = importedRecord(rawSection, `${sectionField}[${sectionIndex}]`)
+    requiredImportedString(section, 'code')
+    requiredImportedString(section, 'name')
+    if (!Array.isArray(section[pointField]) || !section[pointField].length) importedLibraryError(`${sectionField}[${sectionIndex}].${pointField} 必须是非空数组。`)
+    for (const [pointIndex, rawPoint] of (section[pointField] as unknown[]).entries()) {
+      const point = importedRecord(rawPoint, `${sectionField}[${sectionIndex}].${pointField}[${pointIndex}]`)
+      requiredImportedString(point, 'code')
+      requiredImportedString(point, 'name')
+      if (point.tagType !== undefined && typeof point.tagType !== 'string') importedLibraryError(`${sectionField}[${sectionIndex}].${pointField}[${pointIndex}].tagType 必须是字符串。`)
+      if (isMethod && point.tagType !== undefined && !['method', 'problem_type', 'strategy', 'other'].includes(point.tagType as string)) importedLibraryError(`${sectionField}[${sectionIndex}].${pointField}[${pointIndex}].tagType 无效。`)
+      if (point.appliesTo !== undefined && (!Array.isArray(point.appliesTo) || point.appliesTo.some((item) => typeof item !== 'string'))) importedLibraryError(`${sectionField}[${sectionIndex}].${pointField}[${pointIndex}].appliesTo 必须是字符串数组。`)
+    }
+  }
+  return normalizeLibrary(library)
 }
 
 export function validate(library: LearningTagLibrary | null, jsonError = '') {

@@ -21,6 +21,59 @@ export function asRecord(value: unknown): Record<string, any> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {}
 }
 
+function ocrImportError(message: string): never {
+  throw new RouteError(400, `OCRDocument JSON schema 错误：${message}`)
+}
+
+function ocrImportRecord(value: unknown, label: string) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) ocrImportError(`${label}必须是对象。`)
+  return value as Record<string, unknown>
+}
+
+/**
+ * Validates only documents supplied through the JSON import endpoint. The
+ * normalizer below intentionally remains tolerant for persisted historical
+ * OCR records.
+ */
+export function validateImportedOCRDocumentJson(body: Record<string, unknown>) {
+  const raw = ocrImportRecord(body.ocrDocument || body, 'OCRDocument')
+  if (body.sourceDocumentId !== undefined && typeof body.sourceDocumentId !== 'string') ocrImportError('字段 sourceDocumentId 必须是字符串。')
+  if (raw.provider !== 'doc2x' && raw.provider !== 'glm') ocrImportError('字段 provider 必须为 doc2x 或 glm。')
+  if (typeof raw.markdown !== 'string') ocrImportError('字段 markdown 必须是字符串。')
+  for (const field of ['id', 'sourceDocumentId', 'source_document_id', 'rawResultPath', 'raw_result_path', 'createdAt', 'created_at']) {
+    if (raw[field] !== undefined && typeof raw[field] !== 'string') ocrImportError(`字段 ${field} 必须是字符串。`)
+  }
+  if (!Array.isArray(raw.pages)) ocrImportError('字段 pages 必须是数组。')
+  if (!Array.isArray(raw.assets)) ocrImportError('字段 assets 必须是数组。')
+  if (raw.metadata !== undefined && (!raw.metadata || typeof raw.metadata !== 'object' || Array.isArray(raw.metadata))) ocrImportError('字段 metadata 必须是对象。')
+  for (const [index, rawPage] of raw.pages.entries()) {
+    const page = ocrImportRecord(rawPage, `pages[${index}]`)
+    for (const field of ['pageNo', 'width', 'height']) {
+      if (typeof page[field] !== 'number' || !Number.isFinite(page[field])) ocrImportError(`pages[${index}].${field} 必须是数字。`)
+    }
+    if (!Array.isArray(page.blocks)) ocrImportError(`pages[${index}].blocks 必须是数组。`)
+    for (const [blockIndex, rawBlock] of page.blocks.entries()) {
+      const block = ocrImportRecord(rawBlock, `pages[${index}].blocks[${blockIndex}]`)
+      for (const field of ['id', 'type', 'content']) if (typeof block[field] !== 'string') ocrImportError(`pages[${index}].blocks[${blockIndex}].${field} 必须是字符串。`)
+      if (block.pageNo !== undefined && (typeof block.pageNo !== 'number' || !Number.isFinite(block.pageNo))) ocrImportError(`pages[${index}].blocks[${blockIndex}].pageNo 必须是数字。`)
+    }
+  }
+  for (const [index, rawAsset] of raw.assets.entries()) {
+    const asset = ocrImportRecord(rawAsset, `assets[${index}]`)
+    for (const field of ['id', 'type', 'path']) if (typeof asset[field] !== 'string') ocrImportError(`assets[${index}].${field} 必须是字符串。`)
+    if (asset.pageNo !== undefined && (typeof asset.pageNo !== 'number' || !Number.isFinite(asset.pageNo))) ocrImportError(`assets[${index}].pageNo 必须是数字。`)
+  }
+  if (body.sourceDocument !== undefined) {
+    const source = ocrImportRecord(body.sourceDocument, 'sourceDocument')
+    if (source.title !== undefined && typeof source.title !== 'string') ocrImportError('sourceDocument.title 必须是字符串。')
+    for (const field of ['id', 'originalFileName', 'original_file_name', 'filePath']) {
+      if (source[field] !== undefined && typeof source[field] !== 'string') ocrImportError(`sourceDocument.${field} 必须是字符串。`)
+    }
+    if (source.metadata !== undefined && (!source.metadata || typeof source.metadata !== 'object' || Array.isArray(source.metadata))) ocrImportError('sourceDocument.metadata 必须是对象。')
+  }
+  return raw
+}
+
 export function normalizeOCRDocumentPayload(rawValue: unknown, fallbackSourceDocumentId: string): OCRDocument {
   const raw = asRecord(rawValue)
   const provider = normalizeProvider(raw.provider)
@@ -39,14 +92,14 @@ export function normalizeOCRDocumentPayload(rawValue: unknown, fallbackSourceDoc
 
 export async function importOCRDocumentJson(body: Record<string, unknown>) {
   const rawOCRDocument = body.ocrDocument || body
-  const raw = asRecord(rawOCRDocument)
+  const raw = validateImportedOCRDocumentJson(body)
   const sourceBody = asRecord(body.sourceDocument)
   const sourceDocumentId = String(body.sourceDocumentId || raw.sourceDocumentId || raw.source_document_id || '')
   let source = sourceDocumentId ? sourceRepo.getSourceDocument(sourceDocumentId) : null
   if (!source) {
     source = sourceRepo.createSourceDocument({
       id: sourceDocumentId || undefined,
-      title: String(sourceBody.title || raw.metadata?.title || raw.id || '模拟 OCRDocument'),
+      title: String(sourceBody.title || asRecord(raw.metadata).title || raw.id || '模拟 OCRDocument'),
       originalFileName: String(sourceBody.originalFileName || sourceBody.original_file_name || ''),
       filePath: String(sourceBody.filePath || ''),
       fileType: 'json',

@@ -19,6 +19,8 @@ import { rerunQuestionBankItemOcr } from './ocr-rerun.js'
 import { compileTikz } from '../teaching-documents/tikz-renderer.js'
 import { RouteError } from '../../utils/http-error.js'
 import * as repo from '../../repositories/question-bank/items.repo.js'
+import { db } from '../../db/connection.js'
+import { normalizeQuestionJsonPayload } from '../../contracts/question-json.js'
 
 export const questionFigureUpload = candidateFigureUpload.single('file')
 
@@ -54,38 +56,40 @@ export function createItem(body: Record<string, unknown>) {
 }
 
 export function importJsonItems(body: unknown) {
-  const payload = (body || {}) as Record<string, any>
-  const questions = Array.isArray(payload) ? payload : Array.isArray(payload.questions) ? payload.questions : []
-  if (!questions.length) throw new RouteError(400, '请提供 questions 数组。')
-  const sourceTitle = String(payload.sourceTitle || payload.paperTitle || 'AI 识别导入')
-  const stage = String(payload.stage || '高三')
-  const created = questions.map((question: Record<string, unknown>, index: number) => {
-    const review = Boolean(question.needs_human_review)
-    const stemMarkdown = String(question.problem_text || question.stemMarkdown || '')
-    const answerText = String(question.answer || question.answerText || '')
-    const analysisMarkdown = String(question.analysis || question.analysisMarkdown || '')
-    const knowledgePoints = normalizeTags(question.knowledge_points ?? question.knowledgePoints)
-    const solutionMethods = normalizeTags(question.solution_methods ?? question.solutionMethods)
-    const difficultyScore10 = normalizeDifficultyScore10(question.difficulty_score_10 ?? question.difficultyScore10)
-    return createQuestion({
-      questionNo: String(question.question_no || question.questionNo || index + 1),
-      stage,
-      questionType: String(question.question_type || question.questionType || '') || inferQuestionType(stemMarkdown, answerText),
-      sourceTitle,
-      bankStatus: review ? 'blocked' : 'ready',
-      difficultyScore: review ? 4 : 3,
-      difficultyScore10,
-      difficultyLabel: String(question.difficulty_label || question.difficultyLabel || difficultyLabel10(difficultyScore10)),
-      knowledgePoints,
-      solutionMethods,
-      totalScore: normalizeTotalScore(question.total_score ?? question.totalScore),
-      scoringRubric: normalizeScoringRubric(question.scoring_rubric ?? question.scoringRubric),
-      stemMarkdown,
-      answerText,
-      analysisMarkdown,
+  // Normalize and validate the whole batch before opening a write transaction.
+  const payload = normalizeQuestionJsonPayload(body)
+  const sourceTitle = payload.sourceTitle || 'AI 识别导入'
+  const stage = payload.stage || '高三'
+  const ownsTransaction = !db.isTransaction
+  try {
+    if (ownsTransaction) db.exec('BEGIN IMMEDIATE')
+    const created = payload.questions.map((question, index) => {
+      const answerText = question.answerText || ''
+      const difficultyScore10 = normalizeDifficultyScore10(question.difficultyScore10)
+      return createQuestion({
+        questionNo: question.questionNo || String(index + 1),
+        stage: question.stage || stage,
+        questionType: question.questionType || inferQuestionType(question.stemMarkdown, answerText),
+        sourceTitle: question.sourceTitle || sourceTitle,
+        bankStatus: question.needsHumanReview ? 'blocked' : 'ready',
+        difficultyScore: question.needsHumanReview ? 4 : 3,
+        difficultyScore10,
+        difficultyLabel: question.difficultyLabel || difficultyLabel10(difficultyScore10),
+        knowledgePoints: normalizeTags(question.knowledgePoints),
+        solutionMethods: normalizeTags(question.solutionMethods),
+        totalScore: normalizeTotalScore(question.totalScore),
+        scoringRubric: normalizeScoringRubric(question.scoringRubric),
+        stemMarkdown: question.stemMarkdown,
+        answerText,
+        analysisMarkdown: question.analysisMarkdown || '',
+      })
     })
-  })
-  return { items: created, count: created.length }
+    if (ownsTransaction) db.exec('COMMIT')
+    return { items: created, count: created.length }
+  } catch (error) {
+    if (ownsTransaction && db.isTransaction) db.exec('ROLLBACK')
+    throw error
+  }
 }
 
 export function getItem(id: string) {

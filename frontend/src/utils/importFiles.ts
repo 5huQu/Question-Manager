@@ -11,3 +11,16 @@ export function unsupportedImportReason(name: string, options: { allowJson?: boo
   }
   return ''
 }
+
+export async function parseOcrDocumentJsonFile(file: File): Promise<Record<string, unknown>> {
+  let value: unknown
+  try {
+    value = JSON.parse(await file.text())
+  } catch {
+    throw new Error('OCRDocument JSON 文件不是严格合法的 JSON。')
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('OCRDocument JSON 文件顶层必须是对象。')
+  }
+  return value as Record<string, unknown>
+}
