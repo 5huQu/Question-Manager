@@ -14,7 +14,7 @@ export function Modal({ title, desc, children, onClose, wide, locked, actions, f
     : 'flex flex-none items-start justify-between gap-4 border-b border-zinc-100 dark:border-zinc-900 px-4 py-3'
   const bodyClass = locked ? 'min-h-0 flex-1 overflow-hidden p-4' : 'p-4'
 
-  return (
+  const modalNode = (
     <div className={`${isGlass ? 'question-edit-glass-backdrop' : 'bg-black/40 backdrop-blur-sm'} fixed inset-0 z-50 flex items-center justify-center p-4`}>
       <div className={frameClass}>
         <div className={headerClass}>
@@ -37,6 +37,9 @@ export function Modal({ title, desc, children, onClose, wide, locked, actions, f
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') return null
+  return createPortal(modalNode, document.body)
 }
 
 export function LargeImageDialog({ title, caption, imageUrl, secondaryImageUrl, onClose }: { title: string; caption?: string; imageUrl: string; secondaryImageUrl?: string; onClose: () => void }) {

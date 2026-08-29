@@ -29,6 +29,7 @@ export function BankPagination({
         disabled={page === 1}
         className="flex size-6.5 items-center justify-center rounded text-zinc-500 hover:bg-black/5 hover:text-zinc-900 disabled:opacity-30 disabled:pointer-events-none dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100 cursor-pointer transition-colors"
         title="第一页"
+        aria-label="第一页"
       >
         <ChevronsLeft className="size-3.5" />
       </button>
@@ -39,6 +40,7 @@ export function BankPagination({
         disabled={page === 1}
         className="flex size-6.5 items-center justify-center rounded text-zinc-500 hover:bg-black/5 hover:text-zinc-900 disabled:opacity-30 disabled:pointer-events-none dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100 cursor-pointer transition-colors"
         title="上一页"
+        aria-label="上一页"
       >
         <ChevronLeft className="size-3.5" />
       </button>
@@ -50,6 +52,7 @@ export function BankPagination({
             key={p}
             type="button"
             onClick={() => setPage(p)}
+            aria-label={`第 ${p} 页`}
             className={`flex size-6.5 items-center justify-center rounded text-xs font-medium transition-all cursor-pointer ${
               isActive
                 ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-950 shadow-xs"
@@ -67,6 +70,7 @@ export function BankPagination({
         disabled={page === totalPages}
         className="flex size-6.5 items-center justify-center rounded text-zinc-500 hover:bg-black/5 hover:text-zinc-900 disabled:opacity-30 disabled:pointer-events-none dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100 cursor-pointer transition-colors"
         title="下一页"
+        aria-label="下一页"
       >
         <ChevronRight className="size-3.5" />
       </button>
@@ -77,6 +81,7 @@ export function BankPagination({
         disabled={page === totalPages}
         className="flex size-6.5 items-center justify-center rounded text-zinc-500 hover:bg-black/5 hover:text-zinc-900 disabled:opacity-30 disabled:pointer-events-none dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100 cursor-pointer transition-colors"
         title="最后一页"
+        aria-label="最后一页"
       >
         <ChevronsRight className="size-3.5" />
       </button>
