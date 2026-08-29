@@ -274,32 +274,28 @@ export function BasketPageView({
 
           <div className="space-y-4 rounded-xl border border-zinc-200 bg-zinc-50/60 px-4 py-3.5 dark:border-zinc-800 dark:bg-zinc-900/25">
             <div className="space-y-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">答案及解析排版</span>
-            <div className="grid grid-cols-3 gap-2">
-              {([
-                { value: 'student', icon: EyeOff, label: '不显示', desc: '学生版' },
-                { value: 'teacher', icon: BookOpen, label: '详尽解析', desc: '教师版' },
-                { value: 'error_notebook', icon: NotebookPen, label: '错题本', desc: '仅题目排版' },
-              ] as const).map((option) => {
-                const selected = pageVariant === option.value
-                const Icon = option.icon
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setPageVariant(option.value)}
-                    className={`flex flex-col items-center gap-1 p-2.5 border rounded-lg transition-all duration-150 active:scale-[0.98] ${selected ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900/60' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800'}`}
-                  >
-                    <Icon className={`size-5 ${selected ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}`} />
-                    <span className={`text-[10px] leading-tight ${selected ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-700 dark:text-zinc-300'}`}>{option.label}</span>
-                    <span className="text-[9px] leading-tight text-zinc-400 dark:text-zinc-500">{option.desc}</span>
-                  </button>
-                )
-              })}
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">文档类型</span>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { value: 'exam', icon: FileText, label: '试卷' },
+                  { value: 'error_notebook', icon: NotebookPen, label: '错题本' },
+                ] as const).map((option) => {
+                  const selected = option.value === 'error_notebook' ? pageVariant === 'error_notebook' : pageVariant !== 'error_notebook'
+                  const Icon = option.icon
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setPageVariant(option.value === 'error_notebook' ? 'error_notebook' : 'teacher')}
+                      className={`flex flex-col items-center gap-1.5 p-2.5 border rounded-lg transition-all duration-150 active:scale-[0.98] ${selected ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900/60' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800'}`}
+                    >
+                      <Icon className={`size-5 ${selected ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}`} />
+                      <span className={`text-[11px] leading-tight ${selected ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-700 dark:text-zinc-300'}`}>{option.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
-
-          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">试卷版本以上方选择为准。生成试卷文档后，可在文档编辑器中选择学生版或教师版导出；选择错题本时生成错题集文档（仅题目排版）。PDF 仅作为备选输出。</p>
 
             <div className="grid grid-cols-3 divide-x divide-zinc-200/80 border-t border-zinc-200/80 pt-3 dark:divide-zinc-800 dark:border-zinc-800">
               <div className="px-1 text-center">
@@ -319,39 +315,18 @@ export function BasketPageView({
         </div>
 
         <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
-          {layoutDrafts.data?.items[0] ? <button
-            onClick={() => navigate(`/questions/collections/${encodeURIComponent(activeId)}/layout-drafts/${encodeURIComponent(layoutDrafts.data!.items[0].id)}`)}
-            className="mb-2 w-full text-xs text-zinc-600 underline underline-offset-2 dark:text-zinc-400"
-          >继续上次排版：{layoutDrafts.data.items[0].name}</button> : null}
           <button
             onClick={() => void importToTeachingDocument()}
             disabled={importingDocument || !active.data?.questionCount}
             title={pageVariant === 'error_notebook'
               ? '生成错题集文档：仅保留题目，隐藏标题与章节，随后可在文档编辑器中继续编辑'
               : '将当前题目一键生成试卷文档，题目按题型自动分组，随后可在文档编辑器中继续编辑'}
-            className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-md bg-zinc-900 py-2.5 text-xs font-semibold text-zinc-50 transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
+            className="w-full flex items-center justify-center gap-1.5 rounded-md bg-zinc-900 py-2.5 text-xs font-semibold text-zinc-50 transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-zinc-200"
           >
             <NotebookPen className="size-3.5" />
             {importingDocument
               ? (pageVariant === 'error_notebook' ? '正在生成错题集文档…' : '正在生成试卷文档…')
               : (pageVariant === 'error_notebook' ? '生成错题集文档' : '生成试卷文档')}
-          </button>
-          <button
-            onClick={() => void createLayoutDraft()}
-            disabled={exporting || !active.data?.questionCount || pageVariant === 'error_notebook'}
-            title={pageVariant === 'error_notebook' ? '错题本请通过「生成错题集文档」进入文档编辑器排版预览。' : undefined}
-            className="mb-2 w-full flex items-center justify-center gap-1.5 rounded-md border border-zinc-300 bg-white py-2.5 text-xs font-semibold text-zinc-800 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-          >
-            <Settings2 className="size-3.5" />
-            排版并预览
-          </button>
-          <button
-            onClick={() => exportCollection('pdf', pageVariant, 'exam')}
-            disabled={exporting}
-            className="w-full flex items-center justify-center gap-1.5 rounded-md border border-zinc-300 bg-white py-2.5 text-xs font-semibold text-zinc-800 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
-          >
-            <FileDown className="size-3.5" />
-            备选导出 PDF
           </button>
         </div>
       </aside>

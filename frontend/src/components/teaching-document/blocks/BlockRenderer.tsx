@@ -545,7 +545,11 @@ function QuestionRegionContent({
     const figureKey = figureRegion.figureKey || figureRegion.key
     const groupedKeys = figureRegion.groupFigureKeys || [figureKey]
     const groupWidthOverrides = figureRegion.groupFigureWidthOverrides || {}
-    const figureWidths = groupedKeys.map((key) => groupWidthOverrides[key] ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM)
+    // 单图不会生成 groupFigureWidthOverrides。此时必须回退到区域本身的宽度，
+    // 否则“嵌入型”外层仍按默认 30mm 限宽，图片的 widthMm 即使保存成功也看不出变化。
+    const figureWidths = groupedKeys.map((key) => groupWidthOverrides[key]
+      ?? (key === figureKey ? figureRegion.widthOverrideMm : undefined)
+      ?? DEFAULT_QUESTION_FIGURE_WIDTH_MM)
     const figureAspectRatios = visibleFigures.map((figure) => {
       const width = Number(figure.width)
       const height = Number(figure.height)
@@ -912,7 +916,7 @@ function QuestionBlockView({ block, resolvers }: { block: QuestionBlock; resolve
   return (
     <>
       {block.localContent ? (
-        <div className="mt-4">
+        <div className="mt-4" data-print-hide="">
           <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50/60 px-1.5 py-0.5 text-[11px] font-normal tracking-wide text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">文档本地版本</span>
         </div>
       ) : null}

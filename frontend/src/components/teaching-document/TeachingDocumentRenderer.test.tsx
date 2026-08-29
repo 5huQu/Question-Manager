@@ -6,6 +6,7 @@ import type { ParagraphBlock, TeachingDocumentV1, TeachingInline } from '@/types
 import type { QuestionItem } from '@/types'
 import type { ParagraphFragmentPaginationItem } from '@/utils/teachingDocument'
 import { resolveTeachingSkinDesignRenderState, teachingSkinRegistry } from '@/utils/teachingDocument/skins'
+import { CSS_PIXELS_PER_MM } from '@/utils/teachingDocument/layout/paper'
 import { InlineContent } from './blocks/InlineContent'
 import { ParagraphFragmentRenderer } from './blocks/BlockRenderer'
 import { TeachingDocumentRenderer } from './TeachingDocumentRenderer'
@@ -117,6 +118,49 @@ describe('ParagraphFragmentRenderer', () => {
 })
 
 describe('TeachingDocumentRenderer fallbacks', () => {
+  it('uses an embedded question figure width to size its outer container', () => {
+    const question: QuestionItem = {
+      id: 'question-embedded-figure', serialNo: null, questionNo: '11', stage: '高中', questionType: '解答题',
+      difficultyScore: 3, difficultyScore10: 6, difficultyLabel: '中等', chapter: '', knowledgePoints: [], solutionMethods: [], sourceTitle: '', bankStatus: 'ready',
+      stemMarkdown: '观察下图。\n\n<!-- DOC2X_FIGURE:fig-embedded -->', answerText: '', analysisMarkdown: '', totalScore: 12, scoringRubric: [], sliceImagePath: '',
+      figures: [{ id: 'fig-embedded', path: '/fig-embedded.png', usage: 'stem' }], sourceRunId: '', updatedAt: '', hasFigures: true,
+      creator: null, lastEditor: null,
+    }
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer
+        document={documentWith([{
+          type: 'question',
+          id: 'question-embedded-figure-block',
+          questionId: question.id,
+          display: { figureOverrides: { 'fig-embedded': { widthMm: 80 } } },
+        }])}
+        resolveQuestion={() => question}
+      />,
+    )
+
+    expect(html).toContain(`width:${80 * CSS_PIXELS_PER_MM}px`)
+  })
+
+  it('marks a document-local question badge as print-only chrome', () => {
+    const question: QuestionItem = {
+      id: 'question-local-content', serialNo: null, questionNo: '12', stage: '高中', questionType: '解答题',
+      difficultyScore: 3, difficultyScore10: 6, difficultyLabel: '中等', chapter: '', knowledgePoints: [], solutionMethods: [], sourceTitle: '', bankStatus: 'ready',
+      stemMarkdown: '题库题干', answerText: '', analysisMarkdown: '', totalScore: 12, scoringRubric: [], sliceImagePath: '',
+      figures: [], sourceRunId: '', updatedAt: '', hasFigures: false, creator: null, lastEditor: null,
+    }
+    const html = renderToStaticMarkup(
+      <TeachingDocumentRenderer
+        document={documentWith([{
+          type: 'question', id: 'question-local-content-block', questionId: question.id,
+          localContent: { stemMarkdown: '文档题干', answerText: '', analysisMarkdown: '' },
+        }])}
+        resolveQuestion={() => question}
+      />,
+    )
+
+    expect(html).toMatch(/data-print-hide=""[^>]*>\s*<span[^>]*>文档本地版本<\/span>/)
+  })
+
   it('lets a resolved box Skin control its title color while preserving the unskinned default', () => {
     const skinned = renderToStaticMarkup(
       <TeachingDocumentRenderer document={documentWith([{
